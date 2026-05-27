@@ -1,5 +1,5 @@
 import { logger } from '@lib/logger'
-import { redisCache } from '../../redis/clients/clients'
+import { getRedisCache } from '../../redis/clients/clients'
 import { randomUUID } from 'node:crypto'
 
 /**
@@ -54,6 +54,7 @@ export class DistributedLock {
    */
   static async acquire(key: string, ttlMs: number): Promise<LockToken | null> {
     const token = randomUUID()
+    const redisCache = getRedisCache()
 
     try {
       const result = await redisCache.set(key, token, 'PX', ttlMs, 'NX')
@@ -84,6 +85,8 @@ export class DistributedLock {
    *          false se o lock expirou ou foi assumido por outra instância.
    */
   static async renew(key: string, token: LockToken, ttlMs: number): Promise<boolean> {
+    const redisCache = getRedisCache()
+
     try {
       const result = await redisCache.eval(RENEW_SCRIPT, 1, key, token, String(ttlMs))
       const renewed = result === 1
@@ -110,6 +113,8 @@ export class DistributedLock {
    * @param token - O token retornado pelo acquire
    */
   static async release(key: string, token: LockToken): Promise<void> {
+    const redisCache = getRedisCache()
+
     try {
       const result = await redisCache.eval(RELEASE_SCRIPT, 1, key, token)
 

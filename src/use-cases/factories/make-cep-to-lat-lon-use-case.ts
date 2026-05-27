@@ -7,13 +7,13 @@ import { LocationIqProvider } from 'providers/geo-provider/location-iq-provider'
 import { ResilientGeoProvider } from 'providers/geo-provider/resilient-geo-provider'
 import { env } from '@env/index'
 import { BrasilApiProvider } from 'providers/address-provider/brasil-api-provider'
-import { redisCache, redisRateLimit } from '@lib/redis/clients/clients'
+import { getRedisCache, getRedisRateLimit } from '@lib/redis/clients/clients'
 
 let cachedUseCase: CepToLatLonUseCase | null = null
 
 export function makeCepToLatLonUseCase(
-  redisCacheConnection = redisCache,
-  redisRateLimitConnection = redisRateLimit,
+  redisCacheConnection = getRedisCache(),
+  redisRateLimitConnection = getRedisRateLimit(),
 ): CepToLatLonUseCase {
   if (cachedUseCase) {
     return cachedUseCase

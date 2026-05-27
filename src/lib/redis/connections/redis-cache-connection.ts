@@ -27,5 +27,9 @@ export function createRedisCacheConnection() {
     )
   })
 
+  redis.on('close', () => {
+    logger.warn('⚠️ Redis cache connection closed')
+  })
+
   return redis
 }

@@ -2,15 +2,46 @@ import { createRedisBullMQConnection } from '../connections/redis-bullMQ-connect
 import { createRedisCacheConnection } from '../connections/redis-cache-connection'
 import { createRedisRateLimiterConnection } from '../connections/redis-rate-limiter-connection'
 
-// Instâncias Singleton (Lazy loading opcional)
-export const redisCache = createRedisCacheConnection()
-export const redisRateLimit = createRedisRateLimiterConnection()
-export const redisForQueue = createRedisBullMQConnection()
+let redisCacheInstance: ReturnType<typeof createRedisCacheConnection> | null = null
+let redisRateLimitInstance: ReturnType<typeof createRedisRateLimiterConnection> | null = null
+let redisForQueueInstance: ReturnType<typeof createRedisBullMQConnection> | null = null
+
+export function getRedisCache() {
+  if (!redisCacheInstance) {
+    redisCacheInstance = createRedisCacheConnection()
+  }
+
+  return redisCacheInstance
+}
+
+export function getRedisRateLimit() {
+  if (!redisRateLimitInstance) {
+    redisRateLimitInstance = createRedisRateLimiterConnection()
+  }
+
+  return redisRateLimitInstance
+}
+
+export function getRedisForQueue() {
+  if (!redisForQueueInstance) {
+    redisForQueueInstance = createRedisBullMQConnection()
+  }
+
+  return redisForQueueInstance
+}
 
 export function createWorkerConnection() {
   return createRedisBullMQConnection()
 }
 
 export async function closeAllRedisConnections() {
-  await Promise.all([redisCache.quit(), redisRateLimit.quit(), redisForQueue.quit()])
+  const targets = [redisCacheInstance, redisRateLimitInstance, redisForQueueInstance].filter(
+    (connection): connection is NonNullable<typeof connection> => connection !== null,
+  )
+
+  await Promise.all(targets.map((connection) => connection.quit()))
+
+  redisCacheInstance = null
+  redisRateLimitInstance = null
+  redisForQueueInstance = null
 }

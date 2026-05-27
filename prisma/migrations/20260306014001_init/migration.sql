@@ -2,63 +2,7 @@
 CREATE EXTENSION IF NOT EXISTS "postgis";
 
 -- CreateEnum
-CREATE TYPE "AuthenticationStatus" AS ENUM ('SUCCESS', 'USER_NOT_EXISTS', 'INCORRECT_PASSWORD', 'RECOVER_PASSWORD', 'INVALID_TOKEN', 'BLOCKED');
-
--- CreateEnum
-CREATE TYPE "UserRole" AS ENUM ('ADMIN', 'DEFAULT');
-
--- CreateEnum
 CREATE TYPE "OutboxEventType" AS ENUM ('PENDING', 'SENDING');
-
--- CreateTable
-CREATE TABLE "authentication_audit" (
-    "id" TEXT NOT NULL,
-    "ip_address" TEXT,
-    "remote_port" TEXT,
-    "user_agent" TEXT,
-    "origin" TEXT,
-    "status" "AuthenticationStatus" NOT NULL,
-    "user_id" INTEGER,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "authentication_audit_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "users" (
-    "id" SERIAL NOT NULL,
-    "public_id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "username" TEXT NOT NULL,
-    "email" TEXT NOT NULL,
-    "cpf" TEXT NOT NULL,
-    "password_hash" TEXT NOT NULL,
-    "login_attempts" INTEGER NOT NULL DEFAULT 0,
-    "last_login" TIMESTAMP(3),
-    "role" "UserRole" NOT NULL DEFAULT 'DEFAULT',
-    "token" TEXT,
-    "token_expires_at" TIMESTAMP(3),
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
-    "password_changed_at" TIMESTAMP(3),
-
-    CONSTRAINT "users_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "form_submissions" (
-    "id" SERIAL NOT NULL,
-    "public_id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "lastName" TEXT NOT NULL,
-    "email" TEXT NOT NULL,
-    "decisaoPorCristo" BOOLEAN NOT NULL,
-    "location" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "form_submissions_pkey" PRIMARY KEY ("id")
-);
 
 -- CreateTable
 CREATE TABLE "outbox_events" (
@@ -73,51 +17,6 @@ CREATE TABLE "outbox_events" (
     CONSTRAINT "outbox_events_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "churches" (
-    "id" SERIAL NOT NULL,
-    "public_id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "address" TEXT NOT NULL,
-    "lat" DOUBLE PRECISION NOT NULL,
-    "lon" DOUBLE PRECISION NOT NULL,
-    "geog" geography(Point, 4326),
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "churches_pkey" PRIMARY KEY ("id")
-);
-
--- CreateIndex
-CREATE INDEX "idx_auth_audit_user_date" ON "authentication_audit"("user_id", "created_at");
-
--- CreateIndex
-CREATE UNIQUE INDEX "users_public_id_key" ON "users"("public_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "users_username_key" ON "users"("username");
-
--- CreateIndex
-CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
-
--- CreateIndex
-CREATE UNIQUE INDEX "users_cpf_key" ON "users"("cpf");
-
--- CreateIndex
-CREATE UNIQUE INDEX "users_token_key" ON "users"("token");
-
--- CreateIndex
-CREATE INDEX "idx_user_name" ON "users"("name");
-
--- CreateIndex
-CREATE INDEX "idx_user_token" ON "users"("token");
-
--- CreateIndex
-CREATE UNIQUE INDEX "form_submissions_public_id_key" ON "form_submissions"("public_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "form_submissions_email_key" ON "form_submissions"("email");
-
 -- CreateIndex
 CREATE UNIQUE INDEX "outbox_events_public_id_key" ON "outbox_events"("public_id");
 
@@ -127,11 +26,6 @@ CREATE INDEX "outbox_events_status_ocurred_at_idx" ON "outbox_events"("status", 
 -- CreateIndex
 CREATE INDEX "outbox_events_status_sending_at_idx" ON "outbox_events"("status", "sending_at");
 
--- CreateIndex
-CREATE UNIQUE INDEX "churches_public_id_key" ON "churches"("public_id");
-
--- AddForeignKey
-ALTER TABLE "authentication_audit" ADD CONSTRAINT "authentication_audit_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 -- Enable PostGIS (safe & idempotent)
 CREATE EXTENSION IF NOT EXISTS postgis;
 

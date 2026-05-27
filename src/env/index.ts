@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import ms from 'ms'
 
+process.loadEnvFile?.('.env')
+
 const envSchema = z.object({
   // Environment
   NODE_ENV: z.enum(['development', 'staging', 'production', 'test']).default('development'),
@@ -8,13 +10,14 @@ const envSchema = z.object({
 
   // Database
   DATABASE_URL: z.url(),
+  DATABASE_URL_LOCAL: z.url().optional(),
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
   DB_POOL_MIN: z.coerce.number().int().positive().default(2),
   DB_CONNECTION_TIMEOUT: z.coerce.number().int().positive().default(ms('10s')),
   DB_IDLE_TIMEOUT: z.coerce.number().int().positive().default(ms('30s')),
 
   // Redis
-  REDIS_HOST: z.string().default('redis'),
+  REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().default(6379),
   REDIS_PASSWORD: z.string().optional(),
 

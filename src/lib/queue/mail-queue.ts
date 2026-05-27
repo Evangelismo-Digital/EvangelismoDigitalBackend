@@ -1,9 +1,11 @@
 import { QUEUE_NAMES } from 'core/constants/queue/queue'
 import { logger } from '@lib/logger'
-import { redisForQueue } from '@lib/redis/clients/clients'
+import { getRedisForQueue } from '@lib/redis/clients/clients'
 import { attachRedisLogger } from '@lib/redis/connections/redis-bullMQ-connection'
 import { Queue } from 'bullmq'
 import { IOutboxDispatchData } from 'core/contracts/lib/infra/outbox-dispatch-data.interface'
+
+const redisForQueue = getRedisForQueue()
 
 attachRedisLogger(redisForQueue, QUEUE_NAMES.MAIL)
 

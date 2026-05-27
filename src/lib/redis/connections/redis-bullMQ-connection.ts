@@ -3,7 +3,7 @@ import { logger } from '@lib/logger'
 import Redis from 'ioredis'
 
 export function createRedisBullMQConnection() {
-  return new Redis({
+  const redis = new Redis({
     host: env.REDIS_HOST,
     port: env.REDIS_PORT,
     password: env.REDIS_PASSWORD || undefined,
@@ -17,6 +17,23 @@ export function createRedisBullMQConnection() {
       return Math.min(times * 50, 2000)
     },*/
   })
+
+  redis.on('error', (error) => {
+    logger.error(
+      {
+        message: error?.message,
+        stack: error?.stack,
+        name: error?.name,
+      },
+      '❌ Redis BullMQ connection error',
+    )
+  })
+
+  redis.on('close', () => {
+    logger.warn('⚠️ Redis BullMQ connection closed')
+  })
+
+  return redis
 }
 
 export function attachRedisLogger(redis: Redis, context: string) {

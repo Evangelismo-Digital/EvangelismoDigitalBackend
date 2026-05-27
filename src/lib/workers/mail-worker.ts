@@ -2,7 +2,7 @@ import { Worker } from 'bullmq'
 import { makeSendEmailUseCase } from '@use-cases/factories/make-send-email-use-case'
 import { attachRedisLogger } from '@lib/redis/connections/redis-bullMQ-connection'
 import { logger } from '@lib/logger'
-import { createWorkerConnection, redisCache } from '@lib/redis/clients/clients'
+import { createWorkerConnection, getRedisCache } from '@lib/redis/clients/clients'
 import { IOutboxRepository } from 'core/contracts/repository/outbox-repository.interface'
 import { JobAlreadyProcessingError } from '@lib/errors/queue/job-already-processing-error'
 import { SmtpDispatchError } from '@lib/errors/queue/smtp-dispatch-error'
@@ -21,6 +21,7 @@ export async function startMailWorker(outboxRepository: IOutboxRepository) {
     async (job) => {
       const { publicId, emails } = job.data
       const childLogger = logger.child({ jobId: job.id, publicId })
+      const redisCache = getRedisCache()
 
       const idempotencyKey = `${REDIS_KEYS.IDEMPOTENCY_EMAIL_PREFIX}${publicId}`
 
