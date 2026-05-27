@@ -41,18 +41,20 @@ const envSchema = z.object({
   ADMIN_EMAIL: z.email(),
 
   // Address Providers
-  AWESOME_API_URL: z.string().url(), //Also geocoding provider
+  AWESOME_API_URL: z.string(), //Also geocoding provider
   AWESOME_API_TOKEN: z.string().min(1),
-  VIACEP_API_URL: z.string().url(),
-  BRASIL_API_URL: z.string().url(),
+  VIACEP_API_URL: z.string(),
+  BRASIL_API_URL: z.string(),
 
   // Geocoding Providers
   // Nominatim (Fallback)
-  NOMINATIM_API_URL: z.string().url(),
+  NOMINATIM_API_URL: z.string(),
 
-  // LocationIQ (Primary)
-  LOCATION_IQ_API_URL: z.string().url().default('https://us1.locationiq.com/v1'),
+  LOCATION_IQ_API_URL: z.string().default('https://us1.locationiq.com/v1'),
   LOCATION_IQ_API_TOKEN: z.string().min(1),
+
+  // Stadia API
+  STADIA_API_TOKEN: z.string().min(1),
 })
 
 const _env = envSchema.safeParse(process.env)
