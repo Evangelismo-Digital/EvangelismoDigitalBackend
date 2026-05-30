@@ -65,6 +65,14 @@ export default defineConfig(({ mode }) => {
         {
           extends: true,
           test: {
+            name: 'unit-http',
+            dir: 'src/http',
+            include: ['plugins/**/*.spec.ts'],
+          },
+        },
+        {
+          extends: true,
+          test: {
             name: 'unit-church-routing-provider',
             dir: 'src/providers/church-routing-provider',
             include: ['**/*.spec.ts'],

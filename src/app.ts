@@ -13,10 +13,13 @@ import { nodeProfilingIntegration } from '@sentry/profiling-node'
 import { RedisRateLimiter } from '@lib/infra/rate-limiter/rate-limiter'
 import { asyncContext } from '@http/plugins/async-context.plugin'
 import { closeAllRedisConnections } from '@lib/redis/clients/clients'
+import { httpRateLimit } from '@http/plugins/rate-limit.plugin'
+import { httpRateLimitDefaults } from '@http/plugins/rate-limit-defaults.plugin'
 z.config(z.locales.pt())
 
 export const app = fastify({
   logger: false,
+  trustProxy: true,
 })
 
 if (env.SENTRY_DSN) {
@@ -51,6 +54,8 @@ if (env.NODE_ENV === 'production') {
 }
 
 app.register(asyncContext)
+
+app.register(httpRateLimitDefaults)
 
 app.addHook('onRequest', (request, _reply, done) => {
   const requestId = uuidv7()
@@ -105,6 +110,8 @@ app.register(fastifyCors, {
   exposedHeaders: ['Authorization'],
   maxAge: 3600,
 })
+
+app.register(httpRateLimit)
 
 app.register(fastifyJwt, {
   secret: env.JWT_SECRET,
