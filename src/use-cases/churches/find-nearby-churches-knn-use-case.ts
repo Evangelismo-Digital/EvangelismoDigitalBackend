@@ -2,20 +2,20 @@ import { ChurchesRepository, NearbyChurch } from 'core/contracts/repository/chur
 import { LatitudeRangeError } from '@use-cases/errors/latitude-range-error'
 import { LongitudeRangeError } from '@use-cases/errors/longitude-range-error'
 
-interface FindNearestChurchesRequest {
+interface FindNearbyChurchesKnnRequest {
   userLat: number
   userLon: number
 }
 
-interface FindNearestChurchesResponse {
+interface FindNearbyChurchesKnnResponse {
   churches: NearbyChurch[]
   totalFound: number
 }
 
-export class FindNearestChurchesUseCase {
+export class FindNearbyChurchesKnnUseCase {
   constructor(private churchesRepository: ChurchesRepository) {}
 
-  async execute({ userLat, userLon }: FindNearestChurchesRequest): Promise<FindNearestChurchesResponse> {
+  async execute({ userLat, userLon }: FindNearbyChurchesKnnRequest): Promise<FindNearbyChurchesKnnResponse> {
     if (userLat < -90 || userLat > 90) {
       throw new LatitudeRangeError()
     }
@@ -27,7 +27,7 @@ export class FindNearestChurchesUseCase {
     const churches = await this.churchesRepository.findNearest({
       userLat,
       userLon,
-      limit: 20,
+      limit: 5,
     })
 
     return {

@@ -54,7 +54,8 @@ const envSchema = z.object({
   LOCATION_IQ_API_TOKEN: z.string().min(1),
 
   // Stadia API
-  STADIA_API_TOKEN: z.string().min(1),
+  STADIA_MAPS_API_URL: z.url().default('https://api.stadiamaps.com/route/v1'),
+  STADIA_API_TOKEN: z.string().min(1, 'STADIA_API_TOKEN is required'),
 })
 
 const _env = envSchema.safeParse(process.env)

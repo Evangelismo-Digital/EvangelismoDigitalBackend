@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { FindNearestChurchesUseCase } from './find-nearest-churches-use-case'
+import { FindNearestChurchesUseCase } from './find-nearby-churches-knn-use-case'
 import { CreateChurchUseCase } from './create-church-use-case'
 import { InMemoryChurchesRepository } from '@repositories/in-memory/in-memory-chuches-repository'
 import { LatitudeRangeError } from '@use-cases/errors/latitude-range-error'

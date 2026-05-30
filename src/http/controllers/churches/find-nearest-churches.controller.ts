@@ -1,14 +1,14 @@
 import { cepSchema } from '@http/schemas/utils/cep'
 import { ChurchPresenter } from '@http/presenters/church-presenter'
 import { logger } from '@lib/logger'
-import { User } from '@use-cases/churches/find-the-nearest-church'
+import { User } from '@use-cases/churches/calculate-church-route-distances-use-case'
 import { LatitudeRangeError } from '@use-cases/errors/latitude-range-error'
 import { LongitudeRangeError } from '@use-cases/errors/longitude-range-error'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import { makeCepToLatLonUseCase } from '@use-cases/factories/make-cep-to-lat-lon-use-case'
-import { makeFindNearestChurchesUseCase } from '@use-cases/factories/make-find-nearest-churches-use-case'
-import { makeFindTheNearestChurchesUseCase } from '@use-cases/factories/make-find-the-nearest-church'
+import { makeFindNearbyChurchesKnnUseCase } from '@use-cases/factories/make-find-nearby-churches-knn-use-case'
+import { makeCalculateChurchRouteDistancesUseCase } from '@use-cases/factories/make-calculate-church-route-distances-use-case'
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { GeoServiceBusyError } from '@use-cases/errors/geo-service-busy-error'
 import { AddressServiceBusyError } from '@use-cases/errors/address-service-busy-error'
@@ -44,20 +44,22 @@ export async function findNearestChurches(
       })
     }
 
-    const findNearestChurchesUseCase = makeFindNearestChurchesUseCase()
+    const findNearbyChurchesKnnUseCase = makeFindNearbyChurchesKnnUseCase()
 
-    const { churches, totalFound } = await findNearestChurchesUseCase.execute({
+    const { churches, totalFound } = await findNearbyChurchesKnnUseCase.execute({
       userLat: userLat,
       userLon: userLon,
     })
 
-    const findTheNearestChurchesUseCase = makeFindTheNearestChurchesUseCase()
+    const calculateChurchRouteDistancesUseCase = makeCalculateChurchRouteDistancesUseCase()
 
     const user: User = { userLat, userLon }
-    const nearbyChurch = await findTheNearestChurchesUseCase.findNearest({ churches, user })
+
+    const theNearestChurch = await calculateChurchRouteDistancesUseCase.findNearest({ churches, user })
+
     logger.info({
       msg: 'Igreja mais próxima encontrada com sucesso',
-      nearbyChurch,
+      theNearestChurch,
     })
 
     if (env.NODE_ENV !== 'production' || Math.random() < 0.1) {
@@ -67,11 +69,12 @@ export async function findNearestChurches(
       })
     }
 
-    const sanitizedChurches = ChurchPresenter.toHTTP(churches)
+    const sanitizedChurche = ChurchPresenter.toHTTP(theNearestChurch)
 
     return reply
       .status(200)
-      .send({ nearbyChurchInfo: nearbyChurch, churches: sanitizedChurches, totalFound, precision, providerName })
+      .send({ theNearestChurchInfo: sanitizedChurche, totalFound, precision, providerName })
+
   } catch (error) {
     // 1. Erros de Negócio (Bad Request - 400)
     if (error instanceof LatitudeRangeError || error instanceof LongitudeRangeError) {
