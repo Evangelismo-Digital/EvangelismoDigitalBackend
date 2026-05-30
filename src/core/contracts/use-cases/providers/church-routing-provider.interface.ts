@@ -1,3 +1,5 @@
+import { RoutingProfile } from "core/types/routing-profile/routing-profile-enum"
+
 export interface RoutingPoint {
   lat: number
   lon: number
@@ -9,5 +11,5 @@ export interface RouteDistanceResult {
 }
 
 export interface IChurchRoutingProvider {
-  getDistances(params: { origin: RoutingPoint; destinations: RoutingPoint[] }): Promise<RouteDistanceResult[]>
+  getDistances(params: { origin: RoutingPoint; destinations: RoutingPoint[]; profile?: RoutingProfile }): Promise<RouteDistanceResult[]>
 }

@@ -65,6 +65,14 @@ export default defineConfig(({ mode }) => {
         {
           extends: true,
           test: {
+            name: 'unit-church-routing-provider',
+            dir: 'src/providers/church-routing-provider',
+            include: ['**/*.spec.ts'],
+          },
+        },
+        {
+          extends: true,
+          test: {
             name: 'unit-resilient-cache',
             dir: 'src/lib/redis/helper',
           },

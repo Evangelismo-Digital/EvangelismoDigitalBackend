@@ -4,10 +4,12 @@ import {
   RouteDistanceResult,
   RoutingPoint,
 } from 'core/contracts/use-cases/providers/church-routing-provider.interface'
+import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 
 interface StadiaChurchRoutingProviderConfig {
   apiUrl: string
   apiToken: string
+  defaultCosting?: RoutingProfile
 }
 
 interface StadiaRouteResponse {
@@ -28,18 +30,20 @@ interface StadiaRouteResponse {
 export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
   constructor(private readonly config: StadiaChurchRoutingProviderConfig) {}
 
-  async getDistances({ origin, destinations }: { origin: RoutingPoint; destinations: RoutingPoint[] }): Promise<RouteDistanceResult[]> {
+  async getDistances({ origin, destinations, profile }: { origin: RoutingPoint; destinations: RoutingPoint[]; profile?: RoutingProfile }): Promise<RouteDistanceResult[]> {
     const results: RouteDistanceResult[] = []
 
     for (const destination of destinations) {
-      results.push(await this.fetchDistance(origin, destination))
+      results.push(await this.fetchDistance(origin, destination, profile))
     }
 
     return results
   }
 
-  private async fetchDistance(origin: RoutingPoint, destination: RoutingPoint): Promise<RouteDistanceResult> {
+  private async fetchDistance(origin: RoutingPoint, destination: RoutingPoint, profile?: RoutingProfile): Promise<RouteDistanceResult> {
     try {
+      const costing = this.resolveCosting(profile)
+
       const response = await axios.post(
         this.config.apiUrl.replace(/\/$/, ''),
         {
@@ -47,7 +51,7 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
             { lat: origin.lat, lon: origin.lon },
             { lat: destination.lat, lon: destination.lon },
           ],
-          costing: 'auto',
+          costing,
           directions_options: {
             units: 'kilometers',
           },
@@ -87,6 +91,10 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
 
       throw error
     }
+  }
+
+  private resolveCosting(profile?: RoutingProfile): RoutingProfile {
+    return profile ?? this.config.defaultCosting ?? RoutingProfile.AUTO
   }
 
   private extractDistanceKm(responseData: StadiaRouteResponse): number | null {
