@@ -25,7 +25,7 @@ export interface FindNearestProps {
 export class CalculateChurchRouteDistancesUseCase {
   constructor(private readonly routingProvider: IChurchRoutingProvider) {}
 
-  async findNearest({ churches, user }: FindNearestProps): Promise<NearbyChurch> {
+  async findNearest({ churches, user }: FindNearestProps): Promise<NearbyChurch[]> {
     if (!churches.length) {
       throw new Error('Lista de igrejas vazia!')
     }
@@ -41,28 +41,24 @@ export class CalculateChurchRouteDistancesUseCase {
       })),
     })
 
-    let nearestChurch: NearbyChurch | null = null
-    let minDistanceKm = Number.POSITIVE_INFINITY
+    const rankedChurches = results
+      .map((result: RouteDistanceResult, index) => {
+        // status !== 0 means unreachable (optional safety)
+        if (!result || result.distance == null || (result.status != null && result.status !== 0)) return null
 
-    results.forEach((result: RouteDistanceResult, index) => {
-      // status !== 0 means unreachable (optional safety)
-      if (!result || result.distance == null || (result.status != null && result.status !== 0)) return
-
-      if (result.distance < minDistanceKm) {
-        minDistanceKm = result.distance
-
-        nearestChurch = {
+        return {
           ...churches[index],
           distanceKm: result.distance,
           distanceMeters: result.distance * 1000,
         }
-      }
-    })
+      })
+      .filter((church): church is NearbyChurch => church !== null)
+      .sort((firstChurch, secondChurch) => firstChurch.distanceKm - secondChurch.distanceKm)
 
-    if (!nearestChurch) {
+    if (!rankedChurches.length) {
       throw new Error('Nenhuma igreja próxima encontrada!')
     }
 
-    return nearestChurch
+    return rankedChurches
   }
 }

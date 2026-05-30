@@ -55,25 +55,18 @@ export async function findNearestChurches(
 
     const user: User = { userLat, userLon }
 
-    const theNearestChurch = await calculateChurchRouteDistancesUseCase.findNearest({ churches, user })
+    const nearestFiveChurches = await calculateChurchRouteDistancesUseCase.findNearest({ churches, user })
 
     logger.info({
-      msg: 'Igreja mais próxima encontrada com sucesso',
-      theNearestChurch,
+      msg: 'Igrejas mais próximas encontradas com sucesso',
+      nearestFiveChurches,
     })
 
-    if (env.NODE_ENV !== 'production' || Math.random() < 0.1) {
-      logger.info({
-        msg: 'Igrejas mais próximas encontradas com sucesso',
-        totalFound,
-      })
-    }
-
-    const sanitizedChurche = ChurchPresenter.toHTTP(theNearestChurch)
+    const sanitizedChurches = ChurchPresenter.toHTTP(nearestFiveChurches)
 
     return reply
       .status(200)
-      .send({ theNearestChurchInfo: sanitizedChurche, totalFound, precision, providerName })
+      .send({ nearestChurchesInfo: sanitizedChurches, totalFound, precision, providerName })
 
   } catch (error) {
     // 1. Erros de Negócio (Bad Request - 400)
