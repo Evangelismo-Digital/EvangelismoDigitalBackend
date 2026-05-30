@@ -30,13 +30,18 @@ interface CepToLatLonResponse {
 
 export class CepToLatLonUseCase {
   private readonly cacheManager: ResilientCache
+  private readonly redis: Redis
+  private readonly cacheSuccessResults: boolean
 
   constructor(
     private geocodingProvider: IGeocodingProvider,
     private addressProvider: IAddressProvider,
     redis: Redis,
     optionsOverride: ResilientCacheOptions,
+    cacheSuccessResults = true,
   ) {
+    this.redis = redis
+    this.cacheSuccessResults = cacheSuccessResults
     this.cacheManager = new ResilientCache(redis, {
       prefix: optionsOverride.prefix,
       defaultTtlSeconds: optionsOverride.defaultTtlSeconds,
@@ -86,6 +91,10 @@ export class CepToLatLonUseCase {
 
       if (!result) {
         throw new CepToLatLonError()
+      }
+
+      if (!this.cacheSuccessResults) {
+        await this.redis.del(cacheKey)
       }
 
       return result

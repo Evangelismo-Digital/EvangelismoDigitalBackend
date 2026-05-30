@@ -14,6 +14,7 @@ let cachedUseCase: CepToLatLonUseCase | null = null
 export function makeCepToLatLonUseCase(
   redisCacheConnection = getRedisCache(),
   redisRateLimitConnection = getRedisRateLimit(),
+  cacheSuccessResults = true,
 ): CepToLatLonUseCase {
   if (cachedUseCase) {
     return cachedUseCase
@@ -64,13 +65,19 @@ export function makeCepToLatLonUseCase(
   const resilientAddressProvider = new ResilientAddressProvider([awesomeApiProvider, brasilApiProvider, viaCepProvider])
 
   // Create Use Case
-  cachedUseCase = new CepToLatLonUseCase(resilientGeoProvider, resilientAddressProvider, redisCacheConnection, {
-    prefix: 'cache:cep-coords:',
-    defaultTtlSeconds: 60 * 60 * 24 * 7, // 7 days
-    negativeTtlSeconds: 60 * 30, // 30 minutes (Negative Cache)
-    maxPendingFetches: 500,
-    fetchTimeoutMs: 25000,
-  })
+  cachedUseCase = new CepToLatLonUseCase(
+    resilientGeoProvider,
+    resilientAddressProvider,
+    redisCacheConnection,
+    {
+      prefix: 'cache:cep-coords:',
+      defaultTtlSeconds: 60 * 60 * 24 * 7, // 7 days
+      negativeTtlSeconds: 60 * 30, // 30 minutes (Negative Cache)
+      maxPendingFetches: 500,
+      fetchTimeoutMs: 25000,
+    },
+    cacheSuccessResults,
+  )
 
   // 3. Return the new singleton
   return cachedUseCase

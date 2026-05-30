@@ -1,0 +1,147 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { FindNearestChurchesUseCase } from './find-nearest-churches-use-case'
+import { CepToLatLonUseCase } from './cep-to-lat-lon-use-case'
+import { FindNearbyChurchesKnnUseCase } from './find-nearby-churches-knn-use-case'
+import { CalculateChurchRouteDistancesUseCase } from './calculate-church-route-distances-use-case'
+import { ChurchPresenter } from '@http/presenters/church-presenter'
+
+const mockGetOrFetch = vi.fn()
+const mockGenerateKey = vi.fn()
+
+vi.mock('@lib/infra/cache/resilient-cache', () => {
+  return {
+    ResilientCache: class ResilientCacheMock {
+      getOrFetch(...args: any[]) {
+        return mockGetOrFetch(...args)
+      }
+
+      generateKey(...args: any[]) {
+        return mockGenerateKey(...args)
+      }
+    },
+    CachedFailureError: class CachedFailureError extends Error {
+      errorType: string
+      errorData: unknown
+
+      constructor(type: string, message: string, data?: unknown) {
+        super(message)
+        this.name = 'CachedFailureError'
+        this.errorType = type
+        this.errorData = data
+      }
+    },
+  }
+})
+
+describe('FindNearestChurchesUseCase orchestration', () => {
+  let useCase: FindNearestChurchesUseCase
+  let cepToLatLonUseCase: { execute: ReturnType<typeof vi.fn> }
+  let findNearbyChurchesKnnUseCase: { execute: ReturnType<typeof vi.fn> }
+  let calculateChurchRouteDistancesUseCase: { findNearest: ReturnType<typeof vi.fn> }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mockGetOrFetch.mockReset()
+    mockGenerateKey.mockReset()
+    mockGenerateKey.mockImplementation(({ cep }: { cep: string }) => `nearest:${cep}`)
+    mockGetOrFetch.mockImplementation(async (_key: string, fetcher: () => Promise<unknown>) => fetcher())
+
+    cepToLatLonUseCase = { execute: vi.fn() }
+    findNearbyChurchesKnnUseCase = { execute: vi.fn() }
+    calculateChurchRouteDistancesUseCase = { findNearest: vi.fn() }
+
+    useCase = new FindNearestChurchesUseCase(
+      cepToLatLonUseCase as unknown as CepToLatLonUseCase,
+      findNearbyChurchesKnnUseCase as unknown as FindNearbyChurchesKnnUseCase,
+      calculateChurchRouteDistancesUseCase as unknown as CalculateChurchRouteDistancesUseCase,
+      {} as never,
+      {
+        prefix: 'nearest:',
+        defaultTtlSeconds: 60,
+        negativeTtlSeconds: 10,
+      } as never,
+    )
+  })
+
+  it('returns the cached final HTTP response and skips downstream dependencies', async () => {
+    const cachedResponse = {
+      nearestChurchesInfo: [
+        {
+          publicId: 'church-1',
+          name: 'Igreja Central',
+          address: 'Rua A',
+          lat: -23,
+          lon: -46,
+          distanceKm: 1.2,
+          distanceMeters: 1200,
+        },
+      ],
+      totalFound: 1,
+      precision: 'ROOFTOP',
+      providerName: 'AwesomeAPI',
+    }
+
+    mockGetOrFetch.mockResolvedValueOnce(cachedResponse)
+
+    const result = await useCase.execute({ cep: '01310-100' })
+
+    expect(result).toBe(cachedResponse)
+    expect(mockGenerateKey).toHaveBeenCalledWith({ cep: '01310100' })
+    expect(cepToLatLonUseCase.execute).not.toHaveBeenCalled()
+    expect(findNearbyChurchesKnnUseCase.execute).not.toHaveBeenCalled()
+    expect(calculateChurchRouteDistancesUseCase.findNearest).not.toHaveBeenCalled()
+  })
+
+  it('computes and caches the sanitized HTTP response on a cache miss', async () => {
+    cepToLatLonUseCase.execute.mockResolvedValueOnce({
+      userLat: -23.55,
+      userLon: -46.63,
+      precision: 'ROOFTOP',
+      providerName: 'LocationIQ',
+    })
+
+    const knnChurches = [
+      {
+        id: 10,
+        publicId: 'church-10',
+        name: 'Igreja Centro',
+        address: 'Av Principal',
+        lat: -23.5,
+        lon: -46.6,
+        distanceKm: 0,
+        distanceMeters: 0,
+      },
+    ]
+
+    const routedChurches = [
+      {
+        ...knnChurches[0],
+        distanceKm: 2.4,
+        distanceMeters: 2400,
+      },
+    ]
+
+    findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce({
+      churches: knnChurches,
+      totalFound: 1,
+    })
+
+    calculateChurchRouteDistancesUseCase.findNearest.mockResolvedValueOnce(routedChurches)
+
+    const result = await useCase.execute({ cep: '01310100' })
+
+    expect(result).toEqual({
+      nearestChurchesInfo: ChurchPresenter.toHTTP(routedChurches),
+      totalFound: 1,
+      precision: 'ROOFTOP',
+      providerName: 'LocationIQ',
+    })
+    expect(cepToLatLonUseCase.execute).toHaveBeenCalledWith({ cep: '01310100' })
+    expect(findNearbyChurchesKnnUseCase.execute).toHaveBeenCalledWith({ userLat: -23.55, userLon: -46.63 })
+    expect(calculateChurchRouteDistancesUseCase.findNearest).toHaveBeenCalledWith({
+      churches: knnChurches,
+      user: { userLat: -23.55, userLon: -46.63 },
+    })
+  })
+})

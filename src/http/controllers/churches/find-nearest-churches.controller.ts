@@ -1,14 +1,10 @@
 import { cepSchema } from '@http/schemas/utils/cep'
-import { ChurchPresenter } from '@http/presenters/church-presenter'
 import { logger } from '@lib/logger'
-import { User } from '@use-cases/churches/calculate-church-route-distances-use-case'
 import { LatitudeRangeError } from '@use-cases/errors/latitude-range-error'
 import { LongitudeRangeError } from '@use-cases/errors/longitude-range-error'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
-import { makeCepToLatLonUseCase } from '@use-cases/factories/make-cep-to-lat-lon-use-case'
-import { makeFindNearbyChurchesKnnUseCase } from '@use-cases/factories/make-find-nearby-churches-knn-use-case'
-import { makeCalculateChurchRouteDistancesUseCase } from '@use-cases/factories/make-calculate-church-route-distances-use-case'
+import { makeFindNearestChurchesUseCase } from '@use-cases/factories/make-find-nearest-churches-use-case'
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { GeoServiceBusyError } from '@use-cases/errors/geo-service-busy-error'
 import { AddressServiceBusyError } from '@use-cases/errors/address-service-busy-error'
@@ -33,40 +29,16 @@ export async function findNearestChurches(
       })
     }
 
-    const cepToLatLonUseCase = makeCepToLatLonUseCase()
-    const { userLat, userLon, precision, providerName } = await cepToLatLonUseCase.execute({ cep })
+    const findNearestChurchesUseCase = makeFindNearestChurchesUseCase()
 
-    if (env.NODE_ENV !== 'production' || Math.random() < 0.1) {
-      logger.info({
-        msg: 'Coordenadas obtidas a partir do CEP',
-        userLat,
-        userLon,
-      })
-    }
-
-    const findNearbyChurchesKnnUseCase = makeFindNearbyChurchesKnnUseCase()
-
-    const { churches, totalFound } = await findNearbyChurchesKnnUseCase.execute({
-      userLat: userLat,
-      userLon: userLon,
-    })
-
-    const calculateChurchRouteDistancesUseCase = makeCalculateChurchRouteDistancesUseCase()
-
-    const user: User = { userLat, userLon }
-
-    const nearestFiveChurches = await calculateChurchRouteDistancesUseCase.findNearest({ churches, user })
+    const response = await findNearestChurchesUseCase.execute({ cep })
 
     logger.info({
       msg: 'Igrejas mais próximas encontradas com sucesso',
-      nearestFiveChurches,
+      nearestChurchesInfo: response.nearestChurchesInfo,
     })
 
-    const sanitizedChurches = ChurchPresenter.toHTTP(nearestFiveChurches)
-
-    return reply
-      .status(200)
-      .send({ nearestChurchesInfo: sanitizedChurches, totalFound, precision, providerName })
+    return reply.status(200).send(response)
 
   } catch (error) {
     // 1. Erros de Negócio (Bad Request - 400)
