@@ -1,6 +1,7 @@
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
 import Redis from 'ioredis'
+import { isRedisConnectivityError, RedisOutageLogger } from './redis-outage-logger'
 
 export function createRedisCacheConnection() {
   const redis = new Redis({
@@ -16,19 +17,41 @@ export function createRedisCacheConnection() {
     },
   })
 
+  const outageLogger = new RedisOutageLogger({
+    subsystem: 'cache',
+    host: env.REDIS_HOST,
+    port: env.REDIS_PORT,
+  })
+
+  redis.on('ready', () => {
+    outageLogger.onRecovery()
+  })
+
+  redis.on('connect', () => {
+    outageLogger.onRecovery()
+  })
+
   redis.on('error', (error) => {
+    if (isRedisConnectivityError(error)) {
+      outageLogger.onOutage('error', error)
+      return
+    }
+
     logger.error(
       {
+        subsystem: 'cache',
+        redisHost: env.REDIS_HOST,
+        redisPort: env.REDIS_PORT,
         message: error?.message,
         stack: error?.stack,
         name: error?.name,
       },
-      '❌ Redis cache connection error',
+      'Unexpected Redis cache connection error',
     )
   })
 
   redis.on('close', () => {
-    logger.warn('⚠️ Redis cache connection closed')
+    outageLogger.onOutage('close')
   })
 
   return redis

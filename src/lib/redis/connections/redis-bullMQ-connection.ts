@@ -1,6 +1,7 @@
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
 import Redis from 'ioredis'
+import { isRedisConnectivityError, RedisOutageLogger } from './redis-outage-logger'
 
 export function createRedisBullMQConnection() {
   const redis = new Redis({
@@ -18,32 +19,72 @@ export function createRedisBullMQConnection() {
     },*/
   })
 
+  const outageLogger = new RedisOutageLogger({
+    subsystem: 'bullmq',
+    host: env.REDIS_HOST,
+    port: env.REDIS_PORT,
+  })
+
+  redis.on('ready', () => {
+    outageLogger.onRecovery()
+  })
+
+  redis.on('connect', () => {
+    outageLogger.onRecovery()
+  })
+
   redis.on('error', (error) => {
+    if (isRedisConnectivityError(error)) {
+      outageLogger.onOutage('error', error)
+      return
+    }
+
     logger.error(
       {
+        subsystem: 'bullmq',
+        redisHost: env.REDIS_HOST,
+        redisPort: env.REDIS_PORT,
         message: error?.message,
         stack: error?.stack,
         name: error?.name,
       },
-      '❌ Redis BullMQ connection error',
+      'Unexpected Redis BullMQ connection error',
     )
   })
 
   redis.on('close', () => {
-    logger.warn('⚠️ Redis BullMQ connection closed')
+    outageLogger.onOutage('close')
   })
 
   return redis
 }
 
 export function attachRedisLogger(redis: Redis, context: string) {
-  redis.on('connect', () => logger.info(`🔗 Redis (${context}) connection established`))
-  redis.on('ready', () => logger.info(`✅ Redis (${context}) is ready`))
-  // Silencia erros de reconexão normais, loga apenas se for crítico
+  const outageLogger = new RedisOutageLogger({
+    subsystem: 'bullmq',
+    host: env.REDIS_HOST,
+    port: env.REDIS_PORT,
+  })
+
+  redis.on('connect', () => {
+    logger.info(`🔗 Redis (${context}) connection established`)
+    outageLogger.onRecovery()
+  })
+  redis.on('ready', () => {
+    logger.info(`✅ Redis (${context}) is ready`)
+    outageLogger.onRecovery()
+  })
+
   redis.on('error', (error) => {
-    // Evita spam de logs se o Redis estiver reiniciando
-    if (!error.message.includes('ECONNREFUSED')) {
-      logger.error({ err: error.message }, '❌ Redis connection glitch')
+    if (isRedisConnectivityError(error)) {
+      outageLogger.onOutage('error', error)
+      return
     }
+
+    logger.error({ context, err: error.message }, '❌ Redis connection glitch')
+  })
+
+  redis.on('close', () => {
+    outageLogger.onOutage('close')
   })
 }

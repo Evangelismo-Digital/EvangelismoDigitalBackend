@@ -228,7 +228,7 @@ export class ResilientCache {
     } catch (err) {
       // Cache write is best-effort - log but don't throw
       // Redis failure should not break successful fetches
-      logger.error({ err, key }, 'Falha ao escrever no Redis (não fatal, continuando)')
+      logger.warn({ err, key }, 'Falha ao escrever no Redis (não fatal, continuando)')
       // Don't re-throw - system continues functioning without cache
     }
   }

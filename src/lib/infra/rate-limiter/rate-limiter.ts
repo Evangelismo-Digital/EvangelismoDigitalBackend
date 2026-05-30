@@ -4,6 +4,8 @@ import { NoRateLimiterSetError } from '../../errors/infra/rate-limiter/noRateLim
 import { logger } from '@lib/logger'
 import { REDIS_KEYS } from 'core/constants/redis/redis-keys'
 
+const RATE_LIMITER_OUTAGE_WARN_INTERVAL_MS = Number(process.env.REDIS_LOG_OUTAGE_INTERVAL_MS ?? 30000)
+
 /**
  * DESIGN DECISION — Rate Limiting Strategy
  *
@@ -23,8 +25,8 @@ import { REDIS_KEYS } from 'core/constants/redis/redis-keys'
  *
  * ✔️ Estratégia adotada:
  * - Redis é a única fonte de verdade para o rate-limit.
- * - Em falhas de Redis, as requisições são bloqueadas explicitamente.
- * - Essa decisão prioriza a proteção da API externa e a previsibilidade do sistema.
+ * - Em falhas de Redis (infra), adota fail-open temporário para preservar disponibilidade.
+ * - Limite explícito continua quando Redis está disponível.
  *
  * 🔧 Por que rate-limiter-flexible:
  * - Implementação madura e amplamente testada em produção.
@@ -60,6 +62,10 @@ export enum EnumProviderConfig {
 
 export class RedisRateLimiter {
   private static instance: RedisRateLimiter | null
+  private static infraOutageStartedAt: number | null = null
+  private static infraLastWarnAt = 0
+  private static infraSuppressedLogs = 0
+
   private readonly redis: Redis
 
   // 1 limiter por provider
@@ -156,6 +162,9 @@ export class RedisRateLimiter {
       const limiter = this.getLimiter(provider)
 
       await limiter.consume(CONSUMER_KEY, 1)
+
+      RedisRateLimiter.logInfraRecoveryIfNeeded(provider)
+
       return true
     } catch (error) {
       const err = error as unknown
@@ -171,19 +180,77 @@ export class RedisRateLimiter {
 
       const obj = typeof err === 'object' && err !== null ? (err as Record<string, unknown>) : {}
 
-      logger.error(
+      RedisRateLimiter.logInfraDegraded(provider, obj)
+
+      return true
+    }
+  }
+
+  private static logInfraDegraded(provider: EnumProviderConfig, obj: Record<string, unknown>) {
+    const now = Date.now()
+
+    if (this.infraOutageStartedAt === null) {
+      this.infraOutageStartedAt = now
+      this.infraLastWarnAt = now
+      this.infraSuppressedLogs = 0
+
+      logger.warn(
         {
+          provider,
+          mode: 'fail-open',
+          redisOutage: true,
           message: typeof obj.message === 'string' ? obj.message : undefined,
-          stack: typeof obj.stack === 'string' ? obj.stack : undefined,
           code: typeof obj.code === 'string' ? obj.code : undefined,
           name: typeof obj.name === 'string' ? obj.name : undefined,
-          provider,
         },
-        'ERRO CRÍTICO RedisRateLimiter: Redis indisponível. Fail-Closed ativado.',
+        'RedisRateLimiter com erro: Redis não disponível, permitindo requisições (fail-open).',
       )
 
-      return false
+      return
     }
+
+    if (now - this.infraLastWarnAt >= RATE_LIMITER_OUTAGE_WARN_INTERVAL_MS) {
+      logger.warn(
+        {
+          provider,
+          mode: 'fail-open',
+          redisOutage: true,
+          outageDurationMs: now - this.infraOutageStartedAt,
+          suppressedLogs: this.infraSuppressedLogs,
+          message: typeof obj.message === 'string' ? obj.message : undefined,
+          code: typeof obj.code === 'string' ? obj.code : undefined,
+          name: typeof obj.name === 'string' ? obj.name : undefined,
+        },
+        'RedisRateLimiter still degraded: Redis não disponível, permitindo requisições (fail-open).',
+      )
+
+      this.infraLastWarnAt = now
+      this.infraSuppressedLogs = 0
+      return
+    }
+
+    this.infraSuppressedLogs += 1
+  }
+
+  private static logInfraRecoveryIfNeeded(provider: EnumProviderConfig) {
+    if (this.infraOutageStartedAt === null) {
+      return
+    }
+
+    const now = Date.now()
+
+    logger.info(
+      {
+        provider,
+        outageDurationMs: now - this.infraOutageStartedAt,
+        suppressedLogs: this.infraSuppressedLogs,
+      },
+      'RedisRateLimiter recovered: Redis available again.',
+    )
+
+    this.infraOutageStartedAt = null
+    this.infraLastWarnAt = 0
+    this.infraSuppressedLogs = 0
   }
 
   static async destroyInstance() {

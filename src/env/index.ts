@@ -20,6 +20,7 @@ const envSchema = z.object({
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().default(6379),
   REDIS_PASSWORD: z.string().optional(),
+  REDIS_LOG_OUTAGE_INTERVAL_MS: z.coerce.number().int().positive().default(ms('30s')),
 
   // App
   APP_NAME: z.string().default('Backend Template Reborn'),
