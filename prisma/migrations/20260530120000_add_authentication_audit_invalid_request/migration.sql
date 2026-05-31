@@ -1,0 +1,1 @@
+ALTER TYPE "AuthenticationStatus" ADD VALUE 'INVALID_REQUEST';

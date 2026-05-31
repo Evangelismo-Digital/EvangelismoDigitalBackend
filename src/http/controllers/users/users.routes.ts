@@ -3,7 +3,7 @@ import { resetPassword } from './reset-password.controller'
 import { register, registerAdmin } from './register-user.controller'
 import { verifyJwt } from '@middlewares/verify-jwt.middleware'
 import { verifyUserRole } from '@middlewares/verify-user-role.middleware'
-import { authenticateUser } from './authenticate-user.controller'
+import { authenticateUser, handleAuthenticateUserRouteError } from './authenticate-user.controller'
 import { deleteUser, deleteUserByPublicId } from './delete-user.controller'
 import { forgotPassword } from './forgot-password.controller'
 import { getUserByPublicId, getUserProfile } from './get-user-profile.controller'
@@ -26,7 +26,14 @@ export async function usersRoutes(app: FastifyInstance) {
   app.post('/register', { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.register } }, register)
 
   // Authentication routes:
-  app.post('/sessions', { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.session } }, authenticateUser)
+  app.post(
+    '/sessions',
+    {
+      config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.session },
+      errorHandler: handleAuthenticateUserRouteError,
+    },
+    authenticateUser,
+  )
   app.post('/forgot-password', { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.forgotPassword } }, forgotPassword)
   app.patch('/reset-password', { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.resetPassword } }, resetPassword)
 

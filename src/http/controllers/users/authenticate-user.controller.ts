@@ -1,17 +1,48 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
+import { AuthenticationStatus } from '@prisma/client'
 import { logger } from '@lib/logger'
 import { authenticateSchema } from '@http/schemas/users/authenticate-schema'
 import { InvalidCredentialsError } from '@use-cases/errors/invalid-credentials-error'
 import { makeAuthenticateUserUseCase } from '@use-cases/factories/make-authenticate-user-use-case'
+import { makeAuthenticationAuditUseCase } from '@use-cases/factories/make-authentication-audit-use-case'
 import { UserPresenter } from '@http/presenters/user-presenter'
+import { messages } from 'core/constants/messages'
+import { z, ZodError } from 'zod'
+
+const INVALID_REQUEST_STATUS = 'INVALID_REQUEST' as AuthenticationStatus
+
+function getAuthenticationAuditContext(request: FastifyRequest) {
+  return {
+    ipAddress: request.ip,
+    remotePort: request.socket.remotePort?.toString() ?? null,
+    userAgent: typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : null,
+    origin: typeof request.headers.origin === 'string' ? request.headers.origin : null,
+  }
+}
 
 export async function authenticateUser(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    const { login, password } = authenticateSchema.parse(request.body)
+  const authenticationAuditUseCase = makeAuthenticationAuditUseCase()
+  const auditContext = getAuthenticationAuditContext(request)
 
+  const parsedBody = authenticateSchema.safeParse(request.body)
+
+  if (!parsedBody.success) {
+    await authenticationAuditUseCase.execute({
+      ...auditContext,
+      status: INVALID_REQUEST_STATUS,
+    })
+
+    return reply.status(400).send({ message: messages.validation.invalidData, details: z.treeifyError(parsedBody.error) })
+  }
+
+  try {
     const authenticateUserUseCase = makeAuthenticateUserUseCase()
 
-    const { user } = await authenticateUserUseCase.execute({ login, password })
+    const { user } = await authenticateUserUseCase.execute({
+      login: parsedBody.data.login,
+      password: parsedBody.data.password,
+      auditContext,
+    })
 
     logger.info('User authenticated successfully!')
 
@@ -25,4 +56,25 @@ export async function authenticateUser(request: FastifyRequest, reply: FastifyRe
 
     throw error
   }
+}
+
+export async function handleAuthenticateUserRouteError(error: Error, request: FastifyRequest, reply: FastifyReply) {
+  if (error instanceof SyntaxError) {
+    const authenticationAuditUseCase = makeAuthenticationAuditUseCase()
+
+    await authenticationAuditUseCase.execute({
+      ...getAuthenticationAuditContext(request),
+      status: INVALID_REQUEST_STATUS,
+    })
+
+    logger.error(error, 'JSON inválido recebido no login')
+
+    return reply.status(400).send({ message: messages.validation.invalidJson })
+  }
+
+  if (error instanceof ZodError) {
+    return reply.status(400).send({ message: messages.validation.invalidData, details: z.treeifyError(error) })
+  }
+
+  throw error
 }
