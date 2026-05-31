@@ -1,46 +1,99 @@
-import axios from 'axios'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StadiaChurchRoutingProvider } from './stadia-church-routing-provider'
+import type Redis from 'ioredis'
 
-vi.mock('axios', () => ({
-  default: {
-    post: vi.fn(),
+const { mockedPost, mockTryConsume } = vi.hoisted(() => {
+  return {
+    mockedPost: vi.fn(),
+    mockTryConsume: vi.fn(),
+  }
+})
+
+vi.mock('@lib/http/axios', () => ({
+  createHttpClient: vi.fn(() => ({
+    post: mockedPost,
+  })),
+}))
+
+vi.mock('@lib/infra/rate-limiter/rate-limiter', () => ({
+  EnumProviderConfig: {
+    STADIA_ROUTING: 'stadiaRoutingProvider',
+  },
+  RedisRateLimiter: {
+    getInstance: vi.fn(() => ({
+      tryConsume: mockTryConsume,
+    })),
   },
 }))
 
-const mockedAxiosPost = vi.mocked(axios.post)
+class InMemoryRedisMock {
+  private readonly store = new Map<string, string>()
+
+  async get(key: string): Promise<string | null> {
+    return this.store.get(key) ?? null
+  }
+
+  async set(key: string, value: string, ..._args: unknown[]): Promise<'OK'> {
+    this.store.set(key, value)
+    return 'OK'
+  }
+}
+
+function buildProvider(): StadiaChurchRoutingProvider {
+  const redis = new InMemoryRedisMock() as unknown as Redis
+
+  return new StadiaChurchRoutingProvider(
+    {
+      apiUrl: 'https://api.stadiamaps.com/route/v1/',
+      apiToken: 'test-token',
+      defaultCosting: 'pedestrian',
+      timeoutMs: 2500,
+    },
+    redis,
+    redis,
+    {
+      prefix: 'cache:test:stadia:',
+      defaultTtlSeconds: 60,
+      negativeTtlSeconds: 0,
+      maxPendingFetches: 20,
+      fetchTimeoutMs: 2500,
+    },
+  )
+}
 
 describe('StadiaChurchRoutingProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockTryConsume.mockResolvedValue(true)
   })
 
-  it('uses the configured default costing when no profile is provided', async () => {
-    mockedAxiosPost.mockResolvedValueOnce({
+  it('uses default costing and forwards abort signal to HTTP request', async () => {
+    mockedPost.mockResolvedValueOnce({
       data: {
         status: 0,
         routes: [{ summary: { length: 2.5 } }],
       },
     })
 
-    const provider = new StadiaChurchRoutingProvider({
-      apiUrl: 'https://api.stadiamaps.com/route/v1/',
-      apiToken: 'test-token',
-      defaultCosting: 'pedestrian',
-    })
+    const provider = buildProvider()
+    const signal = new AbortController().signal
 
     const result = await provider.getDistances({
       origin: { lat: -23.5505, lon: -46.6333 },
       destinations: [{ lat: -23.551, lon: -46.634 }],
+      signal,
     })
 
     expect(result).toEqual([{ distance: 2.5, status: 0 }])
-    expect(mockedAxiosPost).toHaveBeenCalledWith(
-      'https://api.stadiamaps.com/route/v1',
+    const [, payload, requestConfig] = mockedPost.mock.calls[0]
+
+    expect(payload).toEqual(
       expect.objectContaining({
         costing: 'pedestrian',
         directions_options: { units: 'kilometers' },
       }),
+    )
+    expect(requestConfig).toEqual(
       expect.objectContaining({
         headers: {
           Authorization: 'Stadia-Auth test-token',
@@ -48,21 +101,20 @@ describe('StadiaChurchRoutingProvider', () => {
         },
       }),
     )
+    expect(requestConfig.signal).toBeDefined()
+    expect(requestConfig.signal.aborted).toBe(false)
+    expect(signal.aborted).toBe(false)
   })
 
   it('uses an explicit profile over the default costing', async () => {
-    mockedAxiosPost.mockResolvedValueOnce({
+    mockedPost.mockResolvedValueOnce({
       data: {
         status: 0,
         distance: 1.2,
       },
     })
 
-    const provider = new StadiaChurchRoutingProvider({
-      apiUrl: 'https://api.stadiamaps.com/route/v1',
-      apiToken: 'test-token',
-      defaultCosting: 'auto',
-    })
+    const provider = buildProvider()
 
     await provider.getDistances({
       origin: { lat: -23.5505, lon: -46.6333 },
@@ -70,10 +122,55 @@ describe('StadiaChurchRoutingProvider', () => {
       profile: 'pedestrian',
     })
 
-    expect(mockedAxiosPost).toHaveBeenCalledWith(
+    expect(mockedPost).toHaveBeenCalledWith(
       'https://api.stadiamaps.com/route/v1',
       expect.objectContaining({ costing: 'pedestrian' }),
       expect.any(Object),
     )
+  })
+
+  it('blocks outbound calls when redis rate limiter denies capacity', async () => {
+    mockTryConsume.mockResolvedValueOnce(false)
+
+    const provider = buildProvider()
+
+    await expect(
+      provider.getDistances({
+        origin: { lat: -23.5505, lon: -46.6333 },
+        destinations: [{ lat: -23.551, lon: -46.634 }],
+      }),
+    ).rejects.toThrow('Rate Limit Excedido')
+
+    expect(mockedPost).not.toHaveBeenCalled()
+  })
+
+  it('coalesces concurrent identical route lookups into a single outbound request', async () => {
+    mockedPost.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => {
+            resolve({
+              data: {
+                status: 0,
+                distance: 1.2,
+              },
+            })
+          }, 20)
+        }),
+    )
+
+    const provider = buildProvider()
+    const params = {
+      origin: { lat: -23.5505, lon: -46.6333 },
+      destinations: [{ lat: -23.551, lon: -46.634 }],
+      profile: 'pedestrian' as const,
+    }
+
+    const [first, second] = await Promise.all([provider.getDistances(params), provider.getDistances(params)])
+
+    expect(first).toEqual([{ distance: 1.2, status: 0 }])
+    expect(second).toEqual([{ distance: 1.2, status: 0 }])
+    expect(mockedPost).toHaveBeenCalledTimes(1)
+    expect(mockTryConsume).toHaveBeenCalledTimes(1)
   })
 })

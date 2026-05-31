@@ -83,11 +83,23 @@ export function makeFindNearestChurchesUseCase(
   const churchesRepository = new PrismaChurchesRepository()
   const findNearbyChurchesKnnUseCase = new FindNearbyChurchesKnnUseCase(churchesRepository)
   const calculateChurchRouteDistancesUseCase = new CalculateChurchRouteDistancesUseCase(
-    new StadiaChurchRoutingProvider({
-      apiUrl: env.STADIA_MAPS_API_URL,
-      apiToken: env.STADIA_API_TOKEN,
-      defaultCosting: RoutingProfile.PEDESTRIAN,
-    }),
+    new StadiaChurchRoutingProvider(
+      {
+        apiUrl: env.STADIA_MAPS_API_URL,
+        apiToken: env.STADIA_API_TOKEN,
+        defaultCosting: RoutingProfile.PEDESTRIAN,
+        timeoutMs: 2_500,
+      },
+      redisRateLimitConnection,
+      redisCacheConnection,
+      {
+        prefix: 'cache:stadia-route-distance:',
+        defaultTtlSeconds: 60 * 60 * 24 * 7,
+        negativeTtlSeconds: 0,
+        maxPendingFetches: 500,
+        fetchTimeoutMs: 2_500,
+      },
+    ),
   )
 
   cachedUseCase = new FindNearestChurchesUseCase(
@@ -102,6 +114,7 @@ export function makeFindNearestChurchesUseCase(
       maxPendingFetches: 500,
       fetchTimeoutMs: 25000,
     },
+    RoutingProfile.PEDESTRIAN,
   )
 
   return cachedUseCase

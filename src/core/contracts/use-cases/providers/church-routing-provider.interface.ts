@@ -1,4 +1,4 @@
-import { RoutingProfile } from "core/types/routing-profile/routing-profile-enum"
+import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 
 export interface RoutingPoint {
   lat: number
@@ -11,5 +11,10 @@ export interface RouteDistanceResult {
 }
 
 export interface IChurchRoutingProvider {
-  getDistances(params: { origin: RoutingPoint; destinations: RoutingPoint[]; profile?: RoutingProfile }): Promise<RouteDistanceResult[]>
+  getDistances(params: {
+    origin: RoutingPoint
+    destinations: RoutingPoint[]
+    profile?: RoutingProfile
+    signal?: AbortSignal
+  }): Promise<RouteDistanceResult[]>
 }

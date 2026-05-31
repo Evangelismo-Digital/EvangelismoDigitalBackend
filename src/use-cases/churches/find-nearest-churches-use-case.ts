@@ -1,4 +1,3 @@
-import { NearbyChurch } from 'core/contracts/repository/churches-repository.interface'
 import { CachedFailureError, ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
 import { ChurchPresenter } from '@http/presenters/church-presenter'
 import { CepToLatLonUseCase } from '@use-cases/churches/cep-to-lat-lon-use-case'
@@ -7,6 +6,7 @@ import { CalculateChurchRouteDistancesUseCase } from '@use-cases/churches/calcul
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import { Redis } from 'ioredis'
+import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 
 export interface FindNearestChurchesRequest {
   cep: string
@@ -21,6 +21,7 @@ export interface FindNearestChurchesResponse {
 
 export class FindNearestChurchesUseCase {
   private readonly cacheManager: ResilientCache
+  private readonly defaultProfile: RoutingProfile
 
   constructor(
     private readonly cepToLatLonUseCase: CepToLatLonUseCase,
@@ -28,6 +29,7 @@ export class FindNearestChurchesUseCase {
     private readonly calculateChurchRouteDistancesUseCase: CalculateChurchRouteDistancesUseCase,
     redis: Redis,
     optionsOverride: ResilientCacheOptions,
+    defaultProfile: RoutingProfile = RoutingProfile.PEDESTRIAN,
   ) {
     this.cacheManager = new ResilientCache(redis, {
       prefix: optionsOverride.prefix,
@@ -37,16 +39,17 @@ export class FindNearestChurchesUseCase {
       fetchTimeoutMs: optionsOverride.fetchTimeoutMs,
       ttlJitterPercentage: optionsOverride.ttlJitterPercentage,
     })
+    this.defaultProfile = defaultProfile
   }
 
   async execute({ cep }: FindNearestChurchesRequest): Promise<FindNearestChurchesResponse> {
     const cleanCep = cep.replace(/\D/g, '')
-    const cacheKey = this.cacheManager.generateKey({ cep: cleanCep })
+    const cacheKey = this.cacheManager.generateKey({ cep: cleanCep, profile: this.defaultProfile })
 
     try {
       const result = await this.cacheManager.getOrFetch<FindNearestChurchesResponse>(
         cacheKey,
-        async () => {
+        async (signal) => {
           const { userLat, userLon, precision, providerName } = await this.cepToLatLonUseCase.execute({
             cep: cleanCep,
           })
@@ -56,10 +59,14 @@ export class FindNearestChurchesUseCase {
             userLon,
           })
 
-          const nearestChurches = await this.calculateChurchRouteDistancesUseCase.findNearest({
-            churches,
-            user: { userLat, userLon },
-          })
+          const nearestChurches = await this.calculateChurchRouteDistancesUseCase.findNearest(
+            {
+              churches,
+              user: { userLat, userLon },
+              signal,
+            },
+            this.defaultProfile,
+          )
 
           return {
             nearestChurchesInfo: ChurchPresenter.toHTTP(nearestChurches),
@@ -67,6 +74,18 @@ export class FindNearestChurchesUseCase {
             precision,
             providerName,
           }
+        },
+        // errorMapper: only cache business/domain errors
+        (error: unknown) => {
+          if (error instanceof InvalidCepError) {
+            return { type: 'InvalidCepError', message: error.message, data: { cep: cleanCep } }
+          }
+
+          if (error instanceof CoordinatesNotFoundError) {
+            return { type: 'CoordinatesNotFoundError', message: error.message, data: { cep: cleanCep } }
+          }
+
+          return null
         },
       )
 

@@ -3,6 +3,7 @@ import {
   IChurchRoutingProvider,
   RouteDistanceResult,
 } from 'core/contracts/use-cases/providers/church-routing-provider.interface'
+import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 
 /* =======================
    Input Types
@@ -16,6 +17,7 @@ export interface User {
 export interface FindNearestProps {
   churches: NearbyChurch[]
   user: User
+  signal?: AbortSignal
 }
 
 /* =======================
@@ -25,7 +27,7 @@ export interface FindNearestProps {
 export class CalculateChurchRouteDistancesUseCase {
   constructor(private readonly routingProvider: IChurchRoutingProvider) {}
 
-  async findNearest({ churches, user }: FindNearestProps): Promise<NearbyChurch[]> {
+  async findNearest({ churches, user, signal }: FindNearestProps, profile?: RoutingProfile): Promise<NearbyChurch[]> {
     if (!churches.length) {
       throw new Error('Lista de igrejas vazia!')
     }
@@ -39,6 +41,8 @@ export class CalculateChurchRouteDistancesUseCase {
         lat: church.lat,
         lon: church.lon,
       })),
+      profile,
+      signal,
     })
 
     const rankedChurches = results

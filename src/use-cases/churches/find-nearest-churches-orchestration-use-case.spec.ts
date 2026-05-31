@@ -44,7 +44,7 @@ describe('FindNearestChurchesUseCase orchestration', () => {
 
     mockGetOrFetch.mockReset()
     mockGenerateKey.mockReset()
-    mockGenerateKey.mockImplementation(({ cep }: { cep: string }) => `nearest:${cep}`)
+    mockGenerateKey.mockImplementation((params: any) => `nearest:${params.cep}`)
     mockGetOrFetch.mockImplementation(async (_key: string, fetcher: () => Promise<unknown>) => fetcher())
 
     cepToLatLonUseCase = { execute: vi.fn() }
@@ -87,7 +87,7 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     const result = await useCase.execute({ cep: '01310-100' })
 
     expect(result).toBe(cachedResponse)
-    expect(mockGenerateKey).toHaveBeenCalledWith({ cep: '01310100' })
+    expect(mockGenerateKey).toHaveBeenCalledWith(expect.objectContaining({ cep: '01310100' }))
     expect(cepToLatLonUseCase.execute).not.toHaveBeenCalled()
     expect(findNearbyChurchesKnnUseCase.execute).not.toHaveBeenCalled()
     expect(calculateChurchRouteDistancesUseCase.findNearest).not.toHaveBeenCalled()
@@ -139,9 +139,13 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     })
     expect(cepToLatLonUseCase.execute).toHaveBeenCalledWith({ cep: '01310100' })
     expect(findNearbyChurchesKnnUseCase.execute).toHaveBeenCalledWith({ userLat: -23.55, userLon: -46.63 })
-    expect(calculateChurchRouteDistancesUseCase.findNearest).toHaveBeenCalledWith({
-      churches: knnChurches,
-      user: { userLat: -23.55, userLon: -46.63 },
-    })
+    expect(calculateChurchRouteDistancesUseCase.findNearest).toHaveBeenCalledWith(
+      {
+        churches: knnChurches,
+        user: { userLat: -23.55, userLon: -46.63 },
+        signal: undefined,
+      },
+      expect.anything(),
+    )
   })
 })

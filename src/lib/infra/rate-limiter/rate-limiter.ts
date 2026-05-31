@@ -58,6 +58,7 @@ export enum EnumProviderConfig {
   BRASIL_API_ADDRESS = 'brasilApiAddressProvider',
   NOMINATIM_GEOCODING = 'nominatimGeocodingProvider',
   LOCATION_IQ_GEOCODING = 'locationIqGeocodingProvider',
+  STADIA_ROUTING = 'stadiaRoutingProvider',
 }
 
 export class RedisRateLimiter {
@@ -97,6 +98,10 @@ export class RedisRateLimiter {
     },
     [EnumProviderConfig.LOCATION_IQ_GEOCODING]: {
       points: 2,
+      windowSeconds: 1,
+    },
+    [EnumProviderConfig.STADIA_ROUTING]: {
+      points: 50,
       windowSeconds: 1,
     },
   }
