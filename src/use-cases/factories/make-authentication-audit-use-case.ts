@@ -4,5 +4,7 @@ import { AuthenticationAuditUseCase } from '@use-cases/authentication-audit/auth
 export function makeAuthenticationAuditUseCase() {
   const authenticationAuditRepository = new PrismaAuthenticationAuditRepository()
 
-  return new AuthenticationAuditUseCase(authenticationAuditRepository)
+  const authenticationAuditUseCase = new AuthenticationAuditUseCase(authenticationAuditRepository)
+
+  return authenticationAuditUseCase
 }

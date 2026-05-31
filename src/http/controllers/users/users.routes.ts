@@ -3,7 +3,7 @@ import { resetPassword } from './reset-password.controller'
 import { register, registerAdmin } from './register-user.controller'
 import { verifyJwt } from '@middlewares/verify-jwt.middleware'
 import { verifyUserRole } from '@middlewares/verify-user-role.middleware'
-import { authenticateUser, handleAuthenticateUserRouteError } from './authenticate-user.controller'
+import { authenticateUser } from './authenticate-user.controller'
 import { deleteUser, deleteUserByPublicId } from './delete-user.controller'
 import { forgotPassword } from './forgot-password.controller'
 import { getUserByPublicId, getUserProfile } from './get-user-profile.controller'
@@ -30,7 +30,6 @@ export async function usersRoutes(app: FastifyInstance) {
     '/sessions',
     {
       config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.session },
-      errorHandler: handleAuthenticateUserRouteError,
     },
     authenticateUser,
   )
