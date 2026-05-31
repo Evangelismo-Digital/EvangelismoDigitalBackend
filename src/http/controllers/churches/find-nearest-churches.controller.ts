@@ -22,12 +22,10 @@ export async function findNearestChurches(
   try {
     const cep = cepSchema.parse(request.query.cep)
 
-    if (env.NODE_ENV !== 'production' || Math.random() < 0.1) {
-      logger.info({
-        msg: 'Cep do usuário recebido para encontrar igrejas próximas',
-        ip: request.ip,
-      })
-    }
+    logger.info({
+      msg: 'Cep do usuário recebido para encontrar igrejas próximas',
+      ip: request.ip,
+    })
 
     const findNearestChurchesUseCase = makeFindNearestChurchesUseCase()
 

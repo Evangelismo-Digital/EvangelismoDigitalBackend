@@ -25,7 +25,7 @@ interface CepToLatLonResponse {
   userLat: number
   userLon: number
   precision: string
-  providerName?: string
+  coordinatesProviderName?: string
 }
 
 export class CepToLatLonUseCase {
@@ -169,7 +169,7 @@ export class CepToLatLonUseCase {
           userLat: data.lat,
           userLon: data.lon,
           precision: data.precision || EnumGeoPrecision.NO_CERTAINTY,
-          providerName: data.providerName,
+          coordinatesProviderName: data.providerName,
         }
       }
 
@@ -241,7 +241,7 @@ export class CepToLatLonUseCase {
       userLat: coords.lat,
       userLon: coords.lon,
       precision: coords.precision,
-      providerName: coords.providerName,
+      coordinatesProviderName: coords.providerName,
     }
   }
 }

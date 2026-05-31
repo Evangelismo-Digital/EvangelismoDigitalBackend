@@ -16,7 +16,7 @@ export interface FindNearestChurchesResponse {
   nearestChurchesInfo: ReturnType<typeof ChurchPresenter.toHTTP>
   totalFound: number
   precision: string
-  providerName?: string
+  coordinatesProviderName?: string
 }
 
 export class FindNearestChurchesUseCase {
@@ -50,7 +50,7 @@ export class FindNearestChurchesUseCase {
       const result = await this.cacheManager.getOrFetch<FindNearestChurchesResponse>(
         cacheKey,
         async (signal) => {
-          const { userLat, userLon, precision, providerName } = await this.cepToLatLonUseCase.execute({
+          const { userLat, userLon, precision, coordinatesProviderName } = await this.cepToLatLonUseCase.execute({
             cep: cleanCep,
           })
 
@@ -72,7 +72,7 @@ export class FindNearestChurchesUseCase {
             nearestChurchesInfo: ChurchPresenter.toHTTP(nearestChurches),
             totalFound,
             precision,
-            providerName,
+            coordinatesProviderName,
           }
         },
         // errorMapper: only cache business/domain errors
