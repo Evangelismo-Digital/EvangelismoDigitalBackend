@@ -1,7 +1,7 @@
 import { AxiosError, AxiosInstance } from 'axios'
 import { logger } from '@lib/logger'
 import { createHttpClient } from '@lib/http/axios'
-import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/rate-limiter'
+import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { AddressServiceBusyError } from '@use-cases/errors/address-service-busy-error'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
 import Redis from 'ioredis'

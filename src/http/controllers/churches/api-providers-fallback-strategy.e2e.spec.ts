@@ -7,7 +7,7 @@ import request from 'supertest'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRedisCacheConnection } from '@lib/redis/connections/redis-cache-connection'
 import { BrasilApiProvider } from 'providers/address-provider/brasil-api-provider'
-import { RedisRateLimiter } from '@lib/infra/rate-limiter/rate-limiter'
+import { RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { AddressProviderFailureError } from 'providers/address-provider/error/address-provider-failure-error'
 import { GeoProviderFailureError } from '@use-cases/errors/geo-provider-failure-error'
 

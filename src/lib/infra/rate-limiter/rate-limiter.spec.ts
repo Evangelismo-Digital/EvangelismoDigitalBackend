@@ -49,7 +49,7 @@ vi.mock('rate-limiter-flexible', () => {
 // Imports reais após mocks
 import Redis from 'ioredis'
 import { RateLimiterRedis } from 'rate-limiter-flexible'
-import { RedisRateLimiter, EnumProviderConfig } from './rate-limiter'
+import { RedisRateLimiter, EnumProviderConfig } from './redis-rate-limiter'
 import { logger } from '@lib/logger'
 
 describe('RedisRateLimiter Unit Tests', () => {

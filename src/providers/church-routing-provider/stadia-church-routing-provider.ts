@@ -7,7 +7,7 @@ import {
 } from 'core/contracts/use-cases/providers/church-routing-provider.interface'
 import { createHttpClient } from '@lib/http/axios'
 import { ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
-import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/rate-limiter'
+import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { GeoServiceBusyError } from '@use-cases/errors/geo-service-busy-error'
 import { TimeoutExceededOnFetchError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'

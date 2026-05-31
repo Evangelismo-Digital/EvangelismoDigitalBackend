@@ -1,5 +1,5 @@
 import Redis from 'ioredis'
-import { RateLimiterRedis } from 'rate-limiter-flexible'
+import { RateLimiterRedis } from 'rate-limiter-flexible' // Lib utilizada para implementar o rate-limiter com Redis
 import { NoRateLimiterSetError } from '../../errors/infra/rate-limiter/noRateLimiterSetError'
 import { logger } from '@lib/logger'
 import { REDIS_KEYS } from 'core/constants/redis/redis-keys'
@@ -110,7 +110,7 @@ export class RedisRateLimiter {
     this.redis = redis
   }
 
-  static getInstance(redis: Redis): RedisRateLimiter {
+  static getInstance(redis: Redis): RedisRateLimiter { // Singleton com Redis injetado externamente através da lib RedisRateLimiter
     if (!this.instance) {
       this.instance = new RedisRateLimiter(redis)
     }
