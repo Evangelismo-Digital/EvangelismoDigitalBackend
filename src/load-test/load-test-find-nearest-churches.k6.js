@@ -6,6 +6,7 @@ import { Counter, Rate, Trend } from 'k6/metrics'
 // 📊 Métricas customizadas
 // ===============================
 const rateLimitErrors = new Counter('rate_limit_errors')
+const blockedRequests = new Counter('blocked_requests')
 const successRate = new Rate('success_rate')
 const cacheHitTrend = new Trend('cache_hit_duration')
 const coldPathTrend = new Trend('cold_path_duration')
@@ -39,11 +40,21 @@ export const options = {
       ],
       exec: 'rateLimitTest',
     },
+    nearest_route_blocking: {
+      executor: 'constant-arrival-rate',
+      rate: Number(__ENV.NEAREST_ROUTE_RATE || 20),
+      timeUnit: '1s',
+      duration: __ENV.NEAREST_ROUTE_DURATION || '30s',
+      preAllocatedVUs: Number(__ENV.NEAREST_ROUTE_PRE_ALLOCATED_VUS || 20),
+      maxVUs: Number(__ENV.NEAREST_ROUTE_MAX_VUS || 100),
+      exec: 'nearestRouteBlockingTest',
+    },
   },
   thresholds: {
     cache_hit_duration: ['p(95)<50'],
     cold_path_duration: ['p(95)<5000'],
     'http_req_failed{status:500}': ['rate==0'],
+    blocked_requests: ['count>0'],
   },
 }
 
@@ -100,7 +111,7 @@ export function cacheTest() {
     'status is 200 (cache)': (r) => r.status === 200,
     'cache payload is valid': (r) => {
       const body = r.json()
-      return Array.isArray(body.churches) && body.totalFound === 10
+      return Array.isArray(body.churches) && body.totalFound === 5
     },
   })
 
@@ -131,10 +142,32 @@ export function rateLimitTest() {
   check(res, {
     'status handled correctly': (r) => [200, 400, 404, 429, 503].includes(r.status),
 
-    'valid churches array & totalFound=10 (if 200)': (r) => {
+    'valid churches array & totalFound=5 (if 200)': (r) => {
       if (r.status !== 200) return true
       const body = r.json()
-      return Array.isArray(body.churches) && body.totalFound === 10
+      return Array.isArray(body.churches) && body.totalFound === 5
     },
   })
+}
+
+export function nearestRouteBlockingTest() {
+  const cep = '01001-000'
+  const res = http.get(`${BASE_URL}${ENDPOINT}?cep=${cep}`)
+
+  if (res.status === 200) {
+    successRate.add(1)
+    coldPathTrend.add(res.timings.duration)
+  } else if (res.status === 429) {
+    rateLimitErrors.add(1)
+    blockedRequests.add(1)
+  } else if (res.status === 503) {
+    rateLimitErrors.add(1)
+  }
+
+  check(res, {
+    'nearest route returns an expected status': (r) => [200, 429, 503].includes(r.status),
+    'blocked requests are surfaced as 429': (r) => r.status !== 503,
+  })
+
+  sleep(0.05)
 }

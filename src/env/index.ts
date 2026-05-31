@@ -29,6 +29,12 @@ const envSchema = z.object({
   FRONTEND_URL: z.url().default('http://localhost:5173'),
   HASH_SALT_ROUNDS: z.coerce.number().default(12),
 
+  // HTTP rate limits (test overrides supported via env)
+  HTTP_RATE_LIMIT_GLOBAL_MAX: z.coerce.number().int().positive().default(300),
+  HTTP_RATE_LIMIT_GLOBAL_TIME_WINDOW: z.string().default('1 minute'),
+  HTTP_RATE_LIMIT_CHURCHES_NEAREST_MAX: z.coerce.number().int().positive().default(30000),
+  HTTP_RATE_LIMIT_CHURCHES_NEAREST_TIME_WINDOW: z.string().default('1 minute'),
+
   SENTRY_DSN: z.string().optional(),
 
   // SMTP

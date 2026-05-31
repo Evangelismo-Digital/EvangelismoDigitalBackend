@@ -1,7 +1,9 @@
+import { env } from '@env/index'
+
 export const HTTP_RATE_LIMIT_POLICIES = {
   global: {
-    max: 300,
-    timeWindow: '1 minute',
+    max: env.HTTP_RATE_LIMIT_GLOBAL_MAX,
+    timeWindow: env.HTTP_RATE_LIMIT_GLOBAL_TIME_WINDOW,
   },
   auth: {
     session: {
@@ -37,8 +39,8 @@ export const HTTP_RATE_LIMIT_POLICIES = {
   },
   churches: {
     nearest: {
-      max: 30000,
-      timeWindow: '1 minute',
+      max: env.HTTP_RATE_LIMIT_CHURCHES_NEAREST_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_CHURCHES_NEAREST_TIME_WINDOW,
     },
   },
   forms: {
