@@ -22,8 +22,8 @@ export class PrismaFormsRepository implements FormsRepository {
 
       return ok(formSubmission)
     } catch (error) {
-      const domainError = this.httpErrorMapper.mapToKnownError(error)
-      return err(domainError)
+      const mappedError = this.httpErrorMapper.mapToKnownError(error)
+      return err(mappedError)
     }
   }
 
@@ -41,8 +41,8 @@ export class PrismaFormsRepository implements FormsRepository {
 
       return ok(formSubmission)
     } catch (error) {
-      const domainError = this.httpErrorMapper.mapToKnownError(error)
-      return err(domainError)
+      const mappedError = this.httpErrorMapper.mapToKnownError(error)
+      return err(mappedError)
     }
   }
 }
