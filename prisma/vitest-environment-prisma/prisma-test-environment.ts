@@ -12,6 +12,7 @@ function generateDatabaseUrl(schema: string) {
 
   const url = new URL(baseUrl)
   url.searchParams.set('schema', schema)
+  url.searchParams.set('search_path', `${schema},public`)
 
   return url.toString()
 }
@@ -22,7 +23,7 @@ export default <Environment>{
   async setup() {
     // Create a test database or run migrations here if needed
 
-    const schema = randomUUID()
+    const schema = `test_${randomUUID().replace(/-/g, '_')}`
 
     const databaseUrl = generateDatabaseUrl(schema)
 

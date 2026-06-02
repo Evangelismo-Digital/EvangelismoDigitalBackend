@@ -107,8 +107,8 @@ export default defineConfig(({ mode }) => {
             name: 'e2e',
             dir: 'src/http/controllers',
             exclude: ['**/api-providers-fallback-strategy.e2e.spec.ts'],
-            // Uses isolated schemas for each test run
-            environment: './prisma/vitest-environment-prisma/prisma-test-environment.ts',
+            // Uses Docker database with public schema
+            environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
           },
         },
         {
@@ -125,7 +125,7 @@ export default defineConfig(({ mode }) => {
           test: {
             name: 'e2e-users',
             dir: 'src/http/controllers/users',
-            environment: './prisma/vitest-environment-prisma/prisma-test-environment.ts',
+            environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
           },
         },
       ],

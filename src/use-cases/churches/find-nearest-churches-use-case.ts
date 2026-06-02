@@ -7,6 +7,13 @@ import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import { Redis } from 'ioredis'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
+import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
+import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
+import { ServiceOverloadError as CacheServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
+import { TimeoutExceededOnFetchError as CacheTimeoutError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
+import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 
 export interface FindNearestChurchesRequest {
   cep: string
@@ -42,7 +49,7 @@ export class FindNearestChurchesUseCase {
     this.defaultProfile = defaultProfile
   }
 
-  async execute({ cep }: FindNearestChurchesRequest): Promise<FindNearestChurchesResponse> {
+  async execute({ cep }: FindNearestChurchesRequest): Promise<Result<FindNearestChurchesResponse, AppError>> {
     const cleanCep = cep.replace(/\D/g, '')
     const cacheKey = this.cacheManager.generateKey({ cep: cleanCep, profile: this.defaultProfile })
 
@@ -50,16 +57,24 @@ export class FindNearestChurchesUseCase {
       const result = await this.cacheManager.getOrFetch<FindNearestChurchesResponse>(
         cacheKey,
         async (signal) => {
-          const { userLat, userLon, precision, coordinatesProviderName } = await this.cepToLatLonUseCase.execute({
+          const cepResult = await this.cepToLatLonUseCase.execute({
             cep: cleanCep,
           })
+          if (isErr(cepResult)) {
+            throw cepResult.error
+          }
+          const { userLat, userLon, precision, coordinatesProviderName } = cepResult.value
 
-          const { churches, totalFound } = await this.findNearbyChurchesKnnUseCase.execute({
+          const knnResult = await this.findNearbyChurchesKnnUseCase.execute({
             userLat,
             userLon,
           })
+          if (isErr(knnResult)) {
+            throw knnResult.error
+          }
+          const { churches, totalFound } = knnResult.value
 
-          const nearestChurches = await this.calculateChurchRouteDistancesUseCase.findNearest(
+          const nearestChurchesResult = await this.calculateChurchRouteDistancesUseCase.findNearest(
             {
               churches,
               user: { userLat, userLon },
@@ -67,6 +82,10 @@ export class FindNearestChurchesUseCase {
             },
             this.defaultProfile,
           )
+          if (isErr(nearestChurchesResult)) {
+            throw nearestChurchesResult.error
+          }
+          const nearestChurches = nearestChurchesResult.value
 
           return {
             nearestChurchesInfo: ChurchPresenter.toHTTP(nearestChurches),
@@ -90,30 +109,34 @@ export class FindNearestChurchesUseCase {
       )
 
       if (!result) {
-        throw new Error('Falha ao calcular igrejas próximas!')
+        return errOf(new NoNearbyChurchesFoundError())
       }
 
-      return result
+      return ok(result)
     } catch (error) {
       if (error instanceof CachedFailureError) {
         if (error.errorType === 'InvalidCepError') {
-          throw new InvalidCepError()
+          return errOf(new InvalidCepError())
         }
 
         if (error.errorType === 'CoordinatesNotFoundError') {
-          throw new CoordinatesNotFoundError()
+          return errOf(new CoordinatesNotFoundError())
         }
       }
 
-      if (error instanceof InvalidCepError) {
-        throw error
+      if (error instanceof AppError) {
+        return errOf(error)
       }
 
-      if (error instanceof CoordinatesNotFoundError) {
-        throw error
+      if (error instanceof CacheServiceOverloadError) {
+        return errOf(new InfraServiceOverloadError())
       }
 
-      throw error
+      if (error instanceof CacheTimeoutError) {
+        return errOf(new TimeoutExceededError())
+      }
+
+      return errOf(new NoNearbyChurchesFoundError())
     }
   }
 }

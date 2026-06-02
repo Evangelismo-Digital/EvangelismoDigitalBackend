@@ -1,5 +1,7 @@
 import request from 'supertest'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { ok } from 'core/shared/result'
+import { getRedisRateLimit } from '@lib/redis/clients/clients'
 
 const { nearestChurchesResponse, rateLimitPolicies, mockExecute, mockMakeFindNearestChurchesUseCase } = vi.hoisted(
   () => {
@@ -67,7 +69,7 @@ const { nearestChurchesResponse, rateLimitPolicies, mockExecute, mockMakeFindNea
       },
     } as const
 
-    const mockExecute = vi.fn(() => Promise.resolve(nearestChurchesResponse))
+    const mockExecute = vi.fn(() => Promise.resolve(ok(nearestChurchesResponse)))
     const mockMakeFindNearestChurchesUseCase = vi.fn(() => ({
       execute: mockExecute,
     }))
@@ -90,9 +92,17 @@ function createForwardedIp() {
   return `203.0.113.${Math.floor(Math.random() * 200) + 1}`
 }
 
+import { HTTP_RATE_LIMIT_POLICIES } from '@http/policies/rate-limit'
+
 describe('churches nearest route rate limit (e2e)', () => {
   beforeAll(async () => {
     await app.ready()
+    const redis = getRedisRateLimit()
+    if (redis.status !== 'ready') {
+      await new Promise<void>((resolve) => {
+        redis.once('ready', () => resolve())
+      })
+    }
   })
 
   afterEach(() => {

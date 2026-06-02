@@ -2,13 +2,15 @@ import { AxiosError, AxiosInstance } from 'axios'
 import { logger } from '@lib/logger'
 import { createHttpClient } from '@lib/http/axios'
 import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
-import { AddressServiceBusyError } from '@use-cases/errors/address-service-busy-error'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
 import Redis from 'ioredis'
-import { AddressProviderFailureError } from './error/address-provider-failure-error'
-import { TimeoutExceededOnFetchError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
+import { Result, ok, errOf } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 
 export interface ViaCepConfig {
   apiUrl: string
@@ -62,7 +64,7 @@ export class ViaCepProvider implements IAddressProvider {
     }
   }
 
-  async fetchAddress(cep: string, signal?: AbortSignal): Promise<IAddressData | null> {
+  async fetchAddress(cep: string, signal?: AbortSignal): Promise<Result<IAddressData | null, AppError>> {
     const cleanCep = cep.replace(/\D/g, '')
 
     // Fail-Fast Rate Limit Check
@@ -71,14 +73,14 @@ export class ViaCepProvider implements IAddressProvider {
     const allowed = await rateLimiter.tryConsume(EnumProviderConfig.VIACEP_ADDRESS)
 
     if (!allowed) {
-      throw new AddressServiceBusyError('ViaCEP (Rate Limit Excedido)')
+      return errOf(new ServiceBusyError('ViaCEP'))
     }
 
     let lastError: Error | unknown = undefined
 
     for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
       if (signal?.aborted) {
-        throw signal.reason
+        return errOf(new TimeoutExceededError(signal.reason))
       }
 
       try {
@@ -87,36 +89,31 @@ export class ViaCepProvider implements IAddressProvider {
         })
 
         if (!data || data.erro) {
-          return null
+          return ok(null)
         }
 
         const precision = PrecisionHelper.fromAddressData(data)
 
-        return {
+        return ok({
           logradouro: data.logradouro,
           bairro: data.bairro,
           localidade: data.localidade,
           uf: data.uf,
           precision: precision,
           providerName: 'ViaCEP',
-        }
+        })
       } catch (error) {
         if (signal?.aborted) {
-          throw new TimeoutExceededOnFetchError(signal.reason)
-        }
-
-        // Se for erro de Rate Limit, propaga
-        if (error instanceof AddressServiceBusyError) {
-          throw error
+          return errOf(new TimeoutExceededError(signal.reason))
         }
 
         const err = error as AxiosError
         const status = err.response?.status
 
-        // 404 (raro no ViaCEP, geralmente retorna 200 com erro: true, mas tratamos por segurança)
+        // 404
         if (status === 404) {
           logger.warn({ cep: cleanCep, attempt, status }, 'CEP não encontrado na ViaCEP (404)')
-          throw new InvalidCepError()
+          return errOf(new InvalidCepError())
         }
 
         lastError = error
@@ -126,7 +123,7 @@ export class ViaCepProvider implements IAddressProvider {
 
         if (!isRetryable || attempt === this.MAX_RETRIES) {
           if (status === 429 && attempt === this.MAX_RETRIES) {
-            throw new AddressServiceBusyError('ViaCEP (Rate Limit Excedido)')
+            return errOf(new ServiceBusyError('ViaCEP'))
           }
 
           logger.error(
@@ -142,7 +139,7 @@ export class ViaCepProvider implements IAddressProvider {
             'Falha ao buscar endereço após tentativas (ViaCEP)',
           )
 
-          throw new AddressProviderFailureError(lastError)
+          return errOf(new ProviderFailureError('ViaCEP', lastError))
         }
 
         const delay = this.BACKOFF_MS * Math.pow(2, attempt - 1)
@@ -165,7 +162,7 @@ export class ViaCepProvider implements IAddressProvider {
     }
 
     logger.error({ cep: cleanCep }, 'ViaCEP - todas as tentativas esgotadas sem sucesso')
-    throw new AddressProviderFailureError(lastError)
+    return errOf(new ProviderFailureError('ViaCEP', lastError))
   }
 
   private sleep(ms: number): Promise<void> {

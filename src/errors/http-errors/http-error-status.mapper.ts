@@ -8,6 +8,8 @@ const STATUS_MAP: Record<ErrorType, number> = {
   [ErrorType.CONFLICT]: 409,
   [ErrorType.UNPROCESSABLE_ENTITY]: 422,
   [ErrorType.INTERNAL_SERVER_ERROR]: 500,
+  [ErrorType.TOO_MANY_REQUESTS]: 429,
+  [ErrorType.SERVICE_UNAVAILABLE]: 503,
 }
 
 export function toHttpStatus(type: ErrorType): number {

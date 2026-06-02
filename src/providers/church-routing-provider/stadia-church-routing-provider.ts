@@ -9,8 +9,14 @@ import { createHttpClient } from '@lib/http/axios'
 import { ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
 import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
-import { GeoServiceBusyError } from '@use-cases/errors/geo-service-busy-error'
-import { TimeoutExceededOnFetchError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
+import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
+import { ServiceOverloadError as CacheServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
+import { TimeoutExceededOnFetchError as CacheTimeoutError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
 
 interface StadiaChurchRoutingProviderConfig {
   apiUrl: string
@@ -65,24 +71,23 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
     })
   }
 
-  async getDistances({
-    origin,
-    destinations,
-    profile,
-    signal,
-  }: {
+  async getDistances(params: {
     origin: RoutingPoint
     destinations: RoutingPoint[]
     profile?: RoutingProfile
     signal?: AbortSignal
-  }): Promise<RouteDistanceResult[]> {
+  }): Promise<Result<RouteDistanceResult[], AppError>> {
     const results: RouteDistanceResult[] = []
 
-    for (const destination of destinations) {
-      results.push(await this.fetchDistance(origin, destination, profile, signal))
+    for (const destination of params.destinations) {
+      const fetchResult = await this.fetchDistance(params.origin, destination, params.profile, params.signal)
+      if (isErr(fetchResult)) {
+        return fetchResult
+      }
+      results.push(fetchResult.value)
     }
 
-    return results
+    return ok(results)
   }
 
   private async fetchDistance(
@@ -90,7 +95,7 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
     destination: RoutingPoint,
     profile?: RoutingProfile,
     parentSignal?: AbortSignal,
-  ): Promise<RouteDistanceResult> {
+  ): Promise<Result<RouteDistanceResult, AppError>> {
     try {
       const costing = this.resolveCosting(profile)
       const cacheKey = this.cacheManager.generateKey({
@@ -108,11 +113,12 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
           const allowed = await rateLimiter.tryConsume(EnumProviderConfig.STADIA_ROUTING)
 
           if (!allowed) {
-            throw new GeoServiceBusyError('Stadia Maps (Rate Limit Excedido)')
+            // Throw so ResilientCache knows it failed (and doesn't cache success envelope)
+            throw new ServiceBusyError('Stadia Maps')
           }
 
           if (signal.aborted) {
-            throw new TimeoutExceededOnFetchError(signal.reason)
+            throw new TimeoutExceededError(signal.reason)
           }
 
           const response = await StadiaChurchRoutingProvider.api.post(
@@ -156,34 +162,50 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
       )
 
       if (!result) {
-        throw new Error('Falha ao calcular distância de rota com Stadia')
+        return errOf(new ProviderFailureError('Stadia Maps', new Error('Falha ao calcular distância de rota com Stadia')))
       }
 
-      return result
+      return ok(result)
     } catch (error) {
-      if (error instanceof GeoServiceBusyError || error instanceof TimeoutExceededOnFetchError) {
-        throw error
+      if (error instanceof ServiceBusyError || error instanceof TimeoutExceededError) {
+        return errOf(error)
+      }
+
+      // Check if it's CachedFailureError or similar from ResilientCache
+      if (error && typeof error === 'object' && 'name' in error && error.name === 'CachedFailureError') {
+        const cachedErr = error as any
+        if (cachedErr.errorData instanceof AppError) {
+          return errOf(cachedErr.errorData)
+        }
+      }
+
+      if (error instanceof CacheServiceOverloadError) {
+        return errOf(new InfraServiceOverloadError())
+      }
+
+      if (error instanceof CacheTimeoutError) {
+        return errOf(new TimeoutExceededError())
       }
 
       const axiosError = error as AxiosError
       const status = axiosError.response?.status
 
       if (status === 404) {
-        return {
+        return ok({
           distance: null,
           status,
-        }
+        })
       }
 
       if (status === 429) {
-        throw new GeoServiceBusyError('Stadia Maps (Rate Limit Excedido)')
+        return errOf(new ServiceBusyError('Stadia Maps'))
       }
 
       if (axiosError.code === 'ERR_CANCELED') {
-        throw new TimeoutExceededOnFetchError(axiosError.message)
+        return errOf(new TimeoutExceededError(axiosError.message))
       }
 
-      throw error
+      return errOf(new ProviderFailureError('Stadia Maps', error))
     }
   }
 

@@ -131,13 +131,17 @@ app.setErrorHandler((error, _request, reply) => {
     return reply.status(400).send({ message: messages.validation.invalidJson })
   }
 
+  if (error.statusCode) {
+    return reply.status(error.statusCode).send({ message: error.message })
+  }
+
   if (env.NODE_ENV === 'development') {
     logError(error, {}, 'Unhandled error occurred')
   } else {
     if (env.SENTRY_DSN) {
       Sentry.captureException(error)
     }
-    logger.error('Unhandled error occurred')
+    logger.error(error, 'Unhandled error occurred')
   }
 
   reply.status(500).send({ message: messages.errors.internalServer, error: error.message })

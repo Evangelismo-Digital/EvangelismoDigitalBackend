@@ -40,6 +40,11 @@ export const messages = {
     addressProviderFailureError: 'Falha de sistema ao tentar obter endereço do provedor de serviços.',
     cepToLatLonError: 'Falha de sistema ao tentar converter CEP para coordenadas.',
     noRateLimiterSetError: 'Nenhum rate limiter foi configurado para este provedor.',
+    serviceBusy: 'Serviço temporariamente indisponível devido a limite de requisições.',
+    providerFailure: 'Falha de sistema ao tentar processar dados no provedor de serviços externos.',
+    databaseQueryFailure: 'Falha de sistema ao processar consulta no banco de dados.',
+    emptyChurchList: 'Lista de igrejas vazia!',
+    noNearbyChurchesFound: 'Nenhuma igreja encontrada nas proximidades.',
   },
   info: {
     passwordResetGeneric: 'Se o usuário existir, você receberá um e-mail com instruções para redefinir a senha.',

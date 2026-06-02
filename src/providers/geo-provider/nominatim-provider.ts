@@ -1,19 +1,21 @@
 import { AxiosError, AxiosInstance } from 'axios'
 import { Redis } from 'ioredis'
 
-import { GeoServiceBusyError } from '@use-cases/errors/geo-service-busy-error'
 import { createHttpClient } from '@lib/http/axios'
 import { logger } from '@lib/logger'
 import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
-import { GeoProviderFailureError } from '@use-cases/errors/geo-provider-failure-error'
-import { TimeoutExceededOnFetchError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import {
   IGeocodingProvider,
   IGeoCoordinates,
   IGeoSearchOptions,
 } from 'core/contracts/use-cases/providers/geo-provider.interface'
+import { Result, ok, errOf } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 
 interface NominatimConfig {
   apiUrl: string
@@ -54,11 +56,11 @@ export class NominatimGeoProvider implements IGeocodingProvider {
     }
   }
 
-  async search(query: string, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
+  async search(query: string, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
     return this.performRequest({ q: query, limit: 1, format: 'json' }, signal)
   }
 
-  async searchStructured(options: IGeoSearchOptions, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
+  async searchStructured(options: IGeoSearchOptions, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
     return this.performRequest(
       {
         street: options.street,
@@ -72,10 +74,10 @@ export class NominatimGeoProvider implements IGeocodingProvider {
     )
   }
 
-  private async performRequest(params: NominatimSearchParams, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
+  private async performRequest(params: NominatimSearchParams, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
     try {
       if (signal?.aborted) {
-        throw signal.reason
+        return errOf(new TimeoutExceededError(signal.reason))
       }
 
       const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection)
@@ -83,7 +85,7 @@ export class NominatimGeoProvider implements IGeocodingProvider {
       const allowed = await rateLimiter.tryConsume(EnumProviderConfig.NOMINATIM_GEOCODING)
 
       if (!allowed) {
-        throw new GeoServiceBusyError('Nominatim (Rate Limit Excedido)')
+        return errOf(new ServiceBusyError('Nominatim'))
       }
 
       const cleanParams = this.cleanParams(params)
@@ -94,39 +96,35 @@ export class NominatimGeoProvider implements IGeocodingProvider {
       })
 
       if (!response.data || response.data.length === 0) {
-        return null
+        return ok(null)
       }
 
       const bestMatch = response.data[0]
-      return {
+      return ok({
         lat: parseFloat(bestMatch.lat),
         lon: parseFloat(bestMatch.lon),
         precision: PrecisionHelper.fromOsm(bestMatch),
         providerName: 'Nominatim',
-      }
+      })
     } catch (error) {
       if (signal?.aborted) {
-        throw new TimeoutExceededOnFetchError(signal.reason)
-      }
-
-      if (error instanceof GeoServiceBusyError) {
-        throw error
+        return errOf(new TimeoutExceededError(signal.reason))
       }
 
       const err = error as AxiosError
       const status = err.response?.status
 
-      // 404 means not found - return null to try next provider
+      // 404 means not found
       if (status === 404) {
-        throw new CoordinatesNotFoundError()
+        return errOf(new CoordinatesNotFoundError())
       }
 
-      // API rate limit (429) - throw so ResilientGeoProvider tries next provider
+      // API rate limit (429)
       if (status === 429) {
-        throw new GeoServiceBusyError('Nominatim (Rate Limit Excedido)')
+        return errOf(new ServiceBusyError('Nominatim'))
       }
 
-      // Other errors (network, 500, etc.) - throw as system errors
+      // Other errors (network, 500, etc.)
       logger.warn(
         {
           code: err.code,
@@ -136,7 +134,7 @@ export class NominatimGeoProvider implements IGeocodingProvider {
         },
         'Provedor Nominatim falhou ao buscar coordenadas',
       )
-      throw new GeoProviderFailureError()
+      return errOf(new ProviderFailureError('Nominatim', error))
     }
   }
 

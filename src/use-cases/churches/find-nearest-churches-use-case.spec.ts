@@ -1,18 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { FindNearestChurchesUseCase } from './find-nearby-churches-knn-use-case'
+import { FindNearbyChurchesKnnUseCase } from './find-nearby-churches-knn-use-case'
 import { CreateChurchUseCase } from './create-church-use-case'
 import { InMemoryChurchesRepository } from '@repositories/in-memory/in-memory-chuches-repository'
 import { LatitudeRangeError } from '@use-cases/errors/latitude-range-error'
 import { LongitudeRangeError } from '@use-cases/errors/longitude-range-error'
+import { isOk, isErr } from 'core/shared/result'
 
-describe('Find Nearest Churches Use Case', () => {
+describe('Find Nearby Churches Knn Use Case Spec', () => {
   let churchesRepository: InMemoryChurchesRepository
-  let findNearestChurchesUseCase: FindNearestChurchesUseCase
+  let findNearbyChurchesKnnUseCase: FindNearbyChurchesKnnUseCase
   let createChurchUseCase: CreateChurchUseCase
 
   beforeEach(() => {
     churchesRepository = new InMemoryChurchesRepository()
-    findNearestChurchesUseCase = new FindNearestChurchesUseCase(churchesRepository)
+    findNearbyChurchesKnnUseCase = new FindNearbyChurchesKnnUseCase(churchesRepository)
     createChurchUseCase = new CreateChurchUseCase(churchesRepository)
   })
 
@@ -43,16 +44,20 @@ describe('Find Nearest Churches Use Case', () => {
       lon: -46.65,
     })
 
-    const { churches, totalFound } = await findNearestChurchesUseCase.execute({
+    const result = await findNearbyChurchesKnnUseCase.execute({
       userLat: -23.5505,
       userLon: -46.6333,
     })
 
-    expect(totalFound).toBe(3)
-    expect(churches).toHaveLength(3)
-    expect(churches[0].name).toBe('Igreja Próxima')
-    expect(churches[0].distanceMeters).toBeDefined()
-    expect(churches[0].distanceKm).toBeDefined()
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      const { churches, totalFound } = result.value
+      expect(totalFound).toBe(3)
+      expect(churches).toHaveLength(3)
+      expect(churches[0].name).toBe('Igreja Próxima')
+      expect(churches[0].distanceMeters).toBeDefined()
+      expect(churches[0].distanceKm).toBeDefined()
+    }
   })
 
   it('should return churches sorted by distance (closest first)', async () => {
@@ -78,64 +83,84 @@ describe('Find Nearest Churches Use Case', () => {
       lon: -46.64,
     })
 
-    const { churches } = await findNearestChurchesUseCase.execute({
+    const result = await findNearbyChurchesKnnUseCase.execute({
       userLat: -23.5505,
       userLon: -46.6333,
     })
 
-    expect(churches[0].name).toBe('Igreja Próxima')
-    expect(churches[1].name).toBe('Igreja Média')
-    expect(churches[2].name).toBe('Igreja Distante')
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      const { churches } = result.value
+      expect(churches[0].name).toBe('Igreja Próxima')
+      expect(churches[1].name).toBe('Igreja Média')
+      expect(churches[2].name).toBe('Igreja Distante')
 
-    // Verify distances are in ascending order
-    expect(churches[0].distanceMeters).toBeLessThan(churches[1].distanceMeters)
-    expect(churches[1].distanceMeters).toBeLessThan(churches[2].distanceMeters)
+      // Verify distances are in ascending order
+      expect(churches[0].distanceMeters).toBeLessThan(churches[1].distanceMeters)
+      expect(churches[1].distanceMeters).toBeLessThan(churches[2].distanceMeters)
+    }
   })
 
   it('should return empty array when no churches exist', async () => {
-    const { churches, totalFound } = await findNearestChurchesUseCase.execute({
+    const result = await findNearbyChurchesKnnUseCase.execute({
       userLat: -23.5505,
       userLon: -46.6333,
     })
 
-    expect(churches).toHaveLength(0)
-    expect(totalFound).toBe(0)
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      const { churches, totalFound } = result.value
+      expect(churches).toHaveLength(0)
+      expect(totalFound).toBe(0)
+    }
   })
 
-  it('should throw LatitudeRangeError when latitude is below -90', async () => {
-    await expect(() =>
-      findNearestChurchesUseCase.execute({
-        userLat: -91,
-        userLon: -46.6333,
-      }),
-    ).rejects.toBeInstanceOf(LatitudeRangeError)
+  it('should return LatitudeRangeError when latitude is below -90', async () => {
+    const result = await findNearbyChurchesKnnUseCase.execute({
+      userLat: -91,
+      userLon: -46.6333,
+    })
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(LatitudeRangeError)
+    }
   })
 
-  it('should throw LatitudeRangeError when latitude is above 90', async () => {
-    await expect(() =>
-      findNearestChurchesUseCase.execute({
-        userLat: 91,
-        userLon: -46.6333,
-      }),
-    ).rejects.toBeInstanceOf(LatitudeRangeError)
+  it('should return LatitudeRangeError when latitude is above 90', async () => {
+    const result = await findNearbyChurchesKnnUseCase.execute({
+      userLat: 91,
+      userLon: -46.6333,
+    })
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(LatitudeRangeError)
+    }
   })
 
-  it('should throw LongitudeRangeError when longitude is below -180', async () => {
-    await expect(() =>
-      findNearestChurchesUseCase.execute({
-        userLat: -23.5505,
-        userLon: -181,
-      }),
-    ).rejects.toBeInstanceOf(LongitudeRangeError)
+  it('should return LongitudeRangeError when longitude is below -180', async () => {
+    const result = await findNearbyChurchesKnnUseCase.execute({
+      userLat: -23.5505,
+      userLon: -181,
+    })
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(LongitudeRangeError)
+    }
   })
 
-  it('should throw LongitudeRangeError when longitude is above 180', async () => {
-    await expect(() =>
-      findNearestChurchesUseCase.execute({
-        userLat: -23.5505,
-        userLon: 181,
-      }),
-    ).rejects.toBeInstanceOf(LongitudeRangeError)
+  it('should return LongitudeRangeError when longitude is above 180', async () => {
+    const result = await findNearbyChurchesKnnUseCase.execute({
+      userLat: -23.5505,
+      userLon: 181,
+    })
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(LongitudeRangeError)
+    }
   })
 
   it('should accept valid latitude boundaries (-90 and 90)', async () => {
@@ -146,19 +171,19 @@ describe('Find Nearest Churches Use Case', () => {
       lon: 0,
     })
 
-    const resultSouth = await findNearestChurchesUseCase.execute({
+    const resultSouth = await findNearbyChurchesKnnUseCase.execute({
       userLat: -90,
       userLon: 0,
     })
 
-    expect(resultSouth.churches).toBeDefined()
+    expect(isOk(resultSouth)).toBe(true)
 
-    const resultNorth = await findNearestChurchesUseCase.execute({
+    const resultNorth = await findNearbyChurchesKnnUseCase.execute({
       userLat: 90,
       userLon: 0,
     })
 
-    expect(resultNorth.churches).toBeDefined()
+    expect(isOk(resultNorth)).toBe(true)
   })
 
   it('should accept valid longitude boundaries (-180 and 180)', async () => {
@@ -169,19 +194,19 @@ describe('Find Nearest Churches Use Case', () => {
       lon: -179,
     })
 
-    const resultWest = await findNearestChurchesUseCase.execute({
+    const resultWest = await findNearbyChurchesKnnUseCase.execute({
       userLat: 0,
       userLon: -180,
     })
 
-    expect(resultWest.churches).toBeDefined()
+    expect(isOk(resultWest)).toBe(true)
 
-    const resultEast = await findNearestChurchesUseCase.execute({
+    const resultEast = await findNearbyChurchesKnnUseCase.execute({
       userLat: 0,
       userLon: 180,
     })
 
-    expect(resultEast.churches).toBeDefined()
+    expect(isOk(resultEast)).toBe(true)
   })
 
   it('should filter out churches beyond maxRadiusMeters (50km)', async () => {
@@ -201,15 +226,19 @@ describe('Find Nearest Churches Use Case', () => {
       lon: -47.0,
     })
 
-    const { churches, totalFound } = await findNearestChurchesUseCase.execute({
+    const result = await findNearbyChurchesKnnUseCase.execute({
       userLat: -23.5505,
       userLon: -46.6333,
     })
 
-    // Should only return churches within 50km radius
-    expect(totalFound).toBe(1)
-    expect(churches[0].name).toBe('Igreja Próxima')
-    expect(churches[0].distanceMeters).toBeLessThan(50000)
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      const { churches, totalFound } = result.value
+      // Should only return churches within 50km radius
+      expect(totalFound).toBe(1)
+      expect(churches[0].name).toBe('Igreja Próxima')
+      expect(churches[0].distanceMeters).toBeLessThan(50000)
+    }
   })
 
   it('should limit results to 20 churches', async () => {
@@ -223,13 +252,17 @@ describe('Find Nearest Churches Use Case', () => {
       })
     }
 
-    const { churches, totalFound } = await findNearestChurchesUseCase.execute({
+    const result = await findNearbyChurchesKnnUseCase.execute({
       userLat: -23.5505,
       userLon: -46.6333,
     })
 
-    expect(totalFound).toBeLessThanOrEqual(20)
-    expect(churches.length).toBeLessThanOrEqual(20)
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      const { churches, totalFound } = result.value
+      expect(totalFound).toBeLessThanOrEqual(20)
+      expect(churches.length).toBeLessThanOrEqual(20)
+    }
   })
 
   it('should calculate distance correctly with Haversine formula', async () => {
@@ -240,14 +273,18 @@ describe('Find Nearest Churches Use Case', () => {
       lon: -46.6333,
     })
 
-    const { churches } = await findNearestChurchesUseCase.execute({
+    const result = await findNearbyChurchesKnnUseCase.execute({
       userLat: -23.5505,
       userLon: -46.6333,
     })
 
-    // Distance to itself should be approximately 0
-    expect(churches[0].distanceMeters).toBeLessThan(1)
-    expect(churches[0].distanceKm).toBeLessThan(0.001)
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      const { churches } = result.value
+      // Distance to itself should be approximately 0
+      expect(churches[0].distanceMeters).toBeLessThan(1)
+      expect(churches[0].distanceKm).toBeLessThan(0.001)
+    }
   })
 
   it('should return church with all required properties', async () => {
@@ -258,18 +295,22 @@ describe('Find Nearest Churches Use Case', () => {
       lon: -46.6333,
     })
 
-    const { churches } = await findNearestChurchesUseCase.execute({
+    const result = await findNearbyChurchesKnnUseCase.execute({
       userLat: -23.5505,
       userLon: -46.6333,
     })
 
-    expect(churches[0]).toHaveProperty('id')
-    expect(churches[0]).toHaveProperty('name')
-    expect(churches[0]).toHaveProperty('address')
-    expect(churches[0]).toHaveProperty('lat')
-    expect(churches[0]).toHaveProperty('lon')
-    expect(churches[0]).toHaveProperty('distanceMeters')
-    expect(churches[0]).toHaveProperty('distanceKm')
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      const { churches } = result.value
+      expect(churches[0]).toHaveProperty('id')
+      expect(churches[0]).toHaveProperty('name')
+      expect(churches[0]).toHaveProperty('address')
+      expect(churches[0]).toHaveProperty('lat')
+      expect(churches[0]).toHaveProperty('lon')
+      expect(churches[0]).toHaveProperty('distanceMeters')
+      expect(churches[0]).toHaveProperty('distanceKm')
+    }
   })
 
   it('should convert distanceMeters to distanceKm correctly', async () => {
@@ -280,12 +321,16 @@ describe('Find Nearest Churches Use Case', () => {
       lon: -46.64,
     })
 
-    const { churches } = await findNearestChurchesUseCase.execute({
+    const result = await findNearbyChurchesKnnUseCase.execute({
       userLat: -23.5505,
       userLon: -46.6333,
     })
 
-    const expectedKm = churches[0].distanceMeters / 1000
-    expect(churches[0].distanceKm).toBeCloseTo(expectedKm, 2)
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      const { churches } = result.value
+      const expectedKm = churches[0].distanceMeters / 1000
+      expect(churches[0].distanceKm).toBeCloseTo(expectedKm, 2)
+    }
   })
 })

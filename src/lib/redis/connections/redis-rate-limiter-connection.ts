@@ -13,7 +13,7 @@ export function createRedisRateLimiterConnection() {
 
     // 1. Timeout agressivo. Rate Limit tem que ser instantâneo.
     // Se demorar mais que 100ms, aborta para não segurar a API.
-    commandTimeout: 100, // Cache costuma ser 1000ms
+    commandTimeout: env.NODE_ENV === 'test' ? 1000 : 100, // Cache costuma ser 1000ms
 
     // 2. SEM fila offline.
     // Se a conexão cair, falhe o comando imediatamente (throw error).

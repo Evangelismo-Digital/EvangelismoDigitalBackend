@@ -2,14 +2,14 @@ import { messages } from 'core/constants/messages'
 import { ErrorType } from 'core/types/error-type/error-type'
 import { DomainError } from 'errors/domain-error'
 
-export class LatitudeRangeError extends DomainError {
+export class NoNearbyChurchesFoundError extends DomainError {
   constructor() {
     super(
       {
-        code: 'LATITUDE_OUT_OF_RANGE',
-        message: messages.latitude.outOfRange,
+        code: 'NO_NEARBY_CHURCHES_FOUND',
+        message: messages.errors.noNearbyChurchesFound,
       },
-      ErrorType.BAD_REQUEST,
+      ErrorType.NOT_FOUND,
     )
   }
 }

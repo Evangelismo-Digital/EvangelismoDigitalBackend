@@ -5,10 +5,10 @@ import { AppError } from 'errors/app-error'
 export abstract class InfrastructureError extends AppError {
   public readonly originalError?: unknown
 
-  constructor(detail: IErrorDetail, originalError?: unknown) {
+  constructor(detail: IErrorDetail, originalError?: unknown, type: ErrorType = ErrorType.INTERNAL_SERVER_ERROR) {
     // O tipo aqui e mais para fins de categorizacao interna do erro,
     // embora este tipo nao sera enviado em respostas do Fastify.
-    super(detail, ErrorType.INTERNAL_SERVER_ERROR)
+    super(detail, type)
 
     this.originalError = originalError
 

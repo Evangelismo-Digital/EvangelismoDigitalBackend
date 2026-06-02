@@ -4,6 +4,7 @@ import { CepToLatLonUseCase } from './cep-to-lat-lon-use-case'
 import { FindNearbyChurchesKnnUseCase } from './find-nearby-churches-knn-use-case'
 import { CalculateChurchRouteDistancesUseCase } from './calculate-church-route-distances-use-case'
 import { ChurchPresenter } from '@http/presenters/church-presenter'
+import { isOk, ok } from 'core/shared/result'
 
 const mockGetOrFetch = vi.fn()
 const mockGenerateKey = vi.fn()
@@ -86,7 +87,10 @@ describe('FindNearestChurchesUseCase orchestration', () => {
 
     const result = await useCase.execute({ cep: '01310-100' })
 
-    expect(result).toBe(cachedResponse)
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      expect(result.value).toBe(cachedResponse)
+    }
     expect(mockGenerateKey).toHaveBeenCalledWith(expect.objectContaining({ cep: '01310100' }))
     expect(cepToLatLonUseCase.execute).not.toHaveBeenCalled()
     expect(findNearbyChurchesKnnUseCase.execute).not.toHaveBeenCalled()
@@ -94,12 +98,12 @@ describe('FindNearestChurchesUseCase orchestration', () => {
   })
 
   it('computes and caches the sanitized HTTP response on a cache miss', async () => {
-    cepToLatLonUseCase.execute.mockResolvedValueOnce({
+    cepToLatLonUseCase.execute.mockResolvedValueOnce(ok({
       userLat: -23.55,
       userLon: -46.63,
       precision: 'ROOFTOP',
-      providerName: 'LocationIQ',
-    })
+      coordinatesProviderName: 'LocationIQ',
+    }))
 
     const knnChurches = [
       {
@@ -122,21 +126,24 @@ describe('FindNearestChurchesUseCase orchestration', () => {
       },
     ]
 
-    findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce({
+    findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce(ok({
       churches: knnChurches,
       totalFound: 1,
-    })
+    }))
 
-    calculateChurchRouteDistancesUseCase.findNearest.mockResolvedValueOnce(routedChurches)
+    calculateChurchRouteDistancesUseCase.findNearest.mockResolvedValueOnce(ok(routedChurches))
 
     const result = await useCase.execute({ cep: '01310100' })
 
-    expect(result).toEqual({
-      nearestChurchesInfo: ChurchPresenter.toHTTP(routedChurches),
-      totalFound: 1,
-      precision: 'ROOFTOP',
-      providerName: 'LocationIQ',
-    })
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      expect(result.value).toEqual({
+        nearestChurchesInfo: ChurchPresenter.toHTTP(routedChurches),
+        totalFound: 1,
+        precision: 'ROOFTOP',
+        coordinatesProviderName: 'LocationIQ',
+      })
+    }
     expect(cepToLatLonUseCase.execute).toHaveBeenCalledWith({ cep: '01310100' })
     expect(findNearbyChurchesKnnUseCase.execute).toHaveBeenCalledWith({ userLat: -23.55, userLon: -46.63 })
     expect(calculateChurchRouteDistancesUseCase.findNearest).toHaveBeenCalledWith(

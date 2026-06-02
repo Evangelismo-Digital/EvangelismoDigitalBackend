@@ -2,13 +2,11 @@ import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-foun
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { Redis } from 'ioredis'
 import { logger } from '@lib/logger'
-import { GeoServiceBusyError } from '@use-cases/errors/geo-service-busy-error'
 import { CepToLatLonError } from '@use-cases/errors/cep-to-lat-lon-error'
-import { ServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
-import { AddressServiceBusyError } from '@use-cases/errors/address-service-busy-error'
-import { TimeoutExceededOnFetchError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
-import { AddressProviderFailureError } from 'providers/address-provider/error/address-provider-failure-error'
-import { GeoProviderFailureError } from '@use-cases/errors/geo-provider-failure-error'
+import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
+import { ServiceOverloadError as CacheServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
+import { TimeoutExceededOnFetchError as CacheTimeoutError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
+import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import {
   IGeocodingProvider,
   IGeoCoordinates,
@@ -16,6 +14,8 @@ import {
 } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { CachedFailureError, ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
+import { Result, ok, errOf, isOk, isErr } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 
 interface CepToLatLonRequest {
   cep: string
@@ -52,7 +52,7 @@ export class CepToLatLonUseCase {
     })
   }
 
-  async execute({ cep }: CepToLatLonRequest): Promise<CepToLatLonResponse> {
+  async execute({ cep }: CepToLatLonRequest): Promise<Result<CepToLatLonResponse, AppError>> {
     const cleanCep = cep.replace(/\D/g, '')
     const cacheKey = this.cacheManager.generateKey({ cep: cleanCep })
 
@@ -90,63 +90,43 @@ export class CepToLatLonUseCase {
       )
 
       if (!result) {
-        throw new CepToLatLonError()
+        return errOf(new CepToLatLonError())
       }
 
       if (!this.cacheSuccessResults) {
         await this.redis.del(cacheKey)
       }
 
-      return result
+      return ok(result)
     } catch (error) {
       // Handle CachedFailureError - convert back to domain errors
       if (error instanceof CachedFailureError) {
         if (error.errorType === 'InvalidCepError') {
-          throw new InvalidCepError()
+          return errOf(new InvalidCepError())
         }
         if (error.errorType === 'CoordinatesNotFoundError') {
-          throw new CoordinatesNotFoundError()
+          return errOf(new CoordinatesNotFoundError())
         }
         // This shouldn't happen, but fallback to generic error
         logger.error({ cep: cleanCep, cachedError: error }, 'Tipo de erro em cache inesperado no CepToLatLonUseCase')
-        throw new CepToLatLonError()
+        return errOf(new CepToLatLonError())
       }
 
-      // Domain errors thrown directly from processCep (first fetch)
-      if (error instanceof InvalidCepError) {
-        throw error
+      // Domain or System errors thrown directly
+      if (error instanceof AppError) {
+        return errOf(error)
       }
 
-      if (error instanceof CoordinatesNotFoundError) {
-        throw error
+      if (error instanceof CacheServiceOverloadError) {
+        return errOf(new InfraServiceOverloadError())
       }
 
-      if (error instanceof GeoServiceBusyError) {
-        throw error
+      if (error instanceof CacheTimeoutError) {
+        return errOf(new TimeoutExceededError())
       }
 
-      if (error instanceof AddressServiceBusyError) {
-        throw error
-      }
-
-      if (error instanceof AddressProviderFailureError) {
-        throw error
-      }
-
-      if (error instanceof GeoProviderFailureError) {
-        throw error
-      }
-
-      if (error instanceof TimeoutExceededOnFetchError) {
-        throw error
-      }
-
-      if (error instanceof ServiceOverloadError) {
-        throw error
-      }
-
-      // Throw user-friendly error message ("Instabilidade temporária...")
-      throw new CepToLatLonError()
+      // Throw user-friendly error message
+      return errOf(new CepToLatLonError())
     }
   }
 
@@ -154,85 +134,78 @@ export class CepToLatLonUseCase {
     // 1. Fetch Address (ViaCEP / AwesomeAPI)
     // Passing signal to ensure we respect the global/cache timeout
 
-    let address: IAddressData
+    const addrResult = await this.addressProvider.fetchAddress(cleanCep, signal)
 
-    try {
-      const data = await this.addressProvider.fetchAddress(cleanCep, signal)
-
-      if (!data) {
-        throw new InvalidCepError()
-      }
-
-      // 2. OPTIMIZATION: If Address Provider (AwesomeAPI) gave us coordinates, USE THEM.
-      if (data.lat && data.lon) {
-        return {
-          userLat: data.lat,
-          userLon: data.lon,
-          precision: data.precision || EnumGeoPrecision.NO_CERTAINTY,
-          coordinatesProviderName: data.providerName,
-        }
-      }
-
-      address = data
-    } catch (error) {
-      if (error instanceof InvalidCepError) {
-        throw error
-      }
-      throw error
+    if (isErr(addrResult)) {
+      throw addrResult.error
     }
 
+    const data = addrResult.value
+
+    if (!data) {
+      throw new InvalidCepError()
+    }
+
+    // 2. OPTIMIZATION: If Address Provider (AwesomeAPI) gave us coordinates, USE THEM.
+    if (data.lat && data.lon) {
+      return {
+        userLat: data.lat,
+        userLon: data.lon,
+        precision: data.precision || EnumGeoPrecision.NO_CERTAINTY,
+        coordinatesProviderName: data.providerName,
+      }
+    }
+
+    const address = data
     const { logradouro, localidade, uf, bairro } = address
 
     // 3. Geocoding Fallback Strategies
 
     // Strategy A: Exact Match (Street)
     if (logradouro) {
-      const exact = await this.geocodingProvider.search(`${logradouro}, ${localidade} - ${uf}, Brazil`, signal)
-      if (exact) return this.mapResponse(exact)
+      const exactResult = await this.geocodingProvider.search(`${logradouro}, ${localidade} - ${uf}, Brazil`, signal)
+      if (isOk(exactResult) && exactResult.value) {
+        return this.mapResponse(exactResult.value)
+      } else if (isErr(exactResult) && !(exactResult.error instanceof CoordinatesNotFoundError)) {
+        throw exactResult.error
+      }
     }
 
     // Strategy B: Approximate Match (Neighborhood)
     if (bairro) {
-      const approx = await this.geocodingProvider.search(`${bairro}, ${localidade} - ${uf}, Brazil`, signal)
-      if (approx) return this.mapResponse(approx)
+      const approxResult = await this.geocodingProvider.search(`${bairro}, ${localidade} - ${uf}, Brazil`, signal)
+      if (isOk(approxResult) && approxResult.value) {
+        return this.mapResponse(approxResult.value)
+      } else if (isErr(approxResult) && !(approxResult.error instanceof CoordinatesNotFoundError)) {
+        throw approxResult.error
+      }
     }
 
     // Strategy C: City Fallback
     if (localidade) {
-      try {
-        const city = await this.geocodingProvider.searchStructured(
-          {
-            city: localidade,
-            state: uf,
-            country: 'Brazil',
-          },
-          signal,
-        )
+      const cityResult = await this.geocodingProvider.searchStructured(
+        {
+          city: localidade,
+          state: uf,
+          country: 'Brazil',
+        },
+        signal,
+      )
 
-        if (city === null) {
+      if (isOk(cityResult)) {
+        if (cityResult.value === null) {
           throw new CoordinatesNotFoundError()
         }
-
-        return this.mapResponse(city)
-      } catch (error) {
-        if (error instanceof CoordinatesNotFoundError) {
-          throw error
-        }
-
-        logger.error(
-          { cep: cleanCep, city: localidade, error },
-          'Crítico: Falha ao buscar coordenadas da cidade no geocoding provider',
-        )
-        throw error
+        return this.mapResponse(cityResult.value)
+      } else {
+        throw cityResult.error
       }
     }
 
     // 4. PARANOID GUARD
-    // We found the address data (text) but Geocoders failed to find even the city.
-    // This implies a provider failure or data inconsistency.
     logger.error({ cep: cleanCep, city: localidade }, 'Crítico: Geocoding Provider não encontrou a cidade.')
 
-    // This is a system error - won't be cached
+    // This is a system error
     throw new CepToLatLonError()
   }
 

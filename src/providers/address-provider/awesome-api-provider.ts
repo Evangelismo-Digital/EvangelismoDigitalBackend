@@ -2,20 +2,21 @@ import { AxiosError, AxiosInstance } from 'axios'
 import { logger } from '@lib/logger'
 import { createHttpClient } from '@lib/http/axios'
 import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
-import { AddressServiceBusyError } from '@use-cases/errors/address-service-busy-error'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
 import Redis from 'ioredis'
-import { AddressProviderFailureError } from './error/address-provider-failure-error'
-import { TimeoutExceededOnFetchError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
+import { Result, ok, errOf } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 
 export interface AwesomeApiConfig {
   apiUrl: string
   apiToken: string
 }
 
-// [MUDANÇA 2] Garantir que a interface da resposta da API esteja definida
 interface AwesomeApiResponse {
   cep: string
   address_type: string
@@ -64,7 +65,7 @@ export class AwesomeApiProvider implements IAddressProvider {
     }
   }
 
-  async fetchAddress(cep: string, signal?: AbortSignal): Promise<IAddressData | null> {
+  async fetchAddress(cep: string, signal?: AbortSignal): Promise<Result<IAddressData | null, AppError>> {
     const cleanCep = cep.replace(/\D/g, '')
 
     // Fail-Fast Rate Limit Check
@@ -73,14 +74,14 @@ export class AwesomeApiProvider implements IAddressProvider {
     const allowed = await rateLimiter.tryConsume(EnumProviderConfig.AWESOME_API_ADDRESS)
 
     if (!allowed) {
-      throw new AddressServiceBusyError('AwesomeAPI (Rate Limit Excedido)')
+      return errOf(new ServiceBusyError('AwesomeAPI'))
     }
 
     let lastError: Error | unknown = undefined
 
     for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
       if (signal?.aborted) {
-        throw signal.reason
+        return errOf(new TimeoutExceededError(signal.reason))
       }
 
       try {
@@ -89,11 +90,9 @@ export class AwesomeApiProvider implements IAddressProvider {
         })
 
         if (!data || !data.cep) {
-          return null
+          return ok(null)
         }
 
-        // [MUDANÇA 3] Normalizar dados para o PrecisionHelper
-        // A AwesomeAPI usa 'address_name' para rua e 'district' para bairro
         const normalizedData = {
           logradouro: data.address_name,
           bairro: data.district,
@@ -103,7 +102,7 @@ export class AwesomeApiProvider implements IAddressProvider {
 
         const precision = PrecisionHelper.fromAddressData(normalizedData)
 
-        return {
+        return ok({
           logradouro: data.address_name,
           bairro: data.district,
           localidade: data.city,
@@ -112,23 +111,19 @@ export class AwesomeApiProvider implements IAddressProvider {
           lon: parseFloat(data.lng),
           precision: precision,
           providerName: 'AwesomeAPI',
-        }
+        })
       } catch (error) {
         if (signal?.aborted) {
-          throw new TimeoutExceededOnFetchError(signal.reason)
-        }
-
-        if (error instanceof AddressServiceBusyError) {
-          throw error
+          return errOf(new TimeoutExceededError(signal.reason))
         }
 
         const err = error as AxiosError
         const status = err.response?.status
 
-        // 404 means CEP not found - return null to try next provider
+        // 404
         if (status === 404) {
           logger.warn({ cep: cleanCep, attempt, status }, 'CEP não encontrado na AwesomeAPI (404)')
-          throw new InvalidCepError()
+          return errOf(new InvalidCepError())
         }
 
         lastError = error
@@ -138,7 +133,7 @@ export class AwesomeApiProvider implements IAddressProvider {
 
         if (!isRetryable || attempt === this.MAX_RETRIES) {
           if (status === 429 && attempt === this.MAX_RETRIES) {
-            throw new AddressServiceBusyError('AwesomeAPI (Rate Limit Excedido)')
+            return errOf(new ServiceBusyError('AwesomeAPI'))
           }
 
           logger.error(
@@ -153,7 +148,7 @@ export class AwesomeApiProvider implements IAddressProvider {
             },
             'Falha ao buscar endereço AwesomeAPI após tentativas',
           )
-          throw new AddressProviderFailureError(lastError)
+          return errOf(new ProviderFailureError('AwesomeAPI', lastError))
         }
 
         // Backoff and retry for transient errors
@@ -163,9 +158,8 @@ export class AwesomeApiProvider implements IAddressProvider {
       }
     }
 
-    // This should be unreachable due to retry logic, but as safety net
     logger.error({ cep: cleanCep }, 'AwesomeAPI - todas as tentativas esgotadas sem sucesso')
-    throw new AddressProviderFailureError(lastError)
+    return errOf(new ProviderFailureError('AwesomeAPI', lastError))
   }
 
   private sleep(ms: number): Promise<void> {

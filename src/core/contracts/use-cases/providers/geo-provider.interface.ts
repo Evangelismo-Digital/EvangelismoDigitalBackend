@@ -1,3 +1,6 @@
+import { Result } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+
 export enum EnumGeoPrecision {
   ROOFTOP = 'ROOFTOP',
   NEIGHBORHOOD = 'NEIGHBORHOOD',
@@ -26,6 +29,6 @@ export enum EnumGeoCacheScope {
 }
 
 export interface IGeocodingProvider {
-  search(query: string, signal?: AbortSignal): Promise<IGeoCoordinates | null>
-  searchStructured(options: IGeoSearchOptions, signal?: AbortSignal): Promise<IGeoCoordinates | null>
+  search(query: string, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>>
+  searchStructured(options: IGeoSearchOptions, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>>
 }

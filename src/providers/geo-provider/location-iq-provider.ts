@@ -1,18 +1,20 @@
 import { AxiosInstance, AxiosError } from 'axios'
 import { Redis } from 'ioredis'
-import { GeoServiceBusyError } from '@use-cases/errors/geo-service-busy-error'
 import { createHttpClient } from '@lib/http/axios'
 import { logger } from '@lib/logger'
 import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
-import { GeoProviderFailureError } from '@use-cases/errors/geo-provider-failure-error'
-import { TimeoutExceededOnFetchError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import {
   IGeocodingProvider,
   IGeoCoordinates,
   IGeoSearchOptions,
 } from 'core/contracts/use-cases/providers/geo-provider.interface'
+import { Result, ok, errOf } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 
 interface LocationIqConfig {
   apiUrl: string
@@ -29,10 +31,6 @@ type LocationIqResponseItem = {
 
 export class LocationIqProvider implements IGeocodingProvider {
   private static api: AxiosInstance
-
-  // Configuração Fail-Fast in RedisRateLimiter: 2 requisições por segundo
-  // RATE_LIMIT_MAX = 2
-  // RATE_LIMIT_WINDOW = 1
 
   // Timeout da API LocationIQ
   private readonly TIMEOUT = 2000
@@ -67,11 +65,11 @@ export class LocationIqProvider implements IGeocodingProvider {
     }
   }
 
-  async search(query: string, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
+  async search(query: string, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
     return this.performRequest({ q: query, limit: 1, addressdetails: 1 }, signal)
   }
 
-  async searchStructured(options: IGeoSearchOptions, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
+  async searchStructured(options: IGeoSearchOptions, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
     return this.performRequest(
       {
         street: options.street,
@@ -85,12 +83,12 @@ export class LocationIqProvider implements IGeocodingProvider {
     )
   }
 
-  private async performRequest(params: Record<string, unknown>, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
+  private async performRequest(params: Record<string, unknown>, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
     let lastError: Error | unknown = undefined
 
     for (let attempt = 1; attempt <= this.MAX_ATTEMPTS; attempt++) {
       if (signal?.aborted) {
-        throw signal.reason
+        return errOf(new TimeoutExceededError(signal.reason))
       }
 
       const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection)
@@ -98,7 +96,7 @@ export class LocationIqProvider implements IGeocodingProvider {
       const allowed = await rateLimiter.tryConsume(EnumProviderConfig.LOCATION_IQ_GEOCODING)
 
       if (!allowed) {
-        throw new GeoServiceBusyError('LocationIQ (Rate Limit Excedido)')
+        return errOf(new ServiceBusyError('LocationIQ'))
       }
 
       try {
@@ -108,31 +106,26 @@ export class LocationIqProvider implements IGeocodingProvider {
         })
 
         if (!response.data || response.data.length === 0) {
-          return null
+          return ok(null)
         }
 
         const bestMatch = response.data[0]
-        return {
+        return ok({
           lat: parseFloat(bestMatch.lat),
           lon: parseFloat(bestMatch.lon),
           precision: PrecisionHelper.fromOsm(bestMatch),
           providerName: 'LocationIQ',
-        }
+        })
       } catch (error) {
         if (signal?.aborted) {
-          throw new TimeoutExceededOnFetchError(signal.reason)
-        }
-
-        // Se o erro foi o nosso BusyError (lançado acima), repassa imediatamente
-        if (error instanceof GeoServiceBusyError) {
-          throw error
+          return errOf(new TimeoutExceededError(signal.reason))
         }
 
         const err = error as AxiosError
         const status = err.response?.status
 
         if (status === 404) {
-          throw new CoordinatesNotFoundError()
+          return errOf(new CoordinatesNotFoundError())
         }
 
         // Store last error for potential re-throw
@@ -142,7 +135,7 @@ export class LocationIqProvider implements IGeocodingProvider {
 
         if (!isRetryable || attempt === this.MAX_ATTEMPTS) {
           if (status === 429 && attempt === this.MAX_ATTEMPTS) {
-            throw new GeoServiceBusyError('LocationIQ (Rate Limit Excedido)')
+            return errOf(new ServiceBusyError('LocationIQ'))
           }
 
           logger.warn(
@@ -154,7 +147,7 @@ export class LocationIqProvider implements IGeocodingProvider {
             },
             'Provedor LocationIQ falhou ao buscar coordenadas',
           )
-          throw new GeoProviderFailureError(lastError)
+          return errOf(new ProviderFailureError('LocationIQ', lastError))
         }
 
         // Backoff apenas para erros de rede/servidor instável
@@ -163,9 +156,7 @@ export class LocationIqProvider implements IGeocodingProvider {
       }
     }
 
-    // This should be unreachable, but as a safety net, throw last error or generic error
-    //logger.error({ lastError }, 'LocationIQ: Unexpected code path - all attempts exhausted without throw')
-    throw new GeoProviderFailureError(lastError)
+    return errOf(new ProviderFailureError('LocationIQ', lastError))
   }
 
   private sleep(ms: number): Promise<void> {

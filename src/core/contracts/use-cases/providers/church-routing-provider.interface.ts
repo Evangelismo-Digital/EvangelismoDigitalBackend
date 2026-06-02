@@ -1,3 +1,5 @@
+import { Result } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 
 export interface RoutingPoint {
@@ -16,5 +18,5 @@ export interface IChurchRoutingProvider {
     destinations: RoutingPoint[]
     profile?: RoutingProfile
     signal?: AbortSignal
-  }): Promise<RouteDistanceResult[]>
+  }): Promise<Result<RouteDistanceResult[], AppError>>
 }

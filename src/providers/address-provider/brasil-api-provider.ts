@@ -3,12 +3,14 @@ import Redis from 'ioredis'
 import { logger } from '@lib/logger'
 import { createHttpClient } from '@lib/http/axios'
 import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
-import { AddressServiceBusyError } from '@use-cases/errors/address-service-busy-error'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
-import { AddressProviderFailureError } from './error/address-provider-failure-error'
-import { TimeoutExceededOnFetchError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
+import { Result, ok, errOf } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 
 export interface BrasilApiConfig {
   apiUrl: string // Esperado: https://brasilapi.com.br
@@ -60,7 +62,7 @@ export class BrasilApiProvider implements IAddressProvider {
     }
   }
 
-  async fetchAddress(cep: string, signal?: AbortSignal): Promise<IAddressData | null> {
+  async fetchAddress(cep: string, signal?: AbortSignal): Promise<Result<IAddressData | null, AppError>> {
     const cleanCep = cep.replace(/\D/g, '')
 
     // 1. Fail-Fast Rate Limit Check
@@ -70,8 +72,7 @@ export class BrasilApiProvider implements IAddressProvider {
     const allowed = await rateLimiter.tryConsume(EnumProviderConfig.BRASIL_API_ADDRESS)
 
     if (!allowed) {
-      // Lança erro específico para que o balneador de carga possa tentar outro provider se necessário
-      throw new AddressServiceBusyError('BrasilAPI (Rate Limit Excedido)')
+      return errOf(new ServiceBusyError('BrasilAPI'))
     }
 
     let lastError: Error | unknown = undefined
@@ -79,7 +80,7 @@ export class BrasilApiProvider implements IAddressProvider {
     // 2. Lógica de Retry com Backoff
     for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
       if (signal?.aborted) {
-        throw signal.reason
+        return errOf(new TimeoutExceededError(signal.reason))
       }
 
       try {
@@ -90,7 +91,7 @@ export class BrasilApiProvider implements IAddressProvider {
         })
 
         if (!data || !data.cep || !data.city || !data.state) {
-          return null
+          return ok(null)
         }
 
         // 3. Normalização de Dados para o PrecisionHelper
@@ -104,28 +105,24 @@ export class BrasilApiProvider implements IAddressProvider {
         // Calcula a precisão baseada na presença de logradouro/bairro
         const precision = PrecisionHelper.fromAddressData(normalizedData)
 
-        return {
+        return ok({
           ...normalizedData,
           precision: precision,
           providerName: 'BrasilAPI',
-        }
+        })
       } catch (error) {
         // Tratamento de Abort/Timeout
         if (signal?.aborted) {
-          throw new TimeoutExceededOnFetchError(signal.reason)
-        }
-
-        if (error instanceof AddressServiceBusyError) {
-          throw error
+          return errOf(new TimeoutExceededError(signal.reason))
         }
 
         const err = error as AxiosError
         const status = err.response?.status
 
-        // 404 significa CEP não encontrado na base deles - retorna null para tentar próximo provider
+        // 404 significa CEP não encontrado na base deles
         if (status === 404) {
           logger.warn({ cep: cleanCep, attempt, status }, 'CEP não encontrado na BrasilAPI (404)')
-          throw new InvalidCepError()
+          return errOf(new InvalidCepError())
         }
 
         lastError = error
@@ -136,7 +133,7 @@ export class BrasilApiProvider implements IAddressProvider {
         // Se não for retryable ou se esgotou as tentativas, falha.
         if (!isRetryable || attempt === this.MAX_RETRIES) {
           if (status === 429 && attempt === this.MAX_RETRIES) {
-            throw new AddressServiceBusyError('BrasilAPI (Rate Limit Excedido)')
+            return errOf(new ServiceBusyError('BrasilAPI'))
           }
 
           logger.error(
@@ -150,7 +147,7 @@ export class BrasilApiProvider implements IAddressProvider {
             },
             'Falha ao buscar endereço BrasilAPI após tentativas',
           )
-          throw new AddressProviderFailureError(lastError)
+          return errOf(new ProviderFailureError('BrasilAPI', lastError))
         }
 
         // Backoff Exponencial
@@ -160,9 +157,9 @@ export class BrasilApiProvider implements IAddressProvider {
       }
     }
 
-    // Fallback de segurança (código inalcançável teoricamente)
+    // Fallback de segurança
     logger.error({ cep: cleanCep }, 'BrasilAPI - todas as tentativas esgotadas sem sucesso')
-    throw new AddressProviderFailureError(lastError)
+    return errOf(new ProviderFailureError('BrasilAPI', lastError))
   }
 
   private sleep(ms: number): Promise<void> {
