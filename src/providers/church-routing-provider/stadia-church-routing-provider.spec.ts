@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StadiaChurchRoutingProvider } from './stadia-church-routing-provider'
 import type Redis from 'ioredis'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 
 const { mockedPost, mockTryConsume } = vi.hoisted(() => {
   return {
@@ -47,7 +48,7 @@ function buildProvider(): StadiaChurchRoutingProvider {
     {
       apiUrl: 'https://api.stadiamaps.com/route/v1/',
       apiToken: 'test-token',
-      defaultCosting: 'pedestrian',
+      defaultCosting: RoutingProfile.PEDESTRIAN,
       timeoutMs: 2500,
     },
     redis,
@@ -123,7 +124,7 @@ describe('StadiaChurchRoutingProvider', () => {
     await provider.getDistances({
       origin: { lat: -23.5505, lon: -46.6333 },
       destinations: [{ lat: -23.551, lon: -46.634 }],
-      profile: 'pedestrian',
+      profile: RoutingProfile.PEDESTRIAN,
     })
 
     expect(mockedPost).toHaveBeenCalledWith(
@@ -170,7 +171,7 @@ describe('StadiaChurchRoutingProvider', () => {
     const params = {
       origin: { lat: -23.5505, lon: -46.6333 },
       destinations: [{ lat: -23.551, lon: -46.634 }],
-      profile: 'pedestrian' as const,
+      profile: RoutingProfile.PEDESTRIAN,
     }
 
     const [first, second] = await Promise.all([provider.getDistances(params), provider.getDistances(params)])
