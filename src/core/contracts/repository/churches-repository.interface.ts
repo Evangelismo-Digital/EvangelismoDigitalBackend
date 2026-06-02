@@ -41,6 +41,8 @@ export interface ChurchesRepository {
   findNearest(params: FindNearbyParams): Promise<Result<NearbyChurch[], AppError>>
   findByParams(params: ChurchAlreadyExists): Promise<Result<Church | null, AppError>>
   findByName(name: string): Promise<Result<Church | null, AppError>>
-  createChurch(data: Omit<Church, 'id' | 'publicId' | 'createdAt' | 'updatedAt' | 'geog'>): Promise<Result<Church, AppError>>
+  createChurch(
+    data: Omit<Church, 'id' | 'publicId' | 'createdAt' | 'updatedAt' | 'geog'>,
+  ): Promise<Result<Church, AppError>>
   deleteChurchByPublicId(publicId: string): Promise<Result<Church, AppError>>
 }

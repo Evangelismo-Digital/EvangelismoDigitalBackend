@@ -29,7 +29,11 @@ export class AuthenticateUserUseCase {
     private authenticationAuditUseCase: AuthenticationAuditUseCase,
   ) {}
 
-  async execute({ login, password, auditContext }: AuthenticateUserUseCaseRequest): Promise<AuthenticateUserUseCaseResponse> {
+  async execute({
+    login,
+    password,
+    auditContext,
+  }: AuthenticateUserUseCaseRequest): Promise<AuthenticateUserUseCaseResponse> {
     let user: User | null = null
 
     if (emailSchema.safeParse(login).success) {

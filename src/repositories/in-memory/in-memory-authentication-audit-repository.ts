@@ -1,6 +1,9 @@
 import { AuthenticationAudit } from '@prisma/client'
 import { randomUUID } from 'node:crypto'
-import { AuthenticationAuditInput, AuthenticationAuditRepository } from 'core/contracts/repository/authentication-audit-repository.interface'
+import {
+  AuthenticationAuditInput,
+  AuthenticationAuditRepository,
+} from 'core/contracts/repository/authentication-audit-repository.interface'
 
 export class InMemoryAuthenticationAuditRepository implements AuthenticationAuditRepository {
   public items: AuthenticationAudit[] = []

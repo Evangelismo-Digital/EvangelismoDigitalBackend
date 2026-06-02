@@ -21,13 +21,13 @@ export class ResilientGeoProvider implements IGeocodingProvider {
 
   async search(query: string, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
     const effectiveSignal = signal ?? new AbortController().signal
-    return await this.executeStrategy(
-      (provider, innerSignal) => provider.search(query, innerSignal),
-      effectiveSignal,
-    )
+    return await this.executeStrategy((provider, innerSignal) => provider.search(query, innerSignal), effectiveSignal)
   }
 
-  async searchStructured(options: IGeoSearchOptions, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
+  async searchStructured(
+    options: IGeoSearchOptions,
+    signal?: AbortSignal,
+  ): Promise<Result<IGeoCoordinates | null, AppError>> {
     const effectiveSignal = signal ?? new AbortController().signal
     return await this.executeStrategy(
       (provider, innerSignal) => provider.searchStructured(options, innerSignal),

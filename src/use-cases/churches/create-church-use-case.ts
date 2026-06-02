@@ -26,7 +26,12 @@ interface CreateChurchUseCaseResponse {
 export class CreateChurchUseCase {
   constructor(private churchesRepository: ChurchesRepository) {}
 
-  async execute({ name, address, lat, lon }: CreateChurchUseCaseRequest): Promise<Result<CreateChurchUseCaseResponse, AppError>> {
+  async execute({
+    name,
+    address,
+    lat,
+    lon,
+  }: CreateChurchUseCaseRequest): Promise<Result<CreateChurchUseCaseResponse, AppError>> {
     if (!address || address.trim() === '') {
       return errOf(new NoAddressError())
     }

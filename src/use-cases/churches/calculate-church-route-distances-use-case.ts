@@ -31,7 +31,10 @@ export interface FindNearestProps {
 export class CalculateChurchRouteDistancesUseCase {
   constructor(private readonly routingProvider: IChurchRoutingProvider) {}
 
-  async findNearest({ churches, user, signal }: FindNearestProps, profile?: RoutingProfile): Promise<Result<NearbyChurch[], AppError>> {
+  async findNearest(
+    { churches, user, signal }: FindNearestProps,
+    profile?: RoutingProfile,
+  ): Promise<Result<NearbyChurch[], AppError>> {
     if (!churches.length) {
       return errOf(new EmptyChurchListError())
     }

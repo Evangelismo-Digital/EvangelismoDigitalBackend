@@ -19,7 +19,6 @@ function getAuthenticationAuditContext(request: FastifyRequest) {
 }
 
 export async function authenticateUser(request: FastifyRequest, reply: FastifyReply) {
-  
   const authenticationAuditUseCase = makeAuthenticationAuditUseCase()
 
   const auditContext = getAuthenticationAuditContext(request)
@@ -32,7 +31,9 @@ export async function authenticateUser(request: FastifyRequest, reply: FastifyRe
       status: AuthenticationStatus.INVALID_REQUEST,
     })
 
-    return reply.status(400).send({ message: messages.validation.invalidData, details: z.treeifyError(parsedBody.error) })
+    return reply
+      .status(400)
+      .send({ message: messages.validation.invalidData, details: z.treeifyError(parsedBody.error) })
   }
 
   try {

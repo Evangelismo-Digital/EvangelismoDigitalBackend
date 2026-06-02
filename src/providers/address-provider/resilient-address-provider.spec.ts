@@ -129,7 +129,9 @@ describe('ResilientAddressProvider Unit Tests', () => {
     it('should return ServiceBusyError if the last provider had a ServiceBusy error', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(errOf(new ProviderFailureError('MockProvider1', new Error('Connection timeout'))))
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(
+        errOf(new ProviderFailureError('MockProvider1', new Error('Connection timeout'))),
+      )
       vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(errOf(new ServiceBusyError('MockProvider2')))
 
       const result = await provider.fetchAddress('12345678')
@@ -143,7 +145,9 @@ describe('ResilientAddressProvider Unit Tests', () => {
       const provider = createProvider()
 
       vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(errOf(new ServiceBusyError('MockProvider1')))
-      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(errOf(new ProviderFailureError('MockProvider2', new Error('Connection timeout'))))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(
+        errOf(new ProviderFailureError('MockProvider2', new Error('Connection timeout'))),
+      )
 
       const result = await provider.fetchAddress('12345678')
       expect(isErr(result)).toBe(true)
@@ -169,7 +173,9 @@ describe('ResilientAddressProvider Unit Tests', () => {
       const provider = createProvider()
 
       vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(ok(null))
-      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(errOf(new ProviderFailureError('MockProvider2', new Error('Network error'))))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(
+        errOf(new ProviderFailureError('MockProvider2', new Error('Network error'))),
+      )
 
       const result = await provider.fetchAddress('12345678')
       expect(isErr(result)).toBe(true)
@@ -196,7 +202,9 @@ describe('ResilientAddressProvider Unit Tests', () => {
       const systemError = new Error('Database connection failed')
 
       vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(errOf(new ServiceBusyError('MockProvider1')))
-      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(errOf(new ProviderFailureError('MockProvider2', systemError)))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(
+        errOf(new ProviderFailureError('MockProvider2', systemError)),
+      )
 
       const result = await provider.fetchAddress('12345678')
       expect(isErr(result)).toBe(true)

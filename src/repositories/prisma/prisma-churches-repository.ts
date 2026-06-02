@@ -143,7 +143,9 @@ export class PrismaChurchesRepository implements ChurchesRepository {
     }
   }
 
-  async createChurch(data: Omit<Church, 'id' | 'publicId' | 'createdAt' | 'updatedAt' | 'geog'>): Promise<Result<Church, AppError>> {
+  async createChurch(
+    data: Omit<Church, 'id' | 'publicId' | 'createdAt' | 'updatedAt' | 'geog'>,
+  ): Promise<Result<Church, AppError>> {
     try {
       const rows = await prisma.$queryRaw<Church[]>`
         INSERT INTO churches (public_id, name, address, lat, lon, created_at, updated_at)

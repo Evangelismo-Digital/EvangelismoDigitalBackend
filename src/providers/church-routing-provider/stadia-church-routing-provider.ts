@@ -162,7 +162,9 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
       )
 
       if (!result) {
-        return errOf(new ProviderFailureError('Stadia Maps', new Error('Falha ao calcular distância de rota com Stadia')))
+        return errOf(
+          new ProviderFailureError('Stadia Maps', new Error('Falha ao calcular distância de rota com Stadia')),
+        )
       }
 
       return ok(result)

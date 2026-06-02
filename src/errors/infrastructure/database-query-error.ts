@@ -4,11 +4,7 @@ import { DATABASE_QUERY_FAILURE_ERROR } from 'messages/errors/providers/provider
 
 export class DatabaseQueryError extends InfrastructureError {
   constructor(originalError?: unknown) {
-    super(
-      DATABASE_QUERY_FAILURE_ERROR,
-      originalError,
-      ErrorType.INTERNAL_SERVER_ERROR,
-    )
+    super(DATABASE_QUERY_FAILURE_ERROR, originalError, ErrorType.INTERNAL_SERVER_ERROR)
     this.name = 'DatabaseQueryError'
   }
 }

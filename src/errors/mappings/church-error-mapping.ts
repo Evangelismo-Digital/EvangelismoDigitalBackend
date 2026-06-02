@@ -7,8 +7,8 @@ import { AppError } from 'errors/app-error'
 type PrismaErrorCode = string
 
 const CHURCH_PRISMA_ERROR_MAP: Record<PrismaErrorCode, () => AppError> = {
-  'P2002': () => new ChurchAlreadyExistsError(),  // Unique constraint violation (create)
-  'P2025': () => new ChurchNotFoundError(),        // Record not found (delete/update)
+  P2002: () => new ChurchAlreadyExistsError(), // Unique constraint violation (create)
+  P2025: () => new ChurchNotFoundError(), // Record not found (delete/update)
 }
 
 /**

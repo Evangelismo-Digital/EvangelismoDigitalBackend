@@ -51,7 +51,10 @@ export class ResilientAddressProvider implements IAddressProvider {
 
         if (error instanceof InvalidCepError) {
           notFoundCount++
-          logger.info({ provider: providerName, cep: cleanCep }, 'CEP inválido reportado por provedor - tentando próximo')
+          logger.info(
+            { provider: providerName, cep: cleanCep },
+            'CEP inválido reportado por provedor - tentando próximo',
+          )
           continue
         }
 

@@ -60,7 +60,10 @@ export class NominatimGeoProvider implements IGeocodingProvider {
     return this.performRequest({ q: query, limit: 1, format: 'json' }, signal)
   }
 
-  async searchStructured(options: IGeoSearchOptions, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
+  async searchStructured(
+    options: IGeoSearchOptions,
+    signal?: AbortSignal,
+  ): Promise<Result<IGeoCoordinates | null, AppError>> {
     return this.performRequest(
       {
         street: options.street,
@@ -74,7 +77,10 @@ export class NominatimGeoProvider implements IGeocodingProvider {
     )
   }
 
-  private async performRequest(params: NominatimSearchParams, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
+  private async performRequest(
+    params: NominatimSearchParams,
+    signal?: AbortSignal,
+  ): Promise<Result<IGeoCoordinates | null, AppError>> {
     try {
       if (signal?.aborted) {
         return errOf(new TimeoutExceededError(signal.reason))

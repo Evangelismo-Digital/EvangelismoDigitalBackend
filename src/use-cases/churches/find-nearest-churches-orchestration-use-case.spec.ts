@@ -98,12 +98,14 @@ describe('FindNearestChurchesUseCase orchestration', () => {
   })
 
   it('computes and caches the sanitized HTTP response on a cache miss', async () => {
-    cepToLatLonUseCase.execute.mockResolvedValueOnce(ok({
-      userLat: -23.55,
-      userLon: -46.63,
-      precision: 'ROOFTOP',
-      coordinatesProviderName: 'LocationIQ',
-    }))
+    cepToLatLonUseCase.execute.mockResolvedValueOnce(
+      ok({
+        userLat: -23.55,
+        userLon: -46.63,
+        precision: 'ROOFTOP',
+        coordinatesProviderName: 'LocationIQ',
+      }),
+    )
 
     const knnChurches = [
       {
@@ -126,10 +128,12 @@ describe('FindNearestChurchesUseCase orchestration', () => {
       },
     ]
 
-    findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce(ok({
-      churches: knnChurches,
-      totalFound: 1,
-    }))
+    findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce(
+      ok({
+        churches: knnChurches,
+        totalFound: 1,
+      }),
+    )
 
     calculateChurchRouteDistancesUseCase.findNearest.mockResolvedValueOnce(ok(routedChurches))
 

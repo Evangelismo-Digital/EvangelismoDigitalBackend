@@ -102,6 +102,8 @@ describe('isRedisConnectivityError', () => {
   })
 
   it('returns false for non-connectivity errors', () => {
-    expect(isRedisConnectivityError({ message: 'WRONGTYPE Operation against a key holding the wrong kind of value' })).toBe(false)
+    expect(
+      isRedisConnectivityError({ message: 'WRONGTYPE Operation against a key holding the wrong kind of value' }),
+    ).toBe(false)
   })
 })

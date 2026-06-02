@@ -69,7 +69,9 @@ export class InMemoryChurchesRepository implements ChurchesRepository {
     return ok(church ?? null)
   }
 
-  async createChurch(data: Omit<Church, 'id' | 'publicId' | 'createdAt' | 'updatedAt' | 'geog'>): Promise<Result<Church, AppError>> {
+  async createChurch(
+    data: Omit<Church, 'id' | 'publicId' | 'createdAt' | 'updatedAt' | 'geog'>,
+  ): Promise<Result<Church, AppError>> {
     const now = new Date()
     const church: Church = {
       id: this.items.length + 1,

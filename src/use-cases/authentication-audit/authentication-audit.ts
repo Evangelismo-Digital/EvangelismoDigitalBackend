@@ -1,5 +1,8 @@
 import { logger } from '@lib/logger'
-import { AuthenticationAuditInput, AuthenticationAuditRepository } from 'core/contracts/repository/authentication-audit-repository.interface'
+import {
+  AuthenticationAuditInput,
+  AuthenticationAuditRepository,
+} from 'core/contracts/repository/authentication-audit-repository.interface'
 
 export class AuthenticationAuditUseCase {
   constructor(private readonly authenticationAuditRepository: AuthenticationAuditRepository) {}

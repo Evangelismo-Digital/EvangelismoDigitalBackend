@@ -14,7 +14,9 @@ interface FindChurchPublicIdByNameUseCaseResponse {
 export class FindChurchPublicIdByNameUseCase {
   constructor(private churchesRepository: ChurchesRepository) {}
 
-  async execute({ name }: FindChurchPublicIdByNameUseCaseRequest): Promise<Result<FindChurchPublicIdByNameUseCaseResponse, AppError>> {
+  async execute({
+    name,
+  }: FindChurchPublicIdByNameUseCaseRequest): Promise<Result<FindChurchPublicIdByNameUseCaseResponse, AppError>> {
     const result = await this.churchesRepository.findByName(name)
     if (isErr(result)) {
       return result

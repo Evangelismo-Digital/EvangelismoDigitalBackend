@@ -4,11 +4,7 @@ import { TIMEOUT_EXCEEDED_ERROR } from 'messages/errors/providers/providers-erro
 
 export class TimeoutExceededError extends InfrastructureError {
   constructor(reason?: unknown) {
-    super(
-      TIMEOUT_EXCEEDED_ERROR,
-      reason,
-      ErrorType.SERVICE_UNAVAILABLE,
-    )
+    super(TIMEOUT_EXCEEDED_ERROR, reason, ErrorType.SERVICE_UNAVAILABLE)
     this.name = 'TimeoutExceededError'
   }
 }

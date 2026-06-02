@@ -69,7 +69,10 @@ export class LocationIqProvider implements IGeocodingProvider {
     return this.performRequest({ q: query, limit: 1, addressdetails: 1 }, signal)
   }
 
-  async searchStructured(options: IGeoSearchOptions, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
+  async searchStructured(
+    options: IGeoSearchOptions,
+    signal?: AbortSignal,
+  ): Promise<Result<IGeoCoordinates | null, AppError>> {
     return this.performRequest(
       {
         street: options.street,
@@ -83,7 +86,10 @@ export class LocationIqProvider implements IGeocodingProvider {
     )
   }
 
-  private async performRequest(params: Record<string, unknown>, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
+  private async performRequest(
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<Result<IGeoCoordinates | null, AppError>> {
     let lastError: Error | unknown = undefined
 
     for (let attempt = 1; attempt <= this.MAX_ATTEMPTS; attempt++) {

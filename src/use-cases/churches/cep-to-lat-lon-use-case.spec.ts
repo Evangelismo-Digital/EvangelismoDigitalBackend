@@ -101,12 +101,14 @@ describe('CepToLatLon Use Case', () => {
   // ============================================================================
 
   it('should format CEP correctly and use generated cache key', async () => {
-    addressProviderMock.fetchAddress.mockResolvedValue(ok({
-      lat: -23,
-      lon: -46,
-      precision: EnumGeoPrecision.ROOFTOP,
-      providerName: 'AwesomeAPI',
-    }))
+    addressProviderMock.fetchAddress.mockResolvedValue(
+      ok({
+        lat: -23,
+        lon: -46,
+        precision: EnumGeoPrecision.ROOFTOP,
+        providerName: 'AwesomeAPI',
+      }),
+    )
 
     const result = await useCase.execute({ cep: '12.345-678' })
 
@@ -116,13 +118,15 @@ describe('CepToLatLon Use Case', () => {
   })
 
   it('OPTIMIZATION: should return coordinates directly if AddressProvider returns them', async () => {
-    addressProviderMock.fetchAddress.mockResolvedValue(ok({
-      logradouro: 'Av Paulista',
-      lat: -23.56,
-      lon: -46.65,
-      precision: EnumGeoPrecision.ROOFTOP,
-      providerName: 'AwesomeAPI',
-    }))
+    addressProviderMock.fetchAddress.mockResolvedValue(
+      ok({
+        logradouro: 'Av Paulista',
+        lat: -23.56,
+        lon: -46.65,
+        precision: EnumGeoPrecision.ROOFTOP,
+        providerName: 'AwesomeAPI',
+      }),
+    )
 
     const result = await useCase.execute({ cep: '01310100' })
 
@@ -139,18 +143,22 @@ describe('CepToLatLon Use Case', () => {
   })
 
   it('STRATEGY A: should find coordinates using exact address (Street + City)', async () => {
-    addressProviderMock.fetchAddress.mockResolvedValue(ok({
-      logradouro: 'Avenida Paulista',
-      localidade: 'São Paulo',
-      uf: 'SP',
-    }))
+    addressProviderMock.fetchAddress.mockResolvedValue(
+      ok({
+        logradouro: 'Avenida Paulista',
+        localidade: 'São Paulo',
+        uf: 'SP',
+      }),
+    )
 
-    geocodingProviderMock.search.mockResolvedValueOnce(ok({
-      lat: -23.5631,
-      lon: -46.6554,
-      precision: EnumGeoPrecision.ROOFTOP,
-      providerName: 'LocationIQ',
-    }))
+    geocodingProviderMock.search.mockResolvedValueOnce(
+      ok({
+        lat: -23.5631,
+        lon: -46.6554,
+        precision: EnumGeoPrecision.ROOFTOP,
+        providerName: 'LocationIQ',
+      }),
+    )
 
     const result = await useCase.execute({ cep: '01310100' })
 
@@ -165,22 +173,26 @@ describe('CepToLatLon Use Case', () => {
   })
 
   it('STRATEGY B: should fallback to neighborhood search if street search fails', async () => {
-    addressProviderMock.fetchAddress.mockResolvedValue(ok({
-      logradouro: 'Rua Desconhecida',
-      bairro: 'Bela Vista',
-      localidade: 'São Paulo',
-      uf: 'SP',
-    }))
+    addressProviderMock.fetchAddress.mockResolvedValue(
+      ok({
+        logradouro: 'Rua Desconhecida',
+        bairro: 'Bela Vista',
+        localidade: 'São Paulo',
+        uf: 'SP',
+      }),
+    )
 
     geocodingProviderMock.search
       .mockResolvedValueOnce(ok(null)) // Falha na Rua
-      .mockResolvedValueOnce(ok({
-        // Sucesso no Bairro
-        lat: -23.1,
-        lon: -46.2,
-        precision: EnumGeoPrecision.NEIGHBORHOOD,
-        providerName: 'LocationIQ',
-      }))
+      .mockResolvedValueOnce(
+        ok({
+          // Sucesso no Bairro
+          lat: -23.1,
+          lon: -46.2,
+          precision: EnumGeoPrecision.NEIGHBORHOOD,
+          providerName: 'LocationIQ',
+        }),
+      )
 
     const result = await useCase.execute({ cep: '01310100' })
 
@@ -192,20 +204,24 @@ describe('CepToLatLon Use Case', () => {
   })
 
   it('STRATEGY C: should fallback to structured city search if street and neighborhood fail', async () => {
-    addressProviderMock.fetchAddress.mockResolvedValue(ok({
-      logradouro: 'Rua X',
-      bairro: 'Bairro Y',
-      localidade: 'São Paulo',
-      uf: 'SP',
-    }))
+    addressProviderMock.fetchAddress.mockResolvedValue(
+      ok({
+        logradouro: 'Rua X',
+        bairro: 'Bairro Y',
+        localidade: 'São Paulo',
+        uf: 'SP',
+      }),
+    )
 
     geocodingProviderMock.search.mockResolvedValue(ok(null)) // Falha rua e bairro
-    geocodingProviderMock.searchStructured.mockResolvedValueOnce(ok({
-      lat: -23.55,
-      lon: -46.63,
-      precision: EnumGeoPrecision.CITY,
-      providerName: 'LocationIQ',
-    }))
+    geocodingProviderMock.searchStructured.mockResolvedValueOnce(
+      ok({
+        lat: -23.55,
+        lon: -46.63,
+        precision: EnumGeoPrecision.CITY,
+        providerName: 'LocationIQ',
+      }),
+    )
 
     const result = await useCase.execute({ cep: '01000000' })
 
@@ -322,7 +338,9 @@ describe('CepToLatLon Use Case', () => {
   })
 
   it('should return generic CepToLatLonError on unexpected system failure', async () => {
-    addressProviderMock.fetchAddress.mockResolvedValue(errOf(new ProviderFailureError('Mock', new Error('Unknown Axios Error'))))
+    addressProviderMock.fetchAddress.mockResolvedValue(
+      errOf(new ProviderFailureError('Mock', new Error('Unknown Axios Error'))),
+    )
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {

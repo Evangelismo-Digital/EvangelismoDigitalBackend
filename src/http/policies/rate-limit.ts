@@ -57,5 +57,4 @@ export const HTTP_RATE_LIMIT_POLICIES = {
   },
 } as const
 
-export type HttpRateLimitPolicy =
-  (typeof HTTP_RATE_LIMIT_POLICIES)[keyof typeof HTTP_RATE_LIMIT_POLICIES]
+export type HttpRateLimitPolicy = (typeof HTTP_RATE_LIMIT_POLICIES)[keyof typeof HTTP_RATE_LIMIT_POLICIES]

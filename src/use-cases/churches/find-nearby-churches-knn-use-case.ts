@@ -17,7 +17,10 @@ interface FindNearbyChurchesKnnResponse {
 export class FindNearbyChurchesKnnUseCase {
   constructor(private churchesRepository: ChurchesRepository) {}
 
-  async execute({ userLat, userLon }: FindNearbyChurchesKnnRequest): Promise<Result<FindNearbyChurchesKnnResponse, AppError>> {
+  async execute({
+    userLat,
+    userLon,
+  }: FindNearbyChurchesKnnRequest): Promise<Result<FindNearbyChurchesKnnResponse, AppError>> {
     if (userLat < -90 || userLat > 90) {
       return errOf(new LatitudeRangeError())
     }

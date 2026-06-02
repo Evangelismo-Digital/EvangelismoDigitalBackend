@@ -1,4 +1,4 @@
-import { ErrorType } from "core/types/error-type/error-type"
+import { ErrorType } from 'core/types/error-type/error-type'
 
 const STATUS_MAP: Record<ErrorType, number> = {
   [ErrorType.BAD_REQUEST]: 400,

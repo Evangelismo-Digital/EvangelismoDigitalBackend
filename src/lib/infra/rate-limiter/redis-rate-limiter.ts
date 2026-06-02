@@ -110,7 +110,8 @@ export class RedisRateLimiter {
     this.redis = redis
   }
 
-  static getInstance(redis: Redis): RedisRateLimiter { // Singleton com Redis injetado externamente através da lib RedisRateLimiter
+  static getInstance(redis: Redis): RedisRateLimiter {
+    // Singleton com Redis injetado externamente através da lib RedisRateLimiter
     if (!this.instance) {
       this.instance = new RedisRateLimiter(redis)
     }

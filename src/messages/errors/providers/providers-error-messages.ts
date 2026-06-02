@@ -25,6 +25,8 @@ export const TIMEOUT_EXCEEDED_ERROR: IErrorDetail = {
   message: 'Tempo limite excedido ao buscar dados nos provedores externos.',
 }
 
-export const NO_GEO_PROVIDER_ERROR_MESSAGE = 'Provedor resiliente de geolocalização requer pelo menos um provedor de geolocalização configurado.'
+export const NO_GEO_PROVIDER_ERROR_MESSAGE =
+  'Provedor resiliente de geolocalização requer pelo menos um provedor de geolocalização configurado.'
 
-export const NO_ADDRESS_PROVIDER_ERROR_MESSAGE = 'Provedor resiliente de endereço requer pelo menos um provedor de endereço configurado.'
+export const NO_ADDRESS_PROVIDER_ERROR_MESSAGE =
+  'Provedor resiliente de endereço requer pelo menos um provedor de endereço configurado.'

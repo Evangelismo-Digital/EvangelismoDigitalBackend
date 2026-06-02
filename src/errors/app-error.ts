@@ -1,6 +1,6 @@
-import { IAppError } from "core/contracts/errors/app-error.interface"
-import { IErrorDetail } from "core/contracts/errors/error-detail.interface"
-import { ErrorType } from "core/types/error-type/error-type"
+import { IAppError } from 'core/contracts/errors/app-error.interface'
+import { IErrorDetail } from 'core/contracts/errors/error-detail.interface'
+import { ErrorType } from 'core/types/error-type/error-type'
 
 export abstract class AppError extends Error implements IAppError {
   public type: ErrorType
