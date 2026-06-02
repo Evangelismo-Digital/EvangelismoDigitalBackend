@@ -1,7 +1,7 @@
-import { messages } from 'core/constants/messages'
+import { SERVICE_OVERLOAD_ERROR } from 'messages/errors/providers/providers-error-messages'
 
 export class ServiceOverloadError extends Error {
   constructor() {
-    super(messages.errors.serviceOverloadError)
+    super(SERVICE_OVERLOAD_ERROR.message)
   }
 }

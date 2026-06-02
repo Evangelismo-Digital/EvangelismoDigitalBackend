@@ -1,15 +1,9 @@
-import { messages } from 'core/constants/messages'
 import { ErrorType } from 'core/types/error-type/error-type'
 import { DomainError } from 'errors/domain-error'
+import { CHURCH_ALREADY_EXISTS_ERROR } from 'messages/errors/use-cases/churches/churches-error-messages'
 
 export class ChurchAlreadyExistsError extends DomainError {
   constructor() {
-    super(
-      {
-        code: 'CHURCH_ALREADY_EXISTS',
-        message: messages.validation.churchAlreadyExists,
-      },
-      ErrorType.CONFLICT,
-    )
+    super(CHURCH_ALREADY_EXISTS_ERROR, ErrorType.CONFLICT)
   }
 }

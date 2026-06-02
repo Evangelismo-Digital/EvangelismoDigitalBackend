@@ -1,7 +1,7 @@
-import { messages } from 'core/constants/messages'
+import { NO_ADDRESS_PROVIDER_ERROR_MESSAGE } from 'messages/errors/providers/providers-error-messages'
 
 export class NoAddressProviderError extends Error {
   constructor() {
-    super(messages.errors.noAddressProviderError)
+    super(NO_ADDRESS_PROVIDER_ERROR_MESSAGE)
   }
 }

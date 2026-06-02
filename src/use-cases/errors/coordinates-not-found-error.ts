@@ -1,15 +1,9 @@
-import { messages } from 'core/constants/messages'
 import { ErrorType } from 'core/types/error-type/error-type'
 import { DomainError } from 'errors/domain-error'
+import { COORDINATES_NOT_FOUND_ERROR } from 'messages/errors/use-cases/churches/churches-error-messages'
 
 export class CoordinatesNotFoundError extends DomainError {
   constructor() {
-    super(
-      {
-        code: 'COORDINATES_NOT_FOUND',
-        message: messages.errors.coordinatesNotFound,
-      },
-      ErrorType.NOT_FOUND,
-    )
+    super(COORDINATES_NOT_FOUND_ERROR, ErrorType.NOT_FOUND)
   }
 }

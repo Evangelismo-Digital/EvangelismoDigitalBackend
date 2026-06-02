@@ -1,7 +1,7 @@
-import { messages } from 'core/constants/messages'
+import { NO_GEO_PROVIDER_ERROR_MESSAGE } from 'messages/errors/providers/providers-error-messages'
 
 export class NoGeoProviderError extends Error {
   constructor() {
-    super(messages.errors.noGeoProviderError)
+    super(NO_GEO_PROVIDER_ERROR_MESSAGE)
   }
 }
