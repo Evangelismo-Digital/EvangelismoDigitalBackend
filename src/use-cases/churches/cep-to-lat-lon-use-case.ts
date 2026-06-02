@@ -12,7 +12,7 @@ import {
   IGeoCoordinates,
   EnumGeoPrecision,
 } from 'core/contracts/use-cases/providers/geo-provider.interface'
-import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
+import { IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { CachedFailureError, ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
 import { Result, ok, errOf, isOk, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'

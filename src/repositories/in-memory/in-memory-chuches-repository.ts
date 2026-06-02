@@ -10,10 +10,6 @@ import { AppError } from 'errors/app-error'
 import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
 import { randomUUID } from 'node:crypto'
 
-interface InMemoryNearbyChurch extends NearbyChurch {
-  publicId: string
-}
-
 export class InMemoryChurchesRepository implements ChurchesRepository {
   public items: Church[] = []
 

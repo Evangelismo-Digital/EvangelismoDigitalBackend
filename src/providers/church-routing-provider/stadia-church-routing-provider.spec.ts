@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StadiaChurchRoutingProvider } from './stadia-church-routing-provider'
 import type Redis from 'ioredis'
+import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 
 const { mockedPost, mockTryConsume } = vi.hoisted(() => {
   return {
@@ -15,7 +16,7 @@ vi.mock('@lib/http/axios', () => ({
   })),
 }))
 
-vi.mock('@lib/infra/rate-limiter/rate-limiter', () => ({
+vi.mock('@lib/infra/rate-limiter/redis-rate-limiter', () => ({
   EnumProviderConfig: {
     STADIA_ROUTING: 'stadiaRoutingProvider',
   },
@@ -84,7 +85,10 @@ describe('StadiaChurchRoutingProvider', () => {
       signal,
     })
 
-    expect(result).toEqual([{ distance: 2.5, status: 0 }])
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.value).toEqual([{ distance: 2.5, status: 0 }])
+    }
     const [, payload, requestConfig] = mockedPost.mock.calls[0]
 
     expect(payload).toEqual(
@@ -134,12 +138,15 @@ describe('StadiaChurchRoutingProvider', () => {
 
     const provider = buildProvider()
 
-    await expect(
-      provider.getDistances({
-        origin: { lat: -23.5505, lon: -46.6333 },
-        destinations: [{ lat: -23.551, lon: -46.634 }],
-      }),
-    ).rejects.toThrow('Rate Limit Excedido')
+    const result = await provider.getDistances({
+      origin: { lat: -23.5505, lon: -46.6333 },
+      destinations: [{ lat: -23.551, lon: -46.634 }],
+    })
+
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error).toBeInstanceOf(ServiceBusyError)
+    }
 
     expect(mockedPost).not.toHaveBeenCalled()
   })
@@ -168,8 +175,12 @@ describe('StadiaChurchRoutingProvider', () => {
 
     const [first, second] = await Promise.all([provider.getDistances(params), provider.getDistances(params)])
 
-    expect(first).toEqual([{ distance: 1.2, status: 0 }])
-    expect(second).toEqual([{ distance: 1.2, status: 0 }])
+    expect(first.success).toBe(true)
+    expect(second.success).toBe(true)
+    if (first.success && second.success) {
+      expect(first.value).toEqual([{ distance: 1.2, status: 0 }])
+      expect(second.value).toEqual([{ distance: 1.2, status: 0 }])
+    }
     expect(mockedPost).toHaveBeenCalledTimes(1)
     expect(mockTryConsume).toHaveBeenCalledTimes(1)
   })

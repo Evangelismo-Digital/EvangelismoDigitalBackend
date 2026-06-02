@@ -1,7 +1,9 @@
 import { IOutboxEventRegistration } from 'core/contracts/use-cases/outbox-event/outbox-event.interface'
 import { FormsRepository, IFormSubmissionInputData } from 'core/contracts/repository/forms-repository.interface'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
-import { ok, Result } from 'core/shared/result'
+import { FormsAlreadyExistsError } from '@use-cases/errors/forms/forms-already-exists-error'
+import { FormsNotFoundError } from '@use-cases/errors/forms/forms-not-found-error'
+import { ok, err, Result } from 'core/shared/result'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 
 type Response = Result<
@@ -21,7 +23,11 @@ export class FormsSubmissionUseCase {
   async execute(request: IFormSubmissionInputData): Promise<Response> {
     const findEmailResult = await this.formsSubmissionRepository.findByEmail(request.email)
 
-    if (findEmailResult.success === false) {
+    if (findEmailResult.success === true) {
+      return err(new FormsAlreadyExistsError())
+    }
+
+    if (!(findEmailResult.error instanceof FormsNotFoundError)) {
       return findEmailResult
     }
 

@@ -175,7 +175,7 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
 
       // Check if it's CachedFailureError or similar from ResilientCache
       if (error && typeof error === 'object' && 'name' in error && error.name === 'CachedFailureError') {
-        const cachedErr = error as any
+        const cachedErr = error as { errorData?: unknown }
         if (cachedErr.errorData instanceof AppError) {
           return errOf(cachedErr.errorData)
         }

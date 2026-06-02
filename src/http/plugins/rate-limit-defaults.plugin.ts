@@ -7,7 +7,7 @@ const rateLimitDefaultsPlugin: FastifyPluginAsync = async (app) => {
     try {
       // Ensure a config object exists
       if (!routeOptions.config) {
-        ;(routeOptions as any).config = { rateLimit: HTTP_RATE_LIMIT_POLICIES.global }
+        routeOptions.config = { rateLimit: HTTP_RATE_LIMIT_POLICIES.global }
         return
       }
 
@@ -18,7 +18,7 @@ const rateLimitDefaultsPlugin: FastifyPluginAsync = async (app) => {
 
       // If route did not set a rateLimit, apply the global default policy
       if (routeOptions.config.rateLimit == null) {
-        ;(routeOptions.config as any).rateLimit = HTTP_RATE_LIMIT_POLICIES.global
+        routeOptions.config.rateLimit = HTTP_RATE_LIMIT_POLICIES.global
       }
     } catch {
       // Defensive: do not throw during route registration

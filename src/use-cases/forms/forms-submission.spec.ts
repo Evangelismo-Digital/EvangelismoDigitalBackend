@@ -2,15 +2,30 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { FormsSubmissionUseCase } from './forms-submission'
 import { InMemoryFormsSubmissionRepository } from '@repositories/in-memory/in-memory-forms-submission-repository'
 import { FormSubmissionError } from '@use-cases/errors/form-submission-error'
+import { ok, err } from 'core/shared/result'
 
 describe('Forms Submission Use Case', async () => {
   afterEach(() => {
     vi.clearAllMocks()
   })
 
+  const mockEventRegistration = {
+    register: vi.fn().mockResolvedValue(
+      ok({
+        id: 1,
+        publicId: 'outbox-uuid',
+        eventType: 'form_submission',
+        payload: JSON.stringify({}),
+        status: 'PENDING',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ),
+  }
+
   it('should create a form submission successfully', async () => {
     const formsRepository = new InMemoryFormsSubmissionRepository()
-    const formsSubmissionUseCase = new FormsSubmissionUseCase(formsRepository)
+    const formsSubmissionUseCase = new FormsSubmissionUseCase(formsRepository, mockEventRegistration)
 
     const data = {
       name: 'John Doe',
@@ -20,24 +35,24 @@ describe('Forms Submission Use Case', async () => {
       location: 'New York',
     }
 
-    const { formSubmission } = await formsSubmissionUseCase.execute(data)
+    const result = await formsSubmissionUseCase.execute(data)
+    expect(result.success).toBe(true)
+    if (result.success) {
+      const { sanitizedFormSubmission } = result.value
 
-    expect(formSubmission).toMatchObject({
-      name: data.name,
-      lastName: data.lastName,
-      email: data.email,
-      decisaoPorCristo: data.decisaoPorCristo,
-      location: data.location,
-    })
-
-    expect(formSubmission.id).toBeDefined()
-    expect(formSubmission.publicId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-    expect(formSubmission.createdAt).toBeInstanceOf(Date)
+      expect(sanitizedFormSubmission).toMatchObject({
+        name: data.name,
+        lastName: data.lastName,
+        email: data.email,
+        decisaoPorCristo: data.decisaoPorCristo,
+        location: data.location,
+      })
+    }
   })
 
   it('should set location to null if not provided', async () => {
     const formsRepository = new InMemoryFormsSubmissionRepository()
-    const useCase = new FormsSubmissionUseCase(formsRepository)
+    const useCase = new FormsSubmissionUseCase(formsRepository, mockEventRegistration)
 
     const data = {
       name: 'John',
@@ -46,23 +61,28 @@ describe('Forms Submission Use Case', async () => {
       decisaoPorCristo: false,
     }
 
-    const { formSubmission } = await useCase.execute(data)
-
-    expect(formSubmission.location).toBeNull()
+    const result = await useCase.execute(data)
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.value.sanitizedFormSubmission.location).toBeNull()
+    }
   })
 
-  it('should throw FormSubmissionError if repository returns null', async () => {
+  it('should return FormSubmissionError if repository returns null/failure', async () => {
     const formsRepository = new InMemoryFormsSubmissionRepository()
-    vi.spyOn(formsRepository, 'create').mockResolvedValueOnce(null as any)
-    const useCase = new FormsSubmissionUseCase(formsRepository)
+    vi.spyOn(formsRepository, 'create').mockResolvedValueOnce(err(new FormSubmissionError()))
+    const useCase = new FormsSubmissionUseCase(formsRepository, mockEventRegistration)
 
-    await expect(() =>
-      useCase.execute({
-        name: 'Test',
-        lastName: 'User',
-        email: 'test@example.com',
-        decisaoPorCristo: true,
-      }),
-    ).rejects.toBeInstanceOf(FormSubmissionError)
+    const result = await useCase.execute({
+      name: 'Test',
+      lastName: 'User',
+      email: 'test@example.com',
+      decisaoPorCristo: true,
+    })
+
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error).toBeInstanceOf(FormSubmissionError)
+    }
   })
 })
