@@ -28,8 +28,8 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(this.toEntity(outboxEvent))
     } catch (error) {
-      const domainError = this.httpErrorMapper.mapToKnownError(error)
-      return err(domainError)
+      const mappedError = this.httpErrorMapper.mapToKnownError(error)
+      return err(mappedError)
     }
   }
 
@@ -44,8 +44,8 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       return ok(events.map((e) => this.toEntity(e)))
     } catch (error) {
       // Buscas feitas pelo Cron: usa InfraError
-      const infraError = this.infraErrorMapper.mapToKnownError(error)
-      return err(infraError)
+      const infraMappedError = this.infraErrorMapper.mapToKnownError(error)
+      return err(infraMappedError)
     }
   }
 
@@ -61,8 +61,8 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(events.map((e) => this.toEntity(e)))
     } catch (error) {
-      const infraError = this.infraErrorMapper.mapToKnownError(error)
-      return err(infraError)
+      const infraMappedError = this.infraErrorMapper.mapToKnownError(error)
+      return err(infraMappedError)
     }
   }
 
@@ -74,8 +74,8 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(event ? this.toEntity(event) : null)
     } catch (error) {
-      const infraError = this.infraErrorMapper.mapToKnownError(error)
-      return err(infraError)
+      const infraMappedError = this.infraErrorMapper.mapToKnownError(error)
+      return err(infraMappedError)
     }
   }
 
@@ -90,8 +90,8 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       })
       return ok(undefined)
     } catch (error) {
-      const infraError = this.infraErrorMapper.mapToKnownError(error)
-      return err(infraError)
+      const infraMappedError = this.infraErrorMapper.mapToKnownError(error)
+      return err(infraMappedError)
     }
   }
 
@@ -102,8 +102,8 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       })
       return ok(undefined)
     } catch (error) {
-      const infraError = this.infraErrorMapper.mapToKnownError(error)
-      return err(infraError)
+      const infraMappedError = this.infraErrorMapper.mapToKnownError(error)
+      return err(infraMappedError)
     }
   }
 
