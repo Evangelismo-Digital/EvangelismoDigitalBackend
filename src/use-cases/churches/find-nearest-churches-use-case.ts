@@ -57,7 +57,6 @@ export class FindNearestChurchesUseCase {
       const result = await this.cacheManager.getOrFetch<FindNearestChurchesResponse>(
         cacheKey,
         async (signal) => {
-
           const cepResult = await this.cepToLatLonUseCase.execute({
             cep: cleanCep,
           })
@@ -118,7 +117,6 @@ export class FindNearestChurchesUseCase {
       }
 
       return ok(result)
-      
     } catch (error) {
       if (error instanceof CachedFailureError) {
         if (error.errorType === 'InvalidCepError') {
