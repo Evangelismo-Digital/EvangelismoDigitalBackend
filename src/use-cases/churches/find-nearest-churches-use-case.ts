@@ -57,12 +57,15 @@ export class FindNearestChurchesUseCase {
       const result = await this.cacheManager.getOrFetch<FindNearestChurchesResponse>(
         cacheKey,
         async (signal) => {
+
           const cepResult = await this.cepToLatLonUseCase.execute({
             cep: cleanCep,
           })
+
           if (isErr(cepResult)) {
             throw cepResult.error
           }
+
           const { userLat, userLon, precision, coordinatesProviderName } = cepResult.value
 
           const knnResult = await this.findNearbyChurchesKnnUseCase.execute({
@@ -82,9 +85,11 @@ export class FindNearestChurchesUseCase {
             },
             this.defaultProfile,
           )
+
           if (isErr(nearestChurchesResult)) {
             throw nearestChurchesResult.error
           }
+
           const nearestChurches = nearestChurchesResult.value
 
           return {
@@ -113,6 +118,7 @@ export class FindNearestChurchesUseCase {
       }
 
       return ok(result)
+      
     } catch (error) {
       if (error instanceof CachedFailureError) {
         if (error.errorType === 'InvalidCepError') {
