@@ -10,6 +10,10 @@ import { IGeocodingProvider, EnumGeoPrecision } from 'core/contracts/use-cases/p
 import { IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { ok, errOf, isOk, isErr } from 'core/shared/result'
 import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
+import { ServiceOverloadError as CacheServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
+import { TimeoutExceededOnFetchError as CacheTimeoutError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
+import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
+import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 
 vi.mock('@lib/env', () => ({
   env: {
@@ -358,6 +362,64 @@ describe('CepToLatLon Use Case', () => {
     if (isErr(result)) {
       expect(result.error).toBeInstanceOf(CepToLatLonError)
       expect(result.error.message).toBe('Falha ao processar o CEP 00000000.')
+    }
+  })
+
+  it('should return TimeoutExceededError when cache throws CacheTimeoutError (CacheOvertime)', async () => {
+    mockGetOrFetch.mockRejectedValueOnce(new CacheTimeoutError('Cache get timeout'))
+    const result = await useCase.execute({ cep: '00000000' })
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(TimeoutExceededError)
+    }
+  })
+
+  it('should return InfraServiceOverloadError when cache throws CacheServiceOverloadError (CacheOverload)', async () => {
+    mockGetOrFetch.mockRejectedValueOnce(new CacheServiceOverloadError())
+    const result = await useCase.execute({ cep: '00000000' })
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(InfraServiceOverloadError)
+    }
+  })
+
+  it('should return generic CepToLatLonError when cache throws CachedFailureError of an unknown type (Cache Unknown Failure)', async () => {
+    mockGetOrFetch.mockRejectedValueOnce(new CachedFailureError('UnknownErrorType', 'Unexpected cached failure', {}))
+    const result = await useCase.execute({ cep: '00000000' })
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(CepToLatLonError)
+    }
+  })
+
+  it('should return TimeoutExceededError when signal is already aborted (Signal Abortion)', async () => {
+    const controller = new AbortController()
+    controller.abort(new Error('Aborted by client'))
+
+    mockGetOrFetch.mockImplementationOnce(async (_key, fetcher) => {
+      return fetcher(controller.signal)
+    })
+
+    addressProviderMock.fetchAddress.mockImplementationOnce(async (cep, signal) => {
+      if (signal?.aborted) {
+        return errOf(new TimeoutExceededError(signal.reason))
+      }
+      return ok(null)
+    })
+
+    const result = await useCase.execute({ cep: '00000000' })
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(TimeoutExceededError)
+    }
+  })
+
+  it('should return generic CepToLatLonError when cache throws an unhandled raw Error (Fatal Errors)', async () => {
+    mockGetOrFetch.mockRejectedValueOnce(new Error('Fatal database crash'))
+    const result = await useCase.execute({ cep: '00000000' })
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(CepToLatLonError)
     }
   })
 })

@@ -16,6 +16,13 @@ export default defineConfig(({ mode }) => {
         {
           extends: true,
           test: {
+            name: 'unit-errors',
+            dir: 'src/errors',
+          },
+        },
+        {
+          extends: true,
+          test: {
             name: 'unit-use-cases',
             dir: 'src/use-cases',
           },
