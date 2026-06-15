@@ -1,4 +1,4 @@
-import { AxiosError, AxiosInstance } from 'axios'
+import { AxiosInstance } from 'axios'
 import { logger } from '@lib/logger'
 import { createHttpClient } from '@lib/http/axios'
 import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
@@ -9,7 +9,8 @@ import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { resolveAddressProviderError } from 'errors/mappings/axios-error-mapper'
+import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 export interface ViaCepConfig {
   apiUrl: string
@@ -75,14 +76,12 @@ export class ViaCepProvider implements IAddressProvider {
       return errOf(new ServiceBusyError('ViaCEP'))
     }
 
-    let lastError: unknown = undefined
-
     for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
       if (signal?.aborted) {
         return errOf(new TimeoutExceededError(signal.reason))
       }
 
-      try {
+      const result = await FindNearestChurchesErrorMapper.runCatching<IAddressData | null>(async () => {
         const { data } = await ViaCepProvider.api.get<ViaCepResponse>(`/${cleanCep}/json`, {
           signal,
         })
@@ -101,51 +100,38 @@ export class ViaCepProvider implements IAddressProvider {
           precision: precision,
           providerName: 'ViaCEP',
         })
-      } catch (error) {
-        if (signal?.aborted) {
-          return errOf(new TimeoutExceededError(signal.reason))
-        }
+      })
 
-        lastError = error
-        const err = error as AxiosError
-        const { error: appError, shouldRetry } = resolveAddressProviderError(err, {
-          provider: 'ViaCEP',
-          originalError: lastError,
-        })
+      if (result.success) {
+        return result
+      }
 
-        if (!shouldRetry || attempt === this.MAX_RETRIES) {
-          logger.error(
-            {
-              cep: cleanCep,
-              attempt,
-              status: err.response?.status,
-              code: err.code,
-              name: err.name,
-              url: err.config?.url,
-              method: err.config?.method,
-            },
-            'Falha ao buscar endereço após tentativas (ViaCEP)',
-          )
-          return errOf(appError)
-        }
+      const error = result.error
+      const isRetryable = error.failureMode === FailureMode.RETRYABLE
 
-        const delay = this.BACKOFF_MS * Math.pow(2, attempt - 1)
-        logger.warn(
+      if (!isRetryable || attempt === this.MAX_RETRIES) {
+        logger.error(
           {
             cep: cleanCep,
             attempt,
-            delay,
-            status: err.response?.status,
-            code: err.code,
-            name: err.name,
-            url: err.config?.url,
-            method: err.config?.method,
+            error: error.message,
           },
-          'Repetindo solicitação para ViaCEP',
+          'Falha ao buscar endereço após tentativas (ViaCEP)',
         )
-
-        await this.sleep(delay)
+        return errOf(error)
       }
+
+      const delay = this.BACKOFF_MS * Math.pow(2, attempt - 1)
+      logger.warn(
+        {
+          cep: cleanCep,
+          attempt,
+          delay,
+        },
+        'Repetindo solicitação para ViaCEP',
+      )
+
+      await this.sleep(delay)
     }
 
     logger.error({ cep: cleanCep }, 'ViaCEP - todas as tentativas esgotadas sem sucesso')

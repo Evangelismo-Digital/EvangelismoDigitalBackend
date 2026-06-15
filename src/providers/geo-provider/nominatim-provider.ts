@@ -1,4 +1,4 @@
-import { AxiosError, AxiosInstance } from 'axios'
+import { AxiosInstance } from 'axios'
 import { Redis } from 'ioredis'
 
 import { createHttpClient } from '@lib/http/axios'
@@ -14,7 +14,7 @@ import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { resolveGeoProviderError } from 'errors/mappings/axios-error-mapper'
+import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
 
 interface NominatimConfig {
   apiUrl: string
@@ -80,21 +80,21 @@ export class NominatimGeoProvider implements IGeocodingProvider {
     params: NominatimSearchParams,
     signal?: AbortSignal,
   ): Promise<Result<IGeoCoordinates | null, AppError>> {
-    try {
-      if (signal?.aborted) {
-        return errOf(new TimeoutExceededError(signal.reason))
-      }
+    if (signal?.aborted) {
+      return errOf(new TimeoutExceededError(signal.reason))
+    }
 
-      const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection)
+    const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection)
 
-      const allowed = await rateLimiter.tryConsume(EnumProviderConfig.NOMINATIM_GEOCODING)
+    const allowed = await rateLimiter.tryConsume(EnumProviderConfig.NOMINATIM_GEOCODING)
 
-      if (!allowed) {
-        return errOf(new ServiceBusyError('Nominatim'))
-      }
+    if (!allowed) {
+      return errOf(new ServiceBusyError('Nominatim'))
+    }
 
-      const cleanParams = this.cleanParams(params)
+    const cleanParams = this.cleanParams(params)
 
+    const result = await FindNearestChurchesErrorMapper.runCatching<IGeoCoordinates | null>(async () => {
       const response = await NominatimGeoProvider.api.get('/search', {
         params: cleanParams,
         signal,
@@ -111,29 +111,20 @@ export class NominatimGeoProvider implements IGeocodingProvider {
         precision: PrecisionHelper.fromOsm(bestMatch),
         providerName: 'Nominatim',
       })
-    } catch (error) {
-      if (signal?.aborted) {
-        return errOf(new TimeoutExceededError(signal.reason))
-      }
+    })
 
-      const err = error as AxiosError
-      const { error: appError } = resolveGeoProviderError(err, {
-        provider: 'Nominatim',
-        originalError: error,
-      })
-
-      logger.warn(
-        {
-          code: err.code,
-          name: err.name,
-          url: err.config?.url,
-          method: err.config?.method,
-        },
-        'Provedor Nominatim falhou ao buscar coordenadas',
-      )
-
-      return errOf(appError)
+    if (result.success) {
+      return result
     }
+
+    logger.warn(
+      {
+        error: result.error.message,
+      },
+      'Provedor Nominatim falhou ao buscar coordenadas',
+    )
+
+    return errOf(result.error)
   }
 
   private cleanParams(params: NominatimSearchParams): Record<string, string | number> {
@@ -146,3 +137,4 @@ export class NominatimGeoProvider implements IGeocodingProvider {
     return cleaned
   }
 }
+

@@ -62,12 +62,25 @@ vi.mock('ioredis', () => {
   }
 })
 
-// Imports reais
+// // Imports reais
 import Redis from 'ioredis'
-import { ResilientCache, CachedFailureError } from './resilient-cache'
-import { ServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
-import { OperationAbortedError } from '@lib/errors/infra/cache/operation-aborted-error'
-import { TimeoutExceededOnFetchError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
+import { ResilientCache } from './resilient-cache'
+import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
+import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { Result, ok, errOf, isOk, isErr } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
+import { AppErrorRegistry } from 'errors/app-error-registry'
+import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+
+class TestAppError extends AppError {
+  constructor(failureMode: FailureMode = FailureMode.NOT_FOUND) {
+    super({ code: 'TEST', message: 'Test error' }, 'INTERNAL_SERVER_ERROR' as any, failureMode)
+  }
+}
+
+// Register TestAppError in registry for deserialization tests
+AppErrorRegistry.TestAppError = () => new TestAppError()
 
 describe('ResilientCache Unit Tests', () => {
   let redisClient: Redis
@@ -105,52 +118,32 @@ describe('ResilientCache Unit Tests', () => {
     })
   })
 
-  // === 2. normalizeAbortReason ===
-  describe('normalizeAbortReason', () => {
-    const getPrivateMethod = () => (resilientCache as any).normalizeAbortReason.bind(resilientCache)
-
-    it('should return existing TimeoutExceededOnFetchError', () => {
-      const error = new TimeoutExceededOnFetchError('timeout')
-      expect(getPrivateMethod()(error)).toBe(error)
-    })
-
-    it('should wrap string reason in TimeoutExceededOnFetchError', () => {
-      const result = getPrivateMethod()('AbortSignal.timeout')
-      expect(result).toBeInstanceOf(TimeoutExceededOnFetchError)
-    })
-
-    it('should wrap unknown NON-ERROR types in OperationAbortedError', () => {
-      const unknownReason = { custom: 'reason' }
-      const result = getPrivateMethod()(unknownReason)
-      expect(result).toBeInstanceOf(OperationAbortedError)
-    })
-
-    it('should wrap generic Error in OperationAbortedError', () => {
-      const error = new Error('Generic Error')
-      // Baseado na implementação: Error genérico vira TimeoutExceededOnFetchError
-      expect(() => getPrivateMethod()(error)).toThrow(TimeoutExceededOnFetchError)
-    })
-  })
-
-  // === 3. executeFetchWithSignalLogic ===
+  // === 2. executeFetchWithSignalLogic ===
   describe('executeFetchWithSignalLogic', () => {
     const executeFetch = (key: string, fetcher: any) =>
-      (resilientCache as any).executeFetchWithSignalLogic(key, fetcher, undefined, undefined)
+      (resilientCache as any).executeFetchWithSignalLogic(key, fetcher, undefined)
 
     it('should resolve value when fetcher succeeds', async () => {
-      const mockFetcher = vi.fn().mockResolvedValue('success')
+      const mockFetcher = vi.fn().mockResolvedValue(ok('success'))
       const result = await executeFetch('key', mockFetcher)
-      expect(result).toBe('success')
+      expect(result.success).toBe(true)
+      if (result.success) {
+        expect(result.value).toBe('success')
+      }
     })
 
-    it('should reject with Error if fetcher fails', async () => {
-      const error = new Error('fetch-fail')
-      const mockFetcher = vi.fn().mockRejectedValue(error)
-      await expect(executeFetch('key', mockFetcher)).rejects.toThrow('fetch-fail')
+    it('should return error Result if fetcher fails returning error Result', async () => {
+      const error = new TestAppError()
+      const mockFetcher = vi.fn().mockResolvedValue(errOf(error))
+      const result = await executeFetch('key', mockFetcher)
+      expect(result.success).toBe(false)
+      if (!result.success) {
+        expect(result.error).toBe(error)
+      }
     })
   })
 
-  // === 4. getOrFetch (Cenários Principais) ===
+  // === 3. getOrFetch (Cenários Principais) ===
   describe('getOrFetch', () => {
     it('should return cached value immediately on CACHE HIT (Success)', async () => {
       const keyParams = { id: 'test-1' }
@@ -162,26 +155,55 @@ describe('ResilientCache Unit Tests', () => {
       const result = await resilientCache.getOrFetch(generatedKey, fetcher)
 
       expect(mockRedisGet).toHaveBeenCalledWith(generatedKey)
-      expect(result).toBe('cached-value')
+      expect(isOk(result)).toBe(true)
+      if (isOk(result)) {
+        expect(result.value).toBe('cached-value')
+      }
       expect(fetcher).not.toHaveBeenCalled()
     })
 
-    it('should throw CachedFailureError on CACHE HIT (Failure/Negative Cache)', async () => {
+    it('should return errOf(MappedError) on CACHE HIT (Negative Cache)', async () => {
       const keyParams = { id: 'test-2' }
       const generatedKey = resilientCache.generateKey(keyParams)
 
       mockRedisGet.mockResolvedValue(
         JSON.stringify({
           s: false,
-          e: { type: 'Error', message: 'Cached Error' },
+          e: { type: 'TestAppError', message: 'Cached Error' },
         }),
       )
 
       const fetcher = vi.fn()
 
-      await expect(resilientCache.getOrFetch(generatedKey, fetcher)).rejects.toThrow(CachedFailureError)
+      const result = await resilientCache.getOrFetch(generatedKey, fetcher)
 
       expect(fetcher).not.toHaveBeenCalled()
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(TestAppError)
+      }
+    })
+
+    it('should return errOf(Fallback) on CACHE HIT (Negative Cache - Unmapped Type)', async () => {
+      const keyParams = { id: 'test-2-unmapped' }
+      const generatedKey = resilientCache.generateKey(keyParams)
+
+      mockRedisGet.mockResolvedValue(
+        JSON.stringify({
+          s: false,
+          e: { type: 'UnknownType', message: 'Cached Error' },
+        }),
+      )
+
+      const fetcher = vi.fn()
+
+      const result = await resilientCache.getOrFetch(generatedKey, fetcher)
+
+      expect(fetcher).not.toHaveBeenCalled()
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(ProviderFailureError)
+      }
     })
 
     it('should execute fetcher on CACHE MISS and cache success', async () => {
@@ -190,11 +212,14 @@ describe('ResilientCache Unit Tests', () => {
 
       mockRedisGet.mockResolvedValue(null)
       mockRedisSet.mockResolvedValue('OK')
-      const fetcher = vi.fn().mockResolvedValue('fresh-data')
+      const fetcher = vi.fn().mockResolvedValue(ok('fresh-data'))
 
       const result = await resilientCache.getOrFetch(generatedKey, fetcher)
 
-      expect(result).toBe('fresh-data')
+      expect(isOk(result)).toBe(true)
+      if (isOk(result)) {
+        expect(result.value).toBe('fresh-data')
+      }
       expect(fetcher).toHaveBeenCalled()
       expect(mockRedisSet).toHaveBeenCalledWith(
         generatedKey,
@@ -212,7 +237,7 @@ describe('ResilientCache Unit Tests', () => {
 
       const fetcher = vi.fn().mockImplementation(async () => {
         await new Promise((resolve) => setTimeout(resolve, 50))
-        return 'shared-data'
+        return ok('shared-data')
       })
 
       const p1 = resilientCache.getOrFetch(generatedKey, fetcher)
@@ -220,12 +245,12 @@ describe('ResilientCache Unit Tests', () => {
 
       const [res1, res2] = await Promise.all([p1, p2])
 
-      expect(res1).toBe('shared-data')
-      expect(res2).toBe('shared-data')
+      expect(isOk(res1)).toBe(true)
+      expect(isOk(res2)).toBe(true)
       expect(fetcher).toHaveBeenCalledTimes(1)
     })
 
-    it('should throw ServiceOverloadError when max pending fetches exceeded with DIFFERENT KEYS', async () => {
+    it('should return errOf(InfraServiceOverloadError) when max pending fetches exceeded with DIFFERENT KEYS', async () => {
       const restrictedCache = new ResilientCache(redisClient, {
         ...defaultOptions,
         maxPendingFetches: 2,
@@ -236,19 +261,22 @@ describe('ResilientCache Unit Tests', () => {
 
       const fetcher = async () => {
         await new Promise((resolve) => setTimeout(resolve, 200))
-        return 'data'
+        return ok('data')
       }
 
       // 1. Dispara as duas primeiras requisições para encher o limite
       const p1 = restrictedCache.getOrFetch('key-1', fetcher)
       const p2 = restrictedCache.getOrFetch('key-2', fetcher)
 
-      // 2. CORREÇÃO: Aguarda um ciclo do event loop para que as Promises acima
-      // avancem do "await redis.get()" para o "pendingFetches.set()".
+      // 2. Aguarda um ciclo do event loop
       await new Promise((resolve) => setTimeout(resolve, 10))
 
       // 3. A terceira chamada agora deve encontrar o mapa cheio e falhar
-      await expect(restrictedCache.getOrFetch('key-3', fetcher)).rejects.toThrow(ServiceOverloadError)
+      const p3 = await restrictedCache.getOrFetch('key-3', fetcher)
+      expect(isErr(p3)).toBe(true)
+      if (isErr(p3)) {
+        expect(p3.error).toBeInstanceOf(InfraServiceOverloadError)
+      }
 
       // Limpeza: aguarda as promises originais finalizarem
       await Promise.allSettled([p1, p2])
@@ -256,30 +284,20 @@ describe('ResilientCache Unit Tests', () => {
   })
 
   describe('Negative Caching Logic', () => {
-    it('should cache failure using negative TTL when error is mapped', async () => {
+    it('should cache failure using negative TTL when AppError is returned with NOT_FOUND', async () => {
       // 1. Configuração
       const keyParams = { id: 'negative-test-1' }
       const generatedKey = resilientCache.generateKey(keyParams)
 
-      // Simula Cache Miss
       mockRedisGet.mockResolvedValue(null)
 
-      // 2. Fetcher que falha
-      const error = new Error('Invalid ID provided')
-      const fetcher = vi.fn().mockRejectedValue(error)
+      const appError = new TestAppError(FailureMode.NOT_FOUND)
+      const fetcher = vi.fn().mockResolvedValue(errOf(appError))
 
-      // 3. Mapper que decide que esse erro DEVE ser cacheado
-      const errorMapper = vi.fn().mockReturnValue({
-        type: 'InvalidInputError',
-        message: 'The ID is invalid',
-      })
+      const result = await resilientCache.getOrFetch(generatedKey, fetcher)
 
-      // 4. Execução: Esperamos que lance CachedFailureError (o wrapper)
-      await expect(resilientCache.getOrFetch(generatedKey, fetcher, errorMapper)).rejects.toThrow(CachedFailureError)
-
-      // 5. Verificações
+      expect(isErr(result)).toBe(true)
       expect(fetcher).toHaveBeenCalled()
-      expect(errorMapper).toHaveBeenCalledWith(error)
 
       // Verifica se salvou no Redis com flag de erro (s: false)
       expect(mockRedisSet).toHaveBeenCalledWith(
@@ -292,52 +310,70 @@ describe('ResilientCache Unit Tests', () => {
       // Verifica conteúdo do erro salvo
       expect(mockRedisSet).toHaveBeenCalledWith(
         generatedKey,
-        expect.stringContaining('"type":"InvalidInputError"'),
+        expect.stringContaining('"type":"TestAppError"'),
         'EX',
         expect.any(Number),
       )
 
       // 6. Verifica se usou o TTL Negativo (10s) e não o Default (60s)
-      // Com jitter de 10% em 10s, o TTL deve estar entre 9 e 11
       const ttlArg = mockRedisSet.mock.calls[0][3]
       expect(ttlArg).toBeGreaterThanOrEqual(9)
       expect(ttlArg).toBeLessThanOrEqual(11)
       expect(ttlArg).not.toBeGreaterThanOrEqual(50) // Garante que não usou o default
     })
 
-    it('should NOT cache failure when error is NOT mapped (System Error)', async () => {
+    it('should NOT cache failure when AppError is returned with other failure mode (Retryable)', async () => {
       const keyParams = { id: 'negative-test-2' }
       const generatedKey = resilientCache.generateKey(keyParams)
       mockRedisGet.mockResolvedValue(null)
 
-      // Fetcher falha com erro genérico
-      const error = new Error('Database Connection Failed')
-      const fetcher = vi.fn().mockRejectedValue(error)
+      const appError = new TestAppError(FailureMode.RETRYABLE)
+      const fetcher = vi.fn().mockResolvedValue(errOf(appError))
 
-      // Mapper retorna null (ou undefined), indicando erro não cacheável
-      const errorMapper = vi.fn().mockReturnValue(null)
+      const result = await resilientCache.getOrFetch(generatedKey, fetcher)
 
-      // Espera o erro original, não o CachedFailureError
-      await expect(resilientCache.getOrFetch(generatedKey, fetcher, errorMapper)).rejects.toThrow(
-        'Database Connection Failed',
-      )
-
-      // Verifica que NADA foi salvo no Redis
+      expect(isErr(result)).toBe(true)
       expect(mockRedisSet).not.toHaveBeenCalled()
     })
 
-    it('should NOT cache failure when no errorMapper is provided', async () => {
+    it('should NOT cache failure and return TimeoutExceededError when fetch times out', async () => {
       const keyParams = { id: 'negative-test-3' }
       const generatedKey = resilientCache.generateKey(keyParams)
       mockRedisGet.mockResolvedValue(null)
 
-      const error = new Error('Unknown Error')
-      const fetcher = vi.fn().mockRejectedValue(error)
+      // Fetcher simulates timeout
+      const fetcher = vi.fn().mockImplementation(async (signal) => {
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        if (signal.aborted) {
+          return errOf(new TimeoutExceededError())
+        }
+        return ok('done')
+      })
 
-      // Sem mapper
-      await expect(resilientCache.getOrFetch(generatedKey, fetcher)).rejects.toThrow('Unknown Error')
+      const result = await resilientCache.getOrFetch(generatedKey, fetcher)
 
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(TimeoutExceededError)
+      }
+      expect(mockRedisSet).not.toHaveBeenCalled()
+    })
+
+    it('should NOT cache failure and return ProviderFailureError when fetch throws generic Error', async () => {
+      const keyParams = { id: 'negative-test-4' }
+      const generatedKey = resilientCache.generateKey(keyParams)
+      mockRedisGet.mockResolvedValue(null)
+
+      const fetcher = vi.fn().mockRejectedValue(new Error('Random JS Error'))
+
+      const result = await resilientCache.getOrFetch(generatedKey, fetcher)
+
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(ProviderFailureError)
+      }
       expect(mockRedisSet).not.toHaveBeenCalled()
     })
   })
 })
+

@@ -5,14 +5,11 @@ import { FindNearbyChurchesKnnUseCase } from './find-nearby-churches-knn-use-cas
 import { CalculateChurchRouteDistancesUseCase } from './calculate-church-route-distances-use-case'
 import { ChurchPresenter } from '@http/presenters/church-presenter'
 import { isOk, ok, isErr, errOf } from 'core/shared/result'
-import { ServiceOverloadError as CacheServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
-import { TimeoutExceededOnFetchError as CacheTimeoutError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
 import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
-import { CachedFailureError } from '@lib/infra/cache/resilient-cache'
 
 const mockGetOrFetch = vi.fn()
 const mockGenerateKey = vi.fn()
@@ -26,17 +23,6 @@ vi.mock('@lib/infra/cache/resilient-cache', () => {
 
       generateKey(...args: any[]) {
         return mockGenerateKey(...args)
-      }
-    },
-    CachedFailureError: class CachedFailureError extends Error {
-      errorType: string
-      errorData: unknown
-
-      constructor(type: string, message: string, data?: unknown) {
-        super(message)
-        this.name = 'CachedFailureError'
-        this.errorType = type
-        this.errorData = data
       }
     },
   }
@@ -91,7 +77,7 @@ describe('FindNearestChurchesUseCase orchestration', () => {
       providerName: 'AwesomeAPI',
     }
 
-    mockGetOrFetch.mockResolvedValueOnce(cachedResponse)
+    mockGetOrFetch.mockResolvedValueOnce(ok(cachedResponse))
 
     const result = await useCase.execute({ cep: '01310-100' })
 
@@ -168,8 +154,8 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     )
   })
 
-  it('should return TimeoutExceededError when cache throws CacheTimeoutError (CacheOvertime)', async () => {
-    mockGetOrFetch.mockRejectedValueOnce(new CacheTimeoutError('Cache get timeout'))
+  it('should return TimeoutExceededError when cache returns it (CacheOvertime)', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(errOf(new TimeoutExceededError('Cache get timeout')))
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
@@ -177,8 +163,8 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     }
   })
 
-  it('should return InfraServiceOverloadError when cache throws CacheServiceOverloadError (CacheOverload)', async () => {
-    mockGetOrFetch.mockRejectedValueOnce(new CacheServiceOverloadError())
+  it('should return InfraServiceOverloadError when cache returns it (CacheOverload)', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(errOf(new InfraServiceOverloadError()))
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
@@ -186,10 +172,8 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     }
   })
 
-  it('should unwrap CachedFailureError back to InvalidCepError', async () => {
-    const originalError = new InvalidCepError()
-    const cachedError = new CachedFailureError('InvalidCepError', 'Invalid CEP', originalError)
-    mockGetOrFetch.mockRejectedValueOnce(cachedError)
+  it('should unwrap errOf(InvalidCepError) from cache', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(errOf(new InvalidCepError()))
 
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
@@ -198,10 +182,8 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     }
   })
 
-  it('should unwrap CachedFailureError back to CoordinatesNotFoundError', async () => {
-    const originalError = new CoordinatesNotFoundError()
-    const cachedError = new CachedFailureError('CoordinatesNotFoundError', 'Not found', originalError)
-    mockGetOrFetch.mockRejectedValueOnce(cachedError)
+  it('should unwrap errOf(CoordinatesNotFoundError) from cache', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(errOf(new CoordinatesNotFoundError()))
 
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
@@ -210,8 +192,8 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     }
   })
 
-  it('should return NoNearbyChurchesFoundError when cache throws CachedFailureError of an unknown type (Cache Unknown Failure)', async () => {
-    mockGetOrFetch.mockRejectedValueOnce(new CachedFailureError('UnknownErrorType', 'Unexpected cached failure', {}))
+  it('should return NoNearbyChurchesFoundError when cache returns an unknown AppError', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(errOf(new NoNearbyChurchesFoundError()))
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
@@ -238,8 +220,8 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     }
   })
 
-  it('should return NoNearbyChurchesFoundError when cache throws an unhandled raw Error (Fatal Errors)', async () => {
-    mockGetOrFetch.mockRejectedValueOnce(new Error('Fatal database crash'))
+  it('should return NoNearbyChurchesFoundError when cache returns it', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(errOf(new NoNearbyChurchesFoundError()))
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {

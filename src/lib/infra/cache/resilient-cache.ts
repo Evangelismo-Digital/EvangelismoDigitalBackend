@@ -1,9 +1,14 @@
 import crypto from 'crypto'
 import { Redis } from 'ioredis'
 import { logger } from '@lib/logger'
-import { ServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
-import { OperationAbortedError } from '@lib/errors/infra/cache/operation-aborted-error'
-import { TimeoutExceededOnFetchError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
+import { ResultPattern } from 'core/types/patterns/result-pattern'
+import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
+import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
+import { deserializeAppError } from 'errors/app-error-registry'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 export interface ResilientCacheOptions {
   prefix: string
@@ -23,19 +28,6 @@ export interface CacheEnvelope<T> {
     type: string // Error class name (e.g., 'InvalidCepError')
     message: string
     data?: unknown // Additional error data
-  }
-}
-
-// === Error thrown when retrieving a cached failure ===
-export class CachedFailureError extends Error {
-  public readonly errorType: string
-  public readonly errorData?: unknown
-
-  constructor(type: string, message: string, data?: unknown) {
-    super(message)
-    this.name = 'CachedFailureError'
-    this.errorType = type
-    this.errorData = data
   }
 }
 
@@ -67,22 +59,20 @@ export class ResilientCache {
     return `${this.options.prefix}${hash}`
   }
 
-  async getOrFetch<T>(
+  async getOrFetch<T, E extends AppError = AppError>(
     key: string,
-    fetcher: (signal: AbortSignal) => Promise<T>,
-    // Optional: Function that decides if error should be cached and returns error metadata
-    errorMapper?: (error: unknown) => { type: string; message: string; data?: unknown } | null,
+    fetcher: (signal: AbortSignal) => Promise<Result<T, E>>,
     parentSignal?: AbortSignal,
-  ): Promise<T | null> {
+  ): Promise<Result<T, AppError>> {
     // 1. Circuit Breaker FIRST (before any work)
     if (this.pendingFetches.size >= this.MAX_PENDING) {
-      throw new ServiceOverloadError()
+      return errOf(new InfraServiceOverloadError())
     }
 
     // 2. Dedup Check (FAST PATH - in-memory)
     const existing = this.pendingFetches.get(key)
     if (existing) {
-      return await (existing as Promise<T>)
+      return await (existing as Promise<Result<T, AppError>>)
     }
 
     // 3. Fast Redis Read (Envelope Unwrapping)
@@ -93,37 +83,37 @@ export class ResilientCache {
 
         // If success, return the value
         if (envelope.s) {
-          // Validate that value exists in success envelope
           if (!('v' in envelope)) {
-            logger.error({ key, envelope }, 'Cache corrompida detectada: CacheEnvelop de sucesso sem valor')
-            throw new OperationAbortedError('Cache corrompida: CacheEnvelop de sucesso sem valor')
+            logger.error({ key, envelope }, 'Cache corrompida detectada: CacheEnvelope de sucesso sem valor')
+            return errOf(new ProviderFailureError('Cache', ProviderLayer.Address, new Error('Corrupted Cache: Missing value')))
           }
-          return envelope.v as T
+          return ok(envelope.v as T)
         }
 
-        // If cached failure, throw CachedFailureError
+        // If cached failure, reconstruct error
         if (!envelope.s && envelope.e) {
-          throw new CachedFailureError(envelope.e.type, envelope.e.message, envelope.e.data)
+          const deserialized = deserializeAppError(envelope.e.type, envelope.e.message, envelope.e.data)
+          if (deserialized) {
+            return errOf(deserialized)
+          }
+
+          // Fallback reconstruction
+          return errOf(new ProviderFailureError('Cache', ProviderLayer.Address, new Error(`Cached Error: ${envelope.e.type} - ${envelope.e.message}`)))
         }
       }
     } catch (err) {
-      // Re-throw specific error types that should propagate
-      if (err instanceof CachedFailureError) throw err
-      if (err instanceof Error && err.message.includes('Cache corrompida')) throw err
-
-      // Only swallow Redis connection/parsing errors
+      // Swallow Redis connection/parsing errors and proceed to fetch
       logger.warn({ err, key }, 'Erro de leitura ou falha do Redis. Continuando sem cache.')
     }
 
     // 4. Double-check pattern: Check again after async Redis call
-    // This handles race conditions where multiple callers passed the first check
     const existingAfterRedis = this.pendingFetches.get(key)
     if (existingAfterRedis) {
-      return await (existingAfterRedis as Promise<T>)
+      return await (existingAfterRedis as Promise<Result<T, AppError>>)
     }
 
     // 5. Create and store promise atomically
-    const promise = this.executeFetchWithSignalLogic(key, fetcher, errorMapper, parentSignal)
+    const promise = this.executeFetchWithSignalLogic(key, fetcher, parentSignal)
 
     // Store immediately to catch any concurrent requests
     this.pendingFetches.set(key, promise)
@@ -136,84 +126,65 @@ export class ResilientCache {
     }
   }
 
-  private async executeFetchWithSignalLogic<T>(
+  private async executeFetchWithSignalLogic<T, E extends AppError>(
     key: string,
-    fetcher: (signal: AbortSignal) => Promise<T>,
-    errorMapper?: (error: unknown) => { type: string; message: string; data?: unknown } | null,
+    fetcher: (signal: AbortSignal) => Promise<Result<T, E>>,
     parentSignal?: AbortSignal,
-  ): Promise<T | null> {
+  ): Promise<Result<T, AppError>> {
     const timeoutSignal = AbortSignal.timeout(this.FETCH_TIMEOUT)
 
     const signals: AbortSignal[] = [timeoutSignal]
-    if (parentSignal) {
+    if (parentSignal instanceof AbortSignal) {
       signals.push(parentSignal)
     }
 
     const effectiveSignal = AbortSignal.any(signals)
 
     if (effectiveSignal.aborted) {
-      throw this.normalizeAbortReason(effectiveSignal.reason)
+      return errOf(new TimeoutExceededError(effectiveSignal.reason))
     }
 
     try {
       const result = await fetcher(effectiveSignal)
 
       if (effectiveSignal.aborted) {
-        throw this.normalizeAbortReason(effectiveSignal.reason)
+        return errOf(new TimeoutExceededError(effectiveSignal.reason))
+      }
+
+      if (isErr(result)) {
+        const err = result.error
+        // Negative Cache (do not cache transient/retryable failures)
+        if (err.failureMode !== FailureMode.RETRYABLE) {
+          await this.setResult(key, {
+            s: false,
+            e: {
+              type: err.constructor.name,
+              message: err.message,
+              data: err,
+            },
+          })
+        }
+        return errOf(err)
       }
 
       // SUCCESS: Cache as success envelope
-      await this.setResult(key, { s: true, v: result })
-      return result
+      await this.setResult(key, { s: true, v: result.value })
+      return ok(result.value)
     } catch (error) {
-      // Check first if it was aborted (Timeout/User Cancellation)
+      // The fetcher threw an UNHANDLED exception.
       if (effectiveSignal.aborted) {
-        if (parentSignal?.aborted) {
-          throw this.normalizeAbortReason(parentSignal.reason)
-        }
-        throw new TimeoutExceededOnFetchError()
+        const abortReason = parentSignal?.aborted ? parentSignal.reason : 'Timeout Exceeded'
+        return errOf(new TimeoutExceededError(abortReason))
       }
 
-      // === ERROR CAPTURE LOGIC ===
-      // Check if error is cacheable (e.g., InvalidCepError)
-      if (errorMapper) {
-        const errorMetadata = errorMapper(error)
-
-        if (errorMetadata) {
-          await this.setResult(key, {
-            s: false,
-            e: errorMetadata,
-          })
-
-          // Throw CachedFailureError for consistency (all callers get same error type)
-          throw new CachedFailureError(errorMetadata.type, errorMetadata.message, errorMetadata.data)
-        }
-      }
-
-      // If not mapped, it's a system error (don't cache, just throw)
-      throw error
+      // We do not cache unhandled system exceptions.
+      return errOf(new ProviderFailureError('Fetcher', ProviderLayer.Address, error))
     }
-  }
-
-  private normalizeAbortReason(reason: unknown): Error {
-    if (reason instanceof Error) {
-      if (reason instanceof TimeoutExceededOnFetchError || reason instanceof OperationAbortedError) {
-        return reason
-      }
-
-      throw new TimeoutExceededOnFetchError(reason)
-    }
-    if (typeof reason === 'string') {
-      return new TimeoutExceededOnFetchError(reason)
-    }
-    return new OperationAbortedError(reason)
   }
 
   private async setResult<T>(key: string, envelope: CacheEnvelope<T>): Promise<void> {
-    // If s=false (Failure), use negative TTL (short). If s=true, use default TTL.
     const baseTtl = !envelope.s ? this.options.negativeTtlSeconds : this.options.defaultTtlSeconds
 
-    // Handle edge case: if negativeTtlSeconds is 0, don't cache at all
     if (baseTtl <= 0) {
       logger.debug({ key }, 'TTL <= 0, pulando escrita no cache')
       return
@@ -226,10 +197,7 @@ export class ResilientCache {
 
       await this.redis.set(key, JSON.stringify(envelope), 'EX', finalTtl)
     } catch (err) {
-      // Cache write is best-effort - log but don't throw
-      // Redis failure should not break successful fetches
       logger.warn({ err, key }, 'Falha ao escrever no Redis (não fatal, continuando)')
-      // Don't re-throw - system continues functioning without cache
     }
   }
 }

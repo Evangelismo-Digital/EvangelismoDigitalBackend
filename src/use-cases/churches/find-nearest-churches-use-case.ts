@@ -1,4 +1,4 @@
-import { CachedFailureError, ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
+import { ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
 import { ChurchPresenter } from '@http/presenters/church-presenter'
 import { CepToLatLonUseCase } from '@use-cases/churches/cep-to-lat-lon-use-case'
 import { FindNearbyChurchesKnnUseCase } from '@use-cases/churches/find-nearby-churches-knn-use-case'
@@ -7,14 +7,7 @@ import { Redis } from 'ioredis'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { Result, ok, errOf, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
-import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
-import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
-import { ServiceOverloadError as CacheServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
-import { TimeoutExceededOnFetchError as CacheTimeoutError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
+import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
 
 export interface FindNearestChurchesRequest {
   cep: string
@@ -51,11 +44,11 @@ export class FindNearestChurchesUseCase {
   }
 
   async execute({ cep }: FindNearestChurchesRequest): Promise<Result<FindNearestChurchesResponse, AppError>> {
-    const cleanCep = cep.replace(/\D/g, '')
-    const cacheKey = this.cacheManager.generateKey({ cep: cleanCep, profile: this.defaultProfile })
+    return FindNearestChurchesErrorMapper.runCatching(async () => {
+      const cleanCep = cep.replace(/\D/g, '')
+      const cacheKey = this.cacheManager.generateKey({ cep: cleanCep, profile: this.defaultProfile })
 
-    try {
-      const result = await this.cacheManager.getOrFetch<FindNearestChurchesResponse>(
+      return await this.cacheManager.getOrFetch<FindNearestChurchesResponse, AppError>(
         cacheKey,
         async (signal) => {
           const cepResult = await this.cepToLatLonUseCase.execute({
@@ -63,7 +56,7 @@ export class FindNearestChurchesUseCase {
           })
 
           if (isErr(cepResult)) {
-            throw cepResult.error
+            return errOf(cepResult.error)
           }
 
           const { userLat, userLon, precision, coordinatesProviderName } = cepResult.value
@@ -72,9 +65,11 @@ export class FindNearestChurchesUseCase {
             userLat,
             userLon,
           })
+
           if (isErr(knnResult)) {
-            throw knnResult.error
+            return errOf(knnResult.error)
           }
+
           const { churches, totalFound } = knnResult.value
 
           const nearestChurchesResult = await this.calculateChurchRouteDistancesUseCase.findNearest(
@@ -87,64 +82,20 @@ export class FindNearestChurchesUseCase {
           )
 
           if (isErr(nearestChurchesResult)) {
-            throw nearestChurchesResult.error
+            return errOf(nearestChurchesResult.error)
           }
 
           const nearestChurches = nearestChurchesResult.value
 
-          return {
+          return ok({
             nearestChurchesInfo: ChurchPresenter.toHTTP(nearestChurches),
             totalFound,
             precision,
             coordinatesProviderName,
-          }
-        },
-        // errorMapper: cache only NOT_FOUND domain facts; never cache RETRYABLE infra errors
-        (error: unknown) => {
-          if (error instanceof AppError && error.failureMode === FailureMode.NOT_FOUND) {
-            return {
-              type: error.constructor.name,
-              message: error.message,
-              data: { cep: cleanCep },
-            }
-          }
-          return null
+          })
         },
       )
-
-      if (!result) {
-        return errOf(new NoNearbyChurchesFoundError())
-      }
-
-      return ok(result)
-    } catch (error) {
-      // CachedFailureError: reconstruct the original AppError from errorType
-      if (error instanceof CachedFailureError) {
-        if (error.errorType === 'InvalidCepError') {
-          return errOf(new InvalidCepError())
-        }
-        if (error.errorType === 'CoordinatesNotFoundError') {
-          return errOf(new CoordinatesNotFoundError())
-        }
-        // Fallback for corrupted cache entries
-        return errOf(new NoNearbyChurchesFoundError())
-      }
-
-      // AppErrors propagate directly (domain and infra alike)
-      if (error instanceof AppError) {
-        return errOf(error)
-      }
-
-      // Cache infrastructure errors — translate to canonical AppErrors
-      if (error instanceof CacheServiceOverloadError) {
-        return errOf(new InfraServiceOverloadError())
-      }
-
-      if (error instanceof CacheTimeoutError) {
-        return errOf(new TimeoutExceededError())
-      }
-
-      return errOf(new NoNearbyChurchesFoundError())
-    }
+    })
   }
 }
+

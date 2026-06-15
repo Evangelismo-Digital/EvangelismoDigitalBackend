@@ -1,4 +1,4 @@
-import { AxiosError, AxiosInstance } from 'axios'
+import { AxiosInstance } from 'axios'
 import { Redis } from 'ioredis'
 import { createHttpClient } from '@lib/http/axios'
 import { logger } from '@lib/logger'
@@ -13,7 +13,8 @@ import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { resolveGeoProviderError } from 'errors/mappings/axios-error-mapper'
+import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 interface LocationIqConfig {
   apiUrl: string
@@ -89,8 +90,6 @@ export class LocationIqProvider implements IGeocodingProvider {
     params: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<Result<IGeoCoordinates | null, AppError>> {
-    let lastError: unknown = undefined
-
     for (let attempt = 1; attempt <= this.MAX_ATTEMPTS; attempt++) {
       if (signal?.aborted) {
         return errOf(new TimeoutExceededError(signal.reason))
@@ -104,7 +103,7 @@ export class LocationIqProvider implements IGeocodingProvider {
         return errOf(new ServiceBusyError('LocationIQ'))
       }
 
-      try {
+      const result = await FindNearestChurchesErrorMapper.runCatching<IGeoCoordinates | null>(async () => {
         const response = await LocationIqProvider.api.get<LocationIqResponseItem[]>('/search', {
           params,
           signal,
@@ -121,35 +120,28 @@ export class LocationIqProvider implements IGeocodingProvider {
           precision: PrecisionHelper.fromOsm(bestMatch),
           providerName: 'LocationIQ',
         })
-      } catch (error) {
-        if (signal?.aborted) {
-          return errOf(new TimeoutExceededError(signal.reason))
-        }
+      })
 
-        lastError = error
-        const err = error as AxiosError
-        const { error: appError, shouldRetry } = resolveGeoProviderError(err, {
-          provider: 'LocationIQ',
-          originalError: lastError,
-        })
-
-        if (!shouldRetry || attempt === this.MAX_ATTEMPTS) {
-          logger.warn(
-            {
-              code: err.code,
-              name: err.name,
-              url: err.config?.url,
-              method: err.config?.method,
-            },
-            'Provedor LocationIQ falhou ao buscar coordenadas',
-          )
-          return errOf(appError)
-        }
-
-        // Backoff apenas para erros de rede/servidor instável
-        const delay = this.BACKOFF_MS * Math.pow(2, attempt - 1)
-        await this.sleep(delay)
+      if (result.success) {
+        return result
       }
+
+      const error = result.error
+      const isRetryable = error.failureMode === FailureMode.RETRYABLE
+
+      if (!isRetryable || attempt === this.MAX_ATTEMPTS) {
+        logger.warn(
+          {
+            error: error.message,
+          },
+          'Provedor LocationIQ falhou ao buscar coordenadas',
+        )
+        return errOf(error)
+      }
+
+      // Backoff apenas para erros de rede/servidor instável
+      const delay = this.BACKOFF_MS * Math.pow(2, attempt - 1)
+      await this.sleep(delay)
     }
 
     return errOf(new ServiceBusyError('LocationIQ'))

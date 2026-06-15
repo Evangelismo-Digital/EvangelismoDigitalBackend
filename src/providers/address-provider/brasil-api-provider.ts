@@ -1,4 +1,4 @@
-import { AxiosError, AxiosInstance } from 'axios'
+import { AxiosInstance } from 'axios'
 import Redis from 'ioredis'
 import { logger } from '@lib/logger'
 import { createHttpClient } from '@lib/http/axios'
@@ -9,7 +9,8 @@ import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { resolveAddressProviderError } from 'errors/mappings/axios-error-mapper'
+import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 export interface BrasilApiConfig {
   apiUrl: string // Esperado: https://brasilapi.com.br
@@ -74,17 +75,14 @@ export class BrasilApiProvider implements IAddressProvider {
       return errOf(new ServiceBusyError('BrasilAPI'))
     }
 
-    let lastError: unknown = undefined
-
     // 2. Lógica de Retry com Backoff
     for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
       if (signal?.aborted) {
         return errOf(new TimeoutExceededError(signal.reason))
       }
 
-      try {
+      const result = await FindNearestChurchesErrorMapper.runCatching<IAddressData | null>(async () => {
         // A URL solicitada é /api/cep/v1/{cep}
-        // Assumindo que o baseURL já é https://brasilapi.com.br, fazemos o append do path
         const { data } = await BrasilApiProvider.api.get<BrasilApiResponse>(`/${cleanCep}`, {
           signal,
         })
@@ -109,40 +107,32 @@ export class BrasilApiProvider implements IAddressProvider {
           precision: precision,
           providerName: 'BrasilAPI',
         })
-      } catch (error) {
-        // Tratamento de Abort/Timeout
-        if (signal?.aborted) {
-          return errOf(new TimeoutExceededError(signal.reason))
-        }
+      })
 
-        lastError = error
-        const err = error as AxiosError
-        const { error: appError, shouldRetry } = resolveAddressProviderError(err, {
-          provider: 'BrasilAPI',
-          originalError: lastError,
-        })
-
-        // Se não for retryable ou se esgotou as tentativas, falha.
-        if (!shouldRetry || attempt === this.MAX_RETRIES) {
-          logger.error(
-            {
-              cep: cleanCep,
-              attempt,
-              status: err.response?.status,
-              code: err.code,
-              name: err.name,
-              url: err.config?.url,
-            },
-            'Falha ao buscar endereço BrasilAPI após tentativas',
-          )
-          return errOf(appError)
-        }
-
-        // Backoff Exponencial
-        const delay = this.BACKOFF_MS * Math.pow(2, attempt - 1)
-        logger.warn({ cep: cleanCep, attempt, delay, status: err.response?.status }, 'Repetindo solicitação para BrasilAPI')
-        await this.sleep(delay)
+      if (result.success) {
+        return result
       }
+
+      const error = result.error
+      const isRetryable = error.failureMode === FailureMode.RETRYABLE
+
+      // Se não for retryable ou se esgotou as tentativas, falha.
+      if (!isRetryable || attempt === this.MAX_RETRIES) {
+        logger.error(
+          {
+            cep: cleanCep,
+            attempt,
+            error: error.message,
+          },
+          'Falha ao buscar endereço BrasilAPI após tentativas',
+        )
+        return errOf(error)
+      }
+
+      // Backoff Exponencial
+      const delay = this.BACKOFF_MS * Math.pow(2, attempt - 1)
+      logger.warn({ cep: cleanCep, attempt, delay }, 'Repetindo solicitação para BrasilAPI')
+      await this.sleep(delay)
     }
 
     // Fallback de segurança

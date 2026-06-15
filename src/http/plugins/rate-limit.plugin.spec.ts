@@ -23,7 +23,7 @@ describe('httpRateLimitPlugin', () => {
     const register = vi.fn().mockResolvedValue(undefined)
     const app = { register }
 
-    await httpRateLimitPlugin(app as never)
+    await httpRateLimitPlugin(app as never, {} as never)
 
     expect(mockGetRedisRateLimit).toHaveBeenCalledTimes(1)
     expect(register).toHaveBeenCalledWith(

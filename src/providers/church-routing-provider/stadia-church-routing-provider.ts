@@ -1,4 +1,4 @@
-import { AxiosError, AxiosInstance } from 'axios'
+import { AxiosInstance } from 'axios'
 import Redis from 'ioredis'
 import {
   IChurchRoutingProvider,
@@ -6,18 +6,14 @@ import {
   RoutingPoint,
 } from 'core/contracts/use-cases/providers/church-routing-provider.interface'
 import { createHttpClient } from '@lib/http/axios'
-import { CachedFailureError, ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
+import { ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
 import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
-import { ServiceOverloadError as CacheServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
-import { TimeoutExceededOnFetchError as CacheTimeoutError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
-import { resolveRoutingProviderError } from 'errors/mappings/axios-error-mapper'
+import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
 
 interface StadiaChurchRoutingProviderConfig {
   apiUrl: string
@@ -97,7 +93,7 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
     profile?: RoutingProfile,
     parentSignal?: AbortSignal,
   ): Promise<Result<RouteDistanceResult, AppError>> {
-    try {
+    return FindNearestChurchesErrorMapper.runCatching(async () => {
       const costing = this.resolveCosting(profile)
       const cacheKey = this.cacheManager.generateKey({
         oLat: origin.lat,
@@ -107,19 +103,18 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
         profile: costing,
       })
 
-      const result = await this.cacheManager.getOrFetch<RouteDistanceResult>(
+      return await this.cacheManager.getOrFetch<RouteDistanceResult, AppError>(
         cacheKey,
         async (signal) => {
           const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection)
           const allowed = await rateLimiter.tryConsume(EnumProviderConfig.STADIA_ROUTING)
 
           if (!allowed) {
-            // Throw so ResilientCache knows it failed (and doesn't cache success envelope)
-            throw new ServiceBusyError('Stadia Maps')
+            return errOf(new ServiceBusyError('Stadia Maps'))
           }
 
           if (signal.aborted) {
-            throw new TimeoutExceededError(signal.reason)
+            return errOf(new TimeoutExceededError(signal.reason))
           }
 
           const response = await StadiaChurchRoutingProvider.api.post(
@@ -140,75 +135,35 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
                 'Content-Type': 'application/json',
               },
               signal,
+              validateStatus: (status) => (status >= 200 && status < 300) || status === 404,
             },
           )
+
+          if (response.status === 404) {
+            return ok({
+              distance: null,
+              status: 404,
+            })
+          }
 
           const distance = this.extractDistanceKm(response.data)
           const status = response.data?.status
 
           if (distance == null || (typeof status === 'number' && status !== 0)) {
-            return {
+            return ok({
               distance: null,
               status: typeof status === 'number' ? status : 0,
-            }
+            })
           }
 
-          return {
+          return ok({
             distance,
             status: typeof status === 'number' ? status : 0,
-          }
+          })
         },
-        undefined,
         parentSignal,
       )
-
-      if (!result) {
-        return errOf(
-          new ProviderFailureError('Stadia Maps', ProviderLayer.Route, new Error('Falha ao calcular distância de rota com Stadia')),
-        )
-      }
-
-      return ok(result)
-    } catch (error) {
-      // === Unwrap cache-layer errors internally — callers stay ignorant of CachedFailureError ===
-
-      // CachedFailureError: a previously cached AppError is being replayed
-      if (error instanceof CachedFailureError) {
-        if (error.errorData instanceof AppError) {
-          return errOf(error.errorData)
-        }
-        // Corrupted cache entry — treat as provider failure
-        return errOf(new ProviderFailureError('Stadia Maps', ProviderLayer.Route, error))
-      }
-
-      // Cache infrastructure errors — translate to canonical AppErrors
-      if (error instanceof CacheServiceOverloadError) {
-        return errOf(new InfraServiceOverloadError())
-      }
-
-      if (error instanceof CacheTimeoutError) {
-        return errOf(new TimeoutExceededError())
-      }
-
-      // AppErrors thrown from inside the fetcher (ServiceBusyError, TimeoutExceededError)
-      if (error instanceof AppError) {
-        return errOf(error)
-      }
-
-      // Axios errors from the HTTP call — map via lookup table
-      const axiosError = error as AxiosError
-
-      // 404 from routing API means the route could not be computed (unreachable),
-      // not a true error — represent as null distance
-      if (axiosError.response?.status === 404) {
-        return ok({
-          distance: null,
-          status: 404,
-        })
-      }
-
-      return errOf(resolveRoutingProviderError(axiosError, { provider: 'Stadia Maps', originalError: error }))
-    }
+    })
   }
 
   private resolveCosting(profile?: RoutingProfile): RoutingProfile {

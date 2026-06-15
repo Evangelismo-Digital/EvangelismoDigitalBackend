@@ -98,14 +98,14 @@ export default defineConfig(({ mode }) => {
           extends: true,
           test: {
             name: 'unit-resilient-cache',
-            dir: 'src/lib/redis/helper',
+            dir: 'src/lib/infra/cache',
           },
         },
         {
           extends: true,
           test: {
             name: 'unit-rate-limiter',
-            dir: 'src/lib/redis',
+            dir: 'src/lib/infra/rate-limiter',
           },
         },
         {

@@ -118,7 +118,7 @@ describe('RedisRateLimiter Unit Tests', () => {
           mode: 'fail-open',
           provider: EnumProviderConfig.VIACEP_ADDRESS,
         }),
-        expect.stringContaining('RedisRateLimiter degraded: Redis unavailable, allowing requests (fail-open).'),
+        expect.stringContaining('RedisRateLimiter com erro: Redis não disponível, permitindo requisições (fail-open).'),
       )
     })
   })
