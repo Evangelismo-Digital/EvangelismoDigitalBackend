@@ -12,7 +12,7 @@ vi.mock('@lib/logger', () => ({
 import { ResilientAddressProvider } from './resilient-address-provider'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { NoAddressProviderError } from './error/no-address-provider-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
@@ -130,7 +130,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
       const provider = createProvider()
 
       vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(
-        errOf(new ProviderFailureError('MockProvider1', new Error('Connection timeout'))),
+        errOf(new ProviderFailureError('MockProvider1', ProviderLayer.Address, new Error('Connection timeout'))),
       )
       vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(errOf(new ServiceBusyError('MockProvider2')))
 
@@ -146,7 +146,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
 
       vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(errOf(new ServiceBusyError('MockProvider1')))
       vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(
-        errOf(new ProviderFailureError('MockProvider2', new Error('Connection timeout'))),
+        errOf(new ProviderFailureError('MockProvider2', ProviderLayer.Address, new Error('Connection timeout'))),
       )
 
       const result = await provider.fetchAddress('12345678')
@@ -174,7 +174,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
 
       vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(ok(null))
       vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(
-        errOf(new ProviderFailureError('MockProvider2', new Error('Network error'))),
+        errOf(new ProviderFailureError('MockProvider2', ProviderLayer.Address, new Error('Network error'))),
       )
 
       const result = await provider.fetchAddress('12345678')
@@ -203,7 +203,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
 
       vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(errOf(new ServiceBusyError('MockProvider1')))
       vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(
-        errOf(new ProviderFailureError('MockProvider2', systemError)),
+        errOf(new ProviderFailureError('MockProvider2', ProviderLayer.Address, systemError)),
       )
 
       const result = await provider.fetchAddress('12345678')

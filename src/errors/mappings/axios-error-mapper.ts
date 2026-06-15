@@ -1,7 +1,7 @@
 import { AxiosError } from 'axios'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
@@ -43,6 +43,7 @@ function isNetworkError(err: AxiosError): boolean {
 export type ProviderErrorContext = {
   provider: string
   originalError: unknown
+  layer?: ProviderLayer
 }
 
 /**
@@ -64,7 +65,7 @@ export function resolveAddressProviderError(
 
   const retryable = isNetworkError(err) || isRetryableStatus(status)
   return {
-    error: new ProviderFailureError(provider, originalError),
+    error: new ProviderFailureError(provider, ProviderLayer.Address, originalError),
     shouldRetry: retryable,
   }
 }
@@ -85,7 +86,7 @@ export function resolveGeoProviderError(
 
   const retryable = isNetworkError(err) || isRetryableStatus(status)
   return {
-    error: new ProviderFailureError(provider, originalError),
+    error: new ProviderFailureError(provider, ProviderLayer.Geo, originalError),
     shouldRetry: retryable,
   }
 }
@@ -110,5 +111,5 @@ export function resolveRoutingProviderError(
     return new TimeoutExceededError(err.message)
   }
 
-  return new ProviderFailureError(provider, originalError)
+  return new ProviderFailureError(provider, ProviderLayer.Route, originalError)
 }

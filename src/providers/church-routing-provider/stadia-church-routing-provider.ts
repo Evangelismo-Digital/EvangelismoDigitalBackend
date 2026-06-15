@@ -12,7 +12,7 @@ import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { ServiceOverloadError as CacheServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
@@ -164,7 +164,7 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
 
       if (!result) {
         return errOf(
-          new ProviderFailureError('Stadia Maps', new Error('Falha ao calcular distância de rota com Stadia')),
+          new ProviderFailureError('Stadia Maps', ProviderLayer.Route, new Error('Falha ao calcular distância de rota com Stadia')),
         )
       }
 
@@ -178,7 +178,7 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
           return errOf(error.errorData)
         }
         // Corrupted cache entry — treat as provider failure
-        return errOf(new ProviderFailureError('Stadia Maps', error))
+        return errOf(new ProviderFailureError('Stadia Maps', ProviderLayer.Route, error))
       }
 
       // Cache infrastructure errors — translate to canonical AppErrors

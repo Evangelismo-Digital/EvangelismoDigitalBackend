@@ -7,6 +7,8 @@ import { Redis } from 'ioredis'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { Result, ok, errOf, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
+import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
+import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
 import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { ServiceOverloadError as CacheServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
@@ -116,10 +118,13 @@ export class FindNearestChurchesUseCase {
 
       return ok(result)
     } catch (error) {
-      // CachedFailureError: reconstruct the original AppError from errorData
+      // CachedFailureError: reconstruct the original AppError from errorType
       if (error instanceof CachedFailureError) {
-        if (error.errorData instanceof AppError) {
-          return errOf(error.errorData)
+        if (error.errorType === 'InvalidCepError') {
+          return errOf(new InvalidCepError())
+        }
+        if (error.errorType === 'CoordinatesNotFoundError') {
+          return errOf(new CoordinatesNotFoundError())
         }
         // Fallback for corrupted cache entries
         return errOf(new NoNearbyChurchesFoundError())

@@ -1,7 +1,8 @@
 import { logger } from '@lib/logger'
 import { NoAddressProviderError } from './error/no-address-provider-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { Result, ok, errOf, isOk } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
@@ -83,13 +84,11 @@ export class ResilientAddressProvider implements IAddressProvider {
     // Decision phase: all providers exhausted
     if (notFoundCount === this.providers.length) {
       // Every provider confirmed the resource does not exist
-      logger.info(
+      logger.warn(
         { cep: cleanCep, notFoundCount, totalProviders: this.providers.length },
         'TODOS os provedores confirmaram CEP inválido/não encontrado',
       )
-      // Return the last NOT_FOUND error from the chain — first provider's error
-      // is the canonical one since the category is homogeneous
-      return errOf(new ProviderFailureError('ResilientAddressProvider', new Error('TODOS os provedores confirmaram não encontrado')))
+      return errOf(new InvalidCepError())
     }
 
     if (lastRetryableError) {
@@ -100,6 +99,6 @@ export class ResilientAddressProvider implements IAddressProvider {
       return errOf(lastRetryableError)
     }
 
-    return errOf(new ProviderFailureError('ResilientAddressProvider', new Error('TODOS os provedores falharam')))
+    return errOf(new ProviderFailureError('ResilientAddressProvider', ProviderLayer.Address, new Error('TODOS os provedores falharam')))
   }
 }

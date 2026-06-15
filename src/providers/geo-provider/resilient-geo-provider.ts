@@ -1,6 +1,6 @@
 import { logger } from '@lib/logger'
 import { NoGeoProviderError } from './error/no-geo-provider-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import {
@@ -100,7 +100,10 @@ export class ResilientGeoProvider implements IGeocodingProvider {
 
     // Decision phase: all providers exhausted
     if (notFoundCount === this.providers.length) {
-      logger.info('Nenhum provedor retornou resultados - coordenadas não encontradas')
+      logger.warn(
+        { notFoundCount, totalProviders: this.providers.length },
+        'Nenhum provedor retornou resultados - coordenadas não encontradas',
+      )
       return errOf(new CoordinatesNotFoundError())
     }
 
@@ -109,6 +112,6 @@ export class ResilientGeoProvider implements IGeocodingProvider {
       return errOf(lastRetryableError)
     }
 
-    return errOf(new ProviderFailureError('ResilientGeoProvider', new Error('TODOS os provedores falharam')))
+    return errOf(new ProviderFailureError('ResilientGeoProvider', ProviderLayer.Geo, new Error('TODOS os provedores falharam')))
   }
 }

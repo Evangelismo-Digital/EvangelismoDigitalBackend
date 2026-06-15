@@ -49,3 +49,9 @@ export const NO_NEARBY_CHURCHES_FOUND_ERROR: IErrorDetail = {
   code: 'NO_NEARBY_CHURCHES_FOUND',
   message: 'Nenhuma igreja encontrada nas proximidades.',
 }
+
+export const CEP_TO_LAT_LON_ERROR: IErrorDetail = {
+  code: 'CEP_TO_LAT_LON_FAILED',
+  message: 'Falha ao processar o CEP',
+}
+

@@ -9,7 +9,7 @@ import { CachedFailureError } from '@lib/infra/cache/resilient-cache'
 import { IGeocodingProvider, EnumGeoPrecision } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { ok, errOf, isOk, isErr } from 'core/shared/result'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
 
 vi.mock('@lib/env', () => ({
   env: {
@@ -342,7 +342,7 @@ describe('CepToLatLon Use Case', () => {
 
   it('should return generic CepToLatLonError on unexpected system failure', async () => {
     addressProviderMock.fetchAddress.mockResolvedValue(
-      errOf(new ProviderFailureError('Mock', new Error('Unknown Axios Error'))),
+      errOf(new ProviderFailureError('Mock', ProviderLayer.Address, new Error('Unknown Axios Error'))),
     )
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
@@ -357,6 +357,7 @@ describe('CepToLatLon Use Case', () => {
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
       expect(result.error).toBeInstanceOf(CepToLatLonError)
+      expect(result.error.message).toBe('Falha ao processar o CEP 00000000.')
     }
   })
 })

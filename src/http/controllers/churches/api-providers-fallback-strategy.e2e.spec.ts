@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { createRedisCacheConnection } from '@lib/redis/connections/redis-cache-connection'
 import { BrasilApiProvider } from 'providers/address-provider/brasil-api-provider'
 import { RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
 import { errOf, ok } from 'core/shared/result'
 import { StadiaChurchRoutingProvider } from 'providers/church-routing-provider/stadia-church-routing-provider'
 
@@ -78,13 +78,13 @@ describe('Real Geocoding Fallback Scenarios (e2e)', () => {
   it('Scenario 3: Awesome Fail -> BrasilAPI Fail -> ViaCep Fail (System Failure)', async () => {
     const spyAwesome = vi
       .spyOn(AwesomeApiProvider.prototype, 'fetchAddress')
-      .mockResolvedValue(errOf(new ProviderFailureError('AwesomeAPI', new Error('Network error'))))
+      .mockResolvedValue(errOf(new ProviderFailureError('AwesomeAPI', ProviderLayer.Address, new Error('Network error'))))
     const spyBrasilApi = vi
       .spyOn(BrasilApiProvider.prototype, 'fetchAddress')
-      .mockResolvedValue(errOf(new ProviderFailureError('BrasilAPI', new Error('Network error'))))
+      .mockResolvedValue(errOf(new ProviderFailureError('BrasilAPI', ProviderLayer.Address, new Error('Network error'))))
     const spyViaCep = vi
       .spyOn(ViaCepProvider.prototype, 'fetchAddress')
-      .mockResolvedValue(errOf(new ProviderFailureError('ViaCEP', new Error('Network error'))))
+      .mockResolvedValue(errOf(new ProviderFailureError('ViaCEP', ProviderLayer.Address, new Error('Network error'))))
 
     const response = await request(app.server).get('/churches/nearest').query({ cep: VALID_CEP })
 
@@ -101,11 +101,11 @@ describe('Real Geocoding Fallback Scenarios (e2e)', () => {
   it('Scenario 4: Awesome Fail -> BrasilAPI Fail -> ViaCep OK -> LocationIQ OK', async () => {
     const spyAwesome = vi
       .spyOn(AwesomeApiProvider.prototype, 'fetchAddress')
-      .mockResolvedValue(errOf(new ProviderFailureError('AwesomeAPI', new Error('Network error'))))
+      .mockResolvedValue(errOf(new ProviderFailureError('AwesomeAPI', ProviderLayer.Address, new Error('Network error'))))
 
     const spyBrasilApi = vi
       .spyOn(BrasilApiProvider.prototype, 'fetchAddress')
-      .mockResolvedValue(errOf(new ProviderFailureError('BrasilAPI', new Error('Network error'))))
+      .mockResolvedValue(errOf(new ProviderFailureError('BrasilAPI', ProviderLayer.Address, new Error('Network error'))))
 
     const spyViaCep = vi.spyOn(ViaCepProvider.prototype, 'fetchAddress')
 
@@ -130,16 +130,16 @@ describe('Real Geocoding Fallback Scenarios (e2e)', () => {
   // ==============================================================================
   it('Scenario 5: Awesome Fail -> BrasilAPI Fail -> ViaCep OK -> LocationIQ Fail -> Nominatim OK', async () => {
     vi.spyOn(AwesomeApiProvider.prototype, 'fetchAddress').mockResolvedValue(
-      errOf(new ProviderFailureError('AwesomeAPI', new Error('Network error'))),
+      errOf(new ProviderFailureError('AwesomeAPI', ProviderLayer.Address, new Error('Network error'))),
     )
 
     vi.spyOn(BrasilApiProvider.prototype, 'fetchAddress').mockResolvedValue(
-      errOf(new ProviderFailureError('BrasilAPI', new Error('Network error'))),
+      errOf(new ProviderFailureError('BrasilAPI', ProviderLayer.Address, new Error('Network error'))),
     )
 
     const spyLocationIq = vi
       .spyOn(LocationIqProvider.prototype, 'search')
-      .mockResolvedValue(errOf(new ProviderFailureError('LocationIQ', new Error('Network error'))))
+      .mockResolvedValue(errOf(new ProviderFailureError('LocationIQ', ProviderLayer.Geo, new Error('Network error'))))
 
     const spyViaCep = vi.spyOn(ViaCepProvider.prototype, 'fetchAddress')
     const spyNominatim = vi.spyOn(NominatimGeoProvider.prototype, 'search')
@@ -159,17 +159,17 @@ describe('Real Geocoding Fallback Scenarios (e2e)', () => {
   // ==============================================================================
   it('Scenario 6: Everything Fails', async () => {
     vi.spyOn(AwesomeApiProvider.prototype, 'fetchAddress').mockResolvedValue(
-      errOf(new ProviderFailureError('AwesomeAPI', new Error('Network error'))),
+      errOf(new ProviderFailureError('AwesomeAPI', ProviderLayer.Address, new Error('Network error'))),
     )
     vi.spyOn(BrasilApiProvider.prototype, 'fetchAddress').mockResolvedValue(
-      errOf(new ProviderFailureError('BrasilAPI', new Error('Network error'))),
+      errOf(new ProviderFailureError('BrasilAPI', ProviderLayer.Address, new Error('Network error'))),
     )
     // ViaCep works to get address but geocoding fails on both providers
     vi.spyOn(LocationIqProvider.prototype, 'search').mockResolvedValue(
-      errOf(new ProviderFailureError('LocationIQ', new Error('Network error'))),
+      errOf(new ProviderFailureError('LocationIQ', ProviderLayer.Geo, new Error('Network error'))),
     )
     vi.spyOn(NominatimGeoProvider.prototype, 'search').mockResolvedValue(
-      errOf(new ProviderFailureError('Nominatim', new Error('Network error'))),
+      errOf(new ProviderFailureError('Nominatim', ProviderLayer.Geo, new Error('Network error'))),
     )
 
     const response = await request(app.server).get('/churches/nearest').query({ cep: VALID_CEP })
@@ -184,7 +184,7 @@ describe('Real Geocoding Fallback Scenarios (e2e)', () => {
   it('Scenario 7: Awesome fail -> BrasilApiProvider ok -> LocationIQ ok', async () => {
     const spyAwesome = vi
       .spyOn(AwesomeApiProvider.prototype, 'fetchAddress')
-      .mockResolvedValue(errOf(new ProviderFailureError('AwesomeAPI', new Error('Network error'))))
+      .mockResolvedValue(errOf(new ProviderFailureError('AwesomeAPI', ProviderLayer.Address, new Error('Network error'))))
     const spyBrasilApi = vi.spyOn(BrasilApiProvider.prototype, 'fetchAddress')
     const spyViaCep = vi.spyOn(ViaCepProvider.prototype, 'fetchAddress')
 
@@ -207,13 +207,13 @@ describe('Real Geocoding Fallback Scenarios (e2e)', () => {
   it('Scenario 8: Awesome fail -> BrasilApiProvider ok -> LocationIQ fail-> Nominatim ok', async () => {
     const spyAwesome = vi
       .spyOn(AwesomeApiProvider.prototype, 'fetchAddress')
-      .mockResolvedValue(errOf(new ProviderFailureError('AwesomeAPI', new Error('Network error'))))
+      .mockResolvedValue(errOf(new ProviderFailureError('AwesomeAPI', ProviderLayer.Address, new Error('Network error'))))
     const spyBrasilApi = vi.spyOn(BrasilApiProvider.prototype, 'fetchAddress')
     const spyViaCep = vi.spyOn(ViaCepProvider.prototype, 'fetchAddress')
 
     const spyLocationIq = vi
       .spyOn(LocationIqProvider.prototype, 'search')
-      .mockResolvedValue(errOf(new ProviderFailureError('LocationIQ', new Error('Network error'))))
+      .mockResolvedValue(errOf(new ProviderFailureError('LocationIQ', ProviderLayer.Geo, new Error('Network error'))))
     const spyNominatim = vi.spyOn(NominatimGeoProvider.prototype, 'search')
 
     const response = await request(app.server).get('/churches/nearest').query({ cep: VALID_CEP })

@@ -78,7 +78,7 @@ export class CepToLatLonUseCase {
       )
 
       if (!result) {
-        return errOf(new CepToLatLonError())
+        return errOf(new CepToLatLonError(cleanCep))
       }
 
       if (!this.cacheSuccessResults) {
@@ -87,13 +87,16 @@ export class CepToLatLonUseCase {
 
       return ok(result)
     } catch (error) {
-      // CachedFailureError: reconstruct the original AppError from errorData
+      // CachedFailureError: reconstruct the original AppError from errorType
       if (error instanceof CachedFailureError) {
-        if (error.errorData instanceof AppError) {
-          return errOf(error.errorData)
+        if (error.errorType === 'InvalidCepError') {
+          return errOf(new InvalidCepError())
+        }
+        if (error.errorType === 'CoordinatesNotFoundError') {
+          return errOf(new CoordinatesNotFoundError())
         }
         logger.error({ cep: cleanCep, cachedError: error }, 'Tipo de erro em cache inesperado no CepToLatLonUseCase')
-        return errOf(new CepToLatLonError())
+        return errOf(new CepToLatLonError(cleanCep))
       }
 
       // AppErrors propagate directly (domain and infra alike)
@@ -110,7 +113,7 @@ export class CepToLatLonUseCase {
         return errOf(new TimeoutExceededError())
       }
 
-      return errOf(new CepToLatLonError())
+      return errOf(new CepToLatLonError(cleanCep))
     }
   }
 
@@ -192,7 +195,7 @@ export class CepToLatLonUseCase {
     logger.error({ cep: cleanCep, city: localidade }, 'Crítico: Geocoding Provider não encontrou a cidade.')
 
     // This is a system error
-    throw new CepToLatLonError()
+    throw new CepToLatLonError(cleanCep)
   }
 
   private mapResponse(coords: IGeoCoordinates): CepToLatLonResponse {
