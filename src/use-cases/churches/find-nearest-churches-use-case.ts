@@ -14,7 +14,7 @@ import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infras
 import { ServiceOverloadError as CacheServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
 import { TimeoutExceededOnFetchError as CacheTimeoutError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { ErrorCategory } from 'core/types/error-category/error-category.enum'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 export interface FindNearestChurchesRequest {
   cep: string
@@ -101,7 +101,7 @@ export class FindNearestChurchesUseCase {
         },
         // errorMapper: cache only NOT_FOUND domain facts; never cache RETRYABLE infra errors
         (error: unknown) => {
-          if (error instanceof AppError && error.category === ErrorCategory.NOT_FOUND) {
+          if (error instanceof AppError && error.failureMode === FailureMode.NOT_FOUND) {
             return {
               type: error.constructor.name,
               message: error.message,

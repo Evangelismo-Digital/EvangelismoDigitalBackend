@@ -16,7 +16,7 @@ import { IAddressProvider } from 'core/contracts/use-cases/providers/address-pro
 import { CachedFailureError, ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
 import { Result, ok, errOf, isOk, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { ErrorCategory } from 'core/types/error-category/error-category.enum'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 interface CepToLatLonRequest {
   cep: string
@@ -66,7 +66,7 @@ export class CepToLatLonUseCase {
         // errorMapper: cache errors that represent a permanent domain fact (NOT_FOUND).
         // RETRYABLE infra errors are never cached — returning null skips caching.
         (error) => {
-          if (error instanceof AppError && error.category === ErrorCategory.NOT_FOUND) {
+          if (error instanceof AppError && error.failureMode === FailureMode.NOT_FOUND) {
             return {
               type: error.constructor.name,
               message: error.message,
@@ -154,7 +154,7 @@ export class CepToLatLonUseCase {
       if (isOk(exactResult) && exactResult.value) {
         return this.mapResponse(exactResult.value)
       }
-      if (isErr(exactResult) && exactResult.error.category !== ErrorCategory.NOT_FOUND) {
+      if (isErr(exactResult) && exactResult.error.failureMode !== FailureMode.NOT_FOUND) {
         throw exactResult.error
       }
     }
@@ -165,7 +165,7 @@ export class CepToLatLonUseCase {
       if (isOk(approxResult) && approxResult.value) {
         return this.mapResponse(approxResult.value)
       }
-      if (isErr(approxResult) && approxResult.error.category !== ErrorCategory.NOT_FOUND) {
+      if (isErr(approxResult) && approxResult.error.failureMode !== FailureMode.NOT_FOUND) {
         throw approxResult.error
       }
     }

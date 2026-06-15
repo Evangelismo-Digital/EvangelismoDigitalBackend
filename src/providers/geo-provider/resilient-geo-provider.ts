@@ -10,16 +10,16 @@ import {
 } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { Result, ok, errOf, isOk } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { ErrorCategory } from 'core/types/error-category/error-category.enum'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 /**
  * ResilientGeoProvider chains multiple `IGeocodingProvider` implementations
  * and advances to the next provider whenever the current one returns a
- * `RETRYABLE` error.  It bails immediately for any other error category
- * (NOT_FOUND, unknown / no category).
+ * `RETRYABLE` failure mode.  It bails immediately for any other failure mode
+ * (NOT_FOUND, unknown / no failure mode).
  *
  * No `instanceof` checks are used — routing is driven purely by
- * `error.category`.
+ * `error.failureMode`.
  */
 export class ResilientGeoProvider implements IGeocodingProvider {
   constructor(private readonly providers: IGeocodingProvider[]) {
@@ -76,14 +76,14 @@ export class ResilientGeoProvider implements IGeocodingProvider {
       const error = result.error
 
       // NOT_FOUND: resource genuinely missing — treat same as null response
-      if (error.category === ErrorCategory.NOT_FOUND) {
+      if (error.failureMode === FailureMode.NOT_FOUND) {
         notFoundCount++
         logger.info({ provider: providerName }, 'Coordenadas não encontradas - tentando próximo')
         continue
       }
 
       // RETRYABLE: transient infra error — log and advance to next provider
-      if (error.category === ErrorCategory.RETRYABLE) {
+      if (error.failureMode === FailureMode.RETRYABLE) {
         lastRetryableError = error
         lastProviderName = providerName
         logger.warn(

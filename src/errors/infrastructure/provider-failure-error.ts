@@ -1,5 +1,5 @@
 import { ErrorType } from 'core/types/error-type/error-type'
-import { ErrorCategory } from 'core/types/error-category/error-category.enum'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 import { InfrastructureError } from '../infrastructure-error'
 import { PROVIDER_FAILURE_ERROR } from 'messages/errors/providers/providers-error-messages'
 
@@ -19,7 +19,7 @@ export class ProviderFailureError extends InfrastructureError {
       },
       originalError,
       ErrorType.SERVICE_UNAVAILABLE,
-      ErrorCategory.RETRYABLE,
+      FailureMode.RETRYABLE,
     )
     this.name = 'ProviderFailureError'
   }

@@ -1,6 +1,6 @@
 import { IErrorDetail } from 'core/contracts/errors/error-detail.interface'
 import { ErrorType } from 'core/types/error-type/error-type'
-import { ErrorCategory } from 'core/types/error-category/error-category.enum'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 import { AppError } from 'errors/app-error'
 
 export abstract class InfrastructureError extends AppError {
@@ -10,11 +10,11 @@ export abstract class InfrastructureError extends AppError {
     detail: IErrorDetail,
     originalError?: unknown,
     type: ErrorType = ErrorType.INTERNAL_SERVER_ERROR,
-    category?: ErrorCategory,
+    failureMode?: FailureMode,
   ) {
     // O tipo aqui e mais para fins de categorizacao interna do erro,
     // embora este tipo nao sera enviado em respostas do Fastify.
-    super(detail, type, category)
+    super(detail, type, failureMode)
 
     this.originalError = originalError
 

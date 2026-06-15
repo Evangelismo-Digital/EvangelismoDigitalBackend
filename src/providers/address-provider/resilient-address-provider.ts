@@ -6,16 +6,16 @@ import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { Result, ok, errOf, isOk } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { ErrorCategory } from 'core/types/error-category/error-category.enum'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 /**
  * ResilientAddressProvider chains multiple `IAddressProvider` implementations
  * and advances to the next provider whenever the current one returns a
- * `RETRYABLE` error.  It bails immediately for any other error category
- * (NOT_FOUND, unknown / no category).
+ * `RETRYABLE` failure mode.  It bails immediately for any other failure mode
+ * (NOT_FOUND, unknown / no failure mode).
  *
  * No `instanceof` checks are used — routing is driven purely by
- * `error.category`.
+ * `error.failureMode`.
  */
 export class ResilientAddressProvider implements IAddressProvider {
   constructor(private readonly providers: IAddressProvider[]) {
@@ -56,7 +56,7 @@ export class ResilientAddressProvider implements IAddressProvider {
       const error = result.error
 
       // NOT_FOUND: resource genuinely missing — treat same as null response
-      if (error.category === ErrorCategory.NOT_FOUND) {
+      if (error.failureMode === FailureMode.NOT_FOUND) {
         notFoundCount++
         logger.info(
           { provider: providerName, cep: cleanCep },
@@ -66,7 +66,7 @@ export class ResilientAddressProvider implements IAddressProvider {
       }
 
       // RETRYABLE: transient infra error — log and advance to next provider
-      if (error.category === ErrorCategory.RETRYABLE) {
+      if (error.failureMode === FailureMode.RETRYABLE) {
         lastRetryableError = error
         lastProviderName = providerName
         logger.warn(

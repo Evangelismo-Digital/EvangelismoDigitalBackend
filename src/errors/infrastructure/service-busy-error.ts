@@ -1,5 +1,5 @@
 import { ErrorType } from 'core/types/error-type/error-type'
-import { ErrorCategory } from 'core/types/error-category/error-category.enum'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 import { InfrastructureError } from '../infrastructure-error'
 import { SERVICE_BUSY_ERROR } from 'messages/errors/providers/providers-error-messages'
 
@@ -12,7 +12,7 @@ export class ServiceBusyError extends InfrastructureError {
       },
       undefined,
       ErrorType.TOO_MANY_REQUESTS,
-      ErrorCategory.RETRYABLE,
+      FailureMode.RETRYABLE,
     )
     this.name = 'ServiceBusyError'
   }
