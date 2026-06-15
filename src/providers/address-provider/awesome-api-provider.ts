@@ -8,9 +8,8 @@ import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/provide
 import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
+import { resolveAddressProviderError } from 'errors/mappings/axios-error-mapper'
 
 export interface AwesomeApiConfig {
   apiUrl: string
@@ -77,7 +76,7 @@ export class AwesomeApiProvider implements IAddressProvider {
       return errOf(new ServiceBusyError('AwesomeAPI'))
     }
 
-    let lastError: Error | unknown = undefined
+    let lastError: unknown = undefined
 
     for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
       if (signal?.aborted) {
@@ -117,30 +116,19 @@ export class AwesomeApiProvider implements IAddressProvider {
           return errOf(new TimeoutExceededError(signal.reason))
         }
 
-        const err = error as AxiosError
-        const status = err.response?.status
-
-        // 404
-        if (status === 404) {
-          logger.warn({ cep: cleanCep, attempt, status }, 'CEP não encontrado na AwesomeAPI (404)')
-          return errOf(new InvalidCepError())
-        }
-
         lastError = error
+        const err = error as AxiosError
+        const { error: appError, shouldRetry } = resolveAddressProviderError(err, {
+          provider: 'AwesomeAPI',
+          originalError: lastError,
+        })
 
-        // Check if error is retryable (network issues, 5xx, 429)
-        const isRetryable = !err.response || (typeof status === 'number' && (status >= 500 || status === 429))
-
-        if (!isRetryable || attempt === this.MAX_RETRIES) {
-          if (status === 429 && attempt === this.MAX_RETRIES) {
-            return errOf(new ServiceBusyError('AwesomeAPI'))
-          }
-
+        if (!shouldRetry || attempt === this.MAX_RETRIES) {
           logger.error(
             {
               cep: cleanCep,
               attempt,
-              status,
+              status: err.response?.status,
               code: err.code,
               name: err.name,
               url: err.config?.url,
@@ -148,18 +136,18 @@ export class AwesomeApiProvider implements IAddressProvider {
             },
             'Falha ao buscar endereço AwesomeAPI após tentativas',
           )
-          return errOf(new ProviderFailureError('AwesomeAPI', lastError))
+          return errOf(appError)
         }
 
         // Backoff and retry for transient errors
         const delay = this.BACKOFF_MS * Math.pow(2, attempt - 1)
-        logger.warn({ cep: cleanCep, attempt, delay, status }, 'Repetindo solicitação para AwesomeAPI')
+        logger.warn({ cep: cleanCep, attempt, delay, status: err.response?.status }, 'Repetindo solicitação para AwesomeAPI')
         await this.sleep(delay)
       }
     }
 
     logger.error({ cep: cleanCep }, 'AwesomeAPI - todas as tentativas esgotadas sem sucesso')
-    return errOf(new ProviderFailureError('AwesomeAPI', lastError))
+    return errOf(new ServiceBusyError('AwesomeAPI'))
   }
 
   private sleep(ms: number): Promise<void> {

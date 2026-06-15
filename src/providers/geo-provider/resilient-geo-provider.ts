@@ -1,7 +1,6 @@
 import { logger } from '@lib/logger'
 import { NoGeoProviderError } from './error/no-geo-provider-error'
 import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import {
@@ -11,7 +10,17 @@ import {
 } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { Result, ok, errOf, isOk } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
+import { ErrorCategory } from 'core/types/error-category/error-category.enum'
 
+/**
+ * ResilientGeoProvider chains multiple `IGeocodingProvider` implementations
+ * and advances to the next provider whenever the current one returns a
+ * `RETRYABLE` error.  It bails immediately for any other error category
+ * (NOT_FOUND, unknown / no category).
+ *
+ * No `instanceof` checks are used — routing is driven purely by
+ * `error.category`.
+ */
 export class ResilientGeoProvider implements IGeocodingProvider {
   constructor(private readonly providers: IGeocodingProvider[]) {
     if (this.providers.length === 0) {
@@ -39,15 +48,14 @@ export class ResilientGeoProvider implements IGeocodingProvider {
     action: (provider: IGeocodingProvider, signal: AbortSignal) => Promise<Result<IGeoCoordinates | null, AppError>>,
     signal: AbortSignal,
   ): Promise<Result<IGeoCoordinates | null, AppError>> {
-    let lastError: AppError | undefined = undefined
-    let hasSystemError = false
+    let lastRetryableError: AppError | undefined = undefined
     let lastProviderName = ''
     let notFoundCount = 0
 
     for (const [index, provider] of this.providers.entries()) {
       const providerName = provider.constructor.name
 
-      // Defensive Check
+      // Defensive Check — honour abort before each provider attempt
       if (signal.aborted) {
         return errOf(new TimeoutExceededError(signal.reason))
       }
@@ -62,45 +70,43 @@ export class ResilientGeoProvider implements IGeocodingProvider {
         // Provider returned null (not found)
         notFoundCount++
         logger.info({ provider: providerName }, 'Provedor retornou null (não encontrado) - tentando próximo')
-      } else {
-        const error = result.error
-
-        if (error instanceof TimeoutExceededError) {
-          return errOf(error)
-        }
-
-        if (error instanceof CoordinatesNotFoundError) {
-          notFoundCount++
-          logger.info({ provider: providerName }, 'Coordenadas não encontradas - tentando próximo')
-          continue
-        }
-
-        // System errors
-        hasSystemError = true
-        lastError = error
-        lastProviderName = providerName
-        const errMsg = error.message
-
-        if (error instanceof ServiceBusyError) {
-          logger.warn(
-            { provider: providerName, attempt: index + 1 },
-            'Provedor de geocodificação ocupado (429). Alternando para o próximo provedor...',
-          )
-        } else {
-          logger.warn({ provider: providerName, error: errMsg }, 'Provedor falhou (Erro de Sistema). Alternando...')
-        }
+        continue
       }
+
+      const error = result.error
+
+      // NOT_FOUND: resource genuinely missing — treat same as null response
+      if (error.category === ErrorCategory.NOT_FOUND) {
+        notFoundCount++
+        logger.info({ provider: providerName }, 'Coordenadas não encontradas - tentando próximo')
+        continue
+      }
+
+      // RETRYABLE: transient infra error — log and advance to next provider
+      if (error.category === ErrorCategory.RETRYABLE) {
+        lastRetryableError = error
+        lastProviderName = providerName
+        logger.warn(
+          { provider: providerName, attempt: index + 1, error: error.message },
+          'Provedor de geocodificação retornou erro recuperável. Alternando para o próximo provedor...',
+        )
+        continue
+      }
+
+      // Unknown / fatal error — bail immediately without trying other providers
+      logger.error({ provider: providerName, error: error.message }, 'Provedor retornou erro fatal. Abortando cadeia.')
+      return errOf(error)
     }
 
-    // Decision phase
-    if (hasSystemError && lastError) {
-      logger.error({ provider: lastProviderName }, 'Geocodificação falhou com erros de sistema')
-      return errOf(lastError)
-    }
-
+    // Decision phase: all providers exhausted
     if (notFoundCount === this.providers.length) {
       logger.info('Nenhum provedor retornou resultados - coordenadas não encontradas')
       return errOf(new CoordinatesNotFoundError())
+    }
+
+    if (lastRetryableError) {
+      logger.error({ provider: lastProviderName }, 'Geocodificação falhou com erros de sistema')
+      return errOf(lastRetryableError)
     }
 
     return errOf(new ProviderFailureError('ResilientGeoProvider', new Error('TODOS os provedores falharam')))

@@ -16,6 +16,7 @@ import { IAddressProvider } from 'core/contracts/use-cases/providers/address-pro
 import { CachedFailureError, ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
 import { Result, ok, errOf, isOk, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
+import { ErrorCategory } from 'core/types/error-category/error-category.enum'
 
 interface CepToLatLonRequest {
   cep: string
@@ -60,31 +61,18 @@ export class CepToLatLonUseCase {
       const result = await this.cacheManager.getOrFetch<CepToLatLonResponse>(
         cacheKey,
         async (signal) => {
-          // This will throw InvalidCepError or CoordinatesNotFoundError
-          // which will be caught by errorMapper and cached
           return await this.processCep(cleanCep, signal)
         },
-        // errorMapper: Define which errors should be cached (business errors)
+        // errorMapper: cache errors that represent a permanent domain fact (NOT_FOUND).
+        // RETRYABLE infra errors are never cached — returning null skips caching.
         (error) => {
-          // Business errors - these should be cached with negativeTtl
-          if (error instanceof InvalidCepError) {
+          if (error instanceof AppError && error.category === ErrorCategory.NOT_FOUND) {
             return {
-              type: 'InvalidCepError',
+              type: error.constructor.name,
               message: error.message,
               data: { cep: cleanCep },
             }
           }
-
-          if (error instanceof CoordinatesNotFoundError) {
-            return {
-              type: 'CoordinatesNotFoundError',
-              message: error.message,
-              data: { cep: cleanCep },
-            }
-          }
-
-          // System errors (timeouts, rate limits, 500s) - NOT cached
-          // Returning null means "don't cache this error"
           return null
         },
       )
@@ -99,24 +87,21 @@ export class CepToLatLonUseCase {
 
       return ok(result)
     } catch (error) {
-      // Handle CachedFailureError - convert back to domain errors
+      // CachedFailureError: reconstruct the original AppError from errorData
       if (error instanceof CachedFailureError) {
-        if (error.errorType === 'InvalidCepError') {
-          return errOf(new InvalidCepError())
+        if (error.errorData instanceof AppError) {
+          return errOf(error.errorData)
         }
-        if (error.errorType === 'CoordinatesNotFoundError') {
-          return errOf(new CoordinatesNotFoundError())
-        }
-        // This shouldn't happen, but fallback to generic error
         logger.error({ cep: cleanCep, cachedError: error }, 'Tipo de erro em cache inesperado no CepToLatLonUseCase')
         return errOf(new CepToLatLonError())
       }
 
-      // Domain or System errors thrown directly
+      // AppErrors propagate directly (domain and infra alike)
       if (error instanceof AppError) {
         return errOf(error)
       }
 
+      // Cache infrastructure errors — translate to canonical AppErrors
       if (error instanceof CacheServiceOverloadError) {
         return errOf(new InfraServiceOverloadError())
       }
@@ -125,7 +110,6 @@ export class CepToLatLonUseCase {
         return errOf(new TimeoutExceededError())
       }
 
-      // Throw user-friendly error message
       return errOf(new CepToLatLonError())
     }
   }
@@ -166,7 +150,8 @@ export class CepToLatLonUseCase {
       const exactResult = await this.geocodingProvider.search(`${logradouro}, ${localidade} - ${uf}, Brazil`, signal)
       if (isOk(exactResult) && exactResult.value) {
         return this.mapResponse(exactResult.value)
-      } else if (isErr(exactResult) && !(exactResult.error instanceof CoordinatesNotFoundError)) {
+      }
+      if (isErr(exactResult) && exactResult.error.category !== ErrorCategory.NOT_FOUND) {
         throw exactResult.error
       }
     }
@@ -176,7 +161,8 @@ export class CepToLatLonUseCase {
       const approxResult = await this.geocodingProvider.search(`${bairro}, ${localidade} - ${uf}, Brazil`, signal)
       if (isOk(approxResult) && approxResult.value) {
         return this.mapResponse(approxResult.value)
-      } else if (isErr(approxResult) && !(approxResult.error instanceof CoordinatesNotFoundError)) {
+      }
+      if (isErr(approxResult) && approxResult.error.category !== ErrorCategory.NOT_FOUND) {
         throw approxResult.error
       }
     }

@@ -1,4 +1,4 @@
-import { AxiosInstance, AxiosError } from 'axios'
+import { AxiosError, AxiosInstance } from 'axios'
 import { Redis } from 'ioredis'
 import { createHttpClient } from '@lib/http/axios'
 import { logger } from '@lib/logger'
@@ -12,9 +12,8 @@ import {
 import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
+import { resolveGeoProviderError } from 'errors/mappings/axios-error-mapper'
 
 interface LocationIqConfig {
   apiUrl: string
@@ -90,7 +89,7 @@ export class LocationIqProvider implements IGeocodingProvider {
     params: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<Result<IGeoCoordinates | null, AppError>> {
-    let lastError: Error | unknown = undefined
+    let lastError: unknown = undefined
 
     for (let attempt = 1; attempt <= this.MAX_ATTEMPTS; attempt++) {
       if (signal?.aborted) {
@@ -127,23 +126,14 @@ export class LocationIqProvider implements IGeocodingProvider {
           return errOf(new TimeoutExceededError(signal.reason))
         }
 
-        const err = error as AxiosError
-        const status = err.response?.status
-
-        if (status === 404) {
-          return errOf(new CoordinatesNotFoundError())
-        }
-
-        // Store last error for potential re-throw
         lastError = error
+        const err = error as AxiosError
+        const { error: appError, shouldRetry } = resolveGeoProviderError(err, {
+          provider: 'LocationIQ',
+          originalError: lastError,
+        })
 
-        const isRetryable = !err.response || (status && (status >= 500 || status === 429))
-
-        if (!isRetryable || attempt === this.MAX_ATTEMPTS) {
-          if (status === 429 && attempt === this.MAX_ATTEMPTS) {
-            return errOf(new ServiceBusyError('LocationIQ'))
-          }
-
+        if (!shouldRetry || attempt === this.MAX_ATTEMPTS) {
           logger.warn(
             {
               code: err.code,
@@ -153,7 +143,7 @@ export class LocationIqProvider implements IGeocodingProvider {
             },
             'Provedor LocationIQ falhou ao buscar coordenadas',
           )
-          return errOf(new ProviderFailureError('LocationIQ', lastError))
+          return errOf(appError)
         }
 
         // Backoff apenas para erros de rede/servidor instável
@@ -162,7 +152,7 @@ export class LocationIqProvider implements IGeocodingProvider {
       }
     }
 
-    return errOf(new ProviderFailureError('LocationIQ', lastError))
+    return errOf(new ServiceBusyError('LocationIQ'))
   }
 
   private sleep(ms: number): Promise<void> {

@@ -13,9 +13,8 @@ import {
 import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
+import { resolveGeoProviderError } from 'errors/mappings/axios-error-mapper'
 
 interface NominatimConfig {
   apiUrl: string
@@ -118,19 +117,11 @@ export class NominatimGeoProvider implements IGeocodingProvider {
       }
 
       const err = error as AxiosError
-      const status = err.response?.status
+      const { error: appError } = resolveGeoProviderError(err, {
+        provider: 'Nominatim',
+        originalError: error,
+      })
 
-      // 404 means not found
-      if (status === 404) {
-        return errOf(new CoordinatesNotFoundError())
-      }
-
-      // API rate limit (429)
-      if (status === 429) {
-        return errOf(new ServiceBusyError('Nominatim'))
-      }
-
-      // Other errors (network, 500, etc.)
       logger.warn(
         {
           code: err.code,
@@ -140,7 +131,8 @@ export class NominatimGeoProvider implements IGeocodingProvider {
         },
         'Provedor Nominatim falhou ao buscar coordenadas',
       )
-      return errOf(new ProviderFailureError('Nominatim', error))
+
+      return errOf(appError)
     }
   }
 

@@ -3,8 +3,6 @@ import { ChurchPresenter } from '@http/presenters/church-presenter'
 import { CepToLatLonUseCase } from '@use-cases/churches/cep-to-lat-lon-use-case'
 import { FindNearbyChurchesKnnUseCase } from '@use-cases/churches/find-nearby-churches-knn-use-case'
 import { CalculateChurchRouteDistancesUseCase } from '@use-cases/churches/calculate-church-route-distances-use-case'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import { Redis } from 'ioredis'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { Result, ok, errOf, isErr } from 'core/shared/result'
@@ -14,6 +12,7 @@ import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infras
 import { ServiceOverloadError as CacheServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
 import { TimeoutExceededOnFetchError as CacheTimeoutError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { ErrorCategory } from 'core/types/error-category/error-category.enum'
 
 export interface FindNearestChurchesRequest {
   cep: string
@@ -98,16 +97,15 @@ export class FindNearestChurchesUseCase {
             coordinatesProviderName,
           }
         },
-        // errorMapper: only cache business/domain errors
+        // errorMapper: cache only NOT_FOUND domain facts; never cache RETRYABLE infra errors
         (error: unknown) => {
-          if (error instanceof InvalidCepError) {
-            return { type: 'InvalidCepError', message: error.message, data: { cep: cleanCep } }
+          if (error instanceof AppError && error.category === ErrorCategory.NOT_FOUND) {
+            return {
+              type: error.constructor.name,
+              message: error.message,
+              data: { cep: cleanCep },
+            }
           }
-
-          if (error instanceof CoordinatesNotFoundError) {
-            return { type: 'CoordinatesNotFoundError', message: error.message, data: { cep: cleanCep } }
-          }
-
           return null
         },
       )
@@ -118,20 +116,21 @@ export class FindNearestChurchesUseCase {
 
       return ok(result)
     } catch (error) {
+      // CachedFailureError: reconstruct the original AppError from errorData
       if (error instanceof CachedFailureError) {
-        if (error.errorType === 'InvalidCepError') {
-          return errOf(new InvalidCepError())
+        if (error.errorData instanceof AppError) {
+          return errOf(error.errorData)
         }
-
-        if (error.errorType === 'CoordinatesNotFoundError') {
-          return errOf(new CoordinatesNotFoundError())
-        }
+        // Fallback for corrupted cache entries
+        return errOf(new NoNearbyChurchesFoundError())
       }
 
+      // AppErrors propagate directly (domain and infra alike)
       if (error instanceof AppError) {
         return errOf(error)
       }
 
+      // Cache infrastructure errors — translate to canonical AppErrors
       if (error instanceof CacheServiceOverloadError) {
         return errOf(new InfraServiceOverloadError())
       }

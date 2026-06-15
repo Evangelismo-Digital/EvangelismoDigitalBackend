@@ -7,7 +7,7 @@ export const SERVICE_BUSY_ERROR: IErrorDetail = {
 
 export const PROVIDER_FAILURE_ERROR: IErrorDetail = {
   code: 'PROVIDER_FAILURE',
-  message: 'Falha de sistema ao tentar processar dados no provedor de serviços externos.',
+  message: 'Falha de sistema ao processar dados no provedor de serviços externos.',
 }
 
 export const DATABASE_QUERY_FAILURE_ERROR: IErrorDetail = {

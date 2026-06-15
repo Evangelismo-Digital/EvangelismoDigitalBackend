@@ -8,9 +8,8 @@ import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/provide
 import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
+import { resolveAddressProviderError } from 'errors/mappings/axios-error-mapper'
 
 export interface ViaCepConfig {
   apiUrl: string
@@ -76,7 +75,7 @@ export class ViaCepProvider implements IAddressProvider {
       return errOf(new ServiceBusyError('ViaCEP'))
     }
 
-    let lastError: Error | unknown = undefined
+    let lastError: unknown = undefined
 
     for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
       if (signal?.aborted) {
@@ -107,30 +106,19 @@ export class ViaCepProvider implements IAddressProvider {
           return errOf(new TimeoutExceededError(signal.reason))
         }
 
-        const err = error as AxiosError
-        const status = err.response?.status
-
-        // 404
-        if (status === 404) {
-          logger.warn({ cep: cleanCep, attempt, status }, 'CEP não encontrado na ViaCEP (404)')
-          return errOf(new InvalidCepError())
-        }
-
         lastError = error
+        const err = error as AxiosError
+        const { error: appError, shouldRetry } = resolveAddressProviderError(err, {
+          provider: 'ViaCEP',
+          originalError: lastError,
+        })
 
-        // Retry logic para erros de rede, 500 ou 429
-        const isRetryable = !err.response || (typeof status === 'number' && (status >= 500 || status === 429))
-
-        if (!isRetryable || attempt === this.MAX_RETRIES) {
-          if (status === 429 && attempt === this.MAX_RETRIES) {
-            return errOf(new ServiceBusyError('ViaCEP'))
-          }
-
+        if (!shouldRetry || attempt === this.MAX_RETRIES) {
           logger.error(
             {
               cep: cleanCep,
               attempt,
-              status,
+              status: err.response?.status,
               code: err.code,
               name: err.name,
               url: err.config?.url,
@@ -138,8 +126,7 @@ export class ViaCepProvider implements IAddressProvider {
             },
             'Falha ao buscar endereço após tentativas (ViaCEP)',
           )
-
-          return errOf(new ProviderFailureError('ViaCEP', lastError))
+          return errOf(appError)
         }
 
         const delay = this.BACKOFF_MS * Math.pow(2, attempt - 1)
@@ -148,7 +135,7 @@ export class ViaCepProvider implements IAddressProvider {
             cep: cleanCep,
             attempt,
             delay,
-            status,
+            status: err.response?.status,
             code: err.code,
             name: err.name,
             url: err.config?.url,
@@ -162,7 +149,7 @@ export class ViaCepProvider implements IAddressProvider {
     }
 
     logger.error({ cep: cleanCep }, 'ViaCEP - todas as tentativas esgotadas sem sucesso')
-    return errOf(new ProviderFailureError('ViaCEP', lastError))
+    return errOf(new ServiceBusyError('ViaCEP'))
   }
 
   private sleep(ms: number): Promise<void> {

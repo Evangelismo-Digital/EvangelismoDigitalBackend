@@ -250,7 +250,8 @@ describe('CepToLatLon Use Case', () => {
   })
 
   it('should unwrap CachedFailureError back to InvalidCepError', async () => {
-    const cachedError = new CachedFailureError('InvalidCepError', 'Invalid CEP', { cep: '000' })
+    const originalError = new InvalidCepError()
+    const cachedError = new CachedFailureError('InvalidCepError', 'Invalid CEP', originalError)
     mockGetOrFetch.mockRejectedValue(cachedError)
 
     const result = await useCase.execute({ cep: '000' })
@@ -261,7 +262,8 @@ describe('CepToLatLon Use Case', () => {
   })
 
   it('should unwrap CachedFailureError back to CoordinatesNotFoundError', async () => {
-    const cachedError = new CachedFailureError('CoordinatesNotFoundError', 'Not found', { cep: '000' })
+    const originalError = new CoordinatesNotFoundError()
+    const cachedError = new CachedFailureError('CoordinatesNotFoundError', 'Not found', originalError)
     mockGetOrFetch.mockRejectedValue(cachedError)
 
     const result = await useCase.execute({ cep: '000' })
@@ -279,7 +281,8 @@ describe('CepToLatLon Use Case', () => {
         return await fetcher(new AbortController().signal)
       } catch (error) {
         // Simula getOrFetch jogando CachedFailureError
-        throw new CachedFailureError(error.constructor.name, error.message, {})
+        const appErr = error as import('errors/app-error').AppError
+        throw new CachedFailureError(appErr.constructor.name, appErr.message, appErr)
       }
     })
 

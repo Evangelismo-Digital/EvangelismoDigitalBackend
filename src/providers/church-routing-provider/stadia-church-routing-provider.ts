@@ -6,10 +6,10 @@ import {
   RoutingPoint,
 } from 'core/contracts/use-cases/providers/church-routing-provider.interface'
 import { createHttpClient } from '@lib/http/axios'
-import { ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
+import { CachedFailureError, ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
 import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
-import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
@@ -17,6 +17,7 @@ import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-err
 import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { ServiceOverloadError as CacheServiceOverloadError } from '@lib/errors/infra/cache/service-overload-error'
 import { TimeoutExceededOnFetchError as CacheTimeoutError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
+import { resolveRoutingProviderError } from 'errors/mappings/axios-error-mapper'
 
 interface StadiaChurchRoutingProviderConfig {
   apiUrl: string
@@ -81,7 +82,7 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
 
     for (const destination of params.destinations) {
       const fetchResult = await this.fetchDistance(params.origin, destination, params.profile, params.signal)
-      if (isErr(fetchResult)) {
+      if (!fetchResult.success) {
         return fetchResult
       }
       results.push(fetchResult.value)
@@ -169,18 +170,18 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
 
       return ok(result)
     } catch (error) {
-      if (error instanceof ServiceBusyError || error instanceof TimeoutExceededError) {
-        return errOf(error)
-      }
+      // === Unwrap cache-layer errors internally — callers stay ignorant of CachedFailureError ===
 
-      // Check if it's CachedFailureError or similar from ResilientCache
-      if (error && typeof error === 'object' && 'name' in error && error.name === 'CachedFailureError') {
-        const cachedErr = error as { errorData?: unknown }
-        if (cachedErr.errorData instanceof AppError) {
-          return errOf(cachedErr.errorData)
+      // CachedFailureError: a previously cached AppError is being replayed
+      if (error instanceof CachedFailureError) {
+        if (error.errorData instanceof AppError) {
+          return errOf(error.errorData)
         }
+        // Corrupted cache entry — treat as provider failure
+        return errOf(new ProviderFailureError('Stadia Maps', error))
       }
 
+      // Cache infrastructure errors — translate to canonical AppErrors
       if (error instanceof CacheServiceOverloadError) {
         return errOf(new InfraServiceOverloadError())
       }
@@ -189,25 +190,24 @@ export class StadiaChurchRoutingProvider implements IChurchRoutingProvider {
         return errOf(new TimeoutExceededError())
       }
 
-      const axiosError = error as AxiosError
-      const status = axiosError.response?.status
+      // AppErrors thrown from inside the fetcher (ServiceBusyError, TimeoutExceededError)
+      if (error instanceof AppError) {
+        return errOf(error)
+      }
 
-      if (status === 404) {
+      // Axios errors from the HTTP call — map via lookup table
+      const axiosError = error as AxiosError
+
+      // 404 from routing API means the route could not be computed (unreachable),
+      // not a true error — represent as null distance
+      if (axiosError.response?.status === 404) {
         return ok({
           distance: null,
-          status,
+          status: 404,
         })
       }
 
-      if (status === 429) {
-        return errOf(new ServiceBusyError('Stadia Maps'))
-      }
-
-      if (axiosError.code === 'ERR_CANCELED') {
-        return errOf(new TimeoutExceededError(axiosError.message))
-      }
-
-      return errOf(new ProviderFailureError('Stadia Maps', error))
+      return errOf(resolveRoutingProviderError(axiosError, { provider: 'Stadia Maps', originalError: error }))
     }
   }
 

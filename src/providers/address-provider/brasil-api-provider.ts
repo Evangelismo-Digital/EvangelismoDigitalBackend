@@ -8,9 +8,8 @@ import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/provide
 import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
+import { resolveAddressProviderError } from 'errors/mappings/axios-error-mapper'
 
 export interface BrasilApiConfig {
   apiUrl: string // Esperado: https://brasilapi.com.br
@@ -75,7 +74,7 @@ export class BrasilApiProvider implements IAddressProvider {
       return errOf(new ServiceBusyError('BrasilAPI'))
     }
 
-    let lastError: Error | unknown = undefined
+    let lastError: unknown = undefined
 
     // 2. Lógica de Retry com Backoff
     for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
@@ -116,50 +115,39 @@ export class BrasilApiProvider implements IAddressProvider {
           return errOf(new TimeoutExceededError(signal.reason))
         }
 
-        const err = error as AxiosError
-        const status = err.response?.status
-
-        // 404 significa CEP não encontrado na base deles
-        if (status === 404) {
-          logger.warn({ cep: cleanCep, attempt, status }, 'CEP não encontrado na BrasilAPI (404)')
-          return errOf(new InvalidCepError())
-        }
-
         lastError = error
-
-        // Verifica erros retryable (5xx, 429 ou erro de rede)
-        const isRetryable = !err.response || (typeof status === 'number' && (status >= 500 || status === 429))
+        const err = error as AxiosError
+        const { error: appError, shouldRetry } = resolveAddressProviderError(err, {
+          provider: 'BrasilAPI',
+          originalError: lastError,
+        })
 
         // Se não for retryable ou se esgotou as tentativas, falha.
-        if (!isRetryable || attempt === this.MAX_RETRIES) {
-          if (status === 429 && attempt === this.MAX_RETRIES) {
-            return errOf(new ServiceBusyError('BrasilAPI'))
-          }
-
+        if (!shouldRetry || attempt === this.MAX_RETRIES) {
           logger.error(
             {
               cep: cleanCep,
               attempt,
-              status,
+              status: err.response?.status,
               code: err.code,
               name: err.name,
               url: err.config?.url,
             },
             'Falha ao buscar endereço BrasilAPI após tentativas',
           )
-          return errOf(new ProviderFailureError('BrasilAPI', lastError))
+          return errOf(appError)
         }
 
         // Backoff Exponencial
         const delay = this.BACKOFF_MS * Math.pow(2, attempt - 1)
-        logger.warn({ cep: cleanCep, attempt, delay, status }, 'Repetindo solicitação para BrasilAPI')
+        logger.warn({ cep: cleanCep, attempt, delay, status: err.response?.status }, 'Repetindo solicitação para BrasilAPI')
         await this.sleep(delay)
       }
     }
 
     // Fallback de segurança
     logger.error({ cep: cleanCep }, 'BrasilAPI - todas as tentativas esgotadas sem sucesso')
-    return errOf(new ProviderFailureError('BrasilAPI', lastError))
+    return errOf(new ServiceBusyError('BrasilAPI'))
   }
 
   private sleep(ms: number): Promise<void> {
