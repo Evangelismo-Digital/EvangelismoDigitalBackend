@@ -10,20 +10,9 @@ import { BrasilApiProvider } from 'providers/address-provider/brasil-api-provide
 import { getRedisCache, getRedisRateLimit } from '@lib/redis/clients/clients'
 import { ResilientAddressProviderDecorator } from 'providers/address-provider/decorators/resilient-address-provider.decorator'
 import { ResilientGeocodingProviderDecorator } from 'providers/geo-provider/decorators/resilient-geocoding-provider.decorator'
-import { deserializeAppError, SerializedErrorData } from 'errors/app-error-registry'
-import { AppError } from 'errors/app-error'
+import { serializeAppError, deserializeAppError } from 'errors/app-error-registry'
 
 let cachedUseCase: CepToLatLonUseCase | null = null
-
-const serializeError = (err: AppError) => ({
-  type: err.constructor.name,
-  message: err.message,
-  data: (err as { data?: unknown }).data || err,
-})
-
-const deserializeError = (type: string, message: string, data?: unknown) => {
-  return deserializeAppError(type, message, data as SerializedErrorData) || (new Error(message) as unknown as AppError)
-}
 
 export function makeCepToLatLonUseCase(
   redisCacheConnection = getRedisCache(),
@@ -83,8 +72,8 @@ export function makeCepToLatLonUseCase(
       negativeTtlSeconds: 60 * 30, // 30 minutes (Negative Cache)
       maxPendingFetches: 500,
       fetchTimeoutMs: 25000,
-      serializeError,
-      deserializeError,
+      serializeError: serializeAppError,
+      deserializeError: deserializeAppError,
     },
     cacheSuccessResults,
   )

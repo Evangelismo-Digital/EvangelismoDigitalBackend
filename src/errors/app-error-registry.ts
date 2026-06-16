@@ -54,14 +54,22 @@ export const AppErrorRegistry: Record<string, (message: string, data?: Serialize
   },
 }
 
-export function deserializeAppError(type: string, message: string, data?: SerializedErrorData): AppError | null {
+export function serializeAppError(err: AppError): { type: string; message: string; data?: unknown } {
+  return {
+    type: err.constructor.name,
+    message: err.message,
+    data: (err as { data?: unknown }).data || err,
+  }
+}
+
+export function deserializeAppError(type: string, message: string, data?: unknown): AppError {
   const factory = AppErrorRegistry[type]
   if (factory) {
     try {
-      return factory(message, data)
+      return factory(message, data as SerializedErrorData)
     } catch {
-      return null
+      // Fall through to default fallback
     }
   }
-  return null
+  return new Error(message) as unknown as AppError
 }
