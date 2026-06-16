@@ -7,15 +7,15 @@ import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infras
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
 
-export interface ResilientCacheOptions<E = any> {
+export interface ResilientCacheOptions<E = unknown> {
   prefix: string
   defaultTtlSeconds: number
   negativeTtlSeconds: number
   maxPendingFetches?: number
   fetchTimeoutMs?: number
   ttlJitterPercentage?: number
-  serializeError?: (error: E) => { type: string; message: string; data?: any }
-  deserializeError?: (type: string, message: string, data?: any) => E
+  serializeError?: (error: E) => { type: string; message: string; data?: unknown }
+  deserializeError?: (type: string, message: string, data?: unknown) => E
   isRetryable?: (error: E) => boolean
 }
 
@@ -27,12 +27,12 @@ export interface CacheEnvelope<T> {
     // error: Exists only if s=false
     type: string // Error class name (e.g., 'InvalidCepError')
     message: string
-    data?: any // Additional error data
+    data?: unknown // Additional error data
   }
 }
 
-export class ResilientCache<E = any> {
-  private readonly pendingFetches = new Map<string, Promise<any>>()
+export class ResilientCache<E = unknown> {
+  private readonly pendingFetches = new Map<string, Promise<unknown>>()
 
   private readonly MAX_PENDING: number
   private readonly FETCH_TIMEOUT: number
@@ -164,15 +164,16 @@ export class ResilientCache<E = any> {
 
       if (isErr(result)) {
         const err = result.error
-        const isRetryableFn = this.options.isRetryable ?? ((error: E) => (error as any)?.failureMode === 'RETRYABLE')
+        const isRetryableFn =
+          this.options.isRetryable ?? ((error: E) => (error as { failureMode?: string })?.failureMode === 'RETRYABLE')
 
         // Negative Cache (do not cache transient/retryable failures)
         if (!isRetryableFn(err)) {
           const serializer =
             this.options.serializeError ??
             ((error: E) => ({
-              type: (error as any).constructor?.name || 'Error',
-              message: (error as any).message || String(error),
+              type: (error as { constructor?: { name?: string } }).constructor?.name || 'Error',
+              message: (error as { message?: string }).message || String(error),
               data: error,
             }))
 

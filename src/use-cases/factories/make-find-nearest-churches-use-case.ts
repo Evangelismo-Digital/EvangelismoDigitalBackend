@@ -17,7 +17,7 @@ import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { ResilientAddressProviderDecorator } from 'providers/address-provider/decorators/resilient-address-provider.decorator'
 import { ResilientGeocodingProviderDecorator } from 'providers/geo-provider/decorators/resilient-geocoding-provider.decorator'
 import { ResilientChurchRoutingProviderDecorator } from 'providers/church-routing-provider/decorators/resilient-church-routing-provider.decorator'
-import { deserializeAppError } from 'errors/app-error-registry'
+import { deserializeAppError, SerializedErrorData } from 'errors/app-error-registry'
 import { AppError } from 'errors/app-error'
 
 let cachedUseCase: FindNearestChurchesUseCase | null = null
@@ -25,11 +25,11 @@ let cachedUseCase: FindNearestChurchesUseCase | null = null
 const serializeError = (err: AppError) => ({
   type: err.constructor.name,
   message: err.message,
-  data: (err as any).data || err,
+  data: (err as { data?: unknown }).data || err,
 })
 
-const deserializeError = (type: string, message: string, data?: any) => {
-  return deserializeAppError(type, message, data) || (new Error(message) as any)
+const deserializeError = (type: string, message: string, data?: unknown) => {
+  return deserializeAppError(type, message, data as SerializedErrorData) || (new Error(message) as unknown as AppError)
 }
 
 export function makeFindNearestChurchesUseCase(

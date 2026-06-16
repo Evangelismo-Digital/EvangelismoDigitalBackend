@@ -8,7 +8,22 @@ import { ServiceOverloadError as InfraServiceOverloadError } from './infrastruct
 import { TimeoutExceededError } from './infrastructure/timeout-exceeded-error'
 import { ProviderFailureError, ProviderLayer } from './infrastructure/provider-failure-error'
 
-export const AppErrorRegistry: Record<string, (message: string, data?: any) => AppError> = {
+export interface SerializedErrorData {
+  body?: {
+    provider?: string
+    providerContext?: {
+      provider?: string
+      layer?: ProviderLayer
+    }
+  }
+  providerContext?: {
+    provider?: string
+    layer?: ProviderLayer
+  }
+  originalError?: unknown
+}
+
+export const AppErrorRegistry: Record<string, (message: string, data?: SerializedErrorData) => AppError> = {
   InvalidCepError: (msg) => {
     const cep = msg.match(/\b\d{8}\b/)?.[0] || msg.match(/\d{8}/)?.[0]
     return new InvalidCepError(cep)
@@ -39,7 +54,7 @@ export const AppErrorRegistry: Record<string, (message: string, data?: any) => A
   },
 }
 
-export function deserializeAppError(type: string, message: string, data?: any): AppError | null {
+export function deserializeAppError(type: string, message: string, data?: SerializedErrorData): AppError | null {
   const factory = AppErrorRegistry[type]
   if (factory) {
     try {

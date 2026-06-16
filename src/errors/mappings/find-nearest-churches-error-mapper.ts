@@ -1,6 +1,6 @@
 import { Result, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { AxiosError } from 'axios'
+import { AxiosError, isAxiosError } from 'axios'
 import { Prisma } from '@prisma/client'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
@@ -67,7 +67,7 @@ export class FindNearestChurchesErrorMapper {
   }
 
   private static isAxiosError(error: unknown): boolean {
-    return !!(error && typeof error === 'object' && 'isAxiosError' in error && (error as any).isAxiosError)
+    return isAxiosError(error)
   }
 
   private static detectProvider(error: AxiosError): string {

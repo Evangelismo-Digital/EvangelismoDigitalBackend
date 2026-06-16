@@ -84,7 +84,7 @@ AppErrorRegistry.TestAppError = () => new TestAppError()
 
 describe('ResilientCache Unit Tests', () => {
   let redisClient: Redis
-  let resilientCache: ResilientCache
+  let resilientCache: ResilientCache<AppError | null>
 
   const defaultOptions = {
     prefix: 'test-cache:',
@@ -93,21 +93,39 @@ describe('ResilientCache Unit Tests', () => {
     fetchTimeoutMs: 100,
     maxPendingFetches: 5,
     ttlJitterPercentage: 0.1,
-    serializeError: (err: any) => ({
-      type: err.constructor.name,
-      message: err.message,
-      data: err.data || err,
+    serializeError: (err: AppError | null) => ({
+      type: err?.constructor?.name || 'Error',
+      message: err?.message || '',
+      data: (err as { data?: unknown })?.data || err,
     }),
-    deserializeError: (type: string, message: string, data?: any) => {
+    deserializeError: (type: string, message: string, data?: unknown) => {
       const factory = AppErrorRegistry[type]
-      return factory ? factory(message, data) : null
+      return factory
+        ? factory(
+            message,
+            data as {
+              body?: {
+                provider?: string
+                providerContext?: {
+                  provider?: string
+                  layer?: import('errors/infrastructure/provider-failure-error').ProviderLayer
+                }
+              }
+              providerContext?: {
+                provider?: string
+                layer?: import('errors/infrastructure/provider-failure-error').ProviderLayer
+              }
+              originalError?: unknown
+            },
+          )
+        : null
     },
   }
 
   beforeEach(() => {
     vi.clearAllMocks()
     redisClient = new Redis()
-    resilientCache = new ResilientCache(redisClient, defaultOptions)
+    resilientCache = new ResilientCache<AppError | null>(redisClient, defaultOptions)
   })
 
   // === 1. generateKey ===

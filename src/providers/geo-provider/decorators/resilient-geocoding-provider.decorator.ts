@@ -37,7 +37,7 @@ export class ResilientGeocodingProviderDecorator implements IGeocodingProvider {
 
   private async executeResiliently(
     action: (signal?: AbortSignal) => Promise<IGeoCoordinates | null>,
-    logContext: Record<string, any>,
+    logContext: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<Result<IGeoCoordinates | null, AppError>> {
     // 1. Rate Limit check
