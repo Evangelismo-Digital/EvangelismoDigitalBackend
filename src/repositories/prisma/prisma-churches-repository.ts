@@ -73,11 +73,15 @@ export class PrismaChurchesRepository implements ChurchesRepository {
       }))
 
       return ok(mappedChurches)
+      
     } catch (error) {
+
       const mapped = mapPrismaChurchError(error)
+      
       if (mapped) {
         return errOf(mapped)
       }
+
       return errOf(new DatabaseQueryError(error))
     }
   }
@@ -107,11 +111,14 @@ export class PrismaChurchesRepository implements ChurchesRepository {
         LIMIT 1
       `
       return ok(results[0] ?? null)
+
     } catch (error) {
       const mapped = mapPrismaChurchError(error)
+
       if (mapped) {
         return errOf(mapped)
       }
+
       return errOf(new DatabaseQueryError(error))
     }
   }
@@ -134,11 +141,15 @@ export class PrismaChurchesRepository implements ChurchesRepository {
         LIMIT 1
       `
       return ok(results[0] ?? null)
+
     } catch (error) {
+
       const mapped = mapPrismaChurchError(error)
+
       if (mapped) {
         return errOf(mapped)
       }
+
       return errOf(new DatabaseQueryError(error))
     }
   }
@@ -170,10 +181,13 @@ export class PrismaChurchesRepository implements ChurchesRepository {
           updated_at AS "updatedAt"
       `
       const church = rows[0]
+
       if (!church) {
         return errOf(new CreateChurchError())
       }
+
       return ok(church)
+
     } catch (error) {
       const mapped = mapPrismaChurchError(error)
       if (mapped) {
@@ -200,15 +214,21 @@ export class PrismaChurchesRepository implements ChurchesRepository {
           updated_at AS "updatedAt"
       `
       const church = rows[0]
+
       if (!church) {
         return errOf(new ChurchNotFoundError())
       }
+
       return ok(church)
+
     } catch (error) {
+
       const mapped = mapPrismaChurchError(error)
+
       if (mapped) {
         return errOf(mapped)
       }
+
       return errOf(new DatabaseQueryError(error))
     }
   }

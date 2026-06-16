@@ -31,27 +31,33 @@ export class RegisterUserUseCase {
     password,
     role,
   }: RegisterUserUseCaseRequest): Promise<Result<RegisterUserUseCaseResponse, AppError>> {
-    const existingByEmail = await this.usersRepository.findBy({ email })
-    if (isErr(existingByEmail)) {
-      return existingByEmail
+    const userWithExistingEmail = await this.usersRepository.findBy({ email })
+
+    if (isErr(userWithExistingEmail)) {
+      return userWithExistingEmail
     }
-    if (existingByEmail.value) {
+
+    if (userWithExistingEmail.value) {
       return errOf(new UserAlreadyExistsError())
     }
 
-    const existingByCpf = await this.usersRepository.findBy({ cpf })
-    if (isErr(existingByCpf)) {
-      return existingByCpf
+    const userWithExistingCpf = await this.usersRepository.findBy({ cpf })
+
+    if (isErr(userWithExistingCpf)) {
+      return userWithExistingCpf
     }
-    if (existingByCpf.value) {
+
+    if (userWithExistingCpf.value) {
       return errOf(new UserAlreadyExistsError())
     }
 
-    const existingByUsername = await this.usersRepository.findBy({ username })
-    if (isErr(existingByUsername)) {
-      return existingByUsername
+    const userWithExistingUsername = await this.usersRepository.findBy({ username })
+
+    if (isErr(userWithExistingUsername)) {
+      return userWithExistingUsername
     }
-    if (existingByUsername.value) {
+
+    if (userWithExistingUsername.value) {
       return errOf(new UserAlreadyExistsError())
     }
 

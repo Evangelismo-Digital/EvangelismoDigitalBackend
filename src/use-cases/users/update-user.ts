@@ -25,6 +25,7 @@ export class UpdateUserUseCase {
     email,
     username,
   }: UpdateUserUseCaseRequest): Promise<Result<UpdateUserUseCaseResponse, AppError>> {
+
     const userResult = await this.usersRepository.findBy({ publicId })
 
     if (isErr(userResult)) {
@@ -38,6 +39,7 @@ export class UpdateUserUseCase {
     }
 
     const data: UserUpdateInput = {}
+
     if (name) data.name = name
     if (email) data.email = email
     if (username) data.username = username
@@ -45,10 +47,13 @@ export class UpdateUserUseCase {
 
     if (email) {
       const emailResult = await this.usersRepository.findBy({ email })
+
       if (isErr(emailResult)) {
         return emailResult
       }
+
       const userWithExistingEmail = emailResult.value
+
       if (userWithExistingEmail && userWithExistingEmail.publicId !== userToBeUpdated.publicId) {
         return errOf(new UserAlreadyExistsError())
       }
@@ -56,10 +61,13 @@ export class UpdateUserUseCase {
 
     if (username) {
       const usernameResult = await this.usersRepository.findBy({ username })
+
       if (isErr(usernameResult)) {
         return usernameResult
       }
+
       const usernameWithExistingUsername = usernameResult.value
+      
       if (usernameWithExistingUsername && usernameWithExistingUsername.publicId !== userToBeUpdated.publicId) {
         return errOf(new UserAlreadyExistsError())
       }

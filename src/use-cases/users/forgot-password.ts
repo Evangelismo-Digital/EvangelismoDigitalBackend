@@ -26,9 +26,11 @@ export class ForgotPasswordUseCase {
 
     if (emailSchema.safeParse(email).success) {
       const userResult = await this.usersRepository.findBy({ email: email })
+
       if (isErr(userResult)) {
         return userResult
       }
+      
       userExists = userResult.value
     }
 

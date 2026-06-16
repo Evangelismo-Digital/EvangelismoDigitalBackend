@@ -73,17 +73,23 @@ export class PrismaUsersRepository implements UsersRepository {
 
   async list(): Promise<Result<User[], AppError>> {
     try {
+      
       const users = await prisma.user.findMany()
+
       return ok(users)
     } catch (error) {
+
       const mapped = mapPrismaUserError(error)
+
       if (mapped) return errOf(mapped)
+
       return errOf(new DatabaseQueryError(error))
     }
   }
 
   async search(query: string, page: number): Promise<Result<User[], AppError>> {
     try {
+
       const users = await prisma.user.findMany({
         where: {
           name: {
@@ -96,37 +102,49 @@ export class PrismaUsersRepository implements UsersRepository {
       })
 
       return ok(users)
+
     } catch (error) {
       const mapped = mapPrismaUserError(error)
+
       if (mapped) return errOf(mapped)
+
       return errOf(new DatabaseQueryError(error))
     }
   }
 
   async update(publicId: string, data: UserUpdateInput): Promise<Result<User, AppError>> {
     try {
+
       const user = await prisma.user.update({
         where: { publicId },
         data,
       })
+      
       return ok(user)
     } catch (error) {
       const mapped = mapPrismaUserError(error)
+
       if (mapped) return errOf(mapped)
+
       return errOf(new DatabaseQueryError(error))
     }
   }
 
   async updatePassword(publicId: string, data: UserPasswordUpdateInput): Promise<Result<User, AppError>> {
     try {
+
       const user = await prisma.user.update({
         where: { publicId },
         data,
       })
+
       return ok(user)
+
     } catch (error) {
       const mapped = mapPrismaUserError(error)
+
       if (mapped) return errOf(mapped)
+
       return errOf(new DatabaseQueryError(error))
     }
   }
@@ -140,8 +158,11 @@ export class PrismaUsersRepository implements UsersRepository {
       })
       return ok(user)
     } catch (error) {
+
       const mapped = mapPrismaUserError(error)
+
       if (mapped) return errOf(mapped)
+
       return errOf(new DatabaseQueryError(error))
     }
   }
