@@ -1,5 +1,4 @@
 import { IErrorDetail } from 'core/contracts/errors/error-detail.interface'
-import { messages } from 'core/constants/messages'
 
 export const USER_NOT_FOUND_ERROR: IErrorDetail = {
   code: 'USER_NOT_FOUND',
@@ -8,25 +7,25 @@ export const USER_NOT_FOUND_ERROR: IErrorDetail = {
 
 export const USER_ALREADY_EXISTS_ERROR: IErrorDetail = {
   code: 'USER_ALREADY_EXISTS',
-  message: messages.validation.userAlreadyExists,
+  message: 'Usuário já existe !',
 }
 
 export const USER_NOT_CREATED_ERROR: IErrorDetail = {
   code: 'USER_NOT_CREATED',
-  message: messages.errors.createUserFailed,
+  message: 'Falha ao criar o usuário.',
 }
 
 export const USER_NOT_FOUND_FOR_PASSWORD_RESET_ERROR: IErrorDetail = {
   code: 'USER_NOT_FOUND_FOR_PASSWORD_RESET',
-  message: messages.info.passwordResetGeneric,
+  message: 'Se o usuário existir, você receberá um e-mail com instruções para redefinir a senha.',
 }
 
 export const INVALID_CREDENTIALS_ERROR: IErrorDetail = {
   code: 'INVALID_CREDENTIALS',
-  message: messages.errors.invalidCredentials,
+  message: 'Credenciais inválidas!',
 }
 
 export const INVALID_TOKEN_ERROR: IErrorDetail = {
   code: 'INVALID_TOKEN',
-  message: messages.errors.invalidToken,
+  message: 'Token inválido ou expirado!',
 }

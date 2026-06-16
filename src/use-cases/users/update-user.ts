@@ -25,7 +25,6 @@ export class UpdateUserUseCase {
     email,
     username,
   }: UpdateUserUseCaseRequest): Promise<Result<UpdateUserUseCaseResponse, AppError>> {
-
     const userResult = await this.usersRepository.findBy({ publicId })
 
     if (isErr(userResult)) {
@@ -67,7 +66,7 @@ export class UpdateUserUseCase {
       }
 
       const usernameWithExistingUsername = usernameResult.value
-      
+
       if (usernameWithExistingUsername && usernameWithExistingUsername.publicId !== userToBeUpdated.publicId) {
         return errOf(new UserAlreadyExistsError())
       }

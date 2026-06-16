@@ -35,12 +35,10 @@ export class AuthenticateUserUseCase {
     password,
     auditContext,
   }: AuthenticateUserUseCaseRequest): Promise<Result<AuthenticateUserUseCaseResponse, AppError>> {
-
     let userResult: Result<User | null, AppError>
 
     if (emailSchema.safeParse(login).success) {
       userResult = await this.usersRepository.findBy({ email: login })
-
     } else {
       userResult = await this.usersRepository.findBy({ username: login })
     }
@@ -52,7 +50,6 @@ export class AuthenticateUserUseCase {
     const user = userResult.value
 
     if (!user) {
-
       await this.authenticationAuditUseCase.execute({
         ...auditContext,
         status: AuthenticationStatus.USER_NOT_EXISTS,
@@ -66,7 +63,6 @@ export class AuthenticateUserUseCase {
     const doesPasswordMatch = await compare(password, hashToCompare)
 
     if (!doesPasswordMatch) {
-
       await this.authenticationAuditUseCase.execute({
         ...auditContext,
         status: AuthenticationStatus.INCORRECT_PASSWORD,

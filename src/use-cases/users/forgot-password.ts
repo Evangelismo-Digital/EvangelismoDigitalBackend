@@ -30,7 +30,7 @@ export class ForgotPasswordUseCase {
       if (isErr(userResult)) {
         return userResult
       }
-      
+
       userExists = userResult.value
     }
 
