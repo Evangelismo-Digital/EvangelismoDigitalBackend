@@ -4,6 +4,8 @@ import { UsersRepository } from 'core/contracts/repository/users-repository.inte
 import { InvalidCredentialsError } from '@use-cases/errors/invalid-credentials-error'
 import { compare } from 'bcryptjs'
 import { AuthenticationAuditUseCase } from '@use-cases/authentication-audit/authentication-audit'
+import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 
 interface AuthenticationAuditContext {
   ipAddress: string
@@ -32,14 +34,20 @@ export class AuthenticateUserUseCase {
     login,
     password,
     auditContext,
-  }: AuthenticateUserUseCaseRequest): Promise<AuthenticateUserUseCaseResponse> {
-    let user: User | null = null
+  }: AuthenticateUserUseCaseRequest): Promise<Result<AuthenticateUserUseCaseResponse, AppError>> {
+    let userResult: Result<User | null, AppError>
 
     if (emailSchema.safeParse(login).success) {
-      user = await this.usersRepository.findBy({ email: login })
+      userResult = await this.usersRepository.findBy({ email: login })
     } else {
-      user = await this.usersRepository.findBy({ username: login })
+      userResult = await this.usersRepository.findBy({ username: login })
     }
+
+    if (isErr(userResult)) {
+      return userResult
+    }
+
+    const user = userResult.value
 
     if (!user) {
       await this.authenticationAuditUseCase.execute({
@@ -47,7 +55,7 @@ export class AuthenticateUserUseCase {
         status: AuthenticationStatus.USER_NOT_EXISTS,
       })
 
-      throw new InvalidCredentialsError()
+      return errOf(new InvalidCredentialsError())
     }
 
     const hashToCompare = user.passwordHash
@@ -61,7 +69,7 @@ export class AuthenticateUserUseCase {
         userId: user.id,
       })
 
-      throw new InvalidCredentialsError()
+      return errOf(new InvalidCredentialsError())
     }
 
     await this.authenticationAuditUseCase.execute({
@@ -70,6 +78,6 @@ export class AuthenticateUserUseCase {
       userId: user.id,
     })
 
-    return { user }
+    return ok({ user })
   }
 }

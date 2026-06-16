@@ -1,7 +1,9 @@
-import { messages } from 'core/constants/messages'
+import { ErrorType } from 'core/types/error-type/error-type'
+import { DomainError } from 'errors/domain-error'
+import { INVALID_CREDENTIALS_ERROR } from 'messages/errors/use-cases/users/users-error-messages'
 
-export class InvalidCredentialsError extends Error {
+export class InvalidCredentialsError extends DomainError {
   constructor() {
-    super(messages.errors.invalidCredentials)
+    super(INVALID_CREDENTIALS_ERROR, ErrorType.BAD_REQUEST)
   }
 }

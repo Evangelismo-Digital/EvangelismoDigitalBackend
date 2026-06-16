@@ -9,6 +9,7 @@ import { InvalidCredentialsError } from '@use-cases/errors/invalid-credentials-e
 import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { AuthenticationAuditUseCase } from '@use-cases/authentication-audit/authentication-audit'
 import { AuthenticationStatus } from '@prisma/client'
+import { isOk, isErr, errOf } from 'core/shared/result'
 
 describe('Authenticate User Use Case', () => {
   const auditContext = {
@@ -31,7 +32,7 @@ describe('Authenticate User Use Case', () => {
 
     const password = 'Teste123x!'
 
-    await registerUseCase.execute({
+    const registerResult = await registerUseCase.execute({
       name: 'John Doe',
       email: uniqueEmail,
       cpf: uniqueCpf,
@@ -40,13 +41,18 @@ describe('Authenticate User Use Case', () => {
       role: UserRole.DEFAULT,
     })
 
-    const { user } = await authenticateUserUseCase.execute({
+    expect(isOk(registerResult)).toBe(true)
+
+    const authResult = await authenticateUserUseCase.execute({
       login: uniqueEmail,
       password,
       auditContext,
     })
 
-    expect(user.publicId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+    expect(isOk(authResult)).toBe(true)
+    if (isOk(authResult)) {
+      expect(authResult.value.user.publicId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+    }
     expect(authenticationAuditRepository.items).toHaveLength(1)
     expect(authenticationAuditRepository.items[0].status).toBe(AuthenticationStatus.SUCCESS)
   })
@@ -64,7 +70,7 @@ describe('Authenticate User Use Case', () => {
 
     const password = 'Teste123x!'
 
-    await registerUseCase.execute({
+    const registerResult = await registerUseCase.execute({
       name: 'John Doe',
       email: uniqueEmail,
       cpf: uniqueCpf,
@@ -73,13 +79,18 @@ describe('Authenticate User Use Case', () => {
       role: UserRole.DEFAULT,
     })
 
-    const { user } = await authenticateUserUseCase.execute({
+    expect(isOk(registerResult)).toBe(true)
+
+    const authResult = await authenticateUserUseCase.execute({
       login: username,
       password,
       auditContext,
     })
 
-    expect(user.publicId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+    expect(isOk(authResult)).toBe(true)
+    if (isOk(authResult)) {
+      expect(authResult.value.user.publicId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+    }
     expect(authenticationAuditRepository.items).toHaveLength(1)
     expect(authenticationAuditRepository.items[0].status).toBe(AuthenticationStatus.SUCCESS)
   })
@@ -97,7 +108,7 @@ describe('Authenticate User Use Case', () => {
 
     const password = 'Teste123x!'
 
-    await registerUseCase.execute({
+    const registerResult = await registerUseCase.execute({
       name: 'John Doe',
       email: uniqueEmail,
       cpf: uniqueCpf,
@@ -106,15 +117,19 @@ describe('Authenticate User Use Case', () => {
       role: UserRole.DEFAULT,
     })
 
-    const { user } = await authenticateUserUseCase.execute({
+    expect(isOk(registerResult)).toBe(true)
+
+    const authResult = await authenticateUserUseCase.execute({
       login: uniqueEmail,
       password,
       auditContext,
     })
 
-    const isPasswordCorrectlyHashed = await compare(password, user.passwordHash)
-
-    expect(isPasswordCorrectlyHashed).toBe(true)
+    expect(isOk(authResult)).toBe(true)
+    if (isOk(authResult)) {
+      const isPasswordCorrectlyHashed = await compare(password, authResult.value.user.passwordHash)
+      expect(isPasswordCorrectlyHashed).toBe(true)
+    }
     expect(authenticationAuditRepository.items).toHaveLength(1)
     expect(authenticationAuditRepository.items[0].status).toBe(AuthenticationStatus.SUCCESS)
   })
@@ -134,7 +149,7 @@ describe('Authenticate User Use Case', () => {
 
     const invalidEmail = 'invalid-email@gmail.com'
 
-    await registerUseCase.execute({
+    const registerResult = await registerUseCase.execute({
       name: 'John Doe',
       email: uniqueEmail,
       cpf: uniqueCpf,
@@ -143,13 +158,18 @@ describe('Authenticate User Use Case', () => {
       role: UserRole.DEFAULT,
     })
 
-    await expect(
-      authenticateUserUseCase.execute({
-        login: invalidEmail,
-        password,
-        auditContext,
-      }),
-    ).rejects.toBeInstanceOf(InvalidCredentialsError)
+    expect(isOk(registerResult)).toBe(true)
+
+    const authResult = await authenticateUserUseCase.execute({
+      login: invalidEmail,
+      password,
+      auditContext,
+    })
+
+    expect(isErr(authResult)).toBe(true)
+    if (isErr(authResult)) {
+      expect(authResult.error).toBeInstanceOf(InvalidCredentialsError)
+    }
 
     expect(authenticationAuditRepository.items).toHaveLength(1)
     expect(authenticationAuditRepository.items[0].status).toBe(AuthenticationStatus.USER_NOT_EXISTS)
@@ -170,7 +190,7 @@ describe('Authenticate User Use Case', () => {
 
     const invalidUsername = 'invalid-username'
 
-    await registerUseCase.execute({
+    const registerResult = await registerUseCase.execute({
       name: 'John Doe',
       email: uniqueEmail,
       cpf: uniqueCpf,
@@ -179,13 +199,18 @@ describe('Authenticate User Use Case', () => {
       role: UserRole.DEFAULT,
     })
 
-    await expect(
-      authenticateUserUseCase.execute({
-        login: invalidUsername,
-        password,
-        auditContext,
-      }),
-    ).rejects.toBeInstanceOf(InvalidCredentialsError)
+    expect(isOk(registerResult)).toBe(true)
+
+    const authResult = await authenticateUserUseCase.execute({
+      login: invalidUsername,
+      password,
+      auditContext,
+    })
+
+    expect(isErr(authResult)).toBe(true)
+    if (isErr(authResult)) {
+      expect(authResult.error).toBeInstanceOf(InvalidCredentialsError)
+    }
 
     expect(authenticationAuditRepository.items).toHaveLength(1)
     expect(authenticationAuditRepository.items[0].status).toBe(AuthenticationStatus.USER_NOT_EXISTS)
@@ -195,10 +220,10 @@ describe('Authenticate User Use Case', () => {
     const usersRepository = new InMemoryUsersRepository()
     const authenticationAuditRepository = {
       create: vi.fn(async () => {
-        throw new Error('audit unavailable')
+        return errOf(new Error('audit unavailable'))
       }),
     }
-    const authenticationAuditUseCase = new AuthenticationAuditUseCase(authenticationAuditRepository)
+    const authenticationAuditUseCase = new AuthenticationAuditUseCase(authenticationAuditRepository as any)
     const registerUseCase = new RegisterUserUseCase(usersRepository)
     const authenticateUserUseCase = new AuthenticateUserUseCase(usersRepository, authenticationAuditUseCase)
 
@@ -208,7 +233,7 @@ describe('Authenticate User Use Case', () => {
 
     const password = 'Teste123x!'
 
-    await registerUseCase.execute({
+    const registerResult = await registerUseCase.execute({
       name: 'John Doe',
       email: uniqueEmail,
       cpf: uniqueCpf,
@@ -217,13 +242,18 @@ describe('Authenticate User Use Case', () => {
       role: UserRole.DEFAULT,
     })
 
-    const { user } = await authenticateUserUseCase.execute({
+    expect(isOk(registerResult)).toBe(true)
+
+    const authResult = await authenticateUserUseCase.execute({
       login: uniqueEmail,
       password,
       auditContext,
     })
 
-    expect(user.publicId).toBeDefined()
+    expect(isOk(authResult)).toBe(true)
+    if (isOk(authResult)) {
+      expect(authResult.value.user.publicId).toBeDefined()
+    }
     expect(authenticationAuditRepository.create).toHaveBeenCalledOnce()
   })
 })

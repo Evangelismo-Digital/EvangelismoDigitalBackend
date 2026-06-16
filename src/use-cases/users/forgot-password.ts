@@ -3,6 +3,8 @@ import { randomBytes } from 'crypto'
 import { UserNotFoundForPasswordResetError } from '../errors/user-not-found-for-password-reset-error'
 import { emailSchema } from '@http/schemas/utils/email'
 import { UsersRepository } from 'core/contracts/repository/users-repository.interface'
+import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 
 interface ForgotPasswordUseCaseRequest {
   email: string
@@ -19,14 +21,20 @@ const TOKEN_LENGTH = 32
 export class ForgotPasswordUseCase {
   constructor(private usersRepository: UsersRepository) {}
 
-  async execute({ email }: ForgotPasswordUseCaseRequest): Promise<ForgotPasswordUseCaseResponse> {
+  async execute({ email }: ForgotPasswordUseCaseRequest): Promise<Result<ForgotPasswordUseCaseResponse, AppError>> {
     let userExists: User | null = null
 
     if (emailSchema.safeParse(email).success) {
-      userExists = await this.usersRepository.findBy({ email: email })
+      const userResult = await this.usersRepository.findBy({ email: email })
+      if (isErr(userResult)) {
+        return userResult
+      }
+      userExists = userResult.value
     }
 
-    if (!userExists) throw new UserNotFoundForPasswordResetError()
+    if (!userExists) {
+      return errOf(new UserNotFoundForPasswordResetError())
+    }
 
     const passwordToken = randomBytes(TOKEN_LENGTH).toString('hex')
 
@@ -37,15 +45,23 @@ export class ForgotPasswordUseCase {
       tokenExpiresAt: tokenExpiresAt,
     }
 
-    const user = await this.usersRepository.updatePassword(userExists.publicId, {
+    const updateResult = await this.usersRepository.updatePassword(userExists.publicId, {
       ...tokenData,
     })
 
-    if (!user) throw new UserNotFoundForPasswordResetError()
+    if (isErr(updateResult)) {
+      return updateResult
+    }
 
-    return {
+    const user = updateResult.value
+
+    if (!user) {
+      return errOf(new UserNotFoundForPasswordResetError())
+    }
+
+    return ok({
       user,
       token: passwordToken,
-    }
+    })
   }
 }

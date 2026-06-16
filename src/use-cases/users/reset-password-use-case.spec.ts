@@ -7,157 +7,165 @@ import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { ForgotPasswordUseCase } from './forgot-password'
 import { ResetPasswordUseCase } from './reset-password'
 import { InvalidTokenError } from '@use-cases/errors/invalid-token-error'
+import { isOk, isErr, ok, errOf } from 'core/shared/result'
 
 describe('Reset Password Use Case', () => {
-  it('should throw InvalidTokenError when user is not found by token', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
-      const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
-      const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
+  it('should return InvalidTokenError when user is not found by token', async () => {
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
+    const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
-      const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
-      const password = 'Teste123x!'
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const uniqueCpf = cpfValidator.generate()
+    const password = 'Teste123x!'
 
-      await registerUseCase.execute({
-        name: 'John Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'johndoe',
-        role: UserRole.DEFAULT,
-      })
+    const registerResult = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username: 'johndoe',
+      role: UserRole.DEFAULT,
+    })
+    expect(isOk(registerResult)).toBe(true)
 
-      await forgotPasswordUseCase.execute({
-        email: uniqueEmail,
-      })
+    const forgotResult = await forgotPasswordUseCase.execute({
+      email: uniqueEmail,
+    })
+    expect(isOk(forgotResult)).toBe(true)
 
-      await expect(() =>
-        resetPasswordUseCase.execute({
-          token: 'some-token',
-          password: 'newPassword123!',
-        }),
-      ).rejects.toBeInstanceOf(InvalidTokenError)
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
+    const resetResult = await resetPasswordUseCase.execute({
+      token: 'some-token',
+      password: 'newPassword123!',
+    })
+
+    expect(isErr(resetResult)).toBe(true)
+    if (isErr(resetResult)) {
+      expect(resetResult.error).toBeInstanceOf(InvalidTokenError)
     }
   })
 
-  it('should throw InvalidTokenError when tokenExpiresAt does not exist', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
-      const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
-      const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
+  it('should return InvalidTokenError when tokenExpiresAt does not exist', async () => {
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
+    const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
-      const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
-      const password = 'Teste123x!'
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const uniqueCpf = cpfValidator.generate()
+    const password = 'Teste123x!'
 
-      await registerUseCase.execute({
-        name: 'John Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'johndoe',
-        role: UserRole.DEFAULT,
-      })
+    const registerResult = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username: 'johndoe',
+      role: UserRole.DEFAULT,
+    })
+    expect(isOk(registerResult)).toBe(true)
 
-      const { token, user } = await forgotPasswordUseCase.execute({
-        email: uniqueEmail,
-      })
+    const forgotResult = await forgotPasswordUseCase.execute({
+      email: uniqueEmail,
+    })
+    expect(isOk(forgotResult)).toBe(true)
+    const { token, user } = (forgotResult as any).value
 
-      await usersRepository.updatePassword(user.publicId, {
-        tokenExpiresAt: null,
-      })
+    await usersRepository.updatePassword(user.publicId, {
+      tokenExpiresAt: null,
+    })
 
-      await expect(() =>
-        resetPasswordUseCase.execute({
-          token: token,
-          password: 'newPassword123!',
-        }),
-      ).rejects.toBeInstanceOf(InvalidTokenError)
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
+    const resetResult = await resetPasswordUseCase.execute({
+      token: token,
+      password: 'newPassword123!',
+    })
+
+    expect(isErr(resetResult)).toBe(true)
+    if (isErr(resetResult)) {
+      expect(resetResult.error).toBeInstanceOf(InvalidTokenError)
     }
   })
 
-  it('should throw InvalidTokenError when tokenExpiresAt is in the past', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
-      const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
-      const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
+  it('should return InvalidTokenError when tokenExpiresAt is in the past', async () => {
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
+    const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
-      const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
-      const password = 'Teste123x!'
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const uniqueCpf = cpfValidator.generate()
+    const password = 'Teste123x!'
 
-      await registerUseCase.execute({
-        name: 'John Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'johndoe',
-        role: UserRole.DEFAULT,
-      })
+    const registerResult = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username: 'johndoe',
+      role: UserRole.DEFAULT,
+    })
+    expect(isOk(registerResult)).toBe(true)
 
-      const { token, user } = await forgotPasswordUseCase.execute({
-        email: uniqueEmail,
-      })
+    const forgotResult = await forgotPasswordUseCase.execute({
+      email: uniqueEmail,
+    })
+    expect(isOk(forgotResult)).toBe(true)
+    const { token, user } = (forgotResult as any).value
 
-      await usersRepository.updatePassword(user.publicId, {
-        tokenExpiresAt: new Date(Date.now() - 1000 * 60 * 60),
-      })
+    await usersRepository.updatePassword(user.publicId, {
+      tokenExpiresAt: new Date(Date.now() - 1000 * 60 * 60),
+    })
 
-      await expect(() =>
-        resetPasswordUseCase.execute({
-          token: token,
-          password: 'newPassword123!',
-        }),
-      ).rejects.toBeInstanceOf(InvalidTokenError)
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
+    const resetResult = await resetPasswordUseCase.execute({
+      token: token,
+      password: 'newPassword123!',
+    })
+
+    expect(isErr(resetResult)).toBe(true)
+    if (isErr(resetResult)) {
+      expect(resetResult.error).toBeInstanceOf(InvalidTokenError)
     }
   })
 
   it('should reset user password', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
-      const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
-      const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
+    const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
-      const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
-      const password = 'Teste123x!'
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const uniqueCpf = cpfValidator.generate()
+    const password = 'Teste123x!'
 
-      await registerUseCase.execute({
-        name: 'John Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'johndoe',
-        role: UserRole.DEFAULT,
-      })
+    const registerResult = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username: 'johndoe',
+      role: UserRole.DEFAULT,
+    })
+    expect(isOk(registerResult)).toBe(true)
 
-      const { token } = await forgotPasswordUseCase.execute({
-        email: uniqueEmail,
-      })
+    const forgotResult = await forgotPasswordUseCase.execute({
+      email: uniqueEmail,
+    })
+    expect(isOk(forgotResult)).toBe(true)
+    const { token } = (forgotResult as any).value
 
-      const before = Date.now()
+    const before = Date.now()
 
-      const { user } = await resetPasswordUseCase.execute({
-        token,
-        password: 'newPassword123!',
-      })
+    const resetResult = await resetPasswordUseCase.execute({
+      token,
+      password: 'newPassword123!',
+    })
 
-      const after = Date.now()
+    const after = Date.now()
 
+    expect(isOk(resetResult)).toBe(true)
+    if (isOk(resetResult)) {
+      const user = resetResult.value.user
       if (user.passwordChangedAt && user.updatedAt) {
         const passWordChangedAt = new Date(user.passwordChangedAt).getTime()
 
@@ -178,49 +186,48 @@ describe('Reset Password Use Case', () => {
 
       expect(user.token).toBeNull()
       expect(user.tokenExpiresAt).toBeNull()
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
     }
   })
 
-  it('should throw Error when user password is not updated', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
-      const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
-      const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
+  it('should return error when user password is not updated', async () => {
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
+    const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
-      const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
-      const password = 'Teste123x!'
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const uniqueCpf = cpfValidator.generate()
+    const password = 'Teste123x!'
 
-      await registerUseCase.execute({
-        name: 'John Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'johndoe',
-        role: UserRole.DEFAULT,
-      })
+    const registerResult = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username: 'johndoe',
+      role: UserRole.DEFAULT,
+    })
+    expect(isOk(registerResult)).toBe(true)
 
-      const { token } = await forgotPasswordUseCase.execute({
-        email: uniqueEmail,
-      })
+    const forgotResult = await forgotPasswordUseCase.execute({
+      email: uniqueEmail,
+    })
+    expect(isOk(forgotResult)).toBe(true)
+    const { token } = (forgotResult as any).value
 
-      const resetSpy = vi.spyOn(usersRepository, 'updatePassword').mockReturnValueOnce(null as any)
+    const expectedErr = new Error('Failed to update user')
+    const resetSpy = vi.spyOn(usersRepository, 'updatePassword').mockResolvedValueOnce(errOf(expectedErr) as any)
 
-      await expect(() =>
-        resetPasswordUseCase.execute({
-          token,
-          password: 'newPassword123!',
-        }),
-      ).rejects.toThrowError('Failed to update user')
+    const resetResult = await resetPasswordUseCase.execute({
+      token,
+      password: 'newPassword123!',
+    })
 
-      resetSpy.mockRestore()
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
+    expect(isErr(resetResult)).toBe(true)
+    if (isErr(resetResult)) {
+      expect(resetResult.error).toBe(expectedErr)
     }
+
+    resetSpy.mockRestore()
   })
 })

@@ -1,5 +1,7 @@
 import { UsersRepository } from 'core/contracts/repository/users-repository.interface'
-import { ResourceNotFoundError } from '@use-cases/errors/resource-not-found-error'
+import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
+import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 
 interface DeleteUserUseCaseRequest {
   publicId: string
@@ -8,11 +10,24 @@ interface DeleteUserUseCaseRequest {
 export class DeleteUserUseCase {
   constructor(private usersRepository: UsersRepository) {}
 
-  async execute({ publicId }: DeleteUserUseCaseRequest): Promise<void> {
-    const userExists = await this.usersRepository.findBy({ publicId })
+  async execute({ publicId }: DeleteUserUseCaseRequest): Promise<Result<void, AppError>> {
+    const userResult = await this.usersRepository.findBy({ publicId })
 
-    if (!userExists) throw new ResourceNotFoundError()
+    if (isErr(userResult)) {
+      return userResult
+    }
 
-    await this.usersRepository.delete(userExists.publicId)
+    const userExists = userResult.value
+
+    if (!userExists) {
+      return errOf(new UserNotFoundError())
+    }
+
+    const deleteResult = await this.usersRepository.delete(userExists.publicId)
+    if (isErr(deleteResult)) {
+      return deleteResult
+    }
+
+    return ok(undefined)
   }
 }

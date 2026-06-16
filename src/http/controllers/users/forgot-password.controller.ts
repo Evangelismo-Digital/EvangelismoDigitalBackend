@@ -7,36 +7,39 @@ import { forgotPasswordTextTemplate } from '@templates/forgot-password/forgot-pa
 import { forgotPasswordHtmlTemplate } from '@templates/forgot-password/forgot-password-html'
 import { messages } from 'core/constants/messages'
 import { UserNotFoundForPasswordResetError } from '@use-cases/errors/user-not-found-for-password-reset-error'
+import { isErr } from 'core/shared/result'
+import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 
 export async function forgotPassword(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    const { email } = forgotPasswordSchema.parse(request.body)
+  const { email } = forgotPasswordSchema.parse(request.body)
 
-    if (!email) {
-      throw new UserNotFoundForPasswordResetError()
-    }
-
-    const forgotPasswordUseCase = makeForgotPasswordUseCase()
-
-    const { user, token } = await forgotPasswordUseCase.execute({ email })
-
-    const sendEmailUseCase = makeSendEmailUseCase()
-
-    await sendEmailUseCase.execute({
-      to: user.email,
-      subject: messages.email.passwordRecoverySubject,
-      message: forgotPasswordTextTemplate(user.name, token),
-      html: forgotPasswordHtmlTemplate(user.name, token),
-    })
-
-    logger.info({ targetId: user.publicId }, 'Password reset email sent')
-
+  if (!email) {
     return reply.status(200).send({ message: messages.info.passwordResetGeneric })
-  } catch (error) {
-    if (error instanceof UserNotFoundForPasswordResetError) {
-      return reply.status(200).send({ message: error.message })
-    }
-
-    throw error
   }
+
+  const forgotPasswordUseCase = makeForgotPasswordUseCase()
+
+  const result = await forgotPasswordUseCase.execute({ email })
+
+  if (isErr(result)) {
+    if (result.error instanceof UserNotFoundForPasswordResetError) {
+      return reply.status(200).send({ message: result.error.message })
+    }
+    return HttpErrorMapper.map(result.error, reply)
+  }
+
+  const { user, token } = result.value
+
+  const sendEmailUseCase = makeSendEmailUseCase()
+
+  await sendEmailUseCase.execute({
+    to: user.email,
+    subject: messages.email.passwordRecoverySubject,
+    message: forgotPasswordTextTemplate(user.name, token),
+    html: forgotPasswordHtmlTemplate(user.name, token),
+  })
+
+  logger.info({ targetId: user.publicId }, 'Password reset email sent')
+
+  return reply.status(200).send({ message: messages.info.passwordResetGeneric })
 }

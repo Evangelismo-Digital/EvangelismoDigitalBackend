@@ -6,279 +6,257 @@ import { UserAlreadyExistsError } from '@use-cases/errors/user-already-exists-er
 import { UserRole } from 'core/contracts/repository/users-repository.interface'
 import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { UserNotCreatedError } from '@use-cases/errors/user-not-created-error'
-import { Prisma } from '@prisma/client'
+import { isOk, isErr, ok, errOf } from 'core/shared/result'
 
 describe('Register Use Case', () => {
   it('should be able to register', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
 
-      const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const uniqueCpf = cpfValidator.generate()
 
-      const password = 'Teste123x!'
+    const password = 'Teste123x!'
 
-      const { user } = await registerUseCase.execute({
-        name: 'John Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'johndoe',
-        role: UserRole.DEFAULT,
-      })
+    const result = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username: 'johndoe',
+      role: UserRole.DEFAULT,
+    })
 
-      expect(user.publicId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      expect(result.value.user.publicId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
     }
   })
 
   it("should hash user's password upon registration", async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
 
-      const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const uniqueCpf = cpfValidator.generate()
 
-      const password = 'Teste123x!'
+    const password = 'Teste123x!'
 
-      const { user } = await registerUseCase.execute({
-        name: 'John Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'johndoe',
-        role: UserRole.DEFAULT,
-      })
+    const result = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username: 'johndoe',
+      role: UserRole.DEFAULT,
+    })
 
-      const isPasswordCorrectlyHashed = await compare(password, user.passwordHash)
-
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      const isPasswordCorrectlyHashed = await compare(password, result.value.user.passwordHash)
       expect(isPasswordCorrectlyHashed).toBe(true)
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
     }
   })
 
   it('should not be able to register with the same email twice', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
 
-      const uniqueEmail = `johndoe@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
+    const uniqueEmail = `johndoe@gmail.com`
+    const uniqueCpf = cpfValidator.generate()
 
-      const password = 'Teste123!!'
+    const password = 'Teste123!!'
 
-      await registerUseCase.execute({
-        name: 'John Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'johndoe',
-        role: UserRole.DEFAULT,
-      })
+    const result1 = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username: 'johndoe',
+      role: UserRole.DEFAULT,
+    })
+    expect(isOk(result1)).toBe(true)
 
-      const newCpf = cpfValidator.generate()
-      const newUsername = 'janedoe'
+    const newCpf = cpfValidator.generate()
+    const newUsername = 'janedoe'
 
-      await expect(() =>
-        registerUseCase.execute({
-          name: 'John Doe',
-          email: uniqueEmail,
-          cpf: newCpf,
-          password,
-          username: newUsername,
-          role: UserRole.DEFAULT,
-        }),
-      ).rejects.toBeInstanceOf(UserAlreadyExistsError)
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
+    const result2 = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: newCpf,
+      password,
+      username: newUsername,
+      role: UserRole.DEFAULT,
+    })
+
+    expect(isErr(result2)).toBe(true)
+    if (isErr(result2)) {
+      expect(result2.error).toBeInstanceOf(UserAlreadyExistsError)
     }
   })
 
   it('should not be able to register with the same CPF twice', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
 
-      const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-      const uniqueCpf = `316.526.750-27`
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const uniqueCpf = `316.526.750-27`
 
-      const password = 'Teste123!!'
+    const password = 'Teste123!!'
 
-      await registerUseCase.execute({
-        name: 'John Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'johndoe',
-        role: UserRole.DEFAULT,
-      })
+    const result1 = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username: 'johndoe',
+      role: UserRole.DEFAULT,
+    })
+    expect(isOk(result1)).toBe(true)
 
-      const newEmail = `janedoe${Date.now()}@gmail.com`
-      const newUsername = 'janedoe'
+    const newEmail = `janedoe${Date.now()}@gmail.com`
+    const newUsername = 'janedoe'
 
-      await expect(() =>
-        registerUseCase.execute({
-          name: 'Jane Doe',
-          email: newEmail,
-          cpf: uniqueCpf,
-          password,
-          username: newUsername,
-          role: UserRole.DEFAULT,
-        }),
-      ).rejects.toBeInstanceOf(UserAlreadyExistsError)
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
+    const result2 = await registerUseCase.execute({
+      name: 'Jane Doe',
+      email: newEmail,
+      cpf: uniqueCpf,
+      password,
+      username: newUsername,
+      role: UserRole.DEFAULT,
+    })
+
+    expect(isErr(result2)).toBe(true)
+    if (isErr(result2)) {
+      expect(result2.error).toBeInstanceOf(UserAlreadyExistsError)
     }
   })
 
   it('should not be able to register with the same username twice', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
 
-      const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const uniqueCpf = cpfValidator.generate()
 
-      const password = 'Teste123!!'
+    const password = 'Teste123!!'
 
-      const username = 'johndoe'
+    const username = 'johndoe'
 
-      await registerUseCase.execute({
-        name: 'Jane Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: username,
-        role: UserRole.DEFAULT,
-      })
+    const result1 = await registerUseCase.execute({
+      name: 'Jane Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username: username,
+      role: UserRole.DEFAULT,
+    })
+    expect(isOk(result1)).toBe(true)
 
-      const newEmail = `janedoe${Date.now()}@gmail.com`
-      const newCpf = cpfValidator.generate()
+    const newEmail = `janedoe${Date.now()}@gmail.com`
+    const newCpf = cpfValidator.generate()
 
-      await expect(() =>
-        registerUseCase.execute({
-          name: 'John Doe',
-          email: newEmail,
-          cpf: newCpf,
-          password,
-          username: username,
-          role: UserRole.DEFAULT,
-        }),
-      ).rejects.toBeInstanceOf(UserAlreadyExistsError)
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
+    const result2 = await registerUseCase.execute({
+      name: 'John Doe',
+      email: newEmail,
+      cpf: newCpf,
+      password,
+      username: username,
+      role: UserRole.DEFAULT,
+    })
+
+    expect(isErr(result2)).toBe(true)
+    if (isErr(result2)) {
+      expect(result2.error).toBeInstanceOf(UserAlreadyExistsError)
     }
   })
 
-  it('should throw UserNotCreatedError if user is not created', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
+  it('should return UserNotCreatedError if user is not created', async () => {
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
 
-      vi.spyOn(usersRepository, 'create').mockResolvedValueOnce(null as any)
+    vi.spyOn(usersRepository, 'create').mockResolvedValueOnce(ok(null as any))
 
-      await expect(() =>
-        registerUseCase.execute({
-          name: 'Test',
-          email: `test${Date.now()}@example.com`,
-          cpf: '123.456.789-00',
-          password: 'Password123!',
-          username: 'testuser',
-          role: UserRole.DEFAULT,
-        }),
-      ).rejects.toBeInstanceOf(UserNotCreatedError)
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
+    const result = await registerUseCase.execute({
+      name: 'Test',
+      email: `test${Date.now()}@example.com`,
+      cpf: '123.456.789-00',
+      password: 'Password123!',
+      username: 'testuser',
+      role: UserRole.DEFAULT,
+    })
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(UserNotCreatedError)
     }
   })
 
-  it('should throw UserAlreadyExistsError if Prisma error P2002 occurs', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
+  it('should return UserAlreadyExistsError if user create returns a UserAlreadyExistsError', async () => {
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
 
-      const prismaError = new Prisma.PrismaClientKnownRequestError(
-        'Unique constraint failed on the fields: (`email`)',
-        { code: 'P2002', clientVersion: '4.0.0' } as any,
-      )
+    vi.spyOn(usersRepository, 'findBy').mockResolvedValue(ok(null))
+    vi.spyOn(usersRepository, 'create').mockResolvedValueOnce(errOf(new UserAlreadyExistsError()))
 
-      vi.spyOn(usersRepository, 'findBy').mockResolvedValue(null)
-      vi.spyOn(usersRepository, 'create').mockRejectedValueOnce(prismaError)
+    const result = await registerUseCase.execute({
+      name: 'Test',
+      email: `test${Date.now()}@example.com`,
+      cpf: '123.456.789-00',
+      password: 'Password123!',
+      username: 'testuser',
+      role: UserRole.DEFAULT,
+    })
 
-      await expect(() =>
-        registerUseCase.execute({
-          name: 'Test',
-          email: `test${Date.now()}@example.com`,
-          cpf: '123.456.789-00',
-          password: 'Password123!',
-          username: 'testuser',
-          role: UserRole.DEFAULT,
-        }),
-      ).rejects.toBeInstanceOf(UserAlreadyExistsError)
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(UserAlreadyExistsError)
     }
   })
 
-  it('should throw error if repository throws unexpected error', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
+  it('should return error if repository returns unexpected error', async () => {
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
 
-      vi.spyOn(usersRepository, 'findBy').mockResolvedValueOnce(null)
-      vi.spyOn(usersRepository, 'findBy').mockResolvedValueOnce(null)
-      vi.spyOn(usersRepository, 'findBy').mockResolvedValueOnce(null)
-      vi.spyOn(usersRepository, 'create').mockRejectedValueOnce(new Error('Unexpected'))
+    const unexpectedErr = new Error('Unexpected')
+    vi.spyOn(usersRepository, 'findBy').mockResolvedValue(ok(null))
+    vi.spyOn(usersRepository, 'create').mockResolvedValueOnce(errOf(unexpectedErr) as any)
 
-      await expect(() =>
-        registerUseCase.execute({
-          name: 'Test',
-          email: `test${Date.now()}@example.com`,
-          cpf: '123.456.789-00',
-          password: 'Password123!',
-          username: 'testuser',
-          role: UserRole.DEFAULT,
-        }),
-      ).rejects.toThrow('Unexpected')
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
+    const result = await registerUseCase.execute({
+      name: 'Test',
+      email: `test${Date.now()}@example.com`,
+      cpf: '123.456.789-00',
+      password: 'Password123!',
+      username: 'testuser',
+      role: UserRole.DEFAULT,
+    })
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBe(unexpectedErr)
     }
   })
 
   it('should register user with ADMIN role', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
 
-      const uniqueEmail = `admin${Date.now()}@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
-      const password = 'Admin123!'
+    const uniqueEmail = `admin${Date.now()}@gmail.com`
+    const uniqueCpf = cpfValidator.generate()
+    const password = 'Admin123!'
 
-      const { user } = await registerUseCase.execute({
-        name: 'Admin User',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'adminuser',
-        role: UserRole.ADMIN,
-      })
+    const result = await registerUseCase.execute({
+      name: 'Admin User',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username: 'adminuser',
+      role: UserRole.ADMIN,
+    })
 
-      expect(user.role).toBe(UserRole.ADMIN)
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      expect(result.value.user.role).toBe(UserRole.ADMIN)
     }
   })
 })

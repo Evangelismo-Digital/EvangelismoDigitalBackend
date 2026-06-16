@@ -1,7 +1,9 @@
-import { messages } from 'core/constants/messages'
+import { ErrorType } from 'core/types/error-type/error-type'
+import { DomainError } from 'errors/domain-error'
+import { USER_ALREADY_EXISTS_ERROR } from 'messages/errors/use-cases/users/users-error-messages'
 
-export class UserAlreadyExistsError extends Error {
+export class UserAlreadyExistsError extends DomainError {
   constructor() {
-    super(messages.validation.userAlreadyExists)
+    super(USER_ALREADY_EXISTS_ERROR, ErrorType.CONFLICT)
   }
 }

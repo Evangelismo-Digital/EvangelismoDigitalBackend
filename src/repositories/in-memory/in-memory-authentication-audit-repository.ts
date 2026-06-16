@@ -4,11 +4,13 @@ import {
   AuthenticationAuditInput,
   AuthenticationAuditRepository,
 } from 'core/contracts/repository/authentication-audit-repository.interface'
+import { Result, ok } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 
 export class InMemoryAuthenticationAuditRepository implements AuthenticationAuditRepository {
   public items: AuthenticationAudit[] = []
 
-  async create(data: AuthenticationAuditInput): Promise<AuthenticationAudit> {
+  async create(data: AuthenticationAuditInput): Promise<Result<AuthenticationAudit, AppError>> {
     const audit = {} as AuthenticationAudit
 
     Object.assign(audit, {
@@ -24,6 +26,6 @@ export class InMemoryAuthenticationAuditRepository implements AuthenticationAudi
 
     this.items.push(audit)
 
-    return audit
+    return ok(audit)
   }
 }

@@ -1,6 +1,8 @@
 import { User } from '@prisma/client'
 import { UsersRepository } from 'core/contracts/repository/users-repository.interface'
-import { ResourceNotFoundError } from '@use-cases/errors/resource-not-found-error'
+import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
+import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 
 interface SearchUsersUseCaseRequest {
   query: string
@@ -14,13 +16,19 @@ interface SearchUsersUseCaseResponse {
 export class SearchUsersUseCase {
   constructor(private usersRepository: UsersRepository) {}
 
-  async execute({ query, page }: SearchUsersUseCaseRequest): Promise<SearchUsersUseCaseResponse> {
-    const users = await this.usersRepository.search(query, page)
+  async execute({ query, page }: SearchUsersUseCaseRequest): Promise<Result<SearchUsersUseCaseResponse, AppError>> {
+    const searchResult = await this.usersRepository.search(query, page)
 
-    if (!users || users.length === 0) {
-      throw new ResourceNotFoundError()
+    if (isErr(searchResult)) {
+      return searchResult
     }
 
-    return { users }
+    const users = searchResult.value
+
+    if (!users || users.length === 0) {
+      return errOf(new UserNotFoundError())
+    }
+
+    return ok({ users })
   }
 }
