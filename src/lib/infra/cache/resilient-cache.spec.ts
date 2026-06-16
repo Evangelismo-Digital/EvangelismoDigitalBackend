@@ -93,6 +93,15 @@ describe('ResilientCache Unit Tests', () => {
     fetchTimeoutMs: 100,
     maxPendingFetches: 5,
     ttlJitterPercentage: 0.1,
+    serializeError: (err: any) => ({
+      type: err.constructor.name,
+      message: err.message,
+      data: err.data || err,
+    }),
+    deserializeError: (type: string, message: string, data?: any) => {
+      const factory = AppErrorRegistry[type]
+      return factory ? factory(message, data) : null
+    },
   }
 
   beforeEach(() => {

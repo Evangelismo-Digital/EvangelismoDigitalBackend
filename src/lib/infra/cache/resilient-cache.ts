@@ -1,22 +1,22 @@
 import crypto from 'crypto'
 import { Redis } from 'ioredis'
 import { logger } from '@lib/logger'
-import { ResultPattern } from 'core/types/patterns/result-pattern'
 import { Result, ok, errOf, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
-import { deserializeAppError } from 'errors/app-error-registry'
-import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
-export interface ResilientCacheOptions {
+export interface ResilientCacheOptions<E = any> {
   prefix: string
   defaultTtlSeconds: number
   negativeTtlSeconds: number
   maxPendingFetches?: number
   fetchTimeoutMs?: number
   ttlJitterPercentage?: number
+  serializeError?: (error: E) => { type: string; message: string; data?: any }
+  deserializeError?: (type: string, message: string, data?: any) => E
+  isRetryable?: (error: E) => boolean
 }
 
 // === Cache Envelope Structure ===
@@ -27,12 +27,12 @@ export interface CacheEnvelope<T> {
     // error: Exists only if s=false
     type: string // Error class name (e.g., 'InvalidCepError')
     message: string
-    data?: unknown // Additional error data
+    data?: any // Additional error data
   }
 }
 
-export class ResilientCache {
-  private readonly pendingFetches = new Map<string, Promise<unknown>>()
+export class ResilientCache<E = any> {
+  private readonly pendingFetches = new Map<string, Promise<any>>()
 
   private readonly MAX_PENDING: number
   private readonly FETCH_TIMEOUT: number
@@ -40,7 +40,7 @@ export class ResilientCache {
 
   constructor(
     private readonly redis: Redis,
-    private readonly options: ResilientCacheOptions,
+    private readonly options: ResilientCacheOptions<E>,
   ) {
     this.MAX_PENDING = options.maxPendingFetches ?? 1_000
     this.FETCH_TIMEOUT = options.fetchTimeoutMs ?? 12_000
@@ -59,11 +59,11 @@ export class ResilientCache {
     return `${this.options.prefix}${hash}`
   }
 
-  async getOrFetch<T, E extends AppError = AppError>(
+  async getOrFetch<T>(
     key: string,
     fetcher: (signal: AbortSignal) => Promise<Result<T, E>>,
     parentSignal?: AbortSignal,
-  ): Promise<Result<T, AppError>> {
+  ): Promise<Result<T, E | AppError>> {
     // 1. Circuit Breaker FIRST (before any work)
     if (this.pendingFetches.size >= this.MAX_PENDING) {
       return errOf(new InfraServiceOverloadError())
@@ -72,7 +72,7 @@ export class ResilientCache {
     // 2. Dedup Check (FAST PATH - in-memory)
     const existing = this.pendingFetches.get(key)
     if (existing) {
-      return await (existing as Promise<Result<T, AppError>>)
+      return await (existing as Promise<Result<T, E | AppError>>)
     }
 
     // 3. Fast Redis Read (Envelope Unwrapping)
@@ -92,9 +92,12 @@ export class ResilientCache {
 
         // If cached failure, reconstruct error
         if (!envelope.s && envelope.e) {
-          const deserialized = deserializeAppError(envelope.e.type, envelope.e.message, envelope.e.data)
-          if (deserialized) {
-            return errOf(deserialized)
+          const deserializer = this.options.deserializeError
+          if (deserializer) {
+            const deserialized = deserializer(envelope.e.type, envelope.e.message, envelope.e.data)
+            if (deserialized) {
+              return errOf(deserialized)
+            }
           }
 
           // Fallback reconstruction
@@ -109,7 +112,7 @@ export class ResilientCache {
     // 4. Double-check pattern: Check again after async Redis call
     const existingAfterRedis = this.pendingFetches.get(key)
     if (existingAfterRedis) {
-      return await (existingAfterRedis as Promise<Result<T, AppError>>)
+      return await (existingAfterRedis as Promise<Result<T, E | AppError>>)
     }
 
     // 5. Create and store promise atomically
@@ -126,11 +129,11 @@ export class ResilientCache {
     }
   }
 
-  private async executeFetchWithSignalLogic<T, E extends AppError>(
+  private async executeFetchWithSignalLogic<T>(
     key: string,
     fetcher: (signal: AbortSignal) => Promise<Result<T, E>>,
     parentSignal?: AbortSignal,
-  ): Promise<Result<T, AppError>> {
+  ): Promise<Result<T, E | AppError>> {
     const timeoutSignal = AbortSignal.timeout(this.FETCH_TIMEOUT)
 
     const signals: AbortSignal[] = [timeoutSignal]
@@ -153,15 +156,19 @@ export class ResilientCache {
 
       if (isErr(result)) {
         const err = result.error
+        const isRetryableFn = this.options.isRetryable ?? ((error: E) => (error as any)?.failureMode === 'RETRYABLE')
+
         // Negative Cache (do not cache transient/retryable failures)
-        if (err.failureMode !== FailureMode.RETRYABLE) {
+        if (!isRetryableFn(err)) {
+          const serializer = this.options.serializeError ?? ((error: E) => ({
+            type: (error as any).constructor?.name || 'Error',
+            message: (error as any).message || String(error),
+            data: error,
+          }))
+
           await this.setResult(key, {
             s: false,
-            e: {
-              type: err.constructor.name,
-              message: err.message,
-              data: err,
-            },
+            e: serializer(err),
           })
         }
         return errOf(err)

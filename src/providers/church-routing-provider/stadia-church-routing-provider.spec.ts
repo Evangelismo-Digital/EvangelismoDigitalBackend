@@ -3,6 +3,8 @@ import { StadiaChurchRoutingProvider } from './stadia-church-routing-provider'
 import type Redis from 'ioredis'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
+import { ResilientChurchRoutingProviderDecorator } from './decorators/resilient-church-routing-provider.decorator'
+import { IChurchRoutingProvider } from 'core/contracts/use-cases/providers/church-routing-provider.interface'
 
 const { mockedPost, mockTryConsume } = vi.hoisted(() => {
   return {
@@ -41,16 +43,18 @@ class InMemoryRedisMock {
   }
 }
 
-function buildProvider(): StadiaChurchRoutingProvider {
+function buildProvider(): IChurchRoutingProvider {
   const redis = new InMemoryRedisMock() as unknown as Redis
 
-  return new StadiaChurchRoutingProvider(
-    {
-      apiUrl: 'https://api.stadiamaps.com/route/v1/',
-      apiToken: 'test-token',
-      defaultCosting: RoutingProfile.PEDESTRIAN,
-      timeoutMs: 2500,
-    },
+  const rawProvider = new StadiaChurchRoutingProvider({
+    apiUrl: 'https://api.stadiamaps.com/route/v1/',
+    apiToken: 'test-token',
+    defaultCosting: RoutingProfile.PEDESTRIAN,
+    timeoutMs: 2500,
+  })
+
+  return new ResilientChurchRoutingProviderDecorator(
+    rawProvider,
     redis,
     redis,
     {

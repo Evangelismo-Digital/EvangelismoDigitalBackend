@@ -13,7 +13,6 @@ import { ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilien
 import { Result, ok, errOf, isOk, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
-import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
 
 interface CepToLatLonRequest {
   cep: string
@@ -27,7 +26,7 @@ interface CepToLatLonResponse {
 }
 
 export class CepToLatLonUseCase {
-  private readonly cacheManager: ResilientCache
+  private readonly cacheManager: ResilientCache<AppError>
   private readonly redis: Redis
   private readonly cacheSuccessResults: boolean
 
@@ -35,39 +34,40 @@ export class CepToLatLonUseCase {
     private geocodingProvider: IGeocodingProvider,
     private addressProvider: IAddressProvider,
     redis: Redis,
-    optionsOverride: ResilientCacheOptions,
+    optionsOverride: ResilientCacheOptions<AppError>,
     cacheSuccessResults = true,
   ) {
     this.redis = redis
     this.cacheSuccessResults = cacheSuccessResults
-    this.cacheManager = new ResilientCache(redis, {
+    this.cacheManager = new ResilientCache<AppError>(redis, {
       prefix: optionsOverride.prefix,
       defaultTtlSeconds: optionsOverride.defaultTtlSeconds,
       negativeTtlSeconds: optionsOverride.negativeTtlSeconds,
       maxPendingFetches: optionsOverride.maxPendingFetches,
       fetchTimeoutMs: optionsOverride.fetchTimeoutMs,
       ttlJitterPercentage: optionsOverride.ttlJitterPercentage,
+      serializeError: optionsOverride.serializeError,
+      deserializeError: optionsOverride.deserializeError,
+      isRetryable: optionsOverride.isRetryable,
     })
   }
 
   async execute({ cep }: CepToLatLonRequest): Promise<Result<CepToLatLonResponse, AppError>> {
-    return FindNearestChurchesErrorMapper.runCatching(async () => {
-      const cleanCep = cep.replace(/\D/g, '')
-      const cacheKey = this.cacheManager.generateKey({ cep: cleanCep })
+    const cleanCep = cep.replace(/\D/g, '')
+    const cacheKey = this.cacheManager.generateKey({ cep: cleanCep })
 
-      const result = await this.cacheManager.getOrFetch<CepToLatLonResponse, AppError>(
-        cacheKey,
-        async (signal) => {
-          return await this.processCep(cleanCep, signal)
-        },
-      )
+    const result = await this.cacheManager.getOrFetch<CepToLatLonResponse>(
+      cacheKey,
+      async (signal: AbortSignal) => {
+        return await this.processCep(cleanCep, signal)
+      },
+    )
 
-      if (isOk(result) && !this.cacheSuccessResults) {
-        await this.redis.del(cacheKey)
-      }
+    if (isOk(result) && !this.cacheSuccessResults) {
+      await this.redis.del(cacheKey)
+    }
 
-      return result
-    })
+    return result
   }
 
   private async processCep(cleanCep: string, signal: AbortSignal): Promise<Result<CepToLatLonResponse, AppError>> {

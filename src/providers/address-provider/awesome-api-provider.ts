@@ -1,16 +1,9 @@
 import { AxiosInstance } from 'axios'
-import { logger } from '@lib/logger'
 import { createHttpClient } from '@lib/http/axios'
-import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
+import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
-import Redis from 'ioredis'
-import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
-import { Result, ok, errOf } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
-import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
+import { IAddressData } from 'core/contracts/use-cases/providers/address-provider.interface'
+import { IRawAddressProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
 
 export interface AwesomeApiConfig {
   apiUrl: string
@@ -31,11 +24,13 @@ interface AwesomeApiResponse {
   ddd: string
 }
 
-export class AwesomeApiProvider implements IAddressProvider {
+export class AwesomeApiProvider implements IRawAddressProvider {
   private static api: AxiosInstance
 
-  private readonly MAX_RETRIES = 2
-  private readonly BACKOFF_MS = 100
+  readonly providerName = 'AwesomeAPI'
+  readonly rateLimitConfig = EnumProviderConfig.AWESOME_API_ADDRESS
+  readonly maxRetries = 2
+  readonly backoffMs = 100
   private readonly TIMEOUT = 1500
 
   // HTTPS Agent Settings
@@ -44,10 +39,7 @@ export class AwesomeApiProvider implements IAddressProvider {
   private readonly MAX_FREE_SOCKETS = 10
   private readonly HTTPS_AGENT_TIMEOUT = 60000
 
-  constructor(
-    private readonly config: AwesomeApiConfig,
-    private readonly redisRateLimiterConnection: Redis,
-  ) {
+  constructor(private readonly config: AwesomeApiConfig) {
     if (!AwesomeApiProvider.api) {
       AwesomeApiProvider.api = createHttpClient({
         baseURL: this.config.apiUrl,
@@ -65,83 +57,35 @@ export class AwesomeApiProvider implements IAddressProvider {
     }
   }
 
-  async fetchAddress(cep: string, signal?: AbortSignal): Promise<Result<IAddressData | null, AppError>> {
+  async fetchRawAddress(cep: string, signal?: AbortSignal): Promise<IAddressData | null> {
     const cleanCep = cep.replace(/\D/g, '')
 
-    // Fail-Fast Rate Limit Check
-    const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection)
+    const { data } = await AwesomeApiProvider.api.get<AwesomeApiResponse>(`/${cleanCep}`, {
+      signal,
+    })
 
-    const allowed = await rateLimiter.tryConsume(EnumProviderConfig.AWESOME_API_ADDRESS)
-
-    if (!allowed) {
-      return errOf(new ServiceBusyError('AwesomeAPI'))
+    if (!data || !data.cep) {
+      return null
     }
 
-    for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
-      if (signal?.aborted) {
-        return errOf(new TimeoutExceededError(signal.reason))
-      }
-
-      const result = await FindNearestChurchesErrorMapper.runCatching<IAddressData | null>(async () => {
-        const { data } = await AwesomeApiProvider.api.get<AwesomeApiResponse>(`/${cleanCep}`, {
-          signal,
-        })
-
-        if (!data || !data.cep) {
-          return ok(null)
-        }
-
-        const normalizedData = {
-          logradouro: data.address_name,
-          bairro: data.district,
-          localidade: data.city,
-          uf: data.state,
-        }
-
-        const precision = PrecisionHelper.fromAddressData(normalizedData)
-
-        return ok({
-          logradouro: data.address_name,
-          bairro: data.district,
-          localidade: data.city,
-          uf: data.state,
-          lat: parseFloat(data.lat),
-          lon: parseFloat(data.lng),
-          precision: precision,
-          providerName: 'AwesomeAPI',
-        })
-      })
-
-      if (result.success) {
-        return result
-      }
-
-      const error = result.error
-      const isRetryable = error.failureMode === FailureMode.RETRYABLE
-
-      if (!isRetryable || attempt === this.MAX_RETRIES) {
-        logger.error(
-          {
-            cep: cleanCep,
-            attempt,
-            error: error.message,
-          },
-          'Falha ao buscar endereço AwesomeAPI após tentativas',
-        )
-        return errOf(error)
-      }
-
-      // Backoff and retry for transient errors
-      const delay = this.BACKOFF_MS * Math.pow(2, attempt - 1)
-      logger.warn({ cep: cleanCep, attempt, delay }, 'Repetindo solicitação para AwesomeAPI')
-      await this.sleep(delay)
+    const normalizedData = {
+      logradouro: data.address_name,
+      bairro: data.district,
+      localidade: data.city,
+      uf: data.state,
     }
 
-    logger.error({ cep: cleanCep }, 'AwesomeAPI - todas as tentativas esgotadas sem sucesso')
-    return errOf(new ServiceBusyError('AwesomeAPI'))
-  }
+    const precision = PrecisionHelper.fromAddressData(normalizedData)
 
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
+    return {
+      logradouro: data.address_name,
+      bairro: data.district,
+      localidade: data.city,
+      uf: data.state,
+      lat: parseFloat(data.lat),
+      lon: parseFloat(data.lng),
+      precision: precision,
+      providerName: 'AwesomeAPI',
+    }
   }
 }

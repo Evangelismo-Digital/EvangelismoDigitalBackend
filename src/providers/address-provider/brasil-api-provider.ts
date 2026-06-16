@@ -1,23 +1,14 @@
 import { AxiosInstance } from 'axios'
-import Redis from 'ioredis'
-import { logger } from '@lib/logger'
 import { createHttpClient } from '@lib/http/axios'
-import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
+import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
-import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
-import { Result, ok, errOf } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
-import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
+import { IAddressData } from 'core/contracts/use-cases/providers/address-provider.interface'
+import { IRawAddressProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
 
 export interface BrasilApiConfig {
-  apiUrl: string // Esperado: https://brasilapi.com.br
+  apiUrl: string
 }
 
-// Interface baseada na resposta da BrasilAPI V1
-// Ref: https://brasilapi.com.br/api/cep/v1/{cep}
 interface BrasilApiResponse {
   cep: string
   state: string
@@ -27,27 +18,25 @@ interface BrasilApiResponse {
   service: string
 }
 
-export class BrasilApiProvider implements IAddressProvider {
+export class BrasilApiProvider implements IRawAddressProvider {
   private static api: AxiosInstance
 
-  // Configuração de Retry e Timeout
-  private readonly MAX_RETRIES = 2
-  private readonly BACKOFF_MS = 100
-  private readonly TIMEOUT = 1500 // 1.5s timeout agressivo para Fail-Fast
+  readonly providerName = 'BrasilAPI'
+  readonly rateLimitConfig = EnumProviderConfig.BRASIL_API_ADDRESS
+  readonly maxRetries = 2
+  readonly backoffMs = 100
+  private readonly TIMEOUT = 1500
 
-  // HTTPS Agent Settings (Replicando configurações de performance do AwesomeApiProvider)
+  // HTTPS Agent Settings
   private readonly KEEP_ALIVE_MSECS = 1000
   private readonly MAX_SOCKETS = 100
   private readonly MAX_FREE_SOCKETS = 10
   private readonly HTTPS_AGENT_TIMEOUT = 60000
 
-  constructor(
-    private readonly config: BrasilApiConfig,
-    private readonly redisRateLimiterConnection: Redis,
-  ) {
+  constructor(private readonly config: BrasilApiConfig) {
     if (!BrasilApiProvider.api) {
       BrasilApiProvider.api = createHttpClient({
-        baseURL: this.config.apiUrl, // A URL base deve vir do env, ex: https://brasilapi.com.br
+        baseURL: this.config.apiUrl,
         timeout: this.TIMEOUT,
         headers: {
           'User-Agent': 'EvangelismoDigitalBackend/1.0',
@@ -62,85 +51,30 @@ export class BrasilApiProvider implements IAddressProvider {
     }
   }
 
-  async fetchAddress(cep: string, signal?: AbortSignal): Promise<Result<IAddressData | null, AppError>> {
+  async fetchRawAddress(cep: string, signal?: AbortSignal): Promise<IAddressData | null> {
     const cleanCep = cep.replace(/\D/g, '')
 
-    // 1. Fail-Fast Rate Limit Check
-    const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection)
+    const { data } = await BrasilApiProvider.api.get<BrasilApiResponse>(`/${cleanCep}`, {
+      signal,
+    })
 
-    // Usa a chave específica definida no EnumProviderConfig para BrasilAPI
-    const allowed = await rateLimiter.tryConsume(EnumProviderConfig.BRASIL_API_ADDRESS)
-
-    if (!allowed) {
-      return errOf(new ServiceBusyError('BrasilAPI'))
+    if (!data || !data.cep || !data.city || !data.state) {
+      return null
     }
 
-    // 2. Lógica de Retry com Backoff
-    for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
-      if (signal?.aborted) {
-        return errOf(new TimeoutExceededError(signal.reason))
-      }
-
-      const result = await FindNearestChurchesErrorMapper.runCatching<IAddressData | null>(async () => {
-        // A URL solicitada é /api/cep/v1/{cep}
-        const { data } = await BrasilApiProvider.api.get<BrasilApiResponse>(`/${cleanCep}`, {
-          signal,
-        })
-
-        if (!data || !data.cep || !data.city || !data.state) {
-          return ok(null)
-        }
-
-        // 3. Normalização de Dados para o PrecisionHelper
-        const normalizedData = {
-          logradouro: data.street,
-          bairro: data.neighborhood,
-          localidade: data.city,
-          uf: data.state,
-        }
-
-        // Calcula a precisão baseada na presença de logradouro/bairro
-        const precision = PrecisionHelper.fromAddressData(normalizedData)
-
-        return ok({
-          ...normalizedData,
-          precision: precision,
-          providerName: 'BrasilAPI',
-        })
-      })
-
-      if (result.success) {
-        return result
-      }
-
-      const error = result.error
-      const isRetryable = error.failureMode === FailureMode.RETRYABLE
-
-      // Se não for retryable ou se esgotou as tentativas, falha.
-      if (!isRetryable || attempt === this.MAX_RETRIES) {
-        logger.error(
-          {
-            cep: cleanCep,
-            attempt,
-            error: error.message,
-          },
-          'Falha ao buscar endereço BrasilAPI após tentativas',
-        )
-        return errOf(error)
-      }
-
-      // Backoff Exponencial
-      const delay = this.BACKOFF_MS * Math.pow(2, attempt - 1)
-      logger.warn({ cep: cleanCep, attempt, delay }, 'Repetindo solicitação para BrasilAPI')
-      await this.sleep(delay)
+    const normalizedData = {
+      logradouro: data.street,
+      bairro: data.neighborhood,
+      localidade: data.city,
+      uf: data.state,
     }
 
-    // Fallback de segurança
-    logger.error({ cep: cleanCep }, 'BrasilAPI - todas as tentativas esgotadas sem sucesso')
-    return errOf(new ServiceBusyError('BrasilAPI'))
-  }
+    const precision = PrecisionHelper.fromAddressData(normalizedData)
 
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
+    return {
+      ...normalizedData,
+      precision: precision,
+      providerName: 'BrasilAPI',
+    }
   }
 }

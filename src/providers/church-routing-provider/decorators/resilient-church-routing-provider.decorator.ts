@@ -1,0 +1,100 @@
+import {
+  IChurchRoutingProvider,
+  RouteDistanceResult,
+  RoutingPoint,
+} from 'core/contracts/use-cases/providers/church-routing-provider.interface'
+import { IRawChurchRoutingProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
+import { ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
+import { RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
+import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
+import { Result, ok, errOf } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
+import Redis from 'ioredis'
+
+export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingProvider {
+  private readonly cacheManager: ResilientCache<AppError>
+
+  constructor(
+    private readonly rawProvider: IRawChurchRoutingProvider,
+    private readonly redisRateLimiterConnection: Redis,
+    redisCacheConnection: Redis,
+    cacheOptionsOverride?: ResilientCacheOptions<AppError>,
+  ) {
+    const timeoutMs = rawProvider.timeoutMs
+    this.cacheManager = new ResilientCache<AppError>(redisCacheConnection, {
+      prefix: cacheOptionsOverride?.prefix ?? 'cache:stadia-route-distance:',
+      defaultTtlSeconds: cacheOptionsOverride?.defaultTtlSeconds ?? 60 * 60,
+      negativeTtlSeconds: cacheOptionsOverride?.negativeTtlSeconds ?? 0,
+      maxPendingFetches: cacheOptionsOverride?.maxPendingFetches ?? 500,
+      fetchTimeoutMs: cacheOptionsOverride?.fetchTimeoutMs ?? timeoutMs,
+      ttlJitterPercentage: cacheOptionsOverride?.ttlJitterPercentage ?? 0.05,
+      serializeError: cacheOptionsOverride?.serializeError,
+      deserializeError: cacheOptionsOverride?.deserializeError,
+      isRetryable: cacheOptionsOverride?.isRetryable,
+    })
+  }
+
+  async getDistances(params: {
+    origin: RoutingPoint
+    destinations: RoutingPoint[]
+    profile?: RoutingProfile
+    signal?: AbortSignal
+  }): Promise<Result<RouteDistanceResult[], AppError>> {
+    const results: RouteDistanceResult[] = []
+
+    for (const destination of params.destinations) {
+      const fetchResult = await this.fetchDistance(params.origin, destination, params.profile, params.signal)
+      if (!fetchResult.success) {
+        return fetchResult
+      }
+      results.push(fetchResult.value)
+    }
+
+    return ok(results)
+  }
+
+  private async fetchDistance(
+    origin: RoutingPoint,
+    destination: RoutingPoint,
+    profile?: RoutingProfile,
+    parentSignal?: AbortSignal,
+  ): Promise<Result<RouteDistanceResult, AppError>> {
+    const costing = profile ?? this.rawProvider.defaultCosting ?? RoutingProfile.AUTO
+    const cacheKey = this.cacheManager.generateKey({
+      oLat: origin.lat,
+      oLon: origin.lon,
+      dLat: destination.lat,
+      dLon: destination.lon,
+      profile: costing,
+    })
+
+    const result = await this.cacheManager.getOrFetch<RouteDistanceResult>(
+      cacheKey,
+      async (signal: AbortSignal) => {
+        const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection)
+        const allowed = await rateLimiter.tryConsume(this.rawProvider.rateLimitConfig)
+
+        if (!allowed) {
+          return errOf(new ServiceBusyError(this.rawProvider.providerName))
+        }
+
+        if (signal.aborted) {
+          return errOf(new TimeoutExceededError(signal.reason))
+        }
+
+        try {
+          const data = await this.rawProvider.fetchRawDistance(origin, destination, costing, signal)
+          return ok(data)
+        } catch (error) {
+          return errOf(FindNearestChurchesErrorMapper.map(error))
+        }
+      },
+      parentSignal,
+    )
+
+    return result
+  }
+}
