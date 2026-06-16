@@ -10,10 +10,11 @@ import {
 } from 'core/contracts/repository/users-repository.interface'
 import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
-import { mapPrismaUserError } from 'errors/mappings/user-error-mapping'
+import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
 
 export class PrismaUsersRepository implements UsersRepository {
+  constructor(private readonly errorMapper: PrismaErrorMapper<AppError>) {}
+
   async create(data: CreateUser): Promise<Result<User, AppError>> {
     try {
       const user = await prisma.user.create({
@@ -28,9 +29,7 @@ export class PrismaUsersRepository implements UsersRepository {
       })
       return ok(user)
     } catch (error) {
-      const mapped = mapPrismaUserError(error)
-      if (mapped) return errOf(mapped)
-      return errOf(new DatabaseQueryError(error))
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -50,9 +49,7 @@ export class PrismaUsersRepository implements UsersRepository {
       })
       return ok(user)
     } catch (error) {
-      const mapped = mapPrismaUserError(error)
-      if (mapped) return errOf(mapped)
-      return errOf(new DatabaseQueryError(error))
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -65,9 +62,7 @@ export class PrismaUsersRepository implements UsersRepository {
       })
       return ok(user)
     } catch (error) {
-      const mapped = mapPrismaUserError(error)
-      if (mapped) return errOf(mapped)
-      return errOf(new DatabaseQueryError(error))
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -77,11 +72,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
       return ok(users)
     } catch (error) {
-      const mapped = mapPrismaUserError(error)
-
-      if (mapped) return errOf(mapped)
-
-      return errOf(new DatabaseQueryError(error))
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -100,11 +91,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
       return ok(users)
     } catch (error) {
-      const mapped = mapPrismaUserError(error)
-
-      if (mapped) return errOf(mapped)
-
-      return errOf(new DatabaseQueryError(error))
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -117,11 +104,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
       return ok(user)
     } catch (error) {
-      const mapped = mapPrismaUserError(error)
-
-      if (mapped) return errOf(mapped)
-
-      return errOf(new DatabaseQueryError(error))
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -134,11 +117,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
       return ok(user)
     } catch (error) {
-      const mapped = mapPrismaUserError(error)
-
-      if (mapped) return errOf(mapped)
-
-      return errOf(new DatabaseQueryError(error))
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -151,11 +130,7 @@ export class PrismaUsersRepository implements UsersRepository {
       })
       return ok(user)
     } catch (error) {
-      const mapped = mapPrismaUserError(error)
-
-      if (mapped) return errOf(mapped)
-
-      return errOf(new DatabaseQueryError(error))
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 }

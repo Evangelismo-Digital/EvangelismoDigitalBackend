@@ -1,20 +1,21 @@
 import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
-import { formsErrorMapping } from '@use-cases/errors/forms/forms-error-mapper'
 import { FormsNotFoundError } from '@use-cases/errors/forms/forms-not-found-error'
 import {
   FormsRepository,
   IFormSubmission,
   IFormSubmissionInputData,
 } from 'core/contracts/repository/forms-repository.interface'
-import { err, ok, Result } from 'core/shared/result'
+import { errOf, ok, Result } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 
 export class PrismaFormsRepository implements FormsRepository {
-  private httpErrorMapper = new PrismaErrorMapper(formsErrorMapping)
+  constructor(
+    private readonly dbContext: DatabaseContext,
+    private readonly errorMapper: PrismaErrorMapper<AppError>,
+  ) {}
 
-  constructor(private readonly dbContext: DatabaseContext) {}
-
-  async create(data: IFormSubmissionInputData): Promise<Result<IFormSubmission, Error>> {
+  async create(data: IFormSubmissionInputData): Promise<Result<IFormSubmission, AppError>> {
     try {
       const formSubmission = await this.dbContext.client.formSubmission.create({
         data,
@@ -22,12 +23,11 @@ export class PrismaFormsRepository implements FormsRepository {
 
       return ok(formSubmission)
     } catch (error) {
-      const mappedError = this.httpErrorMapper.mapToKnownError(error)
-      return err(mappedError)
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 
-  async findByEmail(email: string): Promise<Result<IFormSubmission, Error>> {
+  async findByEmail(email: string): Promise<Result<IFormSubmission, AppError>> {
     try {
       const formSubmission = await this.dbContext.client.formSubmission.findFirst({
         where: {
@@ -36,13 +36,12 @@ export class PrismaFormsRepository implements FormsRepository {
       })
 
       if (!formSubmission) {
-        return err(new FormsNotFoundError())
+        return errOf(new FormsNotFoundError())
       }
 
       return ok(formSubmission)
     } catch (error) {
-      const mappedError = this.httpErrorMapper.mapToKnownError(error)
-      return err(mappedError)
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 }

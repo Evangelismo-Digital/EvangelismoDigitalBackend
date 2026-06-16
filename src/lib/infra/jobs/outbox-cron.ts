@@ -2,6 +2,8 @@ import cron from 'node-cron'
 import { OutboxProcessor } from './outbox-processor'
 import { logger } from '@lib/logger'
 import { PrismaOutboxRepository } from '@repositories/prisma/prisma-outbox-event-repository'
+import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
+import { outboxHttpPrismaErrorMapping, outboxInfraPrismaErrorMapping } from '@repositories/prisma/errors/outbox-error-mapping'
 import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { CRON_SCHEDULES } from 'core/constants/cron/cron'
 
@@ -48,6 +50,8 @@ export function startOutboxCron(existingProcessor?: OutboxProcessor) {
 
 function buildProcessor(): OutboxProcessor {
   const dbContext = new DatabaseContext()
-  const outboxRepository = new PrismaOutboxRepository(dbContext)
+  const outboxHttpMapper = new PrismaErrorMapper(outboxHttpPrismaErrorMapping)
+  const outboxInfraMapper = new PrismaErrorMapper(outboxInfraPrismaErrorMapping)
+  const outboxRepository = new PrismaOutboxRepository(dbContext, outboxHttpMapper, outboxInfraMapper)
   return new OutboxProcessor(outboxRepository)
 }

@@ -5,6 +5,8 @@ import { CalculateChurchRouteDistancesUseCase } from '@use-cases/churches/calcul
 import { FindNearestChurchesUseCase } from '@use-cases/churches/find-nearest-churches-use-case'
 import { FindNearbyChurchesKnnUseCase } from '@use-cases/churches/find-nearby-churches-knn-use-case'
 import { PrismaChurchesRepository } from '@repositories/prisma/prisma-churches-repository'
+import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
+import { churchPrismaErrorMapping } from '@repositories/prisma/errors/churches-error-mapping'
 import { ResilientAddressProvider } from 'providers/address-provider/resilient-address-provider'
 import { AwesomeApiProvider } from 'providers/address-provider/awesome-api-provider'
 import { BrasilApiProvider } from 'providers/address-provider/brasil-api-provider'
@@ -83,7 +85,8 @@ export function makeFindNearestChurchesUseCase(
     false,
   )
 
-  const churchesRepository = new PrismaChurchesRepository()
+  const errorMapper = new PrismaErrorMapper(churchPrismaErrorMapping)
+  const churchesRepository = new PrismaChurchesRepository(errorMapper)
   const findNearbyChurchesKnnUseCase = new FindNearbyChurchesKnnUseCase(churchesRepository)
 
   // Setup Raw Routing Provider

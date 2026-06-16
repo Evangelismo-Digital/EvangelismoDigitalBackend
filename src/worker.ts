@@ -5,6 +5,8 @@ import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { startMailWorker } from '@lib/workers/mail-worker'
 import { OutboxSignal } from '@lib/infra/events/outbox-signal'
 import { PrismaOutboxRepository } from '@repositories/prisma/prisma-outbox-event-repository'
+import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
+import { outboxHttpPrismaErrorMapping, outboxInfraPrismaErrorMapping } from '@repositories/prisma/errors/outbox-error-mapping'
 import { Worker } from 'bullmq'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 
@@ -16,7 +18,9 @@ async function bootstrap() {
     logger.info('🔧 Inicializando serviços de background...')
 
     const dbContext = new DatabaseContext()
-    const outboxRepository = new PrismaOutboxRepository(dbContext)
+    const outboxHttpMapper = new PrismaErrorMapper(outboxHttpPrismaErrorMapping)
+    const outboxInfraMapper = new PrismaErrorMapper(outboxInfraPrismaErrorMapping)
+    const outboxRepository = new PrismaOutboxRepository(dbContext, outboxHttpMapper, outboxInfraMapper)
 
     worker = await startMailWorker(outboxRepository)
     logger.info('✅ Mail worker iniciado')

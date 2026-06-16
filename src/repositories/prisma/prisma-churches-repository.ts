@@ -8,10 +8,9 @@ import {
 } from '../../core/contracts/repository/churches-repository.interface'
 import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
 import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
 import { CreateChurchError } from '@use-cases/errors/create-church-error'
-import { mapPrismaChurchError } from 'errors/mappings/church-error-mapping'
+import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
 
 interface RawChurch {
   id: number
@@ -24,6 +23,8 @@ interface RawChurch {
 }
 
 export class PrismaChurchesRepository implements ChurchesRepository {
+  constructor(private readonly errorMapper: PrismaErrorMapper<AppError>) {}
+
   async findNearest({ userLat, userLon, limit = 20 }: FindNearbyParams): Promise<Result<NearbyChurch[], AppError>> {
     try {
       // For small datasets, we use a safety margin of 5x the requested limit
@@ -74,13 +75,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
 
       return ok(mappedChurches)
     } catch (error) {
-      const mapped = mapPrismaChurchError(error)
-
-      if (mapped) {
-        return errOf(mapped)
-      }
-
-      return errOf(new DatabaseQueryError(error))
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -110,13 +105,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
       `
       return ok(results[0] ?? null)
     } catch (error) {
-      const mapped = mapPrismaChurchError(error)
-
-      if (mapped) {
-        return errOf(mapped)
-      }
-
-      return errOf(new DatabaseQueryError(error))
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -139,13 +128,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
       `
       return ok(results[0] ?? null)
     } catch (error) {
-      const mapped = mapPrismaChurchError(error)
-
-      if (mapped) {
-        return errOf(mapped)
-      }
-
-      return errOf(new DatabaseQueryError(error))
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -183,11 +166,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
 
       return ok(church)
     } catch (error) {
-      const mapped = mapPrismaChurchError(error)
-      if (mapped) {
-        return errOf(mapped)
-      }
-      return errOf(new DatabaseQueryError(error))
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -215,13 +194,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
 
       return ok(church)
     } catch (error) {
-      const mapped = mapPrismaChurchError(error)
-
-      if (mapped) {
-        return errOf(mapped)
-      }
-
-      return errOf(new DatabaseQueryError(error))
+      return errOf(this.errorMapper.mapToKnownError(error))
     }
   }
 }
