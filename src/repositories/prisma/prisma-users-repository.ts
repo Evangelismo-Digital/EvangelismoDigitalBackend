@@ -13,6 +13,7 @@ import { AppError } from 'errors/app-error'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
 
 export class PrismaUsersRepository implements UsersRepository {
+  
   constructor(private readonly errorMapper: PrismaErrorMapper<AppError>) {}
 
   async create(data: CreateUser): Promise<Result<User, AppError>> {
@@ -91,7 +92,9 @@ export class PrismaUsersRepository implements UsersRepository {
 
       return ok(users)
     } catch (error) {
+
       return errOf(this.errorMapper.mapToKnownError(error))
+
     }
   }
 
