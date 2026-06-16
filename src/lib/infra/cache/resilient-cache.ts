@@ -85,7 +85,9 @@ export class ResilientCache<E = any> {
         if (envelope.s) {
           if (!('v' in envelope)) {
             logger.error({ key, envelope }, 'Cache corrompida detectada: CacheEnvelope de sucesso sem valor')
-            return errOf(new ProviderFailureError('Cache', ProviderLayer.Address, new Error('Corrupted Cache: Missing value')))
+            return errOf(
+              new ProviderFailureError('Cache', ProviderLayer.Address, new Error('Corrupted Cache: Missing value')),
+            )
           }
           return ok(envelope.v as T)
         }
@@ -101,7 +103,13 @@ export class ResilientCache<E = any> {
           }
 
           // Fallback reconstruction
-          return errOf(new ProviderFailureError('Cache', ProviderLayer.Address, new Error(`Cached Error: ${envelope.e.type} - ${envelope.e.message}`)))
+          return errOf(
+            new ProviderFailureError(
+              'Cache',
+              ProviderLayer.Address,
+              new Error(`Cached Error: ${envelope.e.type} - ${envelope.e.message}`),
+            ),
+          )
         }
       }
     } catch (err) {
@@ -160,11 +168,13 @@ export class ResilientCache<E = any> {
 
         // Negative Cache (do not cache transient/retryable failures)
         if (!isRetryableFn(err)) {
-          const serializer = this.options.serializeError ?? ((error: E) => ({
-            type: (error as any).constructor?.name || 'Error',
-            message: (error as any).message || String(error),
-            data: error,
-          }))
+          const serializer =
+            this.options.serializeError ??
+            ((error: E) => ({
+              type: (error as any).constructor?.name || 'Error',
+              message: (error as any).message || String(error),
+              data: error,
+            }))
 
           await this.setResult(key, {
             s: false,

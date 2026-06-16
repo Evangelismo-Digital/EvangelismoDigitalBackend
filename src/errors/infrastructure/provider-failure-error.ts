@@ -24,4 +24,3 @@ export class ProviderFailureError extends InfrastructureError {
     this.name = 'ProviderFailureError'
   }
 }
-

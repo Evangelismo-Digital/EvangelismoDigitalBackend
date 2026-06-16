@@ -2,10 +2,7 @@ import { AxiosInstance } from 'axios'
 import { createHttpClient } from '@lib/http/axios'
 import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
-import {
-  IGeoCoordinates,
-  IGeoSearchOptions,
-} from 'core/contracts/use-cases/providers/geo-provider.interface'
+import { IGeoCoordinates, IGeoSearchOptions } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IRawGeocodingProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
 
 interface LocationIqConfig {
@@ -59,10 +56,7 @@ export class LocationIqProvider implements IRawGeocodingProvider {
     return this.performRequest({ q: query, limit: 1, addressdetails: 1 }, signal)
   }
 
-  async searchStructuredRaw(
-    options: IGeoSearchOptions,
-    signal?: AbortSignal,
-  ): Promise<IGeoCoordinates | null> {
+  async searchStructuredRaw(options: IGeoSearchOptions, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
     return this.performRequest(
       {
         street: options.street,
@@ -76,10 +70,7 @@ export class LocationIqProvider implements IRawGeocodingProvider {
     )
   }
 
-  private async performRequest(
-    params: Record<string, unknown>,
-    signal?: AbortSignal,
-  ): Promise<IGeoCoordinates | null> {
+  private async performRequest(params: Record<string, unknown>, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
     const response = await LocationIqProvider.api.get<LocationIqResponseItem[]>('/search', {
       params,
       signal,

@@ -33,7 +33,7 @@ export class ResilientAddressProvider implements IAddressProvider {
     let notFoundCount = 0
 
     for (const [index, provider] of this.providers.entries()) {
-      const providerName = provider.constructor.name
+      const providerName = (provider as any).providerName ?? provider.constructor.name
 
       // Defensive check — honour abort before each provider attempt
       if (effectiveSignal.aborted) {
@@ -99,6 +99,12 @@ export class ResilientAddressProvider implements IAddressProvider {
       return errOf(lastRetryableError)
     }
 
-    return errOf(new ProviderFailureError('ResilientAddressProvider', ProviderLayer.Address, new Error('TODOS os provedores falharam')))
+    return errOf(
+      new ProviderFailureError(
+        'ResilientAddressProvider',
+        ProviderLayer.Address,
+        new Error('TODOS os provedores falharam'),
+      ),
+    )
   }
 }

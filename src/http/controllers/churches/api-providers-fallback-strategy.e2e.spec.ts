@@ -128,13 +128,9 @@ describe('Real Geocoding Fallback Scenarios (e2e)', () => {
   // 4. Awesome fail -> BrasilApiProvider fail -> ViaCep ok -> LocationIQ fail -> Nominatim ok
   // ==============================================================================
   it('Scenario 5: Awesome Fail -> BrasilAPI Fail -> ViaCep OK -> LocationIQ Fail -> Nominatim OK', async () => {
-    vi.spyOn(AwesomeApiProvider.prototype, 'fetchRawAddress').mockRejectedValue(
-      new Error('AwesomeAPI Network error'),
-    )
+    vi.spyOn(AwesomeApiProvider.prototype, 'fetchRawAddress').mockRejectedValue(new Error('AwesomeAPI Network error'))
 
-    vi.spyOn(BrasilApiProvider.prototype, 'fetchRawAddress').mockRejectedValue(
-      new Error('BrasilAPI Network error'),
-    )
+    vi.spyOn(BrasilApiProvider.prototype, 'fetchRawAddress').mockRejectedValue(new Error('BrasilAPI Network error'))
 
     const spyLocationIq = vi
       .spyOn(LocationIqProvider.prototype, 'searchRaw')
@@ -157,19 +153,11 @@ describe('Real Geocoding Fallback Scenarios (e2e)', () => {
   // 6. Awesome fail -> BrasilApiProvider fail -> ViaCep ok -> LocationIQ fail-> Nominatim fail
   // ==============================================================================
   it('Scenario 6: Everything Fails', async () => {
-    vi.spyOn(AwesomeApiProvider.prototype, 'fetchRawAddress').mockRejectedValue(
-      new Error('AwesomeAPI Network error'),
-    )
-    vi.spyOn(BrasilApiProvider.prototype, 'fetchRawAddress').mockRejectedValue(
-      new Error('BrasilAPI Network error'),
-    )
+    vi.spyOn(AwesomeApiProvider.prototype, 'fetchRawAddress').mockRejectedValue(new Error('AwesomeAPI Network error'))
+    vi.spyOn(BrasilApiProvider.prototype, 'fetchRawAddress').mockRejectedValue(new Error('BrasilAPI Network error'))
     // ViaCep works to get address but geocoding fails on both providers
-    vi.spyOn(LocationIqProvider.prototype, 'searchRaw').mockRejectedValue(
-      new Error('LocationIQ Network error'),
-    )
-    vi.spyOn(NominatimGeoProvider.prototype, 'searchRaw').mockRejectedValue(
-      new Error('Nominatim Network error'),
-    )
+    vi.spyOn(LocationIqProvider.prototype, 'searchRaw').mockRejectedValue(new Error('LocationIQ Network error'))
+    vi.spyOn(NominatimGeoProvider.prototype, 'searchRaw').mockRejectedValue(new Error('Nominatim Network error'))
 
     const response = await request(app.server).get('/churches/nearest').query({ VALID_CEP })
 

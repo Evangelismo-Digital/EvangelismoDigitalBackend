@@ -9,4 +9,3 @@ export class TimeoutExceededError extends InfrastructureError {
     this.name = 'TimeoutExceededError'
   }
 }
-

@@ -8,20 +8,28 @@ import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { deserializeAppError } from 'errors/app-error-registry'
 
-function createFakeAxiosError(status?: number, code?: string, url = 'http://api.awesomeapi.com.br/12345678'): AxiosError {
+function createFakeAxiosError(
+  status?: number,
+  code?: string,
+  url = 'http://api.awesomeapi.com.br/12345678',
+): AxiosError {
   return {
     name: 'AxiosError',
     message: 'Axios error occurred',
     isAxiosError: true,
     code,
-    response: status !== undefined ? {
-      status,
-      data: {},
-      statusText: 'Error',
-      headers: {},
-      config: { url } as any,
-    } : undefined,
+    response:
+      status !== undefined
+        ? {
+            status,
+            data: {},
+            statusText: 'Error',
+            headers: {},
+            config: { url } as any,
+          }
+        : undefined,
     config: { url } as any,
     toJSON: () => ({}),
   } as AxiosError
@@ -32,6 +40,12 @@ describe('FindNearestChurchesErrorMapper', () => {
     const err = createFakeAxiosError(404, undefined, 'https://viacep.com.br/ws/12345678/json')
     const mapped = FindNearestChurchesErrorMapper.map(err)
     expect(mapped).toBeInstanceOf(InvalidCepError)
+    expect(mapped.message).toContain('12345678')
+  })
+
+  it('should format InvalidCepError message with CEP when provided', () => {
+    const err = new InvalidCepError('99392978')
+    expect(err.message).toBe('O CEP fornecido 99392978 não existe.')
   })
 
   it('maps 404 to CoordinatesNotFoundError for geocoding providers', () => {
@@ -96,5 +110,11 @@ describe('FindNearestChurchesErrorMapper', () => {
     if (!res.success) {
       expect(res.error).toBeInstanceOf(InvalidCepError)
     }
+  })
+
+  it('deserializes InvalidCepError and extracts CEP from message', () => {
+    const deserialized = deserializeAppError('InvalidCepError', 'O CEP fornecido 99392978 não existe.')
+    expect(deserialized).toBeInstanceOf(InvalidCepError)
+    expect(deserialized?.message).toBe('O CEP fornecido 99392978 não existe.')
   })
 })

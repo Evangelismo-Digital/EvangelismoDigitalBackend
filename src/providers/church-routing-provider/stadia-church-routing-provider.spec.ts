@@ -53,18 +53,13 @@ function buildProvider(): IChurchRoutingProvider {
     timeoutMs: 2500,
   })
 
-  return new ResilientChurchRoutingProviderDecorator(
-    rawProvider,
-    redis,
-    redis,
-    {
-      prefix: 'cache:test:stadia:',
-      defaultTtlSeconds: 60,
-      negativeTtlSeconds: 0,
-      maxPendingFetches: 20,
-      fetchTimeoutMs: 2500,
-    },
-  )
+  return new ResilientChurchRoutingProviderDecorator(rawProvider, redis, redis, {
+    prefix: 'cache:test:stadia:',
+    defaultTtlSeconds: 60,
+    negativeTtlSeconds: 0,
+    maxPendingFetches: 20,
+    fetchTimeoutMs: 2500,
+  })
 }
 
 describe('StadiaChurchRoutingProvider', () => {

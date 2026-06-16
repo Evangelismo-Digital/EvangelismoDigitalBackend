@@ -9,19 +9,29 @@ import { TimeoutExceededError } from './infrastructure/timeout-exceeded-error'
 import { ProviderFailureError, ProviderLayer } from './infrastructure/provider-failure-error'
 
 export const AppErrorRegistry: Record<string, (message: string, data?: any) => AppError> = {
-  InvalidCepError: () => new InvalidCepError(),
+  InvalidCepError: (msg) => {
+    const cep = msg.match(/\b\d{8}\b/)?.[0] || msg.match(/\d{8}/)?.[0]
+    return new InvalidCepError(cep)
+  },
+
   CoordinatesNotFoundError: () => new CoordinatesNotFoundError(),
+
   NoNearbyChurchesFoundError: () => new NoNearbyChurchesFoundError(),
+
   CepToLatLonError: (msg) => {
     const cep = msg.match(/\d+/)?.[0] || ''
     return new CepToLatLonError(cep)
   },
+
   ServiceBusyError: (msg, data) => {
     const provider = data?.body?.provider || msg.replace('Serviço temporariamente indisponível: ', '')
     return new ServiceBusyError(provider)
   },
+
   ServiceOverloadError: () => new InfraServiceOverloadError(),
+
   TimeoutExceededError: (msg) => new TimeoutExceededError(msg),
+
   ProviderFailureError: (msg, data) => {
     const provider = data?.body?.providerContext?.provider || data?.providerContext?.provider || 'Unknown'
     const layer = data?.body?.providerContext?.layer || data?.providerContext?.layer || ProviderLayer.Address

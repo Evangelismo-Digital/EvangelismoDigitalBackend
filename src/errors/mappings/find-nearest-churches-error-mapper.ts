@@ -1,4 +1,4 @@
-import { Result, errOf, ok } from 'core/shared/result'
+import { Result, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { AxiosError } from 'axios'
 import { Prisma } from '@prisma/client'
@@ -39,7 +39,8 @@ export class FindNearestChurchesErrorMapper {
       if (status === 404) {
         const url = axiosError.config?.url || ''
         if (url.includes('viacep') || url.includes('awesomeapi') || url.includes('brasilapi')) {
-          return new InvalidCepError()
+          const cep = FindNearestChurchesErrorMapper.extractCep(url)
+          return new InvalidCepError(cep)
         }
         return new CoordinatesNotFoundError()
       }
@@ -51,11 +52,18 @@ export class FindNearestChurchesErrorMapper {
       )
     }
 
-    if (error instanceof Prisma.PrismaClientKnownRequestError || error instanceof Prisma.PrismaClientUnknownRequestError) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError ||
+      error instanceof Prisma.PrismaClientUnknownRequestError
+    ) {
       return new DatabaseQueryError(error)
     }
 
-    return new ProviderFailureError('System', ProviderLayer.Address, error instanceof Error ? error : new Error(String(error)))
+    return new ProviderFailureError(
+      'System',
+      ProviderLayer.Address,
+      error instanceof Error ? error : new Error(String(error)),
+    )
   }
 
   private static isAxiosError(error: unknown): boolean {
@@ -82,5 +90,10 @@ export class FindNearestChurchesErrorMapper {
       return ProviderLayer.Geo
     }
     return ProviderLayer.Route
+  }
+
+  private static extractCep(url: string): string | undefined {
+    const match = url.match(/\b\d{8}\b/) || url.match(/\d{8}/)
+    return match ? match[0] : undefined
   }
 }

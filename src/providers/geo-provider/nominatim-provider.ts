@@ -2,10 +2,7 @@ import { AxiosInstance } from 'axios'
 import { createHttpClient } from '@lib/http/axios'
 import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
-import {
-  IGeoCoordinates,
-  IGeoSearchOptions,
-} from 'core/contracts/use-cases/providers/geo-provider.interface'
+import { IGeoCoordinates, IGeoSearchOptions } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IRawGeocodingProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
 
 interface NominatimConfig {
@@ -51,10 +48,7 @@ export class NominatimGeoProvider implements IRawGeocodingProvider {
     return this.performRequest({ q: query, limit: 1, format: 'json' }, signal)
   }
 
-  async searchStructuredRaw(
-    options: IGeoSearchOptions,
-    signal?: AbortSignal,
-  ): Promise<IGeoCoordinates | null> {
+  async searchStructuredRaw(options: IGeoSearchOptions, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
     return this.performRequest(
       {
         street: options.street,
@@ -68,10 +62,7 @@ export class NominatimGeoProvider implements IRawGeocodingProvider {
     )
   }
 
-  private async performRequest(
-    params: NominatimSearchParams,
-    signal?: AbortSignal,
-  ): Promise<IGeoCoordinates | null> {
+  private async performRequest(params: NominatimSearchParams, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
     const cleanParams = this.cleanParams(params)
 
     const response = await NominatimGeoProvider.api.get('/search', {

@@ -1,8 +1,5 @@
 import { AxiosInstance } from 'axios'
-import {
-  RouteDistanceResult,
-  RoutingPoint,
-} from 'core/contracts/use-cases/providers/church-routing-provider.interface'
+import { RouteDistanceResult, RoutingPoint } from 'core/contracts/use-cases/providers/church-routing-provider.interface'
 import { createHttpClient } from '@lib/http/axios'
 import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'

@@ -54,4 +54,3 @@ export const CEP_TO_LAT_LON_ERROR: IErrorDetail = {
   code: 'CEP_TO_LAT_LON_FAILED',
   message: 'Falha ao processar o CEP',
 }
-

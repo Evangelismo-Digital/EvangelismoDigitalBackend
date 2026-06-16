@@ -56,12 +56,9 @@ export class CepToLatLonUseCase {
     const cleanCep = cep.replace(/\D/g, '')
     const cacheKey = this.cacheManager.generateKey({ cep: cleanCep })
 
-    const result = await this.cacheManager.getOrFetch<CepToLatLonResponse>(
-      cacheKey,
-      async (signal: AbortSignal) => {
-        return await this.processCep(cleanCep, signal)
-      },
-    )
+    const result = await this.cacheManager.getOrFetch<CepToLatLonResponse>(cacheKey, async (signal: AbortSignal) => {
+      return await this.processCep(cleanCep, signal)
+    })
 
     if (isOk(result) && !this.cacheSuccessResults) {
       await this.redis.del(cacheKey)

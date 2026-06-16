@@ -1,4 +1,8 @@
-import { IGeocodingProvider, IGeoCoordinates, IGeoSearchOptions } from 'core/contracts/use-cases/providers/geo-provider.interface'
+import {
+  IGeocodingProvider,
+  IGeoCoordinates,
+  IGeoSearchOptions,
+} from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IRawGeocodingProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
 import { Result, ok, errOf } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
@@ -11,28 +15,24 @@ import { logger } from '@lib/logger'
 import Redis from 'ioredis'
 
 export class ResilientGeocodingProviderDecorator implements IGeocodingProvider {
+  readonly providerName: string
+
   constructor(
     private readonly rawProvider: IRawGeocodingProvider,
     private readonly redisRateLimiterConnection: Redis,
-  ) {}
+  ) {
+    this.providerName = rawProvider.providerName
+  }
 
   async search(query: string, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
-    return this.executeResiliently(
-      (sig) => this.rawProvider.searchRaw(query, sig),
-      { query },
-      signal
-    )
+    return this.executeResiliently((sig) => this.rawProvider.searchRaw(query, sig), { query }, signal)
   }
 
   async searchStructured(
     options: IGeoSearchOptions,
     signal?: AbortSignal,
   ): Promise<Result<IGeoCoordinates | null, AppError>> {
-    return this.executeResiliently(
-      (sig) => this.rawProvider.searchStructuredRaw(options, sig),
-      { options },
-      signal
-    )
+    return this.executeResiliently((sig) => this.rawProvider.searchStructuredRaw(options, sig), { options }, signal)
   }
 
   private async executeResiliently(
@@ -74,10 +74,7 @@ export class ResilientGeocodingProviderDecorator implements IGeocodingProvider {
         }
 
         const delay = this.rawProvider.backoffMs * Math.pow(2, attempt - 1)
-        logger.warn(
-          { ...logContext, attempt, delay },
-          `Repetindo solicitação para ${this.rawProvider.providerName}`,
-        )
+        logger.warn({ ...logContext, attempt, delay }, `Repetindo solicitação para ${this.rawProvider.providerName}`)
         await this.sleep(delay)
       }
     }

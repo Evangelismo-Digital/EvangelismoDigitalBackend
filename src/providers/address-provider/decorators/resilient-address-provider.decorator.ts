@@ -11,10 +11,14 @@ import { logger } from '@lib/logger'
 import Redis from 'ioredis'
 
 export class ResilientAddressProviderDecorator implements IAddressProvider {
+  readonly providerName: string
+
   constructor(
     private readonly rawProvider: IRawAddressProvider,
     private readonly redisRateLimiterConnection: Redis,
-  ) {}
+  ) {
+    this.providerName = rawProvider.providerName
+  }
 
   async fetchAddress(cep: string, signal?: AbortSignal): Promise<Result<IAddressData | null, AppError>> {
     const cleanCep = cep.replace(/\D/g, '')

@@ -16,6 +16,7 @@ import Redis from 'ioredis'
 
 export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingProvider {
   private readonly cacheManager: ResilientCache<AppError>
+  readonly providerName: string
 
   constructor(
     private readonly rawProvider: IRawChurchRoutingProvider,
@@ -23,6 +24,7 @@ export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingPr
     redisCacheConnection: Redis,
     cacheOptionsOverride?: ResilientCacheOptions<AppError>,
   ) {
+    this.providerName = rawProvider.providerName
     const timeoutMs = rawProvider.timeoutMs
     this.cacheManager = new ResilientCache<AppError>(redisCacheConnection, {
       prefix: cacheOptionsOverride?.prefix ?? 'cache:stadia-route-distance:',

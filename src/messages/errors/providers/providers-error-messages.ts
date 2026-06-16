@@ -2,7 +2,7 @@ import { IErrorDetail } from 'core/contracts/errors/error-detail.interface'
 
 export const SERVICE_BUSY_ERROR: IErrorDetail = {
   code: 'SERVICE_BUSY',
-  message: 'Serviço temporariamente indisponível devido a limite de requisições.',
+  message: 'Serviço temporariamente indisponível devido ao limite de requisições.',
 }
 
 export const PROVIDER_FAILURE_ERROR: IErrorDetail = {

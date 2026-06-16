@@ -53,7 +53,7 @@ export class ResilientGeoProvider implements IGeocodingProvider {
     let notFoundCount = 0
 
     for (const [index, provider] of this.providers.entries()) {
-      const providerName = provider.constructor.name
+      const providerName = (provider as any).providerName ?? provider.constructor.name
 
       // Defensive Check — honour abort before each provider attempt
       if (signal.aborted) {
@@ -112,6 +112,8 @@ export class ResilientGeoProvider implements IGeocodingProvider {
       return errOf(lastRetryableError)
     }
 
-    return errOf(new ProviderFailureError('ResilientGeoProvider', ProviderLayer.Geo, new Error('TODOS os provedores falharam')))
+    return errOf(
+      new ProviderFailureError('ResilientGeoProvider', ProviderLayer.Geo, new Error('TODOS os provedores falharam')),
+    )
   }
 }

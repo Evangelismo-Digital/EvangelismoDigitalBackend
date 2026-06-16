@@ -47,54 +47,52 @@ export class FindNearestChurchesUseCase {
 
   async execute({ cep }: FindNearestChurchesRequest): Promise<Result<FindNearestChurchesResponse, AppError>> {
     const cleanCep = cep.replace(/\D/g, '')
+
     const cacheKey = this.cacheManager.generateKey({ cep: cleanCep, profile: this.defaultProfile })
 
-    return await this.cacheManager.getOrFetch<FindNearestChurchesResponse>(
-      cacheKey,
-      async (signal: AbortSignal) => {
-        const cepResult = await this.cepToLatLonUseCase.execute({
-          cep: cleanCep,
-        })
+    return await this.cacheManager.getOrFetch<FindNearestChurchesResponse>(cacheKey, async (signal: AbortSignal) => {
+      const cepResult = await this.cepToLatLonUseCase.execute({
+        cep: cleanCep,
+      })
 
-        if (isErr(cepResult)) {
-          return errOf(cepResult.error)
-        }
+      if (isErr(cepResult)) {
+        return errOf(cepResult.error)
+      }
 
-        const { userLat, userLon, precision, coordinatesProviderName } = cepResult.value
+      const { userLat, userLon, precision, coordinatesProviderName } = cepResult.value
 
-        const knnResult = await this.findNearbyChurchesKnnUseCase.execute({
-          userLat,
-          userLon,
-        })
+      const knnResult = await this.findNearbyChurchesKnnUseCase.execute({
+        userLat,
+        userLon,
+      })
 
-        if (isErr(knnResult)) {
-          return errOf(knnResult.error)
-        }
+      if (isErr(knnResult)) {
+        return errOf(knnResult.error)
+      }
 
-        const { churches, totalFound } = knnResult.value
+      const { churches, totalFound } = knnResult.value
 
-        const nearestChurchesResult = await this.calculateChurchRouteDistancesUseCase.findNearest(
-          {
-            churches,
-            user: { userLat, userLon },
-            signal,
-          },
-          this.defaultProfile,
-        )
+      const nearestChurchesResult = await this.calculateChurchRouteDistancesUseCase.findNearest(
+        {
+          churches,
+          user: { userLat, userLon },
+          signal,
+        },
+        this.defaultProfile,
+      )
 
-        if (isErr(nearestChurchesResult)) {
-          return errOf(nearestChurchesResult.error)
-        }
+      if (isErr(nearestChurchesResult)) {
+        return errOf(nearestChurchesResult.error)
+      }
 
-        const nearestChurches = nearestChurchesResult.value
+      const nearestChurches = nearestChurchesResult.value
 
-        return ok({
-          nearestChurchesInfo: ChurchPresenter.toHTTP(nearestChurches),
-          totalFound,
-          precision,
-          coordinatesProviderName,
-        })
-      },
-    )
+      return ok({
+        nearestChurchesInfo: ChurchPresenter.toHTTP(nearestChurches),
+        totalFound,
+        precision,
+        coordinatesProviderName,
+      })
+    })
   }
 }
