@@ -49,10 +49,13 @@ export class ResilientGeoProvider implements IGeocodingProvider {
     signal: AbortSignal,
   ): Promise<Result<IGeoCoordinates | null, AppError>> {
     let lastRetryableError: AppError | undefined = undefined
+
     let lastProviderName = ''
+
     let notFoundCount = 0
 
     for (const [index, provider] of this.providers.entries()) {
+      
       const providerName = (provider as any).providerName ?? provider.constructor.name
 
       // Defensive Check — honour abort before each provider attempt
