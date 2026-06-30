@@ -39,12 +39,12 @@ export class UpdateUserUseCase {
 
     const data: UserUpdateInput = {}
 
-    if (name) data.name = name
-    if (email) data.email = email
-    if (username) data.username = username
+    if (name !== undefined) data.name = name
+    if (email !== undefined) data.email = email
+    if (username !== undefined) data.username = username
     data.updatedAt = new Date()
 
-    if (email) {
+    if (email !== undefined) {
       const emailResult = await this.usersRepository.findBy({ email })
 
       if (isErr(emailResult)) {
@@ -58,7 +58,7 @@ export class UpdateUserUseCase {
       }
     }
 
-    if (username) {
+    if (username !== undefined) {
       const usernameResult = await this.usersRepository.findBy({ username })
 
       if (isErr(usernameResult)) {

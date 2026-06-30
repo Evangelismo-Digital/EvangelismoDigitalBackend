@@ -1,4 +1,4 @@
-import { prisma } from '@lib/prisma'
+import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { Prisma, User } from '@prisma/client'
 import {
   CreateUser,
@@ -13,11 +13,14 @@ import { AppError } from 'errors/app-error'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
 
 export class PrismaUsersRepository implements UsersRepository {
-  constructor(private readonly errorMapper: PrismaErrorMapper<AppError>) {}
+  constructor(
+    private readonly errorMapper: PrismaErrorMapper<AppError>,
+    private readonly dbContext: DatabaseContext = new DatabaseContext(),
+  ) {}
 
   async create(data: CreateUser): Promise<Result<User, AppError>> {
     try {
-      const user = await prisma.user.create({
+      const user = await this.dbContext.client.user.create({
         data: {
           name: data.name,
           email: data.email,
@@ -35,17 +38,21 @@ export class PrismaUsersRepository implements UsersRepository {
 
   async findBy(where: UserWhereUniqueInput): Promise<Result<User | null, AppError>> {
     try {
-      const prismaWhere = {} as Prisma.UserWhereUniqueInput
+      const conditions: Prisma.UserWhereInput[] = []
 
-      if (where.id !== undefined) prismaWhere.id = where.id
-      if (where.publicId !== undefined) prismaWhere.publicId = where.publicId
-      if (where.email !== undefined) prismaWhere.email = where.email
-      if (where.username !== undefined) prismaWhere.username = where.username
-      if (where.cpf !== undefined) prismaWhere.cpf = where.cpf
-      if (where.token !== undefined) prismaWhere.token = where.token
+      if (where.id !== undefined) conditions.push({ id: where.id })
+      if (where.publicId !== undefined) conditions.push({ publicId: where.publicId })
+      if (where.email !== undefined) conditions.push({ email: where.email })
+      if (where.username !== undefined) conditions.push({ username: where.username })
+      if (where.cpf !== undefined) conditions.push({ cpf: where.cpf })
+      if (where.token !== undefined) conditions.push({ token: where.token })
 
-      const user = await prisma.user.findUnique({
-        where: prismaWhere,
+      if (conditions.length === 0) {
+        return ok(null)
+      }
+
+      const user = await this.dbContext.client.user.findFirst({
+        where: conditions.length === 1 ? conditions[0] : { OR: conditions },
       })
       return ok(user)
     } catch (error) {
@@ -55,7 +62,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
   async findByToken({ token }: FindByToken): Promise<Result<User | null, AppError>> {
     try {
-      const user = await prisma.user.findFirst({
+      const user = await this.dbContext.client.user.findFirst({
         where: {
           token,
         },
@@ -68,7 +75,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
   async list(): Promise<Result<User[], AppError>> {
     try {
-      const users = await prisma.user.findMany()
+      const users = await this.dbContext.client.user.findMany()
 
       return ok(users)
     } catch (error) {
@@ -78,7 +85,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
   async search(query: string, page: number): Promise<Result<User[], AppError>> {
     try {
-      const users = await prisma.user.findMany({
+      const users = await this.dbContext.client.user.findMany({
         where: {
           name: {
             contains: query,
@@ -97,7 +104,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
   async update(publicId: string, data: UserUpdateInput): Promise<Result<User, AppError>> {
     try {
-      const user = await prisma.user.update({
+      const user = await this.dbContext.client.user.update({
         where: { publicId },
         data,
       })
@@ -110,7 +117,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
   async updatePassword(publicId: string, data: UserPasswordUpdateInput): Promise<Result<User, AppError>> {
     try {
-      const user = await prisma.user.update({
+      const user = await this.dbContext.client.user.update({
         where: { publicId },
         data,
       })
@@ -123,7 +130,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
   async delete(publicId: string): Promise<Result<User, AppError>> {
     try {
-      const user = await prisma.user.delete({
+      const user = await this.dbContext.client.user.delete({
         where: {
           publicId,
         },
