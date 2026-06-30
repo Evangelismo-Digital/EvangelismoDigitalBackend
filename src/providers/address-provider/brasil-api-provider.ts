@@ -19,7 +19,7 @@ interface BrasilApiResponse {
 }
 
 export class BrasilApiProvider implements IRawAddressProvider {
-  private static api: AxiosInstance
+  private readonly api: AxiosInstance
 
   readonly providerName = 'BrasilAPI'
   readonly rateLimitConfig = EnumProviderConfig.BRASIL_API_ADDRESS
@@ -34,27 +34,25 @@ export class BrasilApiProvider implements IRawAddressProvider {
   private readonly HTTPS_AGENT_TIMEOUT = 60000
 
   constructor(private readonly config: BrasilApiConfig) {
-    if (!BrasilApiProvider.api) {
-      BrasilApiProvider.api = createHttpClient({
-        baseURL: this.config.apiUrl,
-        timeout: this.TIMEOUT,
-        headers: {
-          'User-Agent': 'EvangelismoDigitalBackend/1.0',
-        },
-        agentOptions: {
-          keepAliveMsecs: this.KEEP_ALIVE_MSECS,
-          maxSockets: this.MAX_SOCKETS,
-          maxFreeSockets: this.MAX_FREE_SOCKETS,
-          timeout: this.HTTPS_AGENT_TIMEOUT,
-        },
-      })
-    }
+    this.api = createHttpClient({
+      baseURL: this.config.apiUrl,
+      timeout: this.TIMEOUT,
+      headers: {
+        'User-Agent': 'EvangelismoDigitalBackend/1.0',
+      },
+      agentOptions: {
+        keepAliveMsecs: this.KEEP_ALIVE_MSECS,
+        maxSockets: this.MAX_SOCKETS,
+        maxFreeSockets: this.MAX_FREE_SOCKETS,
+        timeout: this.HTTPS_AGENT_TIMEOUT,
+      },
+    })
   }
 
   async fetchRawAddress(cep: string, signal?: AbortSignal): Promise<IAddressData | null> {
     const cleanCep = cep.replace(/\D/g, '')
 
-    const { data } = await BrasilApiProvider.api.get<BrasilApiResponse>(`/${cleanCep}`, {
+    const { data } = await this.api.get<BrasilApiResponse>(`/${cleanCep}`, {
       signal,
     })
 

@@ -1,7 +1,7 @@
 import { LOCK_KEYS, LOCK_TTL_MS } from 'core/constants/outbox/locks'
 import { JOB_NAMES } from 'core/constants/queue/queue'
 import { logger } from '@lib/logger'
-import { mailQueue } from '@lib/queue/mail-queue'
+import { getMailQueue } from '@lib/queue/mail-queue'
 import { DistributedLock, LockToken } from '@lib/infra/distributed-lock/distributed-lock'
 import { ContactEmailStrategy } from '@use-cases/forms/strategies/contact-email-strategy'
 import { DecisionForChristEmailStrategy } from '@use-cases/forms/strategies/decision-for-christ-email-strategy'
@@ -135,7 +135,7 @@ export class OutboxProcessor {
       throw staffJobResult.error
     }
 
-    await mailQueue.add(
+    await getMailQueue().add(
       JOB_NAMES.OUTBOX_DISPATCH,
       {
         publicId: event.publicId,

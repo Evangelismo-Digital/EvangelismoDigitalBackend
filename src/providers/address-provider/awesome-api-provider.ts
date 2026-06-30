@@ -25,7 +25,7 @@ interface AwesomeApiResponse {
 }
 
 export class AwesomeApiProvider implements IRawAddressProvider {
-  private static api: AxiosInstance
+  private readonly api: AxiosInstance
 
   readonly providerName = 'AwesomeAPI'
   readonly rateLimitConfig = EnumProviderConfig.AWESOME_API_ADDRESS
@@ -40,27 +40,25 @@ export class AwesomeApiProvider implements IRawAddressProvider {
   private readonly HTTPS_AGENT_TIMEOUT = 60000
 
   constructor(private readonly config: AwesomeApiConfig) {
-    if (!AwesomeApiProvider.api) {
-      AwesomeApiProvider.api = createHttpClient({
-        baseURL: this.config.apiUrl,
-        timeout: this.TIMEOUT,
-        headers: {
-          'User-Agent': 'EvangelismoDigitalBackend/1.0',
-        },
-        agentOptions: {
-          keepAliveMsecs: this.KEEP_ALIVE_MSECS,
-          maxSockets: this.MAX_SOCKETS,
-          maxFreeSockets: this.MAX_FREE_SOCKETS,
-          timeout: this.HTTPS_AGENT_TIMEOUT,
-        },
-      })
-    }
+    this.api = createHttpClient({
+      baseURL: this.config.apiUrl,
+      timeout: this.TIMEOUT,
+      headers: {
+        'User-Agent': 'EvangelismoDigitalBackend/1.0',
+      },
+      agentOptions: {
+        keepAliveMsecs: this.KEEP_ALIVE_MSECS,
+        maxSockets: this.MAX_SOCKETS,
+        maxFreeSockets: this.MAX_FREE_SOCKETS,
+        timeout: this.HTTPS_AGENT_TIMEOUT,
+      },
+    })
   }
 
   async fetchRawAddress(cep: string, signal?: AbortSignal): Promise<IAddressData | null> {
     const cleanCep = cep.replace(/\D/g, '')
 
-    const { data } = await AwesomeApiProvider.api.get<AwesomeApiResponse>(`/${cleanCep}`, {
+    const { data } = await this.api.get<AwesomeApiResponse>(`/${cleanCep}`, {
       signal,
     })
 

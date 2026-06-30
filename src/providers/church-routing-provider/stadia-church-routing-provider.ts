@@ -28,7 +28,7 @@ interface StadiaRouteResponse {
 }
 
 export class StadiaChurchRoutingProvider implements IRawChurchRoutingProvider {
-  private static api: AxiosInstance
+  private readonly api: AxiosInstance
 
   readonly providerName = 'Stadia Maps'
   readonly rateLimitConfig = EnumProviderConfig.STADIA_ROUTING
@@ -39,11 +39,9 @@ export class StadiaChurchRoutingProvider implements IRawChurchRoutingProvider {
     this.timeoutMs = config.timeoutMs ?? 2_500
     this.defaultCosting = config.defaultCosting
 
-    if (!StadiaChurchRoutingProvider.api) {
-      StadiaChurchRoutingProvider.api = createHttpClient({
-        timeout: this.timeoutMs,
-      })
-    }
+    this.api = createHttpClient({
+      timeout: this.timeoutMs,
+    })
   }
 
   async fetchRawDistance(
@@ -54,7 +52,7 @@ export class StadiaChurchRoutingProvider implements IRawChurchRoutingProvider {
   ): Promise<RouteDistanceResult> {
     const costing = profile ?? this.config.defaultCosting ?? RoutingProfile.AUTO
 
-    const response = await StadiaChurchRoutingProvider.api.post(
+    const response = await this.api.post(
       this.config.apiUrl.replace(/\/$/, ''),
       {
         locations: [

@@ -24,7 +24,7 @@ interface ViaCepResponse {
 }
 
 export class ViaCepProvider implements IRawAddressProvider {
-  private static api: AxiosInstance
+  private readonly api: AxiosInstance
 
   readonly providerName = 'ViaCEP'
   readonly rateLimitConfig = EnumProviderConfig.VIACEP_ADDRESS
@@ -39,27 +39,25 @@ export class ViaCepProvider implements IRawAddressProvider {
   private readonly HTTPS_AGENT_TIMEOUT = 60000
 
   constructor(private readonly config: ViaCepConfig) {
-    if (!ViaCepProvider.api) {
-      ViaCepProvider.api = createHttpClient({
-        baseURL: this.config.apiUrl,
-        timeout: this.VIACEP_TIMEOUT,
-        headers: {
-          'User-Agent': 'EvangelismoDigitalBackend/1.0',
-        },
-        agentOptions: {
-          keepAliveMsecs: this.KEEP_ALIVE_MSECS,
-          maxSockets: this.MAX_SOCKETS,
-          maxFreeSockets: this.MAX_FREE_SOCKETS,
-          timeout: this.HTTPS_AGENT_TIMEOUT,
-        },
-      })
-    }
+    this.api = createHttpClient({
+      baseURL: this.config.apiUrl,
+      timeout: this.VIACEP_TIMEOUT,
+      headers: {
+        'User-Agent': 'EvangelismoDigitalBackend/1.0',
+      },
+      agentOptions: {
+        keepAliveMsecs: this.KEEP_ALIVE_MSECS,
+        maxSockets: this.MAX_SOCKETS,
+        maxFreeSockets: this.MAX_FREE_SOCKETS,
+        timeout: this.HTTPS_AGENT_TIMEOUT,
+      },
+    })
   }
 
   async fetchRawAddress(cep: string, signal?: AbortSignal): Promise<IAddressData | null> {
     const cleanCep = cep.replace(/\D/g, '')
 
-    const { data } = await ViaCepProvider.api.get<ViaCepResponse>(`/${cleanCep}/json`, {
+    const { data } = await this.api.get<ViaCepResponse>(`/${cleanCep}/json`, {
       signal,
     })
 

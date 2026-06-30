@@ -12,7 +12,7 @@ interface NominatimConfig {
 type NominatimSearchParams = Record<string, string | number | undefined>
 
 export class NominatimGeoProvider implements IRawGeocodingProvider {
-  private static api: AxiosInstance
+  private readonly api: AxiosInstance
 
   readonly providerName = 'Nominatim'
   readonly rateLimitConfig = EnumProviderConfig.NOMINATIM_GEOCODING
@@ -27,21 +27,19 @@ export class NominatimGeoProvider implements IRawGeocodingProvider {
   private readonly HTTPS_AGENT_TIMEOUT = 60000
 
   constructor(private readonly config: NominatimConfig) {
-    if (!NominatimGeoProvider.api) {
-      NominatimGeoProvider.api = createHttpClient({
-        baseURL: this.config.apiUrl,
-        timeout: this.NOMINATIM_TIMEOUT,
-        headers: {
-          'User-Agent': 'EvangelismoDigitalBackend/1.0 (contact@findhope.digital)',
-        },
-        agentOptions: {
-          keepAliveMsecs: this.KEEP_ALIVE_MSECS,
-          maxSockets: this.MAX_SOCKETS,
-          maxFreeSockets: this.MAX_FREE_SOCKETS,
-          timeout: this.HTTPS_AGENT_TIMEOUT,
-        },
-      })
-    }
+    this.api = createHttpClient({
+      baseURL: this.config.apiUrl,
+      timeout: this.NOMINATIM_TIMEOUT,
+      headers: {
+        'User-Agent': 'EvangelismoDigitalBackend/1.0 (contact@findhope.digital)',
+      },
+      agentOptions: {
+        keepAliveMsecs: this.KEEP_ALIVE_MSECS,
+        maxSockets: this.MAX_SOCKETS,
+        maxFreeSockets: this.MAX_FREE_SOCKETS,
+        timeout: this.HTTPS_AGENT_TIMEOUT,
+      },
+    })
   }
 
   async searchRaw(query: string, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
@@ -65,7 +63,7 @@ export class NominatimGeoProvider implements IRawGeocodingProvider {
   private async performRequest(params: NominatimSearchParams, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
     const cleanParams = this.cleanParams(params)
 
-    const response = await NominatimGeoProvider.api.get('/search', {
+    const response = await this.api.get('/search', {
       params: cleanParams,
       signal,
     })

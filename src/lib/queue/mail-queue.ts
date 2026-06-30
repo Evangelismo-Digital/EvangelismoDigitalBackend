@@ -5,23 +5,31 @@ import { attachRedisLogger } from '@lib/redis/connections/redis-bullMQ-connectio
 import { Queue } from 'bullmq'
 import { IOutboxDispatchData } from 'core/contracts/lib/infra/outbox-dispatch-data.interface'
 
-const redisForQueue = getRedisForQueue()
+let mailQueueInstance: Queue<IOutboxDispatchData> | null = null
 
-attachRedisLogger(redisForQueue, QUEUE_NAMES.MAIL)
+export function getMailQueue(): Queue<IOutboxDispatchData> {
+  if (!mailQueueInstance) {
+    const redisForQueue = getRedisForQueue()
 
-export const mailQueue = new Queue<IOutboxDispatchData>(QUEUE_NAMES.MAIL, {
-  connection: redisForQueue,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 10000,
-    },
-    removeOnComplete: true,
-    removeOnFail: true,
-  },
-})
+    attachRedisLogger(redisForQueue, QUEUE_NAMES.MAIL)
 
-mailQueue.on('error', (err: unknown) => {
-  logger.error({ err }, '❌ Erro na MailQueue (Producer)')
-})
+    mailQueueInstance = new Queue<IOutboxDispatchData>(QUEUE_NAMES.MAIL, {
+      connection: redisForQueue,
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 10000,
+        },
+        removeOnComplete: true,
+        removeOnFail: true,
+      },
+    })
+
+    mailQueueInstance.on('error', (err: unknown) => {
+      logger.error({ err }, '❌ Erro na MailQueue (Producer)')
+    })
+  }
+
+  return mailQueueInstance
+}

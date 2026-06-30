@@ -19,7 +19,7 @@ type LocationIqResponseItem = {
 }
 
 export class LocationIqProvider implements IRawGeocodingProvider {
-  private static api: AxiosInstance
+  private readonly api: AxiosInstance
 
   readonly providerName = 'LocationIQ'
   readonly rateLimitConfig = EnumProviderConfig.LOCATION_IQ_GEOCODING
@@ -34,22 +34,20 @@ export class LocationIqProvider implements IRawGeocodingProvider {
   private readonly HTTPS_AGENT_TIMEOUT = 60000
 
   constructor(private readonly config: LocationIqConfig) {
-    if (!LocationIqProvider.api) {
-      LocationIqProvider.api = createHttpClient({
-        baseURL: this.config.apiUrl,
-        timeout: this.TIMEOUT,
-        params: {
-          key: this.config.apiToken,
-          format: 'json',
-        },
-        agentOptions: {
-          keepAliveMsecs: this.KEEP_ALIVE_MSECS,
-          maxSockets: this.MAX_SOCKETS,
-          maxFreeSockets: this.MAX_FREE_SOCKETS,
-          timeout: this.HTTPS_AGENT_TIMEOUT,
-        },
-      })
-    }
+    this.api = createHttpClient({
+      baseURL: this.config.apiUrl,
+      timeout: this.TIMEOUT,
+      params: {
+        key: this.config.apiToken,
+        format: 'json',
+      },
+      agentOptions: {
+        keepAliveMsecs: this.KEEP_ALIVE_MSECS,
+        maxSockets: this.MAX_SOCKETS,
+        maxFreeSockets: this.MAX_FREE_SOCKETS,
+        timeout: this.HTTPS_AGENT_TIMEOUT,
+      },
+    })
   }
 
   async searchRaw(query: string, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
@@ -71,7 +69,7 @@ export class LocationIqProvider implements IRawGeocodingProvider {
   }
 
   private async performRequest(params: Record<string, unknown>, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
-    const response = await LocationIqProvider.api.get<LocationIqResponseItem[]>('/search', {
+    const response = await this.api.get<LocationIqResponseItem[]>('/search', {
       params,
       signal,
     })
