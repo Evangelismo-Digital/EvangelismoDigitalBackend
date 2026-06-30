@@ -58,7 +58,7 @@ export class ResilientAddressProviderDecorator implements IAddressProvider {
 
         const delay = this.rawProvider.backoffMs * Math.pow(2, attempt - 1)
         logger.warn({ cep: cleanCep, attempt, delay }, `Repetindo solicitação para ${this.rawProvider.providerName}`)
-        await this.sleep(delay)
+        await this.sleep(delay, signal)
       }
     }
 
@@ -66,7 +66,23 @@ export class ResilientAddressProviderDecorator implements IAddressProvider {
     return err(new ServiceBusyError(this.rawProvider.providerName))
   }
 
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
+  private sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+      if (signal?.aborted) {
+        return resolve()
+      }
+
+      const timer = setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort)
+        resolve()
+      }, ms)
+
+      function onAbort() {
+        clearTimeout(timer)
+        resolve()
+      }
+
+      signal?.addEventListener('abort', onAbort, { once: true })
+    })
   }
 }

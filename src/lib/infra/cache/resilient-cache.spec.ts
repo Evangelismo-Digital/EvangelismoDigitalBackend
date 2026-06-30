@@ -308,6 +308,38 @@ describe('ResilientCache Unit Tests', () => {
       // Limpeza: aguarda as promises originais finalizarem
       await Promise.allSettled([p1, p2])
     })
+
+    it('should reject and clean up pendingFetches when fetcher hangs indefinitely', async () => {
+      const keyParams = { id: 'non-cooperative-test' }
+      const generatedKey = resilientCache.generateKey(keyParams)
+      mockRedisGet.mockResolvedValue(null)
+
+      // Fetcher that never resolves — simulates a library bug
+      const fetcher = vi.fn().mockImplementation(
+        () => new Promise(() => { /* never settles */ }),
+      )
+
+      const pendingMap = (resilientCache as any).pendingFetches
+      expect(pendingMap.size).toBe(0)
+
+      const resultPromise = resilientCache.getOrFetch(generatedKey, fetcher)
+      
+      // Wait for event loop cycle so the Redis get resolves and sets the pending fetch
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+      expect(pendingMap.has(generatedKey)).toBe(true)
+
+      const result = await resultPromise
+
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(TimeoutExceededError)
+      }
+
+      // The key MUST be removed — this proves the memory leak is prevented
+      expect(pendingMap.has(generatedKey)).toBe(false)
+      expect(pendingMap.size).toBe(0)
+    })
   })
 
   describe('Negative Caching Logic', () => {

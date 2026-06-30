@@ -152,14 +152,32 @@ export class ResilientCache<E = unknown> {
     const effectiveSignal = AbortSignal.any(signals)
 
     if (effectiveSignal.aborted) {
-      return err(new TimeoutExceededError(effectiveSignal.reason))
+      return err(new TimeoutExceededError(effectiveSignal.reason || 'Timeout Exceeded'))
     }
 
-    try {
-      const result = await fetcher(effectiveSignal)
+    // Authoritative hard timeout — guarantees promise settlement
+    let timeoutId: NodeJS.Timeout | undefined
+    let abortListener: (() => void) | undefined
 
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new TimeoutExceededError('Timeout Exceeded'))
+      }, this.FETCH_TIMEOUT)
+
+      // Also reject immediately if the abort signal fires before the timer
+      abortListener = () => {
+        reject(new TimeoutExceededError(effectiveSignal.reason || 'Timeout Exceeded'))
+      }
+      effectiveSignal.addEventListener('abort', abortListener, { once: true })
+    })
+
+    try {
+      const fetchPromise = fetcher(effectiveSignal)
+      const result = await Promise.race([fetchPromise, timeoutPromise])
+
+      // Post-fetch defensive check
       if (effectiveSignal.aborted) {
-        return err(new TimeoutExceededError(effectiveSignal.reason))
+        return err(new TimeoutExceededError(effectiveSignal.reason || 'Timeout Exceeded'))
       }
 
       if (isErr(result)) {
@@ -189,14 +207,16 @@ export class ResilientCache<E = unknown> {
       await this.setResult(key, { s: true, v: result.value })
       return ok(result.value)
     } catch (error) {
-      // The fetcher threw an UNHANDLED exception.
-      if (effectiveSignal.aborted) {
+      if (effectiveSignal.aborted || error instanceof TimeoutExceededError) {
         const abortReason = parentSignal?.aborted ? parentSignal.reason : 'Timeout Exceeded'
         return err(new TimeoutExceededError(abortReason))
       }
 
-      // We do not cache unhandled system exceptions.
       return err(new ProviderFailureError('Fetcher', ProviderLayer.Address, error))
+    } finally {
+      // CRITICAL: Always clean up to prevent timer/listener leaks
+      if (timeoutId) clearTimeout(timeoutId)
+      if (abortListener) effectiveSignal.removeEventListener('abort', abortListener)
     }
   }
 
