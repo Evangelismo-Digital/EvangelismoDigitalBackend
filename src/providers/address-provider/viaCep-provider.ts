@@ -5,8 +5,6 @@ import { PrecisionHelper } from 'providers/helpers/precision-helper'
 import { IAddressData } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { IRawAddressProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
 
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-
 export interface ViaCepConfig {
   apiUrl: string
 }
@@ -66,7 +64,7 @@ export class ViaCepProvider implements IRawAddressProvider {
     })
 
     if (!data || data.erro) {
-      throw new InvalidCepError(cleanCep)
+      return null
     }
 
     const precision = PrecisionHelper.fromAddressData(data)

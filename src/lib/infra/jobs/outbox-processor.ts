@@ -92,12 +92,19 @@ export class OutboxProcessor {
   }
 
   async processSingleEvent(event: IOutboxEvent): Promise<void> {
+    // Phase 1: Transition to SENDING
+    const updateResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.SENDING)
+
+    if (isErr(updateResult)) {
+      logger.error(
+        { publicId: event.publicId, error: updateResult.error },
+        '❌ Falha ao atualizar status para SENDING. Evento permanece em PENDING.',
+      )
+      return
+    }
+
+    // Phase 2: Dispatch to BullMQ (revert on failure)
     try {
-      const updateResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.SENDING)
-
-      // Se não conseguimos atualizar para SENDING, jogamos para o catch reverter
-      if (isErr(updateResult)) throw updateResult.error
-
       await this.dispatchToBullMQ(event)
     } catch (error) {
       const revertResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.PENDING)
@@ -118,14 +125,21 @@ export class OutboxProcessor {
 
     const strategy = payload.decisaoPorCristo ? new DecisionForChristEmailStrategy() : new ContactEmailStrategy()
 
-    const userJob = strategy.buildUserEmail(payload)
-    const staffJob = strategy.buildStaffEmail(payload)
+    const userJobResult = strategy.buildUserEmail(payload)
+    if (isErr(userJobResult)) {
+      throw userJobResult.error
+    }
+
+    const staffJobResult = strategy.buildStaffEmail(payload)
+    if (isErr(staffJobResult)) {
+      throw staffJobResult.error
+    }
 
     await mailQueue.add(
       JOB_NAMES.OUTBOX_DISPATCH,
       {
         publicId: event.publicId,
-        emails: [userJob, staffJob],
+        emails: [userJobResult.value, staffJobResult.value],
       },
       { jobId: event.publicId },
     )
