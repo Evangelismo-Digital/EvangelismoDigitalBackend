@@ -4,6 +4,7 @@ import { attachRedisLogger } from '@lib/redis/connections/redis-bullMQ-connectio
 import { logger } from '@lib/logger'
 import { createWorkerConnection, getRedisCache } from '@lib/redis/clients/clients'
 import { IOutboxRepository } from 'core/contracts/repository/outbox-repository.interface'
+import { isErr } from 'core/shared/result'
 import { JobAlreadyProcessingError } from '@lib/errors/queue/job-already-processing-error'
 import { SmtpDispatchError } from '@lib/errors/queue/smtp-dispatch-error'
 import { InfrastructureError } from 'errors/infrastructure-error'
@@ -40,7 +41,7 @@ export async function startMailWorker(outboxRepository: IOutboxRepository) {
           childLogger.warn('⚠️ Lote já enviado anteriormente. Limpando DB e abortando duplicata.')
 
           const deleteResult = await outboxRepository.delete(publicId)
-          if (deleteResult.success === false) {
+          if (isErr(deleteResult)) {
             // Lançamos a falha do BD para o BullMQ tentar deletar no próximo ciclo
             throw deleteResult.error
           }
@@ -54,7 +55,12 @@ export async function startMailWorker(outboxRepository: IOutboxRepository) {
         childLogger.info(`📨 Processando lote de ${emails.length} e-mails...`)
 
         const sendEmailUseCase = makeSendEmailUseCase()
-        await Promise.all(emails.map((email) => sendEmailUseCase.execute(email)))
+        const results = await Promise.all(emails.map((email) => sendEmailUseCase.execute(email)))
+
+        const failedResult = results.find((r) => isErr(r))
+        if (failedResult && isErr(failedResult)) {
+          throw failedResult.error
+        }
 
         childLogger.info('✅ Lote de e-mails processado com sucesso.')
 
@@ -62,7 +68,7 @@ export async function startMailWorker(outboxRepository: IOutboxRepository) {
 
         const deleteResult = await outboxRepository.delete(publicId)
 
-        if (deleteResult.success === false) {
+        if (isErr(deleteResult)) {
           // Ocorreu um erro no DB (ex: rede caiu). O mapper já converteu para InfraError.
           throw deleteResult.error
         }

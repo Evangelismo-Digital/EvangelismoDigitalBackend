@@ -6,7 +6,7 @@ import { UserRole } from 'core/contracts/repository/users-repository.interface'
 import { UpdateUserUseCase } from './update-user'
 import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
-import { isOk, isErr, ok, errOf } from 'core/shared/result'
+import { isOk, isErr, ok, err } from 'core/shared/result'
 
 describe('Update Use Case', () => {
   it('should return UserNotFoundError when no user is found with the given publicId', async () => {
@@ -236,7 +236,7 @@ describe('Update Use Case', () => {
     const user = (registerResult as any).value.user
 
     const expectedErr = new Error('Error updating user')
-    const updateSpy = vi.spyOn(usersRepository, 'update').mockResolvedValueOnce(errOf(expectedErr) as any)
+    const updateSpy = vi.spyOn(usersRepository, 'update').mockResolvedValueOnce(err(expectedErr) as any)
     const updateUserUseCase = new UpdateUserUseCase(usersRepository)
 
     const updateResult = await updateUserUseCase.execute({

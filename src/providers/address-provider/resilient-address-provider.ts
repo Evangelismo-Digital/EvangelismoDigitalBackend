@@ -4,7 +4,7 @@ import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provi
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
-import { Result, ok, errOf, isOk } from 'core/shared/result'
+import { Result, ok, err, isOk } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
@@ -37,7 +37,7 @@ export class ResilientAddressProvider implements IAddressProvider {
 
       // Defensive check — honour abort before each provider attempt
       if (effectiveSignal.aborted) {
-        return errOf(new TimeoutExceededError(effectiveSignal.reason))
+        return err(new TimeoutExceededError(effectiveSignal.reason))
       }
 
       const result = await provider.fetchAddress(cleanCep, effectiveSignal)
@@ -78,7 +78,7 @@ export class ResilientAddressProvider implements IAddressProvider {
 
       // Unknown / fatal error — bail immediately without trying other providers
       logger.error({ provider: providerName, error: error.message }, 'Provedor retornou erro fatal. Abortando cadeia.')
-      return errOf(error)
+      return err(error)
     }
 
     // Decision phase: all providers exhausted
@@ -88,7 +88,7 @@ export class ResilientAddressProvider implements IAddressProvider {
         { cep: cleanCep, notFoundCount, totalProviders: this.providers.length },
         'TODOS os provedores confirmaram CEP inválido/não encontrado',
       )
-      return errOf(new InvalidCepError())
+      return err(new InvalidCepError())
     }
 
     if (lastRetryableError) {
@@ -96,10 +96,10 @@ export class ResilientAddressProvider implements IAddressProvider {
         { cep: cleanCep, provider: lastProviderName, notFoundCount },
         'Provedores de endereço falharam com erros de sistema',
       )
-      return errOf(lastRetryableError)
+      return err(lastRetryableError)
     }
 
-    return errOf(
+    return err(
       new ProviderFailureError(
         'ResilientAddressProvider',
         ProviderLayer.Address,

@@ -4,7 +4,7 @@ import { UsersRepository } from 'core/contracts/repository/users-repository.inte
 import { InvalidCredentialsError } from '@use-cases/errors/invalid-credentials-error'
 import { compare } from 'bcryptjs'
 import { AuthenticationAuditUseCase } from '@use-cases/authentication-audit/authentication-audit'
-import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 
 interface AuthenticationAuditContext {
@@ -55,7 +55,7 @@ export class AuthenticateUserUseCase {
         status: AuthenticationStatus.USER_NOT_EXISTS,
       })
 
-      return errOf(new InvalidCredentialsError())
+      return err(new InvalidCredentialsError())
     }
 
     const hashToCompare = user.passwordHash
@@ -69,7 +69,7 @@ export class AuthenticateUserUseCase {
         userId: user.id,
       })
 
-      return errOf(new InvalidCredentialsError())
+      return err(new InvalidCredentialsError())
     }
 
     await this.authenticationAuditUseCase.execute({

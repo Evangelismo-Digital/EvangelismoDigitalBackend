@@ -3,7 +3,7 @@ import { DeleteChurchUseCase } from './delete-church-use-case'
 import { CreateChurchUseCase } from './create-church-use-case'
 import { InMemoryChurchesRepository } from '@repositories/in-memory/in-memory-chuches-repository'
 import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
-import { isOk, isErr, errOf } from 'core/shared/result'
+import { isOk, isErr, err } from 'core/shared/result'
 
 describe('Delete Church Use Case', () => {
   let churchesRepository: InMemoryChurchesRepository
@@ -181,7 +181,7 @@ describe('Delete Church Use Case', () => {
   })
 
   it('should handle repository returning null gracefully', async () => {
-    vi.spyOn(churchesRepository, 'deleteChurchByPublicId').mockResolvedValueOnce(errOf(new ChurchNotFoundError()))
+    vi.spyOn(churchesRepository, 'deleteChurchByPublicId').mockResolvedValueOnce(err(new ChurchNotFoundError()))
 
     const result = await deleteChurchUseCase.execute({ publicId: '550e8400-e29b-41d4-a716-446655440000' })
     expect(isErr(result)).toBe(true)

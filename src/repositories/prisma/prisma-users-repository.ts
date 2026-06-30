@@ -8,12 +8,11 @@ import {
   UserUpdateInput,
   UserWhereUniqueInput,
 } from 'core/contracts/repository/users-repository.interface'
-import { Result, ok, errOf } from 'core/shared/result'
+import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
 
 export class PrismaUsersRepository implements UsersRepository {
-  
   constructor(private readonly errorMapper: PrismaErrorMapper<AppError>) {}
 
   async create(data: CreateUser): Promise<Result<User, AppError>> {
@@ -30,7 +29,7 @@ export class PrismaUsersRepository implements UsersRepository {
       })
       return ok(user)
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -50,7 +49,7 @@ export class PrismaUsersRepository implements UsersRepository {
       })
       return ok(user)
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -63,7 +62,7 @@ export class PrismaUsersRepository implements UsersRepository {
       })
       return ok(user)
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -73,7 +72,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
       return ok(users)
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -92,9 +91,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
       return ok(users)
     } catch (error) {
-
-      return errOf(this.errorMapper.mapToKnownError(error))
-
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -107,7 +104,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
       return ok(user)
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -120,7 +117,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
       return ok(user)
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -133,7 +130,7 @@ export class PrismaUsersRepository implements UsersRepository {
       })
       return ok(user)
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 }

@@ -4,7 +4,7 @@ import { CepToLatLonUseCase } from './cep-to-lat-lon-use-case'
 import { FindNearbyChurchesKnnUseCase } from './find-nearby-churches-knn-use-case'
 import { CalculateChurchRouteDistancesUseCase } from './calculate-church-route-distances-use-case'
 import { ChurchPresenter } from '@http/presenters/church-presenter'
-import { isOk, ok, isErr, errOf } from 'core/shared/result'
+import { isOk, ok, isErr, err } from 'core/shared/result'
 import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
@@ -155,7 +155,7 @@ describe('FindNearestChurchesUseCase orchestration', () => {
   })
 
   it('should return TimeoutExceededError when cache returns it (CacheOvertime)', async () => {
-    mockGetOrFetch.mockResolvedValueOnce(errOf(new TimeoutExceededError('Cache get timeout')))
+    mockGetOrFetch.mockResolvedValueOnce(err(new TimeoutExceededError('Cache get timeout')))
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
@@ -164,7 +164,7 @@ describe('FindNearestChurchesUseCase orchestration', () => {
   })
 
   it('should return InfraServiceOverloadError when cache returns it (CacheOverload)', async () => {
-    mockGetOrFetch.mockResolvedValueOnce(errOf(new InfraServiceOverloadError()))
+    mockGetOrFetch.mockResolvedValueOnce(err(new InfraServiceOverloadError()))
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
@@ -172,8 +172,8 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     }
   })
 
-  it('should unwrap errOf(InvalidCepError) from cache', async () => {
-    mockGetOrFetch.mockResolvedValueOnce(errOf(new InvalidCepError()))
+  it('should unwrap err(InvalidCepError) from cache', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(err(new InvalidCepError()))
 
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
@@ -182,8 +182,8 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     }
   })
 
-  it('should unwrap errOf(CoordinatesNotFoundError) from cache', async () => {
-    mockGetOrFetch.mockResolvedValueOnce(errOf(new CoordinatesNotFoundError()))
+  it('should unwrap err(CoordinatesNotFoundError) from cache', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(err(new CoordinatesNotFoundError()))
 
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
@@ -193,7 +193,7 @@ describe('FindNearestChurchesUseCase orchestration', () => {
   })
 
   it('should return NoNearbyChurchesFoundError when cache returns an unknown AppError', async () => {
-    mockGetOrFetch.mockResolvedValueOnce(errOf(new NoNearbyChurchesFoundError()))
+    mockGetOrFetch.mockResolvedValueOnce(err(new NoNearbyChurchesFoundError()))
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
@@ -210,7 +210,7 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     })
 
     cepToLatLonUseCase.execute.mockImplementationOnce(async () => {
-      return errOf(new TimeoutExceededError('Aborted'))
+      return err(new TimeoutExceededError('Aborted'))
     })
 
     const result = await useCase.execute({ cep: '00000000' })
@@ -221,7 +221,7 @@ describe('FindNearestChurchesUseCase orchestration', () => {
   })
 
   it('should return NoNearbyChurchesFoundError when cache returns it', async () => {
-    mockGetOrFetch.mockResolvedValueOnce(errOf(new NoNearbyChurchesFoundError()))
+    mockGetOrFetch.mockResolvedValueOnce(err(new NoNearbyChurchesFoundError()))
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {

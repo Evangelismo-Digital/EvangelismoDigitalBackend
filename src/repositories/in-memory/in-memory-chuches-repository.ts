@@ -5,7 +5,7 @@ import {
   NearbyChurch,
   FindNearbyParams,
 } from 'core/contracts/repository/churches-repository.interface'
-import { Result, ok, errOf } from 'core/shared/result'
+import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
 import { randomUUID } from 'node:crypto'
@@ -89,7 +89,7 @@ export class InMemoryChurchesRepository implements ChurchesRepository {
     const churchIndex = this.items.findIndex((item) => item.publicId === publicId)
 
     if (churchIndex === -1) {
-      return errOf(new ChurchNotFoundError())
+      return err(new ChurchNotFoundError())
     }
 
     const [deletedChurch] = this.items.splice(churchIndex, 1)

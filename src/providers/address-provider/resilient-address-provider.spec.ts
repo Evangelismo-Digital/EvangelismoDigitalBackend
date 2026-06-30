@@ -16,7 +16,7 @@ import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provi
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
-import { ok, errOf, isOk, isErr } from 'core/shared/result'
+import { ok, err, isOk, isErr } from 'core/shared/result'
 
 const mockAddress: IAddressData = {
   logradouro: 'Rua Teste',
@@ -86,7 +86,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
     it('should fallback to second provider if first throws InvalidCepError', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(errOf(new InvalidCepError()))
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new InvalidCepError()))
       vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(ok(mockAddress))
 
       const result = await provider.fetchAddress('12345678')
@@ -101,7 +101,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
     it('should fallback to second provider if first fails with System Error (Busy/Generic)', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(errOf(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
       vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(ok(mockAddress))
 
       const result = await provider.fetchAddress('12345678')
@@ -117,7 +117,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
       const provider = createProvider()
 
       vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(ok(null))
-      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(errOf(new InvalidCepError()))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new InvalidCepError()))
 
       const result = await provider.fetchAddress('12345678')
       expect(isErr(result)).toBe(true)
@@ -130,9 +130,9 @@ describe('ResilientAddressProvider Unit Tests', () => {
       const provider = createProvider()
 
       vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(
-        errOf(new ProviderFailureError('MockProvider1', ProviderLayer.Address, new Error('Connection timeout'))),
+        err(new ProviderFailureError('MockProvider1', ProviderLayer.Address, new Error('Connection timeout'))),
       )
-      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(errOf(new ServiceBusyError('MockProvider2')))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider2')))
 
       const result = await provider.fetchAddress('12345678')
       expect(isErr(result)).toBe(true)
@@ -144,9 +144,9 @@ describe('ResilientAddressProvider Unit Tests', () => {
     it('should return ProviderFailureError if the last provider had a non-busy System Error', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(errOf(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
       vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(
-        errOf(new ProviderFailureError('MockProvider2', ProviderLayer.Address, new Error('Connection timeout'))),
+        err(new ProviderFailureError('MockProvider2', ProviderLayer.Address, new Error('Connection timeout'))),
       )
 
       const result = await provider.fetchAddress('12345678')
@@ -160,7 +160,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
       const provider = createProvider()
 
       vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(ok(null))
-      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(errOf(new ServiceBusyError('MockProvider2')))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider2')))
 
       const result = await provider.fetchAddress('12345678')
       expect(isErr(result)).toBe(true)
@@ -174,7 +174,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
 
       vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(ok(null))
       vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(
-        errOf(new ProviderFailureError('MockProvider2', ProviderLayer.Address, new Error('Network error'))),
+        err(new ProviderFailureError('MockProvider2', ProviderLayer.Address, new Error('Network error'))),
       )
 
       const result = await provider.fetchAddress('12345678')
@@ -187,8 +187,8 @@ describe('ResilientAddressProvider Unit Tests', () => {
     it('should return ServiceBusyError if ALL providers have ServiceBusy errors', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(errOf(new ServiceBusyError('MockProvider1')))
-      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(errOf(new ServiceBusyError('MockProvider2')))
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider2')))
 
       const result = await provider.fetchAddress('12345678')
       expect(isErr(result)).toBe(true)
@@ -201,9 +201,9 @@ describe('ResilientAddressProvider Unit Tests', () => {
       const provider = createProvider()
       const systemError = new Error('Database connection failed')
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(errOf(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
       vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(
-        errOf(new ProviderFailureError('MockProvider2', ProviderLayer.Address, systemError)),
+        err(new ProviderFailureError('MockProvider2', ProviderLayer.Address, systemError)),
       )
 
       const result = await provider.fetchAddress('12345678')

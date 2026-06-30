@@ -21,7 +21,7 @@ import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provi
 import { NoGeoProviderError } from './error/no-geo-provider-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { ok, errOf, isOk, isErr } from 'core/shared/result'
+import { ok, err, isOk, isErr } from 'core/shared/result'
 
 const mockCoords: IGeoCoordinates = {
   lat: -23.55052,
@@ -130,7 +130,7 @@ describe('ResilientGeoProvider Unit Tests', () => {
     it('should fallback to second provider if first throws CoordinatesNotFoundError', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'search').mockResolvedValue(errOf(new CoordinatesNotFoundError()))
+      vi.spyOn(provider1, 'search').mockResolvedValue(err(new CoordinatesNotFoundError()))
       vi.spyOn(provider2, 'search').mockResolvedValue(ok(mockCoords))
 
       const result = await provider.search('Query')
@@ -145,7 +145,7 @@ describe('ResilientGeoProvider Unit Tests', () => {
     it('should fallback to second provider if first fails with System Error (Busy/Generic)', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'search').mockResolvedValue(errOf(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider1, 'search').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
       vi.spyOn(provider2, 'search').mockResolvedValue(ok(mockCoords))
 
       const result = await provider.search('Query')
@@ -161,7 +161,7 @@ describe('ResilientGeoProvider Unit Tests', () => {
       const provider = createProvider()
 
       vi.spyOn(provider1, 'search').mockResolvedValue(ok(null))
-      vi.spyOn(provider2, 'search').mockResolvedValue(errOf(new CoordinatesNotFoundError()))
+      vi.spyOn(provider2, 'search').mockResolvedValue(err(new CoordinatesNotFoundError()))
 
       const result = await provider.search('Nowhere')
       expect(isErr(result)).toBe(true)
@@ -174,9 +174,9 @@ describe('ResilientGeoProvider Unit Tests', () => {
       const provider = createProvider()
 
       vi.spyOn(provider1, 'search').mockResolvedValue(
-        errOf(new ProviderFailureError('MockProvider1', ProviderLayer.Geo, new Error('Connection timeout'))),
+        err(new ProviderFailureError('MockProvider1', ProviderLayer.Geo, new Error('Connection timeout'))),
       )
-      vi.spyOn(provider2, 'search').mockResolvedValue(errOf(new ServiceBusyError('MockProvider2')))
+      vi.spyOn(provider2, 'search').mockResolvedValue(err(new ServiceBusyError('MockProvider2')))
 
       const result = await provider.search('Query')
       expect(isErr(result)).toBe(true)
@@ -188,9 +188,9 @@ describe('ResilientGeoProvider Unit Tests', () => {
     it('should return ProviderFailureError if the last provider had a non-busy System Error', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'search').mockResolvedValue(errOf(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider1, 'search').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
       vi.spyOn(provider2, 'search').mockResolvedValue(
-        errOf(new ProviderFailureError('MockProvider2', ProviderLayer.Geo, new Error('Connection timeout'))),
+        err(new ProviderFailureError('MockProvider2', ProviderLayer.Geo, new Error('Connection timeout'))),
       )
 
       const result = await provider.search('Query')
@@ -204,7 +204,7 @@ describe('ResilientGeoProvider Unit Tests', () => {
       const provider = createProvider()
 
       vi.spyOn(provider1, 'search').mockResolvedValue(ok(null))
-      vi.spyOn(provider2, 'search').mockResolvedValue(errOf(new ServiceBusyError('MockProvider2')))
+      vi.spyOn(provider2, 'search').mockResolvedValue(err(new ServiceBusyError('MockProvider2')))
 
       const result = await provider.search('Query')
       expect(isErr(result)).toBe(true)
@@ -218,7 +218,7 @@ describe('ResilientGeoProvider Unit Tests', () => {
 
       vi.spyOn(provider1, 'search').mockResolvedValue(ok(null))
       vi.spyOn(provider2, 'search').mockResolvedValue(
-        errOf(new ProviderFailureError('MockProvider2', ProviderLayer.Geo, new Error('Network error'))),
+        err(new ProviderFailureError('MockProvider2', ProviderLayer.Geo, new Error('Network error'))),
       )
 
       const result = await provider.search('Query')
@@ -231,8 +231,8 @@ describe('ResilientGeoProvider Unit Tests', () => {
     it('should return ServiceBusyError if ALL providers have ServiceBusy errors', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'search').mockResolvedValue(errOf(new ServiceBusyError('MockProvider1')))
-      vi.spyOn(provider2, 'search').mockResolvedValue(errOf(new ServiceBusyError('MockProvider2')))
+      vi.spyOn(provider1, 'search').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider2, 'search').mockResolvedValue(err(new ServiceBusyError('MockProvider2')))
 
       const result = await provider.search('Query')
       expect(isErr(result)).toBe(true)
@@ -245,9 +245,9 @@ describe('ResilientGeoProvider Unit Tests', () => {
       const provider = createProvider()
       const systemError = new Error('Database connection failed')
 
-      vi.spyOn(provider1, 'search').mockResolvedValue(errOf(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider1, 'search').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
       vi.spyOn(provider2, 'search').mockResolvedValue(
-        errOf(new ProviderFailureError('MockProvider2', ProviderLayer.Geo, systemError)),
+        err(new ProviderFailureError('MockProvider2', ProviderLayer.Geo, systemError)),
       )
 
       const result = await provider.search('Query')

@@ -7,7 +7,7 @@ import { CepToLatLonError } from '@use-cases/errors/cep-to-lat-lon-error'
 import { Redis } from 'ioredis'
 import { IGeocodingProvider, EnumGeoPrecision } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
-import { ok, errOf, isOk, isErr } from 'core/shared/result'
+import { ok, err, isOk, isErr } from 'core/shared/result'
 import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
 import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
@@ -240,8 +240,8 @@ describe('CepToLatLon Use Case', () => {
     expect(addressProviderMock.fetchAddress).not.toHaveBeenCalled()
   })
 
-  it('should return errOf(InvalidCepError) when cache returns it', async () => {
-    mockGetOrFetch.mockResolvedValue(errOf(new InvalidCepError()))
+  it('should return err(InvalidCepError) when cache returns it', async () => {
+    mockGetOrFetch.mockResolvedValue(err(new InvalidCepError()))
 
     const result = await useCase.execute({ cep: '000' })
     expect(isErr(result)).toBe(true)
@@ -250,8 +250,8 @@ describe('CepToLatLon Use Case', () => {
     }
   })
 
-  it('should return errOf(CoordinatesNotFoundError) when cache returns it', async () => {
-    mockGetOrFetch.mockResolvedValue(errOf(new CoordinatesNotFoundError()))
+  it('should return err(CoordinatesNotFoundError) when cache returns it', async () => {
+    mockGetOrFetch.mockResolvedValue(err(new CoordinatesNotFoundError()))
 
     const result = await useCase.execute({ cep: '000' })
     expect(isErr(result)).toBe(true)
@@ -287,7 +287,7 @@ describe('CepToLatLon Use Case', () => {
 
   it('should bubble up ServiceBusyError (Rate Limit)', async () => {
     addressProviderMock.fetchAddress.mockResolvedValue(ok({ logradouro: 'Rua A', localidade: 'B', uf: 'C' }))
-    geocodingProviderMock.search.mockResolvedValue(errOf(new ServiceBusyError('Nominatim')))
+    geocodingProviderMock.search.mockResolvedValue(err(new ServiceBusyError('Nominatim')))
 
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
@@ -298,7 +298,7 @@ describe('CepToLatLon Use Case', () => {
 
   it('should return generic CepToLatLonError on unexpected system failure', async () => {
     addressProviderMock.fetchAddress.mockResolvedValue(
-      errOf(new ProviderFailureError('Mock', ProviderLayer.Address, new Error('Unknown Axios Error'))),
+      err(new ProviderFailureError('Mock', ProviderLayer.Address, new Error('Unknown Axios Error'))),
     )
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
@@ -308,7 +308,7 @@ describe('CepToLatLon Use Case', () => {
   })
 
   it('should return generic CepToLatLonError if cache returns generic error', async () => {
-    mockGetOrFetch.mockResolvedValue(errOf(new CepToLatLonError('00000000')))
+    mockGetOrFetch.mockResolvedValue(err(new CepToLatLonError('00000000')))
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
@@ -317,7 +317,7 @@ describe('CepToLatLon Use Case', () => {
   })
 
   it('should return TimeoutExceededError when cache returns it (CacheOvertime)', async () => {
-    mockGetOrFetch.mockResolvedValueOnce(errOf(new TimeoutExceededError('Cache get timeout')))
+    mockGetOrFetch.mockResolvedValueOnce(err(new TimeoutExceededError('Cache get timeout')))
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
@@ -326,7 +326,7 @@ describe('CepToLatLon Use Case', () => {
   })
 
   it('should return InfraServiceOverloadError when cache returns it (CacheOverload)', async () => {
-    mockGetOrFetch.mockResolvedValueOnce(errOf(new InfraServiceOverloadError()))
+    mockGetOrFetch.mockResolvedValueOnce(err(new InfraServiceOverloadError()))
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
@@ -344,7 +344,7 @@ describe('CepToLatLon Use Case', () => {
 
     addressProviderMock.fetchAddress.mockImplementationOnce(async (cep, signal) => {
       if (signal?.aborted) {
-        return errOf(new TimeoutExceededError(signal.reason))
+        return err(new TimeoutExceededError(signal.reason))
       }
       return ok(null)
     })
@@ -357,7 +357,7 @@ describe('CepToLatLon Use Case', () => {
   })
 
   it('should return generic CepToLatLonError when cache returns an unexpected error', async () => {
-    mockGetOrFetch.mockResolvedValueOnce(errOf(new CepToLatLonError('00000000')))
+    mockGetOrFetch.mockResolvedValueOnce(err(new CepToLatLonError('00000000')))
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {

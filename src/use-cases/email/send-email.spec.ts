@@ -6,6 +6,8 @@ vi.mock('@utils/send-email', () => ({
 
 import { sendEmail } from '@utils/send-email'
 import { SendEmailUseCase } from './send-email'
+import { isOk, isErr } from 'core/shared/result'
+import { SmtpDispatchError } from '@lib/errors/queue/smtp-dispatch-error'
 
 describe('SendEmailUseCase', () => {
   afterEach(() => {
@@ -31,10 +33,13 @@ describe('SendEmailUseCase', () => {
       attachments: undefined,
     })
 
-    expect(result).toBe(mockResult)
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      expect(result.value).toBe(mockResult)
+    }
   })
 
-  it('should propagate errors thrown by sendEmail', async () => {
+  it('should return SmtpDispatchError when sendEmail fails', async () => {
     const error = new Error('Send failed')
     ;(sendEmail as any).mockRejectedValueOnce(error)
 
@@ -46,7 +51,12 @@ describe('SendEmailUseCase', () => {
       html: '<p>This is a test message.</p>',
     }
 
-    await expect(() => useCase.execute(params)).rejects.toThrowError(error)
+    const result = await useCase.execute(params)
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(SmtpDispatchError)
+    }
   })
 
   it('should call sendEmail with attachments if provided', async () => {
@@ -66,6 +76,9 @@ describe('SendEmailUseCase', () => {
     const result = await useCase.execute(params)
 
     expect(sendEmail).toHaveBeenCalledWith(params)
-    expect(result).toBe(mockResult)
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      expect(result.value).toBe(mockResult)
+    }
   })
 })

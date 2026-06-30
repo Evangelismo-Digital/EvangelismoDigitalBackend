@@ -6,7 +6,7 @@ import {
   IFormSubmission,
   IFormSubmissionInputData,
 } from 'core/contracts/repository/forms-repository.interface'
-import { errOf, ok, Result } from 'core/shared/result'
+import { err, ok, Result } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 
 export class PrismaFormsRepository implements FormsRepository {
@@ -23,7 +23,7 @@ export class PrismaFormsRepository implements FormsRepository {
 
       return ok(formSubmission)
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -36,12 +36,12 @@ export class PrismaFormsRepository implements FormsRepository {
       })
 
       if (!formSubmission) {
-        return errOf(new FormsNotFoundError())
+        return err(new FormsNotFoundError())
       }
 
       return ok(formSubmission)
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 }

@@ -3,7 +3,8 @@ import { FormsRepository, IFormSubmissionInputData } from 'core/contracts/reposi
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 import { FormsAlreadyExistsError } from '@use-cases/errors/forms/forms-already-exists-error'
 import { FormsNotFoundError } from '@use-cases/errors/forms/forms-not-found-error'
-import { ok, err, Result } from 'core/shared/result'
+import { ok, err, isOk, isErr, Result } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 
 type Response = Result<
@@ -11,7 +12,7 @@ type Response = Result<
     sanitizedFormSubmission: FormPayload
     outboxEvent: IOutboxEvent
   },
-  Error
+  AppError
 >
 
 export class FormsSubmissionUseCase {
@@ -23,7 +24,7 @@ export class FormsSubmissionUseCase {
   async execute(request: IFormSubmissionInputData): Promise<Response> {
     const findEmailResult = await this.formsSubmissionRepository.findByEmail(request.email)
 
-    if (findEmailResult.success === true) {
+    if (isOk(findEmailResult)) {
       return err(new FormsAlreadyExistsError())
     }
 
@@ -41,7 +42,7 @@ export class FormsSubmissionUseCase {
       location: request.location || undefined,
     })
 
-    if (formSubmissionResult.success === false) {
+    if (isErr(formSubmissionResult)) {
       return formSubmissionResult
     }
 
@@ -61,7 +62,7 @@ export class FormsSubmissionUseCase {
     // Salva o evento na tabela 'outbox_events' NA MESMA TRANSAÇÃO do formulário
     const outboxEvent = await this.eventRegistration.register(sanitizedFormSubmission)
 
-    if (outboxEvent.success === false) {
+    if (isErr(outboxEvent)) {
       return outboxEvent
     }
 

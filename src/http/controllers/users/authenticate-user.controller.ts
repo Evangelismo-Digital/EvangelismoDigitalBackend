@@ -1,12 +1,8 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { AuthenticationStatus } from '@prisma/client'
 import { logger } from '@lib/logger'
 import { authenticateSchema } from '@http/schemas/users/authenticate-schema'
 import { makeAuthenticateUserUseCase } from '@use-cases/factories/make-authenticate-user-use-case'
-import { makeAuthenticationAuditUseCase } from '@use-cases/factories/make-authentication-audit-use-case'
 import { UserPresenter } from '@http/presenters/user-presenter'
-import { messages } from 'core/constants/messages'
-import { z } from 'zod'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 
@@ -20,28 +16,15 @@ function getAuthenticationAuditContext(request: FastifyRequest) {
 }
 
 export async function authenticateUser(request: FastifyRequest, reply: FastifyReply) {
-  const authenticationAuditUseCase = makeAuthenticationAuditUseCase()
+  const { login, password } = authenticateSchema.parse(request.body)
 
   const auditContext = getAuthenticationAuditContext(request)
-
-  const parsedBody = authenticateSchema.safeParse(request.body)
-
-  if (!parsedBody.success) {
-    await authenticationAuditUseCase.execute({
-      ...auditContext,
-      status: AuthenticationStatus.INVALID_REQUEST,
-    })
-
-    return reply
-      .status(400)
-      .send({ message: messages.validation.invalidData, details: z.treeifyError(parsedBody.error) })
-  }
 
   const authenticateUserUseCase = makeAuthenticateUserUseCase()
 
   const result = await authenticateUserUseCase.execute({
-    login: parsedBody.data.login,
-    password: parsedBody.data.password,
+    login,
+    password,
     auditContext,
   })
 

@@ -2,7 +2,7 @@ import { User } from '@prisma/client'
 import { UsersRepository, UserUpdateInput } from 'core/contracts/repository/users-repository.interface'
 import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
 import { UserAlreadyExistsError } from '@use-cases/errors/user-already-exists-error'
-import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 
 interface UpdateUserUseCaseRequest {
@@ -34,7 +34,7 @@ export class UpdateUserUseCase {
     const userToBeUpdated = userResult.value
 
     if (!userToBeUpdated) {
-      return errOf(new UserNotFoundError())
+      return err(new UserNotFoundError())
     }
 
     const data: UserUpdateInput = {}
@@ -54,7 +54,7 @@ export class UpdateUserUseCase {
       const userWithExistingEmail = emailResult.value
 
       if (userWithExistingEmail && userWithExistingEmail.publicId !== userToBeUpdated.publicId) {
-        return errOf(new UserAlreadyExistsError())
+        return err(new UserAlreadyExistsError())
       }
     }
 
@@ -68,7 +68,7 @@ export class UpdateUserUseCase {
       const usernameWithExistingUsername = usernameResult.value
 
       if (usernameWithExistingUsername && usernameWithExistingUsername.publicId !== userToBeUpdated.publicId) {
-        return errOf(new UserAlreadyExistsError())
+        return err(new UserAlreadyExistsError())
       }
     }
 

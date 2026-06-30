@@ -5,7 +5,7 @@ import { FindNearbyChurchesKnnUseCase } from '@use-cases/churches/find-nearby-ch
 import { CalculateChurchRouteDistancesUseCase } from '@use-cases/churches/calculate-church-route-distances-use-case'
 import { Redis } from 'ioredis'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
-import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 
 export interface FindNearestChurchesRequest {
@@ -56,7 +56,7 @@ export class FindNearestChurchesUseCase {
       })
 
       if (isErr(cepResult)) {
-        return errOf(cepResult.error)
+        return err(cepResult.error)
       }
 
       const { userLat, userLon, precision, coordinatesProviderName } = cepResult.value
@@ -67,7 +67,7 @@ export class FindNearestChurchesUseCase {
       })
 
       if (isErr(knnResult)) {
-        return errOf(knnResult.error)
+        return err(knnResult.error)
       }
 
       const { churches, totalFound } = knnResult.value
@@ -82,7 +82,7 @@ export class FindNearestChurchesUseCase {
       )
 
       if (isErr(nearestChurchesResult)) {
-        return errOf(nearestChurchesResult.error)
+        return err(nearestChurchesResult.error)
       }
 
       const nearestChurches = nearestChurchesResult.value

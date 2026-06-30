@@ -3,6 +3,7 @@ import { formsSchema } from '@http/schemas/forms/forms-schema'
 import { makeFormSubmissionUseCase } from '@use-cases/forms/factories/make-form-submission-use-case'
 import { logger } from '@lib/logger'
 import { OutboxSignal } from '@lib/infra/events/outbox-signal'
+import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 
 export async function formSubmission(request: FastifyRequest, reply: FastifyReply) {
@@ -18,7 +19,7 @@ export async function formSubmission(request: FastifyRequest, reply: FastifyRepl
   })
 
   // 4. Tratamento de erro (HTTP Errors)
-  if (result.success === false) {
+  if (isErr(result)) {
     return HttpErrorMapper.map(result.error, reply)
   }
 

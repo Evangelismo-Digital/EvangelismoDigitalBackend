@@ -4,7 +4,7 @@ import {
   AuthenticationAuditInput,
   AuthenticationAuditRepository,
 } from 'core/contracts/repository/authentication-audit-repository.interface'
-import { Result, ok, errOf } from 'core/shared/result'
+import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
 
@@ -23,7 +23,7 @@ export class PrismaAuthenticationAuditRepository implements AuthenticationAuditR
       })
       return ok(audit)
     } catch (error) {
-      return errOf(new DatabaseQueryError(error))
+      return err(new DatabaseQueryError(error))
     }
   }
 }

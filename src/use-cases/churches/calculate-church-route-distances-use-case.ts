@@ -4,7 +4,7 @@ import {
   RouteDistanceResult,
 } from 'core/contracts/use-cases/providers/church-routing-provider.interface'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
-import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { EmptyChurchListError } from '@use-cases/errors/empty-church-list-error'
 import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
@@ -36,7 +36,7 @@ export class CalculateChurchRouteDistancesUseCase {
     profile?: RoutingProfile,
   ): Promise<Result<NearbyChurch[], AppError>> {
     if (!churches.length) {
-      return errOf(new EmptyChurchListError())
+      return err(new EmptyChurchListError())
     }
 
     const routeResult = await this.routingProvider.getDistances({
@@ -73,7 +73,7 @@ export class CalculateChurchRouteDistancesUseCase {
       .sort((firstChurch, secondChurch) => firstChurch.distanceKm - secondChurch.distanceKm)
 
     if (!rankedChurches.length) {
-      return errOf(new NoNearbyChurchesFoundError())
+      return err(new NoNearbyChurchesFoundError())
     }
 
     return ok(rankedChurches)

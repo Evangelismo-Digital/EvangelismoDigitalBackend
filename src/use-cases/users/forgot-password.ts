@@ -3,7 +3,7 @@ import { randomBytes } from 'crypto'
 import { UserNotFoundForPasswordResetError } from '../errors/user-not-found-for-password-reset-error'
 import { emailSchema } from '@http/schemas/utils/email'
 import { UsersRepository } from 'core/contracts/repository/users-repository.interface'
-import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 
 interface ForgotPasswordUseCaseRequest {
@@ -35,7 +35,7 @@ export class ForgotPasswordUseCase {
     }
 
     if (!userExists) {
-      return errOf(new UserNotFoundForPasswordResetError())
+      return err(new UserNotFoundForPasswordResetError())
     }
 
     const passwordToken = randomBytes(TOKEN_LENGTH).toString('hex')
@@ -58,7 +58,7 @@ export class ForgotPasswordUseCase {
     const user = updateResult.value
 
     if (!user) {
-      return errOf(new UserNotFoundForPasswordResetError())
+      return err(new UserNotFoundForPasswordResetError())
     }
 
     return ok({

@@ -10,7 +10,7 @@ import {
 } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
-import { Result, ok, errOf, isOk, isErr } from 'core/shared/result'
+import { Result, ok, err, isOk, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
@@ -74,13 +74,13 @@ export class CepToLatLonUseCase {
     const addrResult = await this.addressProvider.fetchAddress(cleanCep, signal)
 
     if (isErr(addrResult)) {
-      return errOf(addrResult.error)
+      return err(addrResult.error)
     }
 
     const data = addrResult.value
 
     if (!data) {
-      return errOf(new InvalidCepError())
+      return err(new InvalidCepError())
     }
 
     // 2. OPTIMIZATION: If Address Provider (AwesomeAPI) gave us coordinates, USE THEM.
@@ -105,7 +105,7 @@ export class CepToLatLonUseCase {
         return ok(this.mapResponse(exactResult.value))
       }
       if (isErr(exactResult) && exactResult.error.failureMode !== FailureMode.NOT_FOUND) {
-        return errOf(exactResult.error)
+        return err(exactResult.error)
       }
     }
 
@@ -116,7 +116,7 @@ export class CepToLatLonUseCase {
         return ok(this.mapResponse(approxResult.value))
       }
       if (isErr(approxResult) && approxResult.error.failureMode !== FailureMode.NOT_FOUND) {
-        return errOf(approxResult.error)
+        return err(approxResult.error)
       }
     }
 
@@ -133,11 +133,11 @@ export class CepToLatLonUseCase {
 
       if (isOk(cityResult)) {
         if (cityResult.value === null) {
-          return errOf(new CoordinatesNotFoundError())
+          return err(new CoordinatesNotFoundError())
         }
         return ok(this.mapResponse(cityResult.value))
       } else {
-        return errOf(cityResult.error)
+        return err(cityResult.error)
       }
     }
 
@@ -145,7 +145,7 @@ export class CepToLatLonUseCase {
     logger.error({ cep: cleanCep, city: localidade }, 'Crítico: Geocoding Provider não encontrou a cidade.')
 
     // This is a system error
-    return errOf(new CepToLatLonError(cleanCep))
+    return err(new CepToLatLonError(cleanCep))
   }
 
   private mapResponse(coords: IGeoCoordinates): CepToLatLonResponse {

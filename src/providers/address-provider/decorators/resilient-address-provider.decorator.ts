@@ -1,6 +1,6 @@
 import { IAddressProvider, IAddressData } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { IRawAddressProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
-import { Result, ok, errOf } from 'core/shared/result'
+import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
@@ -28,13 +28,13 @@ export class ResilientAddressProviderDecorator implements IAddressProvider {
     const allowed = await rateLimiter.tryConsume(this.rawProvider.rateLimitConfig)
 
     if (!allowed) {
-      return errOf(new ServiceBusyError(this.rawProvider.providerName))
+      return err(new ServiceBusyError(this.rawProvider.providerName))
     }
 
     // 2. Retry Loop
     for (let attempt = 1; attempt <= this.rawProvider.maxRetries; attempt++) {
       if (signal?.aborted) {
-        return errOf(new TimeoutExceededError(signal.reason))
+        return err(new TimeoutExceededError(signal.reason))
       }
 
       try {
@@ -53,7 +53,7 @@ export class ResilientAddressProviderDecorator implements IAddressProvider {
             },
             `Falha ao buscar endereço ${this.rawProvider.providerName} após tentativas`,
           )
-          return errOf(appError)
+          return err(appError)
         }
 
         const delay = this.rawProvider.backoffMs * Math.pow(2, attempt - 1)
@@ -63,7 +63,7 @@ export class ResilientAddressProviderDecorator implements IAddressProvider {
     }
 
     logger.error({ cep: cleanCep }, `${this.rawProvider.providerName} - todas as tentativas esgotadas sem sucesso`)
-    return errOf(new ServiceBusyError(this.rawProvider.providerName))
+    return err(new ServiceBusyError(this.rawProvider.providerName))
   }
 
   private sleep(ms: number): Promise<void> {

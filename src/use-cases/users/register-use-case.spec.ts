@@ -6,7 +6,7 @@ import { UserAlreadyExistsError } from '@use-cases/errors/user-already-exists-er
 import { UserRole } from 'core/contracts/repository/users-repository.interface'
 import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { UserNotCreatedError } from '@use-cases/errors/user-not-created-error'
-import { isOk, isErr, ok, errOf } from 'core/shared/result'
+import { isOk, isErr, ok, err } from 'core/shared/result'
 
 describe('Register Use Case', () => {
   it('should be able to register', async () => {
@@ -29,7 +29,9 @@ describe('Register Use Case', () => {
 
     expect(isOk(result)).toBe(true)
     if (isOk(result)) {
-      expect(result.value.user.publicId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+      expect(result.value.user.publicId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      )
     }
   })
 
@@ -197,7 +199,7 @@ describe('Register Use Case', () => {
     const registerUseCase = new RegisterUserUseCase(usersRepository)
 
     vi.spyOn(usersRepository, 'findBy').mockResolvedValue(ok(null))
-    vi.spyOn(usersRepository, 'create').mockResolvedValueOnce(errOf(new UserAlreadyExistsError()))
+    vi.spyOn(usersRepository, 'create').mockResolvedValueOnce(err(new UserAlreadyExistsError()))
 
     const result = await registerUseCase.execute({
       name: 'Test',
@@ -220,7 +222,7 @@ describe('Register Use Case', () => {
 
     const unexpectedErr = new Error('Unexpected')
     vi.spyOn(usersRepository, 'findBy').mockResolvedValue(ok(null))
-    vi.spyOn(usersRepository, 'create').mockResolvedValueOnce(errOf(unexpectedErr) as any)
+    vi.spyOn(usersRepository, 'create').mockResolvedValueOnce(err(unexpectedErr) as any)
 
     const result = await registerUseCase.execute({
       name: 'Test',

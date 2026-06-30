@@ -1,7 +1,7 @@
 import { ChurchesRepository } from 'core/contracts/repository/churches-repository.interface'
 import { ChurchAlreadyExistsError } from '@use-cases/errors/church-already-exists-error'
 import { NoAddressError } from '@use-cases/errors/no-address-error'
-import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 
 interface CreateChurchUseCaseRequest {
@@ -33,7 +33,7 @@ export class CreateChurchUseCase {
     lon,
   }: CreateChurchUseCaseRequest): Promise<Result<CreateChurchUseCaseResponse, AppError>> {
     if (!address || address.trim() === '') {
-      return errOf(new NoAddressError())
+      return err(new NoAddressError())
     }
 
     const nameResult = await this.churchesRepository.findByName(name)
@@ -41,7 +41,7 @@ export class CreateChurchUseCase {
       return nameResult
     }
     if (nameResult.value !== null) {
-      return errOf(new ChurchAlreadyExistsError())
+      return err(new ChurchAlreadyExistsError())
     }
 
     const paramsResult = await this.churchesRepository.findByParams({
@@ -53,7 +53,7 @@ export class CreateChurchUseCase {
       return paramsResult
     }
     if (paramsResult.value !== null) {
-      return errOf(new ChurchAlreadyExistsError())
+      return err(new ChurchAlreadyExistsError())
     }
 
     const createResult = await this.churchesRepository.createChurch({

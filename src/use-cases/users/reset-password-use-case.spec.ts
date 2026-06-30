@@ -7,7 +7,7 @@ import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { ForgotPasswordUseCase } from './forgot-password'
 import { ResetPasswordUseCase } from './reset-password'
 import { InvalidTokenError } from '@use-cases/errors/invalid-token-error'
-import { isOk, isErr, ok, errOf } from 'core/shared/result'
+import { isOk, isErr, ok, err } from 'core/shared/result'
 
 describe('Reset Password Use Case', () => {
   it('should return InvalidTokenError when user is not found by token', async () => {
@@ -216,7 +216,7 @@ describe('Reset Password Use Case', () => {
     const { token } = (forgotResult as any).value
 
     const expectedErr = new Error('Failed to update user')
-    const resetSpy = vi.spyOn(usersRepository, 'updatePassword').mockResolvedValueOnce(errOf(expectedErr) as any)
+    const resetSpy = vi.spyOn(usersRepository, 'updatePassword').mockResolvedValueOnce(err(expectedErr) as any)
 
     const resetResult = await resetPasswordUseCase.execute({
       token,

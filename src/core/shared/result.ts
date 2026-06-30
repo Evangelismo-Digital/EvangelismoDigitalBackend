@@ -1,5 +1,4 @@
 import { ResultPattern } from 'core/types/patterns/result-pattern'
-import { ensureError } from 'core/shared/error-handlers'
 
 type ResultSuccess<T> = { success: true; value: T }
 type ResultFailure<E> = { success: false; error: E }
@@ -11,12 +10,7 @@ export const ok = <T>(value: T): Result<T, never> => ({
   value,
 })
 
-export const err = (error: unknown): Result<never, Error> => ({
-  success: false,
-  error: ensureError(error),
-})
-
-export const errOf = <E>(error: E): Result<never, E> => ({
+export const err = <E>(error: E): Result<never, E> => ({
   success: false,
   error,
 })

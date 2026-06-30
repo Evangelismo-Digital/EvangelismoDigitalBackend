@@ -9,13 +9,7 @@ import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 
 export async function updateUser(request: FastifyRequest, reply: FastifyReply) {
-  const bodyParse = updateSchema.safeParse(request.body)
-  if (!bodyParse.success) {
-    return reply.status(400).send({
-      message: 'Dados de registro inválidos!',
-    })
-  }
-  const { name, username, email } = bodyParse.data
+  const { name, username, email } = updateSchema.parse(request.body)
 
   const authUser = request.user as { publicId?: string; sub?: string }
 
@@ -25,17 +19,12 @@ export async function updateUser(request: FastifyRequest, reply: FastifyReply) {
     return reply.status(401).send({ message: messages.errors.unauthorized ?? 'Unauthorized' })
   }
 
-  const fallbackValid = publicIdSchema.safeParse({ publicId })
-  if (!fallbackValid.success) {
-    return reply.status(400).send({
-      message: 'Parâmetros inválidos!',
-    })
-  }
+  const { publicId: validatedPublicId } = publicIdSchema.parse({ publicId })
 
   const updateUserUseCase = makeUpdateUserUseCase()
 
   const result = await updateUserUseCase.execute({
-    publicId,
+    publicId: validatedPublicId,
     name,
     email,
     username,

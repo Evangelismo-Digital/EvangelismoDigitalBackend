@@ -1,4 +1,5 @@
 import { AppError } from './app-error'
+import { InfrastructureError } from './infrastructure-error'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
@@ -62,6 +63,15 @@ export function serializeAppError(err: AppError): { type: string; message: strin
   }
 }
 
+class UnknownDeserializationError extends InfrastructureError {
+  constructor(message: string) {
+    super({
+      code: 'UNKNOWN_DESERIALIZATION_ERROR',
+      message,
+    })
+  }
+}
+
 export function deserializeAppError(type: string, message: string, data?: unknown): AppError {
   const factory = AppErrorRegistry[type]
   if (factory) {
@@ -71,5 +81,5 @@ export function deserializeAppError(type: string, message: string, data?: unknow
       // Fall through to default fallback
     }
   }
-  return new Error(message) as unknown as AppError
+  return new UnknownDeserializationError(message)
 }

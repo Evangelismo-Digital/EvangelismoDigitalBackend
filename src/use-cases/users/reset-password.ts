@@ -3,7 +3,7 @@ import { hash } from 'bcryptjs'
 import { InvalidTokenError } from '../errors/invalid-token-error'
 import { UsersRepository } from 'core/contracts/repository/users-repository.interface'
 import { env } from '@env/index'
-import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 
 interface ResetPasswordUseCaseCaseRequest {
@@ -31,7 +31,7 @@ export class ResetPasswordUseCase {
     const userExists = userResult.value
 
     if (!userExists || !userExists.tokenExpiresAt || userExists.tokenExpiresAt < new Date()) {
-      return errOf(new InvalidTokenError())
+      return err(new InvalidTokenError())
     }
 
     const passwordHash = await hash(password, env.HASH_SALT_ROUNDS)

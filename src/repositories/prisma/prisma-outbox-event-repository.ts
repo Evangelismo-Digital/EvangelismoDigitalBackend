@@ -1,7 +1,7 @@
 import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
 import { Prisma } from '@prisma/client'
-import { errOf, ok, Result } from 'core/shared/result'
+import { err, ok, Result } from 'core/shared/result'
 import {
   IOutboxRepository,
   IOutboxEvent,
@@ -29,7 +29,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(this.toEntity(outboxEvent))
     } catch (error) {
-      return errOf(this.httpErrorMapper.mapToKnownError(error))
+      return err(this.httpErrorMapper.mapToKnownError(error))
     }
   }
 
@@ -43,7 +43,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(events.map((e) => this.toEntity(e)))
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.mapToKnownError(error))
     }
   }
 
@@ -59,7 +59,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(events.map((e) => this.toEntity(e)))
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.mapToKnownError(error))
     }
   }
 
@@ -71,7 +71,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(event ? this.toEntity(event) : null)
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.mapToKnownError(error))
     }
   }
 
@@ -86,7 +86,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       })
       return ok(undefined)
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.mapToKnownError(error))
     }
   }
 
@@ -97,7 +97,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       })
       return ok(undefined)
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.mapToKnownError(error))
     }
   }
 

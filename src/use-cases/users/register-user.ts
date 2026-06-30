@@ -4,7 +4,7 @@ import { hash } from 'bcryptjs'
 import { env } from '@env/index'
 import { UserRole, UsersRepository } from 'core/contracts/repository/users-repository.interface'
 import { UserNotCreatedError } from '@use-cases/errors/user-not-created-error'
-import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 
 interface RegisterUserUseCaseRequest {
@@ -38,7 +38,7 @@ export class RegisterUserUseCase {
     }
 
     if (userWithExistingEmail.value) {
-      return errOf(new UserAlreadyExistsError())
+      return err(new UserAlreadyExistsError())
     }
 
     const userWithExistingCpf = await this.usersRepository.findBy({ cpf })
@@ -48,7 +48,7 @@ export class RegisterUserUseCase {
     }
 
     if (userWithExistingCpf.value) {
-      return errOf(new UserAlreadyExistsError())
+      return err(new UserAlreadyExistsError())
     }
 
     const userWithExistingUsername = await this.usersRepository.findBy({ username })
@@ -58,7 +58,7 @@ export class RegisterUserUseCase {
     }
 
     if (userWithExistingUsername.value) {
-      return errOf(new UserAlreadyExistsError())
+      return err(new UserAlreadyExistsError())
     }
 
     const passwordHash = await hash(password, env.HASH_SALT_ROUNDS)
@@ -79,7 +79,7 @@ export class RegisterUserUseCase {
     const user = createResult.value
 
     if (!user) {
-      return errOf(new UserNotCreatedError())
+      return err(new UserNotCreatedError())
     }
 
     return ok({ user })

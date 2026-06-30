@@ -6,7 +6,10 @@ import { TransactionalUseCaseDecorator } from '@use-cases/decorators/transaction
 import { FormsSubmissionUseCase } from '@use-cases/forms/forms-submission'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
 import { formsPrismaErrorMapping } from '@repositories/prisma/errors/forms-error-mapping'
-import { outboxHttpPrismaErrorMapping, outboxInfraPrismaErrorMapping } from '@repositories/prisma/errors/outbox-error-mapping'
+import {
+  outboxHttpPrismaErrorMapping,
+  outboxInfraPrismaErrorMapping,
+} from '@repositories/prisma/errors/outbox-error-mapping'
 
 export function makeFormSubmissionUseCase() {
   // 1. Contexto de Banco de Dados (Gerenciador de Transação)

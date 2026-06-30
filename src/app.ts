@@ -2,10 +2,8 @@ import fastify from 'fastify'
 import { env } from '@env/index'
 import { appRoutes } from '@http/routes'
 import { logger, runWithRequestId, runWithUserContext } from '@lib/logger'
-import { logError } from '@lib/logger/helpers'
 import { v7 as uuidv7 } from 'uuid'
-import z, { ZodError } from 'zod'
-import { messages } from 'core/constants/messages'
+import z from 'zod'
 import fastifyJwt from '@fastify/jwt'
 import fastifyCors from '@fastify/cors'
 import * as Sentry from '@sentry/node'
@@ -15,6 +13,7 @@ import { asyncContext } from '@http/plugins/async-context.plugin'
 import { closeAllRedisConnections } from '@lib/redis/clients/clients'
 import { httpRateLimit } from '@http/plugins/rate-limit.plugin'
 import { httpRateLimitDefaults } from '@http/plugins/rate-limit-defaults.plugin'
+import { errorHandler } from '@http/plugins/error-handler.plugin'
 z.config(z.locales.pt())
 
 export const app = fastify({
@@ -119,33 +118,7 @@ app.register(fastifyJwt, {
 
 app.register(appRoutes)
 
-app.setErrorHandler((error, _request, reply) => {
-  if (error instanceof ZodError) {
-    logger.debug(z.treeifyError(error), 'Validation error occurred')
-
-    return reply.status(400).send({ message: messages.validation.invalidData, details: z.treeifyError(error) })
-  }
-
-  if (error instanceof SyntaxError) {
-    logger.error(error, 'JSON inválido recebido')
-    return reply.status(400).send({ message: messages.validation.invalidJson })
-  }
-
-  if (error.statusCode) {
-    return reply.status(error.statusCode).send({ message: error.message })
-  }
-
-  if (env.NODE_ENV === 'development') {
-    logError(error, {}, 'Unhandled error occurred')
-  } else {
-    if (env.SENTRY_DSN) {
-      Sentry.captureException(error)
-    }
-    logger.error(error, 'Unhandled error occurred')
-  }
-
-  reply.status(500).send({ message: messages.errors.internalServer, error: error.message })
-})
+app.register(errorHandler)
 
 app.addHook('onClose', async () => {
   logger.info('🛑 Shutting down RateLimiter and Redis connections...')

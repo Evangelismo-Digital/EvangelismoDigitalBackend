@@ -8,7 +8,7 @@ import {
   IGeoCoordinates,
   IGeoSearchOptions,
 } from 'core/contracts/use-cases/providers/geo-provider.interface'
-import { Result, ok, errOf, isOk } from 'core/shared/result'
+import { Result, ok, err, isOk } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
@@ -59,7 +59,7 @@ export class ResilientGeoProvider implements IGeocodingProvider {
 
       // Defensive Check — honour abort before each provider attempt
       if (signal.aborted) {
-        return errOf(new TimeoutExceededError(signal.reason))
+        return err(new TimeoutExceededError(signal.reason))
       }
 
       const result = await action(provider, signal)
@@ -97,7 +97,7 @@ export class ResilientGeoProvider implements IGeocodingProvider {
 
       // Unknown / fatal error — bail immediately without trying other providers
       logger.error({ provider: providerName, error: error.message }, 'Provedor retornou erro fatal. Abortando cadeia.')
-      return errOf(error)
+      return err(error)
     }
 
     // Decision phase: all providers exhausted
@@ -106,15 +106,15 @@ export class ResilientGeoProvider implements IGeocodingProvider {
         { notFoundCount, totalProviders: this.providers.length },
         'Nenhum provedor retornou resultados - coordenadas não encontradas',
       )
-      return errOf(new CoordinatesNotFoundError())
+      return err(new CoordinatesNotFoundError())
     }
 
     if (lastRetryableError) {
       logger.error({ provider: lastProviderName }, 'Geocodificação falhou com erros de sistema')
-      return errOf(lastRetryableError)
+      return err(lastRetryableError)
     }
 
-    return errOf(
+    return err(
       new ProviderFailureError('ResilientGeoProvider', ProviderLayer.Geo, new Error('TODOS os provedores falharam')),
     )
   }

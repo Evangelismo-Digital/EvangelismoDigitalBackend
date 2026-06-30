@@ -6,7 +6,7 @@ import {
   Church,
   ChurchAlreadyExists,
 } from '../../core/contracts/repository/churches-repository.interface'
-import { Result, ok, errOf } from 'core/shared/result'
+import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
 import { CreateChurchError } from '@use-cases/errors/create-church-error'
@@ -75,7 +75,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
 
       return ok(mappedChurches)
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -105,7 +105,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
       `
       return ok(results[0] ?? null)
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -128,7 +128,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
       `
       return ok(results[0] ?? null)
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -161,12 +161,12 @@ export class PrismaChurchesRepository implements ChurchesRepository {
       const church = rows[0]
 
       if (!church) {
-        return errOf(new CreateChurchError())
+        return err(new CreateChurchError())
       }
 
       return ok(church)
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 
@@ -189,12 +189,12 @@ export class PrismaChurchesRepository implements ChurchesRepository {
       const church = rows[0]
 
       if (!church) {
-        return errOf(new ChurchNotFoundError())
+        return err(new ChurchNotFoundError())
       }
 
       return ok(church)
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.mapToKnownError(error))
     }
   }
 }

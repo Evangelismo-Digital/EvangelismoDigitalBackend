@@ -9,7 +9,7 @@ import { InvalidCredentialsError } from '@use-cases/errors/invalid-credentials-e
 import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { AuthenticationAuditUseCase } from '@use-cases/authentication-audit/authentication-audit'
 import { AuthenticationStatus } from '@prisma/client'
-import { isOk, isErr, errOf } from 'core/shared/result'
+import { isOk, isErr, err } from 'core/shared/result'
 
 describe('Authenticate User Use Case', () => {
   const auditContext = {
@@ -51,7 +51,9 @@ describe('Authenticate User Use Case', () => {
 
     expect(isOk(authResult)).toBe(true)
     if (isOk(authResult)) {
-      expect(authResult.value.user.publicId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+      expect(authResult.value.user.publicId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      )
     }
     expect(authenticationAuditRepository.items).toHaveLength(1)
     expect(authenticationAuditRepository.items[0].status).toBe(AuthenticationStatus.SUCCESS)
@@ -89,7 +91,9 @@ describe('Authenticate User Use Case', () => {
 
     expect(isOk(authResult)).toBe(true)
     if (isOk(authResult)) {
-      expect(authResult.value.user.publicId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+      expect(authResult.value.user.publicId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      )
     }
     expect(authenticationAuditRepository.items).toHaveLength(1)
     expect(authenticationAuditRepository.items[0].status).toBe(AuthenticationStatus.SUCCESS)
@@ -220,7 +224,7 @@ describe('Authenticate User Use Case', () => {
     const usersRepository = new InMemoryUsersRepository()
     const authenticationAuditRepository = {
       create: vi.fn(async () => {
-        return errOf(new Error('audit unavailable'))
+        return err(new Error('audit unavailable'))
       }),
     }
     const authenticationAuditUseCase = new AuthenticationAuditUseCase(authenticationAuditRepository as any)

@@ -5,7 +5,7 @@ import { ChurchAlreadyExistsError } from '@use-cases/errors/church-already-exist
 import { CreateChurchError } from '@use-cases/errors/create-church-error'
 import { NoAddressError } from '@use-cases/errors/no-address-error'
 import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
-import { isOk, isErr, errOf } from 'core/shared/result'
+import { isOk, isErr, err } from 'core/shared/result'
 
 describe('Create Church Use Case', () => {
   let churchesRepository: InMemoryChurchesRepository
@@ -122,7 +122,7 @@ describe('Create Church Use Case', () => {
   })
 
   it('should return CreateChurchError if repository returns error', async () => {
-    vi.spyOn(churchesRepository, 'createChurch').mockResolvedValueOnce(errOf(new CreateChurchError()))
+    vi.spyOn(churchesRepository, 'createChurch').mockResolvedValueOnce(err(new CreateChurchError()))
 
     const result = await createChurchUseCase.execute({
       name: 'Igreja Teste',
@@ -138,7 +138,7 @@ describe('Create Church Use Case', () => {
   })
 
   it('should return ChurchAlreadyExistsError if duplicate error occurs', async () => {
-    vi.spyOn(churchesRepository, 'createChurch').mockResolvedValueOnce(errOf(new ChurchAlreadyExistsError()))
+    vi.spyOn(churchesRepository, 'createChurch').mockResolvedValueOnce(err(new ChurchAlreadyExistsError()))
 
     const result = await createChurchUseCase.execute({
       name: 'Igreja Duplicada',
@@ -156,7 +156,7 @@ describe('Create Church Use Case', () => {
   it('should return DatabaseQueryError for unexpected errors', async () => {
     const unexpectedError = new Error('Database connection failed')
 
-    vi.spyOn(churchesRepository, 'createChurch').mockResolvedValueOnce(errOf(new DatabaseQueryError(unexpectedError)))
+    vi.spyOn(churchesRepository, 'createChurch').mockResolvedValueOnce(err(new DatabaseQueryError(unexpectedError)))
 
     const result = await createChurchUseCase.execute({
       name: 'Igreja Erro',

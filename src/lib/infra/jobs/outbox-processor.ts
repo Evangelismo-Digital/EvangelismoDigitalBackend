@@ -5,6 +5,7 @@ import { mailQueue } from '@lib/queue/mail-queue'
 import { DistributedLock, LockToken } from '@lib/infra/distributed-lock/distributed-lock'
 import { ContactEmailStrategy } from '@use-cases/forms/strategies/contact-email-strategy'
 import { DecisionForChristEmailStrategy } from '@use-cases/forms/strategies/decision-for-christ-email-strategy'
+import { isErr } from 'core/shared/result'
 import {
   IOutboxRepository,
   IOutboxEvent,
@@ -32,7 +33,7 @@ export class OutboxProcessor {
       const pendingEventsResult = await this.outboxRepository.findPending(OUTBOX_THRESHOLDS.PENDING_FETCH_LIMIT)
 
       // Verificação do Result
-      if (pendingEventsResult.success === false) {
+      if (isErr(pendingEventsResult)) {
         logger.error({ error: pendingEventsResult.error }, '❌ Erro de Infra ao buscar eventos pendentes.')
         return
       }
@@ -67,7 +68,7 @@ export class OutboxProcessor {
       const stuckEventsResult = await this.outboxRepository.findStuck(thresholdDate)
 
       // Verificação do Result
-      if (stuckEventsResult.success === false) {
+      if (isErr(stuckEventsResult)) {
         logger.error({ error: stuckEventsResult.error }, '❌ Erro de Infra ao buscar eventos travados na Outbox.')
         return
       }
@@ -95,13 +96,13 @@ export class OutboxProcessor {
       const updateResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.SENDING)
 
       // Se não conseguimos atualizar para SENDING, jogamos para o catch reverter
-      if (updateResult.success === false) throw updateResult.error
+      if (isErr(updateResult)) throw updateResult.error
 
       await this.dispatchToBullMQ(event)
     } catch (error) {
       const revertResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.PENDING)
 
-      if (revertResult.success === false) {
+      if (isErr(revertResult)) {
         logger.error(
           { publicId: event.publicId, error: revertResult.error },
           '🚨 FATAL: Falha ao reverter status para PENDING. Inconsistência na DB.',

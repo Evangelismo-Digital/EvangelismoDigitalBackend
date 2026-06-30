@@ -2,10 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { describe, expect, it, vi } from 'vitest'
 import { authenticateUser } from './authenticate-user.controller'
 
-const INVALID_REQUEST_STATUS = 'INVALID_REQUEST' as const
-
 const mockAuthenticateExecute = vi.fn()
-const mockAuditExecute = vi.fn()
 
 vi.mock('@use-cases/factories/make-authenticate-user-use-case', () => ({
   makeAuthenticateUserUseCase: vi.fn(() => ({
@@ -13,14 +10,8 @@ vi.mock('@use-cases/factories/make-authenticate-user-use-case', () => ({
   })),
 }))
 
-vi.mock('@use-cases/factories/make-authentication-audit-use-case', () => ({
-  makeAuthenticationAuditUseCase: vi.fn(() => ({
-    execute: mockAuditExecute,
-  })),
-}))
-
 describe('authenticateUser controller', () => {
-  it('records invalid request bodies', async () => {
+  it('throws ZodError for invalid request bodies (caught by global error handler)', async () => {
     const request = {
       body: { login: 123, password: '1234' },
       ip: '203.0.113.10',
@@ -37,19 +28,10 @@ describe('authenticateUser controller', () => {
       jwtSign: vi.fn(),
     } as any
 
-    await authenticateUser(request, reply)
+    // With .parse(), invalid body throws a ZodError before the controller logic runs.
+    // The global error-handler plugin catches ZodError and sends a 400 response.
+    await expect(() => authenticateUser(request, reply)).rejects.toThrow()
 
     expect(mockAuthenticateExecute).not.toHaveBeenCalled()
-    expect(mockAuditExecute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        status: INVALID_REQUEST_STATUS,
-        ipAddress: '203.0.113.10',
-        remotePort: '4321',
-        userAgent: 'vitest',
-        origin: 'http://localhost',
-      }),
-    )
-    expect(reply.status).toHaveBeenCalledWith(400)
-    expect(reply.send).toHaveBeenCalled()
   })
 })

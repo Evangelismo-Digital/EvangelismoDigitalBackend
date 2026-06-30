@@ -1,7 +1,15 @@
+import { ErrorType } from 'core/types/error-type/error-type'
+import { DomainError } from 'errors/domain-error'
+import { IErrorDetail } from 'core/contracts/errors/error-detail.interface'
 import { messages } from 'core/constants/messages'
 
-export class ForbiddenError extends Error {
+const FORBIDDEN_ERROR: IErrorDetail = {
+  code: 'FORBIDDEN',
+  message: messages.errors.forbidden,
+}
+
+export class ForbiddenError extends DomainError {
   constructor() {
-    super(messages.errors.forbidden)
+    super(FORBIDDEN_ERROR, ErrorType.FORBIDDEN)
   }
 }

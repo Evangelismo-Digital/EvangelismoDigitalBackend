@@ -67,7 +67,7 @@ import Redis from 'ioredis'
 import { ResilientCache } from './resilient-cache'
 import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { Result, ok, errOf, isOk, isErr } from 'core/shared/result'
+import { Result, ok, err, isOk, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 import { AppErrorRegistry } from 'errors/app-error-registry'
@@ -161,7 +161,7 @@ describe('ResilientCache Unit Tests', () => {
 
     it('should return error Result if fetcher fails returning error Result', async () => {
       const error = new TestAppError()
-      const mockFetcher = vi.fn().mockResolvedValue(errOf(error))
+      const mockFetcher = vi.fn().mockResolvedValue(err(error))
       const result = await executeFetch('key', mockFetcher)
       expect(result.success).toBe(false)
       if (!result.success) {
@@ -189,7 +189,7 @@ describe('ResilientCache Unit Tests', () => {
       expect(fetcher).not.toHaveBeenCalled()
     })
 
-    it('should return errOf(MappedError) on CACHE HIT (Negative Cache)', async () => {
+    it('should return err(MappedError) on CACHE HIT (Negative Cache)', async () => {
       const keyParams = { id: 'test-2' }
       const generatedKey = resilientCache.generateKey(keyParams)
 
@@ -211,7 +211,7 @@ describe('ResilientCache Unit Tests', () => {
       }
     })
 
-    it('should return errOf(Fallback) on CACHE HIT (Negative Cache - Unmapped Type)', async () => {
+    it('should return err(Fallback) on CACHE HIT (Negative Cache - Unmapped Type)', async () => {
       const keyParams = { id: 'test-2-unmapped' }
       const generatedKey = resilientCache.generateKey(keyParams)
 
@@ -277,7 +277,7 @@ describe('ResilientCache Unit Tests', () => {
       expect(fetcher).toHaveBeenCalledTimes(1)
     })
 
-    it('should return errOf(InfraServiceOverloadError) when max pending fetches exceeded with DIFFERENT KEYS', async () => {
+    it('should return err(InfraServiceOverloadError) when max pending fetches exceeded with DIFFERENT KEYS', async () => {
       const restrictedCache = new ResilientCache(redisClient, {
         ...defaultOptions,
         maxPendingFetches: 2,
@@ -319,7 +319,7 @@ describe('ResilientCache Unit Tests', () => {
       mockRedisGet.mockResolvedValue(null)
 
       const appError = new TestAppError(FailureMode.NOT_FOUND)
-      const fetcher = vi.fn().mockResolvedValue(errOf(appError))
+      const fetcher = vi.fn().mockResolvedValue(err(appError))
 
       const result = await resilientCache.getOrFetch(generatedKey, fetcher)
 
@@ -355,7 +355,7 @@ describe('ResilientCache Unit Tests', () => {
       mockRedisGet.mockResolvedValue(null)
 
       const appError = new TestAppError(FailureMode.RETRYABLE)
-      const fetcher = vi.fn().mockResolvedValue(errOf(appError))
+      const fetcher = vi.fn().mockResolvedValue(err(appError))
 
       const result = await resilientCache.getOrFetch(generatedKey, fetcher)
 
@@ -372,7 +372,7 @@ describe('ResilientCache Unit Tests', () => {
       const fetcher = vi.fn().mockImplementation(async (signal) => {
         await new Promise((resolve) => setTimeout(resolve, 200))
         if (signal.aborted) {
-          return errOf(new TimeoutExceededError())
+          return err(new TimeoutExceededError())
         }
         return ok('done')
       })

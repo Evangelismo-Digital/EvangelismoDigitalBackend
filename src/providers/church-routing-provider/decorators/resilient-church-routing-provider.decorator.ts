@@ -7,7 +7,7 @@ import { IRawChurchRoutingProvider } from 'core/contracts/use-cases/providers/ra
 import { ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
 import { RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
-import { Result, ok, errOf } from 'core/shared/result'
+import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
@@ -80,18 +80,18 @@ export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingPr
         const allowed = await rateLimiter.tryConsume(this.rawProvider.rateLimitConfig)
 
         if (!allowed) {
-          return errOf(new ServiceBusyError(this.rawProvider.providerName))
+          return err(new ServiceBusyError(this.rawProvider.providerName))
         }
 
         if (signal.aborted) {
-          return errOf(new TimeoutExceededError(signal.reason))
+          return err(new TimeoutExceededError(signal.reason))
         }
 
         try {
           const data = await this.rawProvider.fetchRawDistance(origin, destination, costing, signal)
           return ok(data)
         } catch (error) {
-          return errOf(FindNearestChurchesErrorMapper.map(error))
+          return err(FindNearestChurchesErrorMapper.map(error))
         }
       },
       parentSignal,

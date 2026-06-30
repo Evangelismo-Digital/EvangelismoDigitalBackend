@@ -6,7 +6,7 @@ import {
   UsersRepository,
   UserWhereUniqueInput,
 } from 'core/contracts/repository/users-repository.interface'
-import { Result, ok, errOf } from 'core/shared/result'
+import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
 
@@ -90,7 +90,7 @@ export class InMemoryUsersRepository implements UsersRepository {
   async delete(publicId: string): Promise<Result<User, AppError>> {
     const userIndex = this.items.findIndex((item) => item.publicId === publicId)
     if (userIndex === -1) {
-      return errOf(new UserNotFoundError())
+      return err(new UserNotFoundError())
     }
     const [deletedUser] = this.items.splice(userIndex, 1)
     return ok(deletedUser)
@@ -102,7 +102,7 @@ export class InMemoryUsersRepository implements UsersRepository {
   ): Promise<Result<User, AppError>> {
     const userIndex = this.items.findIndex((item) => item.publicId === publicId)
     if (userIndex === -1) {
-      return errOf(new UserNotFoundError())
+      return err(new UserNotFoundError())
     }
     const existingUser = this.items[userIndex]
     const updatedUser = {
@@ -117,7 +117,7 @@ export class InMemoryUsersRepository implements UsersRepository {
   async updatePassword(publicId: string, data: UserPasswordUpdateInput): Promise<Result<User, AppError>> {
     const userIndex = this.items.findIndex((item) => item.publicId === publicId)
     if (userIndex === -1) {
-      return errOf(new UserNotFoundError())
+      return err(new UserNotFoundError())
     }
     const existingUser = this.items[userIndex]
     const updatedUser = {

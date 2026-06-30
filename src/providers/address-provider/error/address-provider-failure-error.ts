@@ -1,9 +1,8 @@
-export class AddressProviderFailureError extends Error {
-  private readonly originalReason?: unknown
+import { InfrastructureError } from '../../../errors/infrastructure-error'
+import { ADDRESS_PROVIDER_FAILURE_ERROR } from 'messages/errors/providers/providers-error-messages'
 
+export class AddressProviderFailureError extends InfrastructureError {
   constructor(reason?: unknown) {
-    super('Falha no provedor de endereços')
-
-    this.originalReason = reason
+    super(ADDRESS_PROVIDER_FAILURE_ERROR, reason)
   }
 }

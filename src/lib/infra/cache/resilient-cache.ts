@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { Redis } from 'ioredis'
 import { logger } from '@lib/logger'
-import { Result, ok, errOf, isErr } from 'core/shared/result'
+import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
@@ -66,7 +66,7 @@ export class ResilientCache<E = unknown> {
   ): Promise<Result<T, E | AppError>> {
     // 1. Circuit Breaker FIRST (before any work)
     if (this.pendingFetches.size >= this.MAX_PENDING) {
-      return errOf(new InfraServiceOverloadError())
+      return err(new InfraServiceOverloadError())
     }
 
     // 2. Dedup Check (FAST PATH - in-memory)
@@ -85,7 +85,7 @@ export class ResilientCache<E = unknown> {
         if (envelope.s) {
           if (!('v' in envelope)) {
             logger.error({ key, envelope }, 'Cache corrompida detectada: CacheEnvelope de sucesso sem valor')
-            return errOf(
+            return err(
               new ProviderFailureError('Cache', ProviderLayer.Address, new Error('Corrupted Cache: Missing value')),
             )
           }
@@ -98,12 +98,12 @@ export class ResilientCache<E = unknown> {
           if (deserializer) {
             const deserialized = deserializer(envelope.e.type, envelope.e.message, envelope.e.data)
             if (deserialized) {
-              return errOf(deserialized)
+              return err(deserialized)
             }
           }
 
           // Fallback reconstruction
-          return errOf(
+          return err(
             new ProviderFailureError(
               'Cache',
               ProviderLayer.Address,
@@ -152,37 +152,37 @@ export class ResilientCache<E = unknown> {
     const effectiveSignal = AbortSignal.any(signals)
 
     if (effectiveSignal.aborted) {
-      return errOf(new TimeoutExceededError(effectiveSignal.reason))
+      return err(new TimeoutExceededError(effectiveSignal.reason))
     }
 
     try {
       const result = await fetcher(effectiveSignal)
 
       if (effectiveSignal.aborted) {
-        return errOf(new TimeoutExceededError(effectiveSignal.reason))
+        return err(new TimeoutExceededError(effectiveSignal.reason))
       }
 
       if (isErr(result)) {
-        const err = result.error
+        const error = result.error
         const isRetryableFn =
-          this.options.isRetryable ?? ((error: E) => (error as { failureMode?: string })?.failureMode === 'RETRYABLE')
+          this.options.isRetryable ?? ((errVal: E) => (errVal as { failureMode?: string })?.failureMode === 'RETRYABLE')
 
         // Negative Cache (do not cache transient/retryable failures)
-        if (!isRetryableFn(err)) {
+        if (!isRetryableFn(error)) {
           const serializer =
             this.options.serializeError ??
-            ((error: E) => ({
-              type: (error as { constructor?: { name?: string } }).constructor?.name || 'Error',
-              message: (error as { message?: string }).message || String(error),
-              data: error,
+            ((errVal: E) => ({
+              type: (errVal as { constructor?: { name?: string } }).constructor?.name || 'Error',
+              message: (errVal as { message?: string }).message || String(errVal),
+              data: errVal,
             }))
 
           await this.setResult(key, {
             s: false,
-            e: serializer(err),
+            e: serializer(error),
           })
         }
-        return errOf(err)
+        return err(error)
       }
 
       // SUCCESS: Cache as success envelope
@@ -192,11 +192,11 @@ export class ResilientCache<E = unknown> {
       // The fetcher threw an UNHANDLED exception.
       if (effectiveSignal.aborted) {
         const abortReason = parentSignal?.aborted ? parentSignal.reason : 'Timeout Exceeded'
-        return errOf(new TimeoutExceededError(abortReason))
+        return err(new TimeoutExceededError(abortReason))
       }
 
       // We do not cache unhandled system exceptions.
-      return errOf(new ProviderFailureError('Fetcher', ProviderLayer.Address, error))
+      return err(new ProviderFailureError('Fetcher', ProviderLayer.Address, error))
     }
   }
 

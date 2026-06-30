@@ -1,4 +1,4 @@
-import { Result, errOf } from 'core/shared/result'
+import { Result, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { AxiosError, isAxiosError } from 'axios'
 import { Prisma } from '@prisma/client'
@@ -14,7 +14,7 @@ export class FindNearestChurchesErrorMapper {
     try {
       return await fn()
     } catch (error) {
-      return errOf(FindNearestChurchesErrorMapper.map(error))
+      return err(FindNearestChurchesErrorMapper.map(error))
     }
   }
 

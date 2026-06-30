@@ -32,14 +32,18 @@ export async function forgotPassword(request: FastifyRequest, reply: FastifyRepl
 
   const sendEmailUseCase = makeSendEmailUseCase()
 
-  await sendEmailUseCase.execute({
+  const emailResult = await sendEmailUseCase.execute({
     to: user.email,
     subject: messages.email.passwordRecoverySubject,
     message: forgotPasswordTextTemplate(user.name, token),
     html: forgotPasswordHtmlTemplate(user.name, token),
   })
 
-  logger.info({ targetId: user.publicId }, 'Password reset email sent')
+  if (isErr(emailResult)) {
+    logger.error({ targetId: user.publicId, error: emailResult.error.message }, 'Failed to send password reset email')
+  } else {
+    logger.info({ targetId: user.publicId }, 'Password reset email sent')
+  }
 
   return reply.status(200).send({ message: messages.info.passwordResetGeneric })
 }
