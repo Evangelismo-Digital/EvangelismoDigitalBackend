@@ -3,24 +3,16 @@ import { makeSearchUsersUseCase } from '@use-cases/factories/make-search-users-u
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
+import { searchUsersSchema } from '@http/schemas/users/search-users-schema'
 
 export async function searchUsersController(request: FastifyRequest, reply: FastifyReply) {
-  const { query, page } = request.query as { query: string; page: string }
-
-  const searchQuery = query || ''
-  const pageNumber = page ? parseInt(page, 10) : 1
-
-  if (isNaN(pageNumber) || pageNumber < 1) {
-    return reply
-      .status(400)
-      .send({ message: 'Número de página inválido. A página deve ser um número inteiro maior que zero.' })
-  }
+  const { query, page } = searchUsersSchema.parse(request.query)
 
   const searchUsersUseCase = makeSearchUsersUseCase()
 
   const result = await searchUsersUseCase.execute({
-    query: searchQuery,
-    page: pageNumber,
+    query,
+    page,
   })
 
   if (isErr(result)) {
@@ -29,7 +21,7 @@ export async function searchUsersController(request: FastifyRequest, reply: Fast
 
   const { users } = result.value
 
-  logger.info(`Encontrados ${users.length} usuários para a consulta: "${searchQuery}" na página ${pageNumber}.`)
+  logger.info(`Encontrados ${users.length} usuários para a consulta: "${query}" na página ${page}.`)
 
   return reply.status(200).send({ users })
 }

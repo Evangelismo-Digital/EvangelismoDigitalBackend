@@ -2,7 +2,6 @@ import { IOutboxEventRegistration } from 'core/contracts/use-cases/outbox-event/
 import { FormsRepository, IFormSubmissionInputData } from 'core/contracts/repository/forms-repository.interface'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 import { FormsAlreadyExistsError } from '@use-cases/errors/forms/forms-already-exists-error'
-import { FormsNotFoundError } from '@use-cases/errors/forms/forms-not-found-error'
 import { ok, err, isOk, isErr, Result } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
@@ -28,7 +27,7 @@ export class FormsSubmissionUseCase {
       return err(new FormsAlreadyExistsError())
     }
 
-    if (!(findEmailResult.error instanceof FormsNotFoundError)) {
+    if (findEmailResult.error.body.code !== 'FORM_NOT_FOUND') {
       return findEmailResult
     }
 
