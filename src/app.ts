@@ -34,8 +34,10 @@ if (env.SENTRY_DSN) {
   Sentry.setupFastifyErrorHandler(app)
 }
 
+let memoryInterval: NodeJS.Timeout | null = null
+
 if (env.NODE_ENV === 'production') {
-  setInterval(() => {
+  memoryInterval = setInterval(() => {
     const memUsage = process.memoryUsage()
     const heapUsedMB = memUsage.heapUsed / 1024 / 1024
     const rssMB = memUsage.rss / 1024 / 1024
@@ -122,6 +124,11 @@ app.register(errorHandler)
 
 app.addHook('onClose', async () => {
   logger.info('🛑 Shutting down RateLimiter and Redis connections...')
+
+  if (memoryInterval) {
+    clearInterval(memoryInterval)
+    logger.info('✅ Memory monitor interval cleared')
+  }
 
   try {
     await RedisRateLimiter.destroyInstance()
