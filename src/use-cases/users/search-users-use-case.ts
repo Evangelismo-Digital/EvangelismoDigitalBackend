@@ -1,7 +1,6 @@
 import { User } from '@prisma/client'
 import { UsersRepository } from 'core/contracts/repository/users-repository.interface'
-import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
-import { Result, ok, err, isErr } from 'core/shared/result'
+import { Result, ok, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 
 interface SearchUsersUseCaseRequest {
@@ -23,11 +22,7 @@ export class SearchUsersUseCase {
       return searchResult
     }
 
-    const users = searchResult.value
-
-    if (!users || users.length === 0) {
-      return err(new UserNotFoundError())
-    }
+    const users = searchResult.value || []
 
     return ok({ users })
   }

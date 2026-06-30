@@ -1,75 +1,22 @@
 import { InMemoryUsersRepository } from '@repositories/in-memory/in-memory-users-repository'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { RegisterUserUseCase } from './register-user'
 import { UserRole } from 'core/contracts/repository/users-repository.interface'
 import { cpf as cpfValidator } from 'cpf-cnpj-validator'
-import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
 import { SearchUsersUseCase } from './search-users-use-case'
-import { isOk, isErr, ok } from 'core/shared/result'
+import { isOk } from 'core/shared/result'
 
 describe('Search Users Use Case', () => {
-  it('should return UserNotFoundError if search returns null', async () => {
+  it('should return empty list if search query yields no matches', async () => {
     const usersRepository = new InMemoryUsersRepository()
-    const registerUseCase = new RegisterUserUseCase(usersRepository)
     const searchUsersUseCase = new SearchUsersUseCase(usersRepository)
 
-    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-    const username = 'johndoe'
-    const uniqueCpf = cpfValidator.generate()
-    const password = 'Teste123x!'
+    const searchResult = await searchUsersUseCase.execute({ query: 'nonexistent', page: 1 })
 
-    const registerResult = await registerUseCase.execute({
-      name: 'John Doe',
-      email: uniqueEmail,
-      cpf: uniqueCpf,
-      password,
-      username: username,
-      role: UserRole.DEFAULT,
-    })
-    expect(isOk(registerResult)).toBe(true)
-
-    const searchSpy = vi.spyOn(usersRepository, 'search').mockResolvedValue(ok(null as any))
-
-    const searchResult = await searchUsersUseCase.execute({ query: 'john', page: 1 })
-
-    expect(isErr(searchResult)).toBe(true)
-    if (isErr(searchResult)) {
-      expect(searchResult.error).toBeInstanceOf(UserNotFoundError)
+    expect(isOk(searchResult)).toBe(true)
+    if (isOk(searchResult)) {
+      expect(searchResult.value.users).toEqual([])
     }
-
-    searchSpy.mockRestore()
-  })
-
-  it('should return UserNotFoundError if search returns empty array', async () => {
-    const usersRepository = new InMemoryUsersRepository()
-    const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const searchUsersUseCase = new SearchUsersUseCase(usersRepository)
-
-    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-    const username = 'johndoe'
-    const uniqueCpf = cpfValidator.generate()
-    const password = 'Teste123x!'
-
-    const registerResult = await registerUseCase.execute({
-      name: 'John Doe',
-      email: uniqueEmail,
-      cpf: uniqueCpf,
-      password,
-      username: username,
-      role: UserRole.DEFAULT,
-    })
-    expect(isOk(registerResult)).toBe(true)
-
-    const searchSpy = vi.spyOn(usersRepository, 'search').mockResolvedValue(ok([]))
-
-    const searchResult = await searchUsersUseCase.execute({ query: 'notfound', page: 1 })
-
-    expect(isErr(searchResult)).toBe(true)
-    if (isErr(searchResult)) {
-      expect(searchResult.error).toBeInstanceOf(UserNotFoundError)
-    }
-
-    searchSpy.mockRestore()
   })
 
   it('should be able to search and return users', async () => {
