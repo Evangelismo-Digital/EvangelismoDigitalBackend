@@ -4,6 +4,6 @@ import { USER_NOT_FOUND_FOR_PASSWORD_RESET_ERROR } from 'messages/errors/use-cas
 
 export class UserNotFoundForPasswordResetError extends DomainError {
   constructor() {
-    super(USER_NOT_FOUND_FOR_PASSWORD_RESET_ERROR, ErrorType.BAD_REQUEST)
+    super(USER_NOT_FOUND_FOR_PASSWORD_RESET_ERROR, ErrorType.OK)
   }
 }

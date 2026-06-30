@@ -1,6 +1,7 @@
 import { ErrorType } from 'core/types/error-type/error-type'
 
 const STATUS_MAP: Record<ErrorType, number> = {
+  [ErrorType.OK]: 200,
   [ErrorType.BAD_REQUEST]: 400,
   [ErrorType.UNAUTHORIZED]: 401,
   [ErrorType.FORBIDDEN]: 403,

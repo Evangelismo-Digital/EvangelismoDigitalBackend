@@ -1,4 +1,5 @@
 export enum ErrorType {
+  OK = 'OK',
   BAD_REQUEST = 'BAD_REQUEST',
   UNAUTHORIZED = 'UNAUTHORIZED',
   FORBIDDEN = 'FORBIDDEN',

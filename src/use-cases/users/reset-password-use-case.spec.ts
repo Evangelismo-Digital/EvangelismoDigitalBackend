@@ -8,12 +8,16 @@ import { ForgotPasswordUseCase } from './forgot-password'
 import { ResetPasswordUseCase } from './reset-password'
 import { InvalidTokenError } from '@use-cases/errors/invalid-token-error'
 import { isOk, isErr, ok, err } from 'core/shared/result'
+import { SendEmailUseCase } from '../email/send-email'
 
 describe('Reset Password Use Case', () => {
+  vi.spyOn(SendEmailUseCase.prototype, 'execute').mockResolvedValue(ok({} as any))
+
   it('should return InvalidTokenError when user is not found by token', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
+    const sendEmailUseCase = new SendEmailUseCase()
+    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
     const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
     const uniqueEmail = `johndoe${Date.now()}@gmail.com`
@@ -49,7 +53,8 @@ describe('Reset Password Use Case', () => {
   it('should return InvalidTokenError when tokenExpiresAt does not exist', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
+    const sendEmailUseCase = new SendEmailUseCase()
+    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
     const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
     const uniqueEmail = `johndoe${Date.now()}@gmail.com`
@@ -90,7 +95,8 @@ describe('Reset Password Use Case', () => {
   it('should return InvalidTokenError when tokenExpiresAt is in the past', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
+    const sendEmailUseCase = new SendEmailUseCase()
+    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
     const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
     const uniqueEmail = `johndoe${Date.now()}@gmail.com`
@@ -131,7 +137,8 @@ describe('Reset Password Use Case', () => {
   it('should reset user password', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
+    const sendEmailUseCase = new SendEmailUseCase()
+    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
     const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
     const uniqueEmail = `johndoe${Date.now()}@gmail.com`
@@ -192,7 +199,8 @@ describe('Reset Password Use Case', () => {
   it('should return error when user password is not updated', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
+    const sendEmailUseCase = new SendEmailUseCase()
+    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
     const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
     const uniqueEmail = `johndoe${Date.now()}@gmail.com`

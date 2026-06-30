@@ -4,14 +4,19 @@ import { RegisterUserUseCase } from './register-user'
 import { UserRole } from 'core/contracts/repository/users-repository.interface'
 import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { ForgotPasswordUseCase } from './forgot-password'
+import { SendEmailUseCase } from '../email/send-email'
 import { UserNotFoundForPasswordResetError } from '@use-cases/errors/user-not-found-for-password-reset-error'
-import { isOk, isErr, ok } from 'core/shared/result'
+import { FailedToSendEmailError } from '@use-cases/errors/failed-to-send-email-error'
+import { isOk, isErr, ok, err } from 'core/shared/result'
 
 describe('Forgot Password Use Case', () => {
   it('should return UserNotFoundForPasswordResetError when user is not found by email', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
+    const sendEmailUseCase = new SendEmailUseCase()
+    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
+
+    vi.spyOn(sendEmailUseCase, 'execute').mockResolvedValue(ok({} as any))
 
     const uniqueEmail = `johndoe${Date.now()}@gmail.com`
     const uniqueCpf = cpfValidator.generate()
@@ -42,7 +47,10 @@ describe('Forgot Password Use Case', () => {
   it('should generate a password reset token and expiration time for the same token', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
+    const sendEmailUseCase = new SendEmailUseCase()
+    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
+
+    vi.spyOn(sendEmailUseCase, 'execute').mockResolvedValue(ok({} as any))
 
     const uniqueEmail = `johndoe${Date.now()}@gmail.com`
     const uniqueCpf = cpfValidator.generate()
@@ -86,7 +94,10 @@ describe('Forgot Password Use Case', () => {
   it('should return UserNotFoundForPasswordResetError when user is not updated', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
+    const sendEmailUseCase = new SendEmailUseCase()
+    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
+
+    vi.spyOn(sendEmailUseCase, 'execute').mockResolvedValue(ok({} as any))
 
     const uniqueEmail = `johndoe${Date.now()}@gmail.com`
     const uniqueCpf = cpfValidator.generate()
@@ -112,5 +123,46 @@ describe('Forgot Password Use Case', () => {
     }
 
     updatePasswordSpy.mockRestore()
+  })
+
+  it('should invalidate token and return FailedToSendEmailError if email sending fails', async () => {
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const sendEmailUseCase = new SendEmailUseCase()
+    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
+
+    const spySend = vi.spyOn(sendEmailUseCase, 'execute').mockResolvedValue(err(new Error('SMTP failure') as any))
+    const spyUpdate = vi.spyOn(usersRepository, 'updatePassword')
+
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const uniqueCpf = cpfValidator.generate()
+    const password = 'Teste123x!'
+
+    const registerResult = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username: 'johndoe',
+      role: UserRole.DEFAULT,
+    })
+    expect(isOk(registerResult)).toBe(true)
+    const registeredUser = (registerResult as any).value.user
+
+    const forgotResult = await forgotPasswordUseCase.execute({ email: uniqueEmail })
+
+    expect(isErr(forgotResult)).toBe(true)
+    if (isErr(forgotResult)) {
+      expect(forgotResult.error).toBeInstanceOf(FailedToSendEmailError)
+    }
+
+    // Verify token was invalidated/deleted
+    expect(spyUpdate).toHaveBeenCalledWith(registeredUser.publicId, {
+      token: null,
+      tokenExpiresAt: null,
+    })
+
+    spySend.mockRestore()
+    spyUpdate.mockRestore()
   })
 })

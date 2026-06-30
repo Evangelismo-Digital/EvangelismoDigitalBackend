@@ -29,3 +29,8 @@ export const INVALID_TOKEN_ERROR: IErrorDetail = {
   code: 'INVALID_TOKEN',
   message: 'Token inválido ou expirado!',
 }
+
+export const FAILED_TO_SEND_EMAIL_ERROR: IErrorDetail = {
+  code: 'FAILED_TO_SEND_EMAIL',
+  message: 'Não foi possível enviar o e-mail. Por favor, tente novamente.',
+}
