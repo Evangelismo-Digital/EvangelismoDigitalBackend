@@ -7,7 +7,7 @@ import { IRawChurchRoutingProvider } from 'core/contracts/use-cases/providers/ra
 import { ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
 import { RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
-import { Result, ok, err } from 'core/shared/result'
+import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
@@ -49,7 +49,7 @@ export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingPr
 
     for (const destination of params.destinations) {
       const fetchResult = await this.fetchDistance(params.origin, destination, params.profile, params.signal)
-      if (!fetchResult.success) {
+      if (isErr(fetchResult)) {
         return fetchResult
       }
       results.push(fetchResult.value)

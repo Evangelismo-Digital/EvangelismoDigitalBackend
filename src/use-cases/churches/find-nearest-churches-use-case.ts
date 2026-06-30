@@ -31,17 +31,7 @@ export class FindNearestChurchesUseCase {
     optionsOverride: ResilientCacheOptions<AppError>,
     defaultProfile: RoutingProfile = RoutingProfile.PEDESTRIAN,
   ) {
-    this.cacheManager = new ResilientCache<AppError>(redis, {
-      prefix: optionsOverride.prefix,
-      defaultTtlSeconds: optionsOverride.defaultTtlSeconds,
-      negativeTtlSeconds: optionsOverride.negativeTtlSeconds,
-      maxPendingFetches: optionsOverride.maxPendingFetches,
-      fetchTimeoutMs: optionsOverride.fetchTimeoutMs,
-      ttlJitterPercentage: optionsOverride.ttlJitterPercentage,
-      serializeError: optionsOverride.serializeError,
-      deserializeError: optionsOverride.deserializeError,
-      isRetryable: optionsOverride.isRetryable,
-    })
+    this.cacheManager = new ResilientCache<AppError>(redis, optionsOverride)
     this.defaultProfile = defaultProfile
   }
 

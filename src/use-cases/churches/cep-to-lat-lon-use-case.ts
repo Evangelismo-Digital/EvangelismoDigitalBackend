@@ -39,17 +39,7 @@ export class CepToLatLonUseCase {
   ) {
     this.redis = redis
     this.cacheSuccessResults = cacheSuccessResults
-    this.cacheManager = new ResilientCache<AppError>(redis, {
-      prefix: optionsOverride.prefix,
-      defaultTtlSeconds: optionsOverride.defaultTtlSeconds,
-      negativeTtlSeconds: optionsOverride.negativeTtlSeconds,
-      maxPendingFetches: optionsOverride.maxPendingFetches,
-      fetchTimeoutMs: optionsOverride.fetchTimeoutMs,
-      ttlJitterPercentage: optionsOverride.ttlJitterPercentage,
-      serializeError: optionsOverride.serializeError,
-      deserializeError: optionsOverride.deserializeError,
-      isRetryable: optionsOverride.isRetryable,
-    })
+    this.cacheManager = new ResilientCache<AppError>(redis, optionsOverride)
   }
 
   async execute({ cep }: CepToLatLonRequest): Promise<Result<CepToLatLonResponse, AppError>> {

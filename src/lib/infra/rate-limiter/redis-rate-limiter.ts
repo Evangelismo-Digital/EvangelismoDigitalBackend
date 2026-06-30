@@ -1,6 +1,5 @@
 import Redis from 'ioredis'
 import { RateLimiterRedis } from 'rate-limiter-flexible' // Lib utilizada para implementar o rate-limiter com Redis
-import { NoRateLimiterSetError } from '../../errors/infra/rate-limiter/noRateLimiterSetError'
 import { logger } from '@lib/logger'
 import { REDIS_KEYS } from 'core/constants/redis/redis-keys'
 
@@ -124,11 +123,7 @@ export class RedisRateLimiter {
    * ❗ Provider PRECISA existir em providerConfigs.
    */
   private getLimiter(provider: EnumProviderConfig): RateLimiterRedis {
-    const config = this.providerConfigs[provider]
-
-    if (!config) {
-      throw new NoRateLimiterSetError(provider)
-    }
+    const config = this.providerConfigs[provider] || { points: 10, windowSeconds: 1 }
 
     const existingLimiter = this.limiters.get(provider)
     if (existingLimiter) {

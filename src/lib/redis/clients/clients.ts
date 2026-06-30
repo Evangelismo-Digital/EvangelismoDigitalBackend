@@ -39,7 +39,9 @@ export async function closeAllRedisConnections() {
     (connection): connection is NonNullable<typeof connection> => connection !== null,
   )
 
-  await Promise.all(targets.map((connection) => connection.quit()))
+  await Promise.allSettled(
+    targets.map((connection) => (connection.status !== 'end' ? connection.quit() : Promise.resolve())),
+  )
 
   redisCacheInstance = null
   redisRateLimitInstance = null
