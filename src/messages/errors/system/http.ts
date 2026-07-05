@@ -15,16 +15,6 @@ export const RESOURCE_NOT_FOUND_ERROR: IErrorDetail = {
   message: 'Recurso não encontrado!',
 }
 
-export const FORBIDDEN_ERROR: IErrorDetail = {
-  code: 'FORBIDDEN',
-  message: 'Acesso negado!',
-}
-
-export const UNAUTHORIZED_ERROR: IErrorDetail = {
-  code: 'UNAUTHORIZED',
-  message: 'Não autorizado!',
-}
-
 export const PASSWORD_CHANGE_REQUIRED_ERROR: IErrorDetail = {
   code: 'PASSWORD_CHANGE_REQUIRED',
   message: 'É necessário alterar a senha antes de acessar o sistema!',

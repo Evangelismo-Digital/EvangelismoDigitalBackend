@@ -4,7 +4,7 @@ import { UserPresenter } from '@http/presenters/user-presenter'
 import { makeUpdateUserUseCase } from '@use-cases/factories/make-update-user-use-case'
 import { updateSchema } from '@http/schemas/users/update-schema'
 import { publicIdSchema } from '@http/schemas/utils/public-id-schema'
-import { UNAUTHORIZED_ERROR } from 'messages/constants/errors/http'
+import { UNAUTHORIZED_ERROR } from 'messages/errors/use-cases/users/users-error-messages'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 

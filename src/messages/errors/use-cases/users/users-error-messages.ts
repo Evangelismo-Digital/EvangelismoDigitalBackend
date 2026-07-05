@@ -34,3 +34,13 @@ export const FAILED_TO_SEND_EMAIL_ERROR: IErrorDetail = {
   code: 'FAILED_TO_SEND_EMAIL',
   message: 'Não foi possível enviar o e-mail. Por favor, tente novamente.',
 }
+
+export const FORBIDDEN_ERROR: IErrorDetail = {
+  code: 'FORBIDDEN',
+  message: 'Acesso negado!',
+}
+
+export const UNAUTHORIZED_ERROR: IErrorDetail = {
+  code: 'UNAUTHORIZED',
+  message: 'Não autorizado!',
+}

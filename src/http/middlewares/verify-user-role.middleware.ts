@@ -1,6 +1,6 @@
 import { type FastifyReply, type FastifyRequest } from 'fastify'
 import { UserRole } from '@prisma/client'
-import { UNAUTHORIZED_ERROR, FORBIDDEN_ERROR } from 'messages/constants/errors/http'
+import { UNAUTHORIZED_ERROR, FORBIDDEN_ERROR } from 'messages/errors/use-cases/users/users-error-messages'
 
 export function verifyUserRole(allowedRoles: UserRole[]) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
