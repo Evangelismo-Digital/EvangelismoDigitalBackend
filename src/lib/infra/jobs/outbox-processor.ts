@@ -1,5 +1,5 @@
-import { LOCK_KEYS, LOCK_TTL_MS } from 'core/constants/outbox/locks'
-import { JOB_NAMES } from 'core/constants/queue/queue'
+import { LOCK_KEYS, LOCK_TTL_MS } from 'messages/constants/outbox/locks'
+import { JOB_NAMES } from 'messages/constants/queue/queue'
 import { logger } from '@lib/logger'
 import { getMailQueue } from '@lib/queue/mail-queue'
 import { DistributedLock, LockToken } from '@lib/infra/distributed-lock/distributed-lock'
@@ -12,7 +12,7 @@ import {
   IOutboxEventType,
 } from 'core/contracts/repository/outbox-repository.interface'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
-import { OUTBOX_THRESHOLDS } from 'core/constants/outbox/outbox-thresholds'
+import { OUTBOX_THRESHOLDS } from 'messages/constants/outbox/outbox-thresholds'
 
 export class OutboxProcessor {
   private readonly LOCK_KEY = LOCK_KEYS.OUTBOX_PROCESSOR

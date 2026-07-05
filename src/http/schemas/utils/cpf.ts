@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { cpf } from 'cpf-cnpj-validator'
-import { messages } from 'core/constants/messages'
+import { messages } from 'messages/constants/messages'
 
 export const cpfSchema = z.preprocess(
   (val) => (typeof val === 'string' ? val.replace(/\D/g, '') : val),

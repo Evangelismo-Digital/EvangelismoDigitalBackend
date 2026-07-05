@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { forgotPasswordSchema } from '@http/schemas/users/forgot-password-schema'
 import { makeForgotPasswordUseCase } from '@use-cases/factories/make-forgot-password-use-case'
-import { messages } from 'core/constants/messages'
+import { messages } from 'messages/constants/messages'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 

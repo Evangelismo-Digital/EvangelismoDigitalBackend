@@ -1,7 +1,7 @@
 import Redis from 'ioredis'
 import { RateLimiterRedis } from 'rate-limiter-flexible' // Lib utilizada para implementar o rate-limiter com Redis
 import { logger } from '@lib/logger'
-import { REDIS_KEYS } from 'core/constants/redis/redis-keys'
+import { REDIS_KEYS } from 'messages/constants/redis/redis-keys'
 
 const RATE_LIMITER_OUTAGE_WARN_INTERVAL_MS = Number(process.env.REDIS_LOG_OUTAGE_INTERVAL_MS ?? 30000)
 

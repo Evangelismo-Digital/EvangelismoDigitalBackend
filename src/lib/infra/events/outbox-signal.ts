@@ -1,4 +1,4 @@
-import { REDIS_CHANNELS } from 'core/constants/redis/redis-channells'
+import { REDIS_CHANNELS } from 'messages/constants/redis/redis-channells'
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'

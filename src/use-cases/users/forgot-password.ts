@@ -7,7 +7,7 @@ import { UsersRepository } from 'core/contracts/repository/users-repository.inte
 import { SendEmailUseCase } from '../email/send-email'
 import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { messages } from 'core/constants/messages'
+import { messages } from 'messages/constants/messages'
 import { forgotPasswordTextTemplate } from '@templates/forgot-password/forgot-password-text'
 import { forgotPasswordHtmlTemplate } from '@templates/forgot-password/forgot-password-html'
 

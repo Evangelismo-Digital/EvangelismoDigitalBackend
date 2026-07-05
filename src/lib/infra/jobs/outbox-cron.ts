@@ -8,7 +8,7 @@ import {
   outboxInfraPrismaErrorMapping,
 } from '@repositories/prisma/errors/outbox-error-mapping'
 import { DatabaseContext } from '@lib/prisma/helpers/database-context'
-import { CRON_SCHEDULES } from 'core/constants/cron/cron'
+import { CRON_SCHEDULES } from 'messages/constants/cron/cron'
 
 export function startOutboxCron(existingProcessor?: OutboxProcessor) {
   /**

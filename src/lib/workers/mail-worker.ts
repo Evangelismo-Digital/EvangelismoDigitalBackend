@@ -9,9 +9,9 @@ import { JobAlreadyProcessingError } from '@lib/errors/queue/job-already-process
 import { SmtpDispatchError } from '@lib/errors/queue/smtp-dispatch-error'
 import { InfrastructureError } from 'errors/infrastructure-error'
 import { IOutboxDispatchData } from 'core/contracts/lib/infra/outbox-dispatch-data.interface'
-import { QUEUE_NAMES } from 'core/constants/queue/queue'
-import { REDIS_KEYS } from 'core/constants/redis/redis-keys'
-import { IDEMPOTENCY_TTL, MAIL_WORKER_CONFIG } from 'core/constants/workers/workers'
+import { QUEUE_NAMES } from 'messages/constants/queue/queue'
+import { REDIS_KEYS } from 'messages/constants/redis/redis-keys'
+import { IDEMPOTENCY_TTL, MAIL_WORKER_CONFIG } from 'messages/constants/workers/workers'
 
 export async function startMailWorker(outboxRepository: IOutboxRepository) {
   const workerConnection = createWorkerConnection()

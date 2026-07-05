@@ -1,4 +1,4 @@
-import { messages } from 'core/constants/messages'
+import { messages } from 'messages/constants/messages'
 
 export class OperationAbortedError extends Error {
   public readonly originalReason?: unknown
