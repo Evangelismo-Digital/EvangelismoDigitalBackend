@@ -1,10 +1,10 @@
-import { messages } from 'messages/constants/messages'
+import { OPERATION_ABORTED_ERROR } from 'messages/constants/errors/cache'
 
 export class OperationAbortedError extends Error {
   public readonly originalReason?: unknown
 
   constructor(reason?: unknown) {
-    super(messages.errors.operationAbortedError)
+    super(OPERATION_ABORTED_ERROR.message)
     this.name = 'OperationAbortedError'
     this.originalReason = reason
   }

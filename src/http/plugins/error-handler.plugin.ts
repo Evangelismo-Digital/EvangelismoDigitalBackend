@@ -5,7 +5,7 @@ import * as Sentry from '@sentry/node'
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
 import { logError } from '@lib/logger/helpers'
-import { messages } from 'messages/constants/messages'
+import { INVALID_JSON_ERROR, INTERNAL_SERVER_ERROR } from 'messages/constants/errors/http'
 import { AppError } from 'errors/app-error'
 import { toHttpStatus } from 'errors/http-errors/http-error-status.mapper'
 import { ZodValidationError } from 'errors/http-errors/zod-validation-error'
@@ -29,7 +29,7 @@ const errorHandlerPlugin: FastifyPluginAsync = async (app) => {
     // 2. JSON parse errors
     if (error instanceof SyntaxError) {
       logger.error(error, 'JSON inválido recebido')
-      return reply.status(400).send({ message: messages.validation.invalidJson })
+      return reply.status(400).send({ message: INVALID_JSON_ERROR.message })
     }
 
     // 3. AppError instances → HttpErrorMapper pipeline
@@ -57,7 +57,7 @@ const errorHandlerPlugin: FastifyPluginAsync = async (app) => {
       logger.error(error, 'Unhandled error occurred')
     }
 
-    reply.status(500).send({ message: messages.errors.internalServer, error: error.message })
+    reply.status(500).send({ message: INTERNAL_SERVER_ERROR.message, error: error.message })
   })
 }
 

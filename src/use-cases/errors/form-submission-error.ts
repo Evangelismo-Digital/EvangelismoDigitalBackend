@@ -1,15 +1,9 @@
 import { ErrorType } from 'core/types/error-type/error-type'
 import { DomainError } from 'errors/domain-error'
-import { IErrorDetail } from 'core/contracts/errors/error-detail.interface'
-import { messages } from 'messages/constants/messages'
-
-const FORM_SUBMISSION_FAILED_ERROR: IErrorDetail = {
-  code: 'FORM_SUBMISSION_FAILED',
-  message: messages.errors.formSubmissionFailed,
-}
+import { FORM_SUBMISSION_ERROR } from 'messages/errors/use-cases/forms/forms-error-messages'
 
 export class FormSubmissionError extends DomainError {
   constructor() {
-    super(FORM_SUBMISSION_FAILED_ERROR, ErrorType.BAD_REQUEST)
+    super(FORM_SUBMISSION_ERROR, ErrorType.BAD_REQUEST)
   }
 }

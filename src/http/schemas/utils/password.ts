@@ -1,15 +1,23 @@
 import { z } from 'zod'
-import { messages } from 'messages/constants/messages'
+import {
+  PASSWORD_TOO_SHORT_MESSAGE,
+  PASSWORD_TOO_LONG_MESSAGE,
+  PASSWORD_UPPERCASE_MESSAGE,
+  PASSWORD_LOWERCASE_MESSAGE,
+  PASSWORD_DIGIT_MESSAGE,
+  PASSWORD_SPECIAL_MESSAGE,
+  PASSWORD_NO_SPACES_MESSAGE,
+} from 'messages/constants/validation/password'
 
 export const passwordSchema = z
   .string()
   .trim()
-  .min(8, { message: messages.validation.passwordTooShort })
-  .max(64, { message: messages.validation.passwordTooLong })
-  .regex(/[A-Z]/, { message: messages.validation.passwordUppercase })
-  .regex(/[a-z]/, { message: messages.validation.passwordLowercase })
-  .regex(/[0-9]/, { message: messages.validation.passwordDigit })
-  .regex(/[\W_]/, { message: messages.validation.passwordSpecial })
-  .refine((val) => !val.includes(' '), { message: messages.validation.passwordNoSpaces })
+  .min(8, { message: PASSWORD_TOO_SHORT_MESSAGE })
+  .max(64, { message: PASSWORD_TOO_LONG_MESSAGE })
+  .regex(/[A-Z]/, { message: PASSWORD_UPPERCASE_MESSAGE })
+  .regex(/[a-z]/, { message: PASSWORD_LOWERCASE_MESSAGE })
+  .regex(/[0-9]/, { message: PASSWORD_DIGIT_MESSAGE })
+  .regex(/[\W_]/, { message: PASSWORD_SPECIAL_MESSAGE })
+  .refine((val) => !val.includes(' '), { message: PASSWORD_NO_SPACES_MESSAGE })
 
 export type PasswordSchemaType = z.infer<typeof passwordSchema>

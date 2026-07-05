@@ -4,7 +4,7 @@ import { UserPresenter } from '@http/presenters/user-presenter'
 import { makeUpdateUserUseCase } from '@use-cases/factories/make-update-user-use-case'
 import { updateSchema } from '@http/schemas/users/update-schema'
 import { publicIdSchema } from '@http/schemas/utils/public-id-schema'
-import { messages } from 'messages/constants/messages'
+import { UNAUTHORIZED_ERROR } from 'messages/constants/errors/http'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 
@@ -16,7 +16,7 @@ export async function updateUser(request: FastifyRequest, reply: FastifyReply) {
   const publicId = authUser?.publicId ?? authUser?.sub
 
   if (!publicId) {
-    return reply.status(401).send({ message: messages.errors.unauthorized ?? 'Unauthorized' })
+    return reply.status(401).send({ message: UNAUTHORIZED_ERROR.message })
   }
 
   const { publicId: validatedPublicId } = publicIdSchema.parse({ publicId })
