@@ -7,7 +7,7 @@ import { UsersRepository } from 'core/contracts/repository/users-repository.inte
 import { SendEmailUseCase } from '../email/send-email'
 import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { PASSWORD_RECOVERY_SUBJECT } from 'messages/constants/email/password-recovery'
+import { EMAIL_CONSTANTS } from 'messages/constants/email/email'
 import { forgotPasswordTextTemplate } from '@templates/forgot-password/forgot-password-text'
 import { forgotPasswordHtmlTemplate } from '@templates/forgot-password/forgot-password-html'
 
@@ -67,7 +67,7 @@ export class ForgotPasswordUseCase {
     // Attempt to send email
     const emailResult = await this.sendEmailUseCase.execute({
       to: user.email,
-      subject: PASSWORD_RECOVERY_SUBJECT,
+      subject: EMAIL_CONSTANTS.PASSWORD_RECOVERY_SUBJECT,
       message: forgotPasswordTextTemplate(user.name, passwordToken),
       html: forgotPasswordHtmlTemplate(user.name, passwordToken),
     })

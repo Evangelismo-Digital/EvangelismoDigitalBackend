@@ -1,9 +1,9 @@
 import { ErrorType } from 'core/types/error-type/error-type'
 import { DomainError } from 'errors/domain-error'
-import { NO_NEARBY_CHURCHES_FOUND_ERROR } from 'messages/errors/use-cases/churches/churches-error-messages'
+import { CHURCH_ERRORS } from 'messages/errors/churches'
 
 export class NoNearbyChurchesFoundError extends DomainError {
   constructor() {
-    super(NO_NEARBY_CHURCHES_FOUND_ERROR, ErrorType.NOT_FOUND)
+    super(CHURCH_ERRORS.NO_NEARBY_FOUND, ErrorType.NOT_FOUND)
   }
 }

@@ -1,9 +1,9 @@
 import { ErrorType } from 'core/types/error-type/error-type'
 import { DomainError } from 'errors/domain-error'
-import { LATITUDE_OUT_OF_RANGE_ERROR } from 'messages/errors/use-cases/churches/churches-error-messages'
+import { CHURCH_ERRORS } from 'messages/errors/churches'
 
 export class LatitudeRangeError extends DomainError {
   constructor() {
-    super(LATITUDE_OUT_OF_RANGE_ERROR, ErrorType.BAD_REQUEST)
+    super(CHURCH_ERRORS.LATITUDE_OUT_OF_RANGE, ErrorType.BAD_REQUEST)
   }
 }

@@ -1,7 +1,8 @@
-export const QUEUE_NAMES = {
-  MAIL: 'mail-queue',
-} as const
-
-export const JOB_NAMES = {
-  OUTBOX_DISPATCH: 'outbox-dispatch',
+export const QUEUE = {
+  NAMES: {
+    MAIL: 'mail-queue',
+  },
+  JOBS: {
+    OUTBOX_DISPATCH: 'outbox-dispatch',
+  },
 } as const

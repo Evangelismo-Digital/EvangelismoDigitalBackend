@@ -1,10 +1,10 @@
-import { TIMEOUT_EXCEEDED_ERROR } from 'messages/errors/providers/providers-error-messages'
+import { GEO_ERRORS } from 'messages/errors/geolocation'
 
 export class TimeoutExceededOnFetchError extends Error {
   public readonly originalReason?: unknown
 
   constructor(reason?: unknown) {
-    super(TIMEOUT_EXCEEDED_ERROR.message)
+    super(GEO_ERRORS.TIMEOUT_EXCEEDED.message)
 
     this.name = 'TimeoutExceededOnFetchError'
     this.originalReason = reason

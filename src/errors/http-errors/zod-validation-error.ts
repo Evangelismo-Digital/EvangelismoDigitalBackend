@@ -1,14 +1,14 @@
+import { VALIDATION_ERRORS } from 'messages/errors/validation'
+import { AppError } from '../app-error'
 import { ErrorType } from 'core/types/error-type/error-type'
-import { DomainError } from 'errors/domain-error'
-import { ZOD_VALIDATION_ERROR } from 'messages/errors/system/validation'
 
-export class ZodValidationError extends DomainError {
-  constructor(zodIssues: Record<string, unknown>) {
+export class ZodValidationError extends AppError {
+  constructor(issues: Record<string, unknown>) {
     super(
       {
-        code: ZOD_VALIDATION_ERROR.code,
-        message: ZOD_VALIDATION_ERROR.message,
-        issues: zodIssues,
+        code: VALIDATION_ERRORS.ZOD_VALIDATION.code,
+        message: VALIDATION_ERRORS.ZOD_VALIDATION.message,
+        issues,
       },
       ErrorType.BAD_REQUEST,
     )

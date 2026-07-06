@@ -1,7 +1,8 @@
 import Redis from 'ioredis'
 import { RateLimiterRedis } from 'rate-limiter-flexible' // Lib utilizada para implementar o rate-limiter com Redis
 import { logger } from '@lib/logger'
-import { REDIS_KEYS } from 'messages/constants/redis/redis-keys'
+import { REDIS_CONSTANTS } from 'messages/constants/redis/redis'
+import { RATE_LIMITER_LOGS } from 'messages/constants/logs/rate-limiter'
 
 const RATE_LIMITER_OUTAGE_WARN_INTERVAL_MS = Number(process.env.REDIS_LOG_OUTAGE_INTERVAL_MS ?? 30000)
 
@@ -132,7 +133,7 @@ export class RedisRateLimiter {
 
     const limiter = new RateLimiterRedis({
       storeClient: this.redis,
-      keyPrefix: `${REDIS_KEYS.RATE_LIMIT_PREFIX}${provider}`,
+      keyPrefix: `${REDIS_CONSTANTS.KEYS.RATE_LIMIT_PREFIX}${provider}`,
       points: config.points,
       duration: config.windowSeconds,
       execEvenly: false,
@@ -204,7 +205,7 @@ export class RedisRateLimiter {
           code: typeof obj.code === 'string' ? obj.code : undefined,
           name: typeof obj.name === 'string' ? obj.name : undefined,
         },
-        'RedisRateLimiter com erro: Redis não disponível, permitindo requisições (fail-open).',
+        RATE_LIMITER_LOGS.INFRA_DEGRADED,
       )
 
       return
@@ -222,7 +223,7 @@ export class RedisRateLimiter {
           code: typeof obj.code === 'string' ? obj.code : undefined,
           name: typeof obj.name === 'string' ? obj.name : undefined,
         },
-        'RedisRateLimiter still degraded: Redis não disponível, permitindo requisições (fail-open).',
+        RATE_LIMITER_LOGS.INFRA_STILL_DEGRADED,
       )
 
       this.infraLastWarnAt = now
@@ -246,7 +247,7 @@ export class RedisRateLimiter {
         outageDurationMs: now - this.infraOutageStartedAt,
         suppressedLogs: this.infraSuppressedLogs,
       },
-      'RedisRateLimiter recovered: Redis available again.',
+      RATE_LIMITER_LOGS.INFRA_RECOVERED,
     )
 
     this.infraOutageStartedAt = null
@@ -256,7 +257,7 @@ export class RedisRateLimiter {
 
   static async destroyInstance() {
     if (!this.instance) {
-      logger.debug('Nenhuma instância de RedisRateLimiter para destruir.')
+      logger.debug(RATE_LIMITER_LOGS.NO_INSTANCE_TO_DESTROY)
       return
     }
 

@@ -1,13 +1,13 @@
 import { ErrorType } from 'core/types/error-type/error-type'
 import { DomainError } from 'errors/domain-error'
-import { CEP_TO_LAT_LON_ERROR } from 'messages/errors/use-cases/churches/churches-error-messages'
+import { CHURCH_ERRORS } from 'messages/errors/churches'
 
 export class CepToLatLonError extends DomainError {
   constructor(cep: string) {
     super(
       {
-        code: CEP_TO_LAT_LON_ERROR.code,
-        message: `${CEP_TO_LAT_LON_ERROR.message} ${cep}.`,
+        code: CHURCH_ERRORS.CEP_TO_LAT_LON_FAILED.code,
+        message: `${CHURCH_ERRORS.CEP_TO_LAT_LON_FAILED.message} ${cep}.`,
       },
       ErrorType.INTERNAL_SERVER_ERROR,
     )

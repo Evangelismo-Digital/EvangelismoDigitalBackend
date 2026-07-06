@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import ms from 'ms'
+import { ENV_CONSTANTS } from 'messages/constants/env/env'
 
 process.loadEnvFile?.('.env')
 
@@ -70,7 +71,7 @@ const _env = envSchema.safeParse(process.env)
 if (!_env.success) {
   console.error('Invalid environment variables:', z.treeifyError(_env.error))
 
-  throw new Error('Invalid environment variables. Please check your .env file or environment configuration.')
+  throw new Error(ENV_CONSTANTS.INVALID_VARIABLES)
 }
 
 export const env = _env.data

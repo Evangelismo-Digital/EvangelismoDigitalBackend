@@ -2,6 +2,7 @@ import { env } from '@env/index'
 import { logger } from '@lib/logger'
 import Redis from 'ioredis'
 import { isRedisConnectivityError, RedisOutageLogger } from './redis-outage-logger'
+import { REDIS_LOGS } from 'messages/constants/logs/redis'
 
 export function createRedisCacheConnection() {
   const redis = new Redis({
@@ -47,7 +48,7 @@ export function createRedisCacheConnection() {
         stack: error?.stack,
         name: error?.name,
       },
-      'Unexpected Redis cache connection error',
+      REDIS_LOGS.CACHE_UNEXPECTED_ERROR,
     )
   })
 

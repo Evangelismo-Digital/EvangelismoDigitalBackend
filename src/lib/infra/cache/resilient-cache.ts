@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import { Redis } from 'ioredis'
 import { logger } from '@lib/logger'
+import { CACHE_LOGS } from 'messages/constants/logs/cache'
 import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
@@ -84,7 +85,7 @@ export class ResilientCache<E = unknown> {
         // If success, return the value
         if (envelope.s) {
           if (!('v' in envelope)) {
-            logger.error({ key, envelope }, 'Cache corrompida detectada: CacheEnvelope de sucesso sem valor')
+            logger.error({ key, envelope }, CACHE_LOGS.CORRUPTED_ENVELOPE)
             return err(
               new ProviderFailureError('Cache', ProviderLayer.Address, new Error('Corrupted Cache: Missing value')),
             )
@@ -114,7 +115,7 @@ export class ResilientCache<E = unknown> {
       }
     } catch (err) {
       // Swallow Redis connection/parsing errors and proceed to fetch
-      logger.warn({ err, key }, 'Erro de leitura ou falha do Redis. Continuando sem cache.')
+      logger.warn({ err, key }, CACHE_LOGS.READ_ERROR)
     }
 
     // 4. Double-check pattern: Check again after async Redis call
@@ -224,7 +225,7 @@ export class ResilientCache<E = unknown> {
     const baseTtl = !envelope.s ? this.options.negativeTtlSeconds : this.options.defaultTtlSeconds
 
     if (baseTtl <= 0) {
-      logger.debug({ key }, 'TTL <= 0, pulando escrita no cache')
+      logger.debug({ key }, CACHE_LOGS.TTL_SKIP)
       return
     }
 
@@ -235,7 +236,7 @@ export class ResilientCache<E = unknown> {
 
       await this.redis.set(key, JSON.stringify(envelope), 'EX', finalTtl)
     } catch (err) {
-      logger.warn({ err, key }, 'Falha ao escrever no Redis (não fatal, continuando)')
+      logger.warn({ err, key }, CACHE_LOGS.WRITE_ERROR)
     }
   }
 }

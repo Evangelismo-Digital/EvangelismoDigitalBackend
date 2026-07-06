@@ -9,28 +9,29 @@ import { JobAlreadyProcessingError } from '@lib/errors/queue/job-already-process
 import { SmtpDispatchError } from '@lib/errors/queue/smtp-dispatch-error'
 import { InfrastructureError } from 'errors/infrastructure-error'
 import { IOutboxDispatchData } from 'core/contracts/lib/infra/outbox-dispatch-data.interface'
-import { QUEUE_NAMES } from 'messages/constants/queue/queue'
-import { REDIS_KEYS } from 'messages/constants/redis/redis-keys'
-import { IDEMPOTENCY_TTL, MAIL_WORKER_CONFIG } from 'messages/constants/workers/workers'
+import { QUEUE } from 'messages/constants/queue/queue'
+import { REDIS_CONSTANTS } from 'messages/constants/redis/redis'
+import { WORKER_CONSTANTS } from 'messages/constants/workers/workers'
+import { WORKER_LOGS } from 'messages/constants/logs/worker'
 
 export async function startMailWorker(outboxRepository: IOutboxRepository) {
   const workerConnection = createWorkerConnection()
   attachRedisLogger(workerConnection, 'MailWorker')
 
   const worker = new Worker<IOutboxDispatchData>(
-    QUEUE_NAMES.MAIL,
+    QUEUE.NAMES.MAIL,
     async (job) => {
       const { publicId, emails } = job.data
       const childLogger = logger.child({ jobId: job.id, publicId })
       const redisCache = getRedisCache()
 
-      const idempotencyKey = `${REDIS_KEYS.IDEMPOTENCY_EMAIL_PREFIX}${publicId}`
+      const idempotencyKey = `${REDIS_CONSTANTS.KEYS.IDEMPOTENCY_EMAIL_PREFIX}${publicId}`
 
       const acquired = await redisCache.set(
         idempotencyKey,
         'processing',
         'EX',
-        IDEMPOTENCY_TTL.PROCESSING_SECONDS,
+        WORKER_CONSTANTS.IDEMPOTENCY_TTL.PROCESSING_SECONDS,
         'NX',
       )
 
@@ -38,7 +39,7 @@ export async function startMailWorker(outboxRepository: IOutboxRepository) {
         const status = await redisCache.get(idempotencyKey)
 
         if (status === 'completed') {
-          childLogger.warn('⚠️ Lote já enviado anteriormente. Limpando DB e abortando duplicata.')
+          childLogger.warn(WORKER_LOGS.BATCH_ALREADY_SENT)
 
           const deleteResult = await outboxRepository.delete(publicId)
           if (isErr(deleteResult)) {
@@ -64,7 +65,7 @@ export async function startMailWorker(outboxRepository: IOutboxRepository) {
 
         childLogger.info('✅ Lote de e-mails processado com sucesso.')
 
-        await redisCache.set(idempotencyKey, 'completed', 'EX', IDEMPOTENCY_TTL.COMPLETED_SECONDS)
+        await redisCache.set(idempotencyKey, 'completed', 'EX', WORKER_CONSTANTS.IDEMPOTENCY_TTL.COMPLETED_SECONDS)
 
         const deleteResult = await outboxRepository.delete(publicId)
 
@@ -88,15 +89,15 @@ export async function startMailWorker(outboxRepository: IOutboxRepository) {
     },
     {
       connection: workerConnection,
-      concurrency: MAIL_WORKER_CONFIG.CONCURRENCY_LIMIT,
-      lockDuration: MAIL_WORKER_CONFIG.LOCK_DURATION_MS,
-      stalledInterval: MAIL_WORKER_CONFIG.STALLED_INTERVAL_MS,
+      concurrency: WORKER_CONSTANTS.MAIL.CONCURRENCY_LIMIT,
+      lockDuration: WORKER_CONSTANTS.MAIL.LOCK_DURATION_MS,
+      stalledInterval: WORKER_CONSTANTS.MAIL.STALLED_INTERVAL_MS,
     },
   )
 
   worker.on('failed', (job, err) => {
     if (err.message.includes('Missing lock') || err.message.includes('job stalled')) {
-      logger.warn({ jobId: job?.id }, '⚠️ Falha de rede interna do BullMQ após processamento. Ignorando.')
+      logger.warn({ jobId: job?.id }, WORKER_LOGS.BULLMQ_NETWORK_GLITCH)
       return
     }
 
@@ -115,7 +116,7 @@ export async function startMailWorker(outboxRepository: IOutboxRepository) {
       return
     }
 
-    logger.error({ jobId: job?.id, err: err.message }, '❌ Falha genérica não mapeada no worker')
+    logger.error({ jobId: job?.id, err: err.message }, WORKER_LOGS.GENERIC_WORKER_FAILURE)
   })
 
   return worker

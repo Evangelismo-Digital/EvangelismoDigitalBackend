@@ -1,9 +1,9 @@
 import { ErrorType } from 'core/types/error-type/error-type'
 import { DomainError } from 'errors/domain-error'
-import { FORM_SUBMISSION_ERROR } from 'messages/errors/use-cases/forms/forms-error-messages'
+import { FORM_ERRORS } from 'messages/errors/forms'
 
 export class FormSubmissionError extends DomainError {
   constructor() {
-    super(FORM_SUBMISSION_ERROR, ErrorType.BAD_REQUEST)
+    super(FORM_ERRORS.SUBMISSION, ErrorType.INTERNAL_SERVER_ERROR)
   }
 }

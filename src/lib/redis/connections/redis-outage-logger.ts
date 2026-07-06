@@ -1,5 +1,6 @@
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
+import { REDIS_LOGS } from 'messages/constants/logs/redis'
 
 type ErrorLike = {
   message?: string
@@ -70,7 +71,7 @@ export class RedisOutageLogger {
           errorName: err.name,
           errorMessage: err.message,
         },
-        'Redis connection degraded',
+        REDIS_LOGS.CONNECTION_DEGRADED,
       )
 
       return
@@ -89,7 +90,7 @@ export class RedisOutageLogger {
           outageDurationMs: now - this.outageStartedAt,
           suppressedEvents: this.suppressedEvents,
         },
-        'Redis connection still degraded',
+        REDIS_LOGS.CONNECTION_STILL_DEGRADED,
       )
 
       this.lastWarnAt = now
@@ -115,7 +116,7 @@ export class RedisOutageLogger {
         outageDurationMs: now - this.outageStartedAt,
         suppressedEvents: this.suppressedEvents,
       },
-      'Redis connection recovered',
+      REDIS_LOGS.CONNECTION_RECOVERED,
     )
 
     this.outageStartedAt = null

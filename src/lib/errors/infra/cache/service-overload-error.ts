@@ -1,7 +1,7 @@
-import { SERVICE_OVERLOAD_ERROR } from 'messages/errors/providers/providers-error-messages'
+import { INFRA_ERRORS } from 'messages/errors/infrastructure'
 
 export class ServiceOverloadError extends Error {
   constructor() {
-    super(SERVICE_OVERLOAD_ERROR.message)
+    super(INFRA_ERRORS.SERVICE_OVERLOAD.message)
   }
 }

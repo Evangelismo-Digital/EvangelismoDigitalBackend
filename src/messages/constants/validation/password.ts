@@ -1,7 +1,0 @@
-export const PASSWORD_TOO_SHORT_MESSAGE = 'A senha deve ter pelo menos 8 caracteres.'
-export const PASSWORD_TOO_LONG_MESSAGE = 'A senha deve ter no máximo 64 caracteres.'
-export const PASSWORD_UPPERCASE_MESSAGE = 'A senha deve conter pelo menos uma letra maiúscula.'
-export const PASSWORD_LOWERCASE_MESSAGE = 'A senha deve conter pelo menos uma letra minúscula.'
-export const PASSWORD_DIGIT_MESSAGE = 'A senha deve conter pelo menos um número.'
-export const PASSWORD_SPECIAL_MESSAGE = 'A senha deve conter pelo menos um caractere especial.'
-export const PASSWORD_NO_SPACES_MESSAGE = 'A senha não pode conter espaços.'

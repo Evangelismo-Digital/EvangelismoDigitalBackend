@@ -1,8 +1,8 @@
-import { JOB_ALREADY_PROCESSING_ERROR } from 'messages/errors/system/queue'
+import { QUEUE_ERRORS } from 'messages/errors/queue'
 import { InfrastructureError } from '../../../errors/infrastructure-error'
 
 export class JobAlreadyProcessingError extends InfrastructureError {
   constructor() {
-    super(JOB_ALREADY_PROCESSING_ERROR)
+    super(QUEUE_ERRORS.JOB_ALREADY_PROCESSING)
   }
 }

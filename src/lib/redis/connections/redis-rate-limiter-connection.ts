@@ -2,6 +2,7 @@ import { env } from '@env/index'
 import { logger } from '@lib/logger'
 import Redis from 'ioredis'
 import { isRedisConnectivityError, RedisOutageLogger } from './redis-outage-logger'
+import { REDIS_LOGS } from 'messages/constants/logs/redis'
 
 export function createRedisRateLimiterConnection() {
   const redis = new Redis({
@@ -55,7 +56,7 @@ export function createRedisRateLimiterConnection() {
         errorMessage: error?.message,
         stack: error?.stack,
       },
-      'Unexpected Redis Rate Limiter connection error',
+      REDIS_LOGS.RATE_LIMITER_UNEXPECTED_ERROR,
     )
   })
 

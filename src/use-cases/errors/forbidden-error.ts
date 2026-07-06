@@ -1,9 +1,9 @@
 import { ErrorType } from 'core/types/error-type/error-type'
 import { DomainError } from 'errors/domain-error'
-import { FORBIDDEN_ERROR } from 'messages/errors/use-cases/users/users-error-messages'
+import { AUTH_ERRORS } from 'messages/errors/auth'
 
 export class ForbiddenError extends DomainError {
   constructor() {
-    super(FORBIDDEN_ERROR, ErrorType.FORBIDDEN)
+    super(AUTH_ERRORS.FORBIDDEN, ErrorType.FORBIDDEN)
   }
 }

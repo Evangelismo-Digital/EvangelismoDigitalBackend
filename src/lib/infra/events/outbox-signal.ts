@@ -1,4 +1,5 @@
-import { REDIS_CHANNELS } from 'messages/constants/redis/redis-channells'
+import { REDIS_CONSTANTS } from 'messages/constants/redis/redis'
+import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
@@ -22,9 +23,9 @@ function getPublisher() {
       commandTimeout: 2000,
     })
 
-    publisher.on('connect', () => logger.info('✅ Redis publisher conectado ao outbox-signal'))
-    publisher.on('error', (err: unknown) => logger.error({ err }, '❌ Redis publisher error no outbox-signal'))
-    publisher.on('close', () => logger.warn('⚠️ Redis publisher connection fechada para outbox-signal'))
+    publisher.on('connect', () => logger.info(OUTBOX_LOGS.PUBLISHER_CONNECTED))
+    publisher.on('error', (err: unknown) => logger.error({ err }, OUTBOX_LOGS.PUBLISHER_ERROR))
+    publisher.on('close', () => logger.warn(OUTBOX_LOGS.PUBLISHER_CLOSED))
   }
 
   return publisher
@@ -47,9 +48,9 @@ function getSubscriber() {
       },
     })
 
-    subscriber.on('connect', () => logger.info('✅ Redis subscriber conectado para outbox-signal'))
-    subscriber.on('error', (err: unknown) => logger.error({ err }, '❌ Redis subscriber error no outbox-signal'))
-    subscriber.on('close', () => logger.warn('⚠️ Redis subscriber connection fechada para outbox-signal'))
+    subscriber.on('connect', () => logger.info(OUTBOX_LOGS.SUBSCRIBER_CONNECTED))
+    subscriber.on('error', (err: unknown) => logger.error({ err }, OUTBOX_LOGS.SUBSCRIBER_ERROR))
+    subscriber.on('close', () => logger.warn(OUTBOX_LOGS.SUBSCRIBER_CLOSED))
   }
 
   return subscriber
@@ -78,11 +79,11 @@ export const OutboxSignal = {
     try {
       const client = getPublisher()
       await ensureConnected(client, 'OutboxPublisher')
-      await client.publish(REDIS_CHANNELS.OUTBOX_SIGNAL, JSON.stringify({ publicId, event }))
+      await client.publish(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL, JSON.stringify({ publicId, event }))
     } catch (err) {
       logger.warn(
         { err },
-        'Não foi possível publicar sinal de nova outbox. O cron job continuará funcionando como fallback.',
+        OUTBOX_LOGS.SIGNAL_PUBLISH_FAILED,
       )
     }
   },
@@ -107,12 +108,12 @@ export const OutboxSignal = {
 
       if (activeMessageListener !== null) {
         client.off('message', activeMessageListener)
-        logger.info('Listener anterior de OutboxSignal removido com sucesso')
+        logger.info(OUTBOX_LOGS.LISTENER_REMOVED)
       }
 
       activeMessageListener = async (channel: string, message: string) => {
-        if (channel !== REDIS_CHANNELS.OUTBOX_SIGNAL) {
-          logger.warn({ channel }, 'Mensagem recebida em canal inesperado. Ignorando.')
+        if (channel !== REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL) {
+          logger.warn({ channel }, OUTBOX_LOGS.UNEXPECTED_CHANNEL)
           return
         }
 
@@ -120,15 +121,15 @@ export const OutboxSignal = {
           const parsed = JSON.parse(message)
           await onSignal(parsed.publicId, parsed.event)
         } catch (err) {
-          logger.error({ err, publicId: message }, 'Erro ao processar sinal de Outbox')
+          logger.error({ err, publicId: message }, OUTBOX_LOGS.SIGNAL_PROCESSING_ERROR)
         }
       }
 
       client.on('message', activeMessageListener)
 
-      await client.subscribe(REDIS_CHANNELS.OUTBOX_SIGNAL)
+      await client.subscribe(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL)
     } catch (err) {
-      logger.error({ err }, '❌ Erro ao subscrever ao canal de OutboxSignal')
+      logger.error({ err }, OUTBOX_LOGS.SUBSCRIBE_ERROR)
     }
   },
 

@@ -1,4 +1,5 @@
 import { logger } from '@lib/logger'
+import { LOCK_LOGS } from 'messages/constants/logs/distributed-lock'
 import { getRedisCache } from '../../redis/clients/clients'
 import { randomUUID } from 'node:crypto'
 
@@ -65,7 +66,7 @@ export class DistributedLock {
 
       return token
     } catch (error) {
-      logger.error({ error, key }, 'Falha ao tentar adquirir Distributed Lock')
+      logger.error({ error, key }, LOCK_LOGS.ACQUIRE_FAILED)
       return null
     }
   }
@@ -92,12 +93,12 @@ export class DistributedLock {
       const renewed = result === 1
 
       if (!renewed) {
-        logger.warn({ key }, 'Distributed Lock não renovado: expirou ou pertence a outra instância')
+        logger.warn({ key }, LOCK_LOGS.RENEW_EXPIRED)
       }
 
       return renewed
     } catch (error) {
-      logger.error({ error, key }, 'Falha ao tentar renovar Distributed Lock')
+      logger.error({ error, key }, LOCK_LOGS.RENEW_FAILED)
       return false
     }
   }
@@ -121,10 +122,10 @@ export class DistributedLock {
       if (result === 0) {
         // Não é necessariamente um erro: o lock pode ter expirado pelo TTL
         // antes do release manual (processo lento ou crash parcial).
-        logger.warn({ key }, 'Distributed Lock já havia expirado ou pertencia a outra instância no momento do release')
+        logger.warn({ key }, LOCK_LOGS.RELEASE_EXPIRED)
       }
     } catch (error) {
-      logger.warn({ error, key }, 'Falha ao liberar Distributed Lock (ele expirará sozinho pelo TTL)')
+      logger.warn({ error, key }, LOCK_LOGS.RELEASE_FAILED)
     }
   }
 }

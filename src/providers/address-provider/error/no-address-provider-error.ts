@@ -1,8 +1,8 @@
 import { InfrastructureError } from '../../../errors/infrastructure-error'
-import { NO_ADDRESS_PROVIDER_ERROR } from 'messages/errors/providers/providers-error-messages'
+import { GEO_ERRORS } from 'messages/errors/geolocation'
 
 export class NoAddressProviderError extends InfrastructureError {
   constructor() {
-    super(NO_ADDRESS_PROVIDER_ERROR)
+    super(GEO_ERRORS.NO_ADDRESS_PROVIDER)
   }
 }

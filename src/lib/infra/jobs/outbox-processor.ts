@@ -1,5 +1,5 @@
-import { LOCK_KEYS, LOCK_TTL_MS } from 'messages/constants/outbox/locks'
-import { JOB_NAMES } from 'messages/constants/queue/queue'
+import { OUTBOX_CONSTANTS } from 'messages/constants/outbox/outbox'
+import { QUEUE } from 'messages/constants/queue/queue'
 import { logger } from '@lib/logger'
 import { getMailQueue } from '@lib/queue/mail-queue'
 import { DistributedLock, LockToken } from '@lib/infra/distributed-lock/distributed-lock'
@@ -12,11 +12,12 @@ import {
   IOutboxEventType,
 } from 'core/contracts/repository/outbox-repository.interface'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
-import { OUTBOX_THRESHOLDS } from 'messages/constants/outbox/outbox-thresholds'
+import { OUTBOX_CONSTANTS as OUTBOX_CFG } from 'messages/constants/outbox/outbox'
+import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 
 export class OutboxProcessor {
-  private readonly LOCK_KEY = LOCK_KEYS.OUTBOX_PROCESSOR
-  private readonly LOCK_TTL_MS = LOCK_TTL_MS.DEFAULT
+  private readonly LOCK_KEY = OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_PROCESSOR
+  private readonly LOCK_TTL_MS = OUTBOX_CONSTANTS.LOCK_TTL_MS.DEFAULT
 
   constructor(private outboxRepository: IOutboxRepository) {}
 
@@ -26,15 +27,15 @@ export class OutboxProcessor {
     try {
       lockToken = await DistributedLock.acquire(this.LOCK_KEY, this.LOCK_TTL_MS)
       if (!lockToken) {
-        logger.warn('processEvents: Processamento ignorado. Outra instância já está rodando.')
+        logger.warn(OUTBOX_LOGS.SKIPPED_ANOTHER_RUNNING)
         return
       }
 
-      const pendingEventsResult = await this.outboxRepository.findPending(OUTBOX_THRESHOLDS.PENDING_FETCH_LIMIT)
+      const pendingEventsResult = await this.outboxRepository.findPending(OUTBOX_CFG.THRESHOLDS.PENDING_FETCH_LIMIT)
 
       // Verificação do Result
       if (isErr(pendingEventsResult)) {
-        logger.error({ error: pendingEventsResult.error }, '❌ Erro de Infra ao buscar eventos pendentes.')
+        logger.error({ error: pendingEventsResult.error }, OUTBOX_LOGS.PENDING_FETCH_ERROR)
         return
       }
 
@@ -49,7 +50,7 @@ export class OutboxProcessor {
         await this.processSingleEvent(event)
       }
     } catch (error) {
-      logger.error({ error }, '❌ Erro crítico inesperado no loop principal de processEvents')
+      logger.error({ error }, OUTBOX_LOGS.CRITICAL_LOOP_ERROR)
     } finally {
       if (lockToken) {
         await DistributedLock.release(this.LOCK_KEY, lockToken)
@@ -61,15 +62,15 @@ export class OutboxProcessor {
     let lockToken: LockToken | null = null
 
     try {
-      lockToken = await DistributedLock.acquire(LOCK_KEYS.OUTBOX_RECOVERY, this.LOCK_TTL_MS)
+      lockToken = await DistributedLock.acquire(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, this.LOCK_TTL_MS)
       if (!lockToken) return
 
-      const thresholdDate = new Date(Date.now() - OUTBOX_THRESHOLDS.STUCK_SENDING_MS)
+      const thresholdDate = new Date(Date.now() - OUTBOX_CFG.THRESHOLDS.STUCK_SENDING_MS)
       const stuckEventsResult = await this.outboxRepository.findStuck(thresholdDate)
 
       // Verificação do Result
       if (isErr(stuckEventsResult)) {
-        logger.error({ error: stuckEventsResult.error }, '❌ Erro de Infra ao buscar eventos travados na Outbox.')
+        logger.error({ error: stuckEventsResult.error }, OUTBOX_LOGS.STUCK_FETCH_ERROR)
         return
       }
 
@@ -78,15 +79,15 @@ export class OutboxProcessor {
       if (stuckEvents.length > 0) {
         logger.warn(`♻️ Encontrados ${stuckEvents.length} eventos travados em SENDING. Iniciando recuperação...`)
         for (const event of stuckEvents) {
-          await DistributedLock.renew(LOCK_KEYS.OUTBOX_RECOVERY, lockToken, this.LOCK_TTL_MS)
+          await DistributedLock.renew(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, lockToken, this.LOCK_TTL_MS)
           await this.processSingleEvent(event)
         }
       }
     } catch (error) {
-      logger.error({ error }, '❌ Erro crítico inesperado no recoverStuckSendingEvents')
+      logger.error({ error }, OUTBOX_LOGS.CRITICAL_RECOVERY_ERROR)
     } finally {
       if (lockToken) {
-        await DistributedLock.release(LOCK_KEYS.OUTBOX_RECOVERY, lockToken)
+        await DistributedLock.release(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, lockToken)
       }
     }
   }
@@ -98,7 +99,7 @@ export class OutboxProcessor {
     if (isErr(updateResult)) {
       logger.error(
         { publicId: event.publicId, error: updateResult.error },
-        '❌ Falha ao atualizar status para SENDING. Evento permanece em PENDING.',
+        OUTBOX_LOGS.STATUS_UPDATE_FAILED,
       )
       return
     }
@@ -112,10 +113,10 @@ export class OutboxProcessor {
       if (isErr(revertResult)) {
         logger.error(
           { publicId: event.publicId, error: revertResult.error },
-          '🚨 FATAL: Falha ao reverter status para PENDING. Inconsistência na DB.',
+          OUTBOX_LOGS.REVERT_FATAL,
         )
       } else {
-        logger.error({ publicId: event.publicId, error }, '❌ Falha no dispatch, revertido para PENDING')
+        logger.error({ publicId: event.publicId, error }, OUTBOX_LOGS.DISPATCH_REVERTED)
       }
     }
   }
@@ -136,7 +137,7 @@ export class OutboxProcessor {
     }
 
     await getMailQueue().add(
-      JOB_NAMES.OUTBOX_DISPATCH,
+      QUEUE.JOBS.OUTBOX_DISPATCH,
       {
         publicId: event.publicId,
         emails: [userJobResult.value, staffJobResult.value],

@@ -9,6 +9,7 @@ import {
 } from '@repositories/prisma/errors/outbox-error-mapping'
 import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { CRON_SCHEDULES } from 'messages/constants/cron/cron'
+import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 
 export function startOutboxCron(existingProcessor?: OutboxProcessor) {
   /**
@@ -25,30 +26,30 @@ export function startOutboxCron(existingProcessor?: OutboxProcessor) {
    *    via OutboxSignal (ex: worker estava fora do ar no momento da escrita).
    */
   cron.schedule(CRON_SCHEDULES.MIDNIGHT_DAILY, async () => {
-    logger.info('⏰ Cron de meia-noite: iniciando varredura de segurança da Outbox...')
+    logger.info(OUTBOX_LOGS.CRON_START)
 
     const processor = existingProcessor ?? buildProcessor()
 
     // Fase 1: recupera eventos travados em SENDING
     try {
       await processor.recoverStuckSendingEvents()
-      logger.info('✅ Fase 1 (recuperação SENDING): concluída.')
+      logger.info(OUTBOX_LOGS.PHASE1_DONE)
     } catch (error) {
-      logger.error({ error }, '❌ Fase 1 (recuperação SENDING): erro inesperado.')
+      logger.error({ error }, OUTBOX_LOGS.PHASE1_ERROR)
     }
 
     // Fase 2: processa eventos PENDING não despachados
     try {
       await processor.processEvents()
-      logger.info('✅ Fase 2 (eventos PENDING): concluída.')
+      logger.info(OUTBOX_LOGS.PHASE2_DONE)
     } catch (error) {
-      logger.error({ error }, '❌ Fase 2 (eventos PENDING): erro inesperado.')
+      logger.error({ error }, OUTBOX_LOGS.PHASE2_ERROR)
     }
 
-    logger.info('✅ Varredura de segurança da Outbox concluída.')
+    logger.info(OUTBOX_LOGS.SCAN_DONE)
   })
 
-  logger.info('🗓️ Agendador da Outbox configurado para 00:00 diariamente.')
+  logger.info(OUTBOX_LOGS.SCHEDULER_CONFIGURED)
 }
 
 function buildProcessor(): OutboxProcessor {
