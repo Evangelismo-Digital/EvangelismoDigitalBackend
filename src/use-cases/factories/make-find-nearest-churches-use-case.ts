@@ -91,28 +91,19 @@ export function makeFindNearestChurchesUseCase(
   const churchesRepository = new PrismaChurchesRepository(errorMapper)
   const findNearbyChurchesKnnUseCase = new FindNearbyChurchesKnnUseCase(churchesRepository)
 
-  // Setup Raw Routing Provider
+  // Setup Raw Routing Provider (batch matrix API)
   const rawRoutingProvider = new StadiaChurchRoutingProvider({
     apiUrl: env.STADIA_MAPS_API_URL,
+    matrixApiUrl: env.STADIA_MAPS_MATRIX_API_URL,
     apiToken: env.STADIA_API_TOKEN,
     defaultCosting: RoutingProfile.PEDESTRIAN,
     timeoutMs: STADIA_CONFIG.DEFAULT_TIMEOUT_MS,
   })
 
-  // Wrap with Resilient Decorator
+  // Wrap with Resilient Decorator (rate limiting + error mapping only, cache is at L3)
   const routingProvider = new ResilientChurchRoutingProviderDecorator(
     rawRoutingProvider,
     redisRateLimitConnection,
-    redisCacheConnection,
-    {
-      prefix: CACHE_CONFIG.STADIA_ROUTE.PREFIX,
-      defaultTtlSeconds: CACHE_CONFIG.STADIA_ROUTE.DEFAULT_TTL_SECONDS,
-      negativeTtlSeconds: CACHE_CONFIG.STADIA_ROUTE.NEGATIVE_TTL_SECONDS,
-      maxPendingFetches: CACHE_CONFIG.STADIA_ROUTE.MAX_PENDING_FETCHES,
-      fetchTimeoutMs: CACHE_CONFIG.STADIA_ROUTE.FETCH_TIMEOUT_MS,
-      serializeError: serializeAppError,
-      deserializeError: deserializeAppError,
-    },
   )
 
   const calculateChurchRouteDistancesUseCase = new CalculateChurchRouteDistancesUseCase(routingProvider)

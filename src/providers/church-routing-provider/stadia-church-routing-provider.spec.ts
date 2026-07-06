@@ -30,36 +30,18 @@ vi.mock('@lib/infra/rate-limiter/redis-rate-limiter', () => ({
   },
 }))
 
-class InMemoryRedisMock {
-  private readonly store = new Map<string, string>()
-
-  async get(key: string): Promise<string | null> {
-    return this.store.get(key) ?? null
-  }
-
-  async set(key: string, value: string, ..._args: unknown[]): Promise<'OK'> {
-    this.store.set(key, value)
-    return 'OK'
-  }
-}
-
 function buildProvider(): IChurchRoutingProvider {
-  const redis = new InMemoryRedisMock() as unknown as Redis
+  const redis = {} as unknown as Redis
 
   const rawProvider = new StadiaChurchRoutingProvider({
     apiUrl: 'https://api.stadiamaps.com/route/v1/',
+    matrixApiUrl: 'https://api.stadiamaps.com/sources_to_targets',
     apiToken: 'test-token',
     defaultCosting: RoutingProfile.PEDESTRIAN,
-    timeoutMs: 2500,
+    timeoutMs: 3000,
   })
 
-  return new ResilientChurchRoutingProviderDecorator(rawProvider, redis, redis, {
-    prefix: 'cache:test:stadia:',
-    defaultTtlSeconds: 60,
-    negativeTtlSeconds: 0,
-    maxPendingFetches: 20,
-    fetchTimeoutMs: 2500,
-  })
+  return new ResilientChurchRoutingProviderDecorator(rawProvider, redis)
 }
 
 describe('StadiaChurchRoutingProvider', () => {
@@ -68,11 +50,66 @@ describe('StadiaChurchRoutingProvider', () => {
     mockTryConsume.mockResolvedValue(true)
   })
 
+  it('uses batch matrix API for multiple destinations', async () => {
+    mockedPost.mockResolvedValueOnce({
+      status: 200,
+      data: {
+        sources_to_targets: [
+          [
+            { distance: 2.5, time: 300 },
+            { distance: 1.8, time: 220 },
+          ],
+        ],
+      },
+    })
+
+    const provider = buildProvider()
+
+    const result = await provider.getDistances({
+      origin: { lat: -23.5505, lon: -46.6333 },
+      destinations: [
+        { lat: -23.551, lon: -46.634 },
+        { lat: -23.560, lon: -46.640 },
+      ],
+      signal: new AbortController().signal,
+    })
+
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.value).toEqual([
+        { distance: 2.5, status: 0 },
+        { distance: 1.8, status: 0 },
+      ])
+    }
+
+    expect(mockedPost).toHaveBeenCalledTimes(1)
+    const [url, payload, requestConfig] = mockedPost.mock.calls[0]
+
+    expect(url).toBe('https://api.stadiamaps.com/sources_to_targets')
+    expect(payload).toEqual(
+      expect.objectContaining({
+        sources: [{ lat: -23.5505, lon: -46.6333 }],
+        targets: [
+          { lat: -23.551, lon: -46.634 },
+          { lat: -23.560, lon: -46.640 },
+        ],
+        costing: 'pedestrian',
+        units: 'kilometers',
+      }),
+    )
+    expect(requestConfig.headers).toEqual({
+      Authorization: 'Stadia-Auth test-token',
+      'Content-Type': 'application/json',
+    })
+  })
+
   it('uses default costing and forwards abort signal to HTTP request', async () => {
     mockedPost.mockResolvedValueOnce({
+      status: 200,
       data: {
-        status: 0,
-        routes: [{ summary: { length: 2.5 } }],
+        sources_to_targets: [
+          [{ distance: 2.5, time: 300 }],
+        ],
       },
     })
 
@@ -94,7 +131,7 @@ describe('StadiaChurchRoutingProvider', () => {
     expect(payload).toEqual(
       expect.objectContaining({
         costing: 'pedestrian',
-        directions_options: { units: 'kilometers' },
+        units: 'kilometers',
       }),
     )
     expect(requestConfig).toEqual(
@@ -112,9 +149,11 @@ describe('StadiaChurchRoutingProvider', () => {
 
   it('uses an explicit profile over the default costing', async () => {
     mockedPost.mockResolvedValueOnce({
+      status: 200,
       data: {
-        status: 0,
-        distance: 1.2,
+        sources_to_targets: [
+          [{ distance: 1.2, time: 150 }],
+        ],
       },
     })
 
@@ -127,7 +166,7 @@ describe('StadiaChurchRoutingProvider', () => {
     })
 
     expect(mockedPost).toHaveBeenCalledWith(
-      'https://api.stadiamaps.com/route/v1',
+      'https://api.stadiamaps.com/sources_to_targets',
       expect.objectContaining({ costing: 'pedestrian' }),
       expect.any(Object),
     )
@@ -151,37 +190,63 @@ describe('StadiaChurchRoutingProvider', () => {
     expect(mockedPost).not.toHaveBeenCalled()
   })
 
-  it('coalesces concurrent identical route lookups into a single outbound request', async () => {
-    mockedPost.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          setTimeout(() => {
-            resolve({
-              data: {
-                status: 0,
-                distance: 1.2,
-              },
-            })
-          }, 20)
-        }),
-    )
+  it('returns null distances for 404 responses', async () => {
+    mockedPost.mockResolvedValueOnce({
+      status: 404,
+      data: {},
+    })
 
     const provider = buildProvider()
-    const params = {
+
+    const result = await provider.getDistances({
       origin: { lat: -23.5505, lon: -46.6333 },
-      destinations: [{ lat: -23.551, lon: -46.634 }],
-      profile: RoutingProfile.PEDESTRIAN,
-    }
+      destinations: [
+        { lat: -23.551, lon: -46.634 },
+        { lat: -23.560, lon: -46.640 },
+      ],
+    })
 
-    const [first, second] = await Promise.all([provider.getDistances(params), provider.getDistances(params)])
-
-    expect(first.success).toBe(true)
-    expect(second.success).toBe(true)
-    if (first.success && second.success) {
-      expect(first.value).toEqual([{ distance: 1.2, status: 0 }])
-      expect(second.value).toEqual([{ distance: 1.2, status: 0 }])
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.value).toEqual([
+        { distance: null, status: 404 },
+        { distance: null, status: 404 },
+      ])
     }
-    expect(mockedPost).toHaveBeenCalledTimes(1)
-    expect(mockTryConsume).toHaveBeenCalledTimes(1)
+  })
+
+  it('handles partial null distances in matrix response', async () => {
+    mockedPost.mockResolvedValueOnce({
+      status: 200,
+      data: {
+        sources_to_targets: [
+          [
+            { distance: 2.5, time: 300 },
+            { distance: null, time: null },
+            { distance: 1.0, time: 120 },
+          ],
+        ],
+      },
+    })
+
+    const provider = buildProvider()
+
+    const result = await provider.getDistances({
+      origin: { lat: -23.5505, lon: -46.6333 },
+      destinations: [
+        { lat: -23.551, lon: -46.634 },
+        { lat: -23.560, lon: -46.640 },
+        { lat: -23.570, lon: -46.650 },
+      ],
+    })
+
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.value).toEqual([
+        { distance: 2.5, status: 0 },
+        { distance: null, status: 0 },
+        { distance: 1.0, status: 0 },
+      ])
+    }
   })
 })

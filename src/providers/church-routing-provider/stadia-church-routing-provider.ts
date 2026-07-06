@@ -8,6 +8,7 @@ import { STADIA_CONFIG } from 'messages/constants/providers/stadia'
 
 interface StadiaChurchRoutingProviderConfig {
   apiUrl: string
+  matrixApiUrl: string
   apiToken: string
   defaultCosting?: RoutingProfile
   timeoutMs?: number
@@ -26,6 +27,15 @@ interface StadiaRouteResponse {
     }
   }
   distance?: number
+}
+
+interface StadiaMatrixEntry {
+  distance: number | null
+  time: number | null
+}
+
+interface StadiaMatrixResponse {
+  sources_to_targets: StadiaMatrixEntry[][]
 }
 
 export class StadiaChurchRoutingProvider implements IRawChurchRoutingProvider {
@@ -96,6 +106,48 @@ export class StadiaChurchRoutingProvider implements IRawChurchRoutingProvider {
       distance,
       status: typeof status === 'number' ? status : 0,
     }
+  }
+
+  async fetchRawDistances(
+    origin: RoutingPoint,
+    destinations: RoutingPoint[],
+    profile?: RoutingProfile,
+    signal?: AbortSignal,
+  ): Promise<RouteDistanceResult[]> {
+    const costing = profile ?? this.config.defaultCosting ?? RoutingProfile.AUTO
+
+    const response = await this.api.post<StadiaMatrixResponse>(
+      this.config.matrixApiUrl.replace(/\/$/, ''),
+      {
+        sources: [{ lat: origin.lat, lon: origin.lon }],
+        targets: destinations.map((d) => ({ lat: d.lat, lon: d.lon })),
+        costing,
+        units: STADIA_CONFIG.UNITS,
+      },
+      {
+        headers: {
+          Authorization: `${STADIA_CONFIG.AUTH_PREFIX} ${this.config.apiToken}`,
+          'Content-Type': STADIA_CONFIG.CONTENT_TYPE,
+        },
+        signal,
+        validateStatus: (status) => (status >= 200 && status < 300) || status === 404,
+      },
+    )
+
+    if (response.status === 404 || !response.data?.sources_to_targets?.length) {
+      return destinations.map(() => ({ distance: null, status: 404 }))
+    }
+
+    // sources_to_targets[0] = results from source[0] to all targets
+    const row = response.data.sources_to_targets[0]
+
+    return destinations.map((_, index) => {
+      const entry = row?.[index]
+      if (!entry || entry.distance == null) {
+        return { distance: null, status: 0 }
+      }
+      return { distance: entry.distance, status: 0 }
+    })
   }
 
   private extractDistanceKm(responseData: StadiaRouteResponse): number | null {

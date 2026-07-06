@@ -32,4 +32,10 @@ export interface IRawChurchRoutingProvider {
     profile?: RoutingProfile,
     signal?: AbortSignal,
   ): Promise<RouteDistanceResult>
+  fetchRawDistances(
+    origin: RoutingPoint,
+    destinations: RoutingPoint[],
+    profile?: RoutingProfile,
+    signal?: AbortSignal,
+  ): Promise<RouteDistanceResult[]>
 }

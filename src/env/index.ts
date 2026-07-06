@@ -63,6 +63,7 @@ const envSchema = z.object({
 
   // Stadia API
   STADIA_MAPS_API_URL: z.url().default('https://api.stadiamaps.com/route/v1'),
+  STADIA_MAPS_MATRIX_API_URL: z.url().default('https://api.stadiamaps.com/sources_to_targets'),
   STADIA_API_TOKEN: z.string().min(1, 'STADIA_API_TOKEN is required'),
 })
 
