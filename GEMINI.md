@@ -476,4 +476,5 @@ When assisting in this repository:
 5. Do not introduce exception-driven business flow.
 6. Keep solutions simple, explicit, and testable.
 7. Respect existing module boundaries.
-8. Favor maintainability over cleverness.
+8. Implement Design Patterns where it make sense.
+9. Favor maintainability over cleverness.
