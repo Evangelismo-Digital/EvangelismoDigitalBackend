@@ -4,6 +4,8 @@ import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
 import { IGeoCoordinates, IGeoSearchOptions } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IRawGeocodingProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
+import { NOMINATIM_CONFIG } from 'messages/constants/providers/nominatim'
+import { SHARED_PROVIDER_DEFAULTS } from 'messages/constants/providers/shared'
 
 interface NominatimConfig {
   apiUrl: string
@@ -16,34 +18,30 @@ export class NominatimGeoProvider implements IRawGeocodingProvider {
 
   readonly providerName = 'Nominatim'
   readonly rateLimitConfig = EnumProviderConfig.NOMINATIM_GEOCODING
-  readonly maxRetries = 2
-  readonly backoffMs = 200
-  private readonly NOMINATIM_TIMEOUT = 4000
-
-  // HTTPS Agent Settings
-  private readonly KEEP_ALIVE_MSECS = 1000
-  private readonly MAX_SOCKETS = 100
-  private readonly MAX_FREE_SOCKETS = 10
-  private readonly HTTPS_AGENT_TIMEOUT = 60000
+  readonly maxRetries = NOMINATIM_CONFIG.MAX_RETRIES
+  readonly backoffMs = NOMINATIM_CONFIG.BACKOFF_MS
 
   constructor(private readonly config: NominatimConfig) {
     this.api = createHttpClient({
       baseURL: this.config.apiUrl,
-      timeout: this.NOMINATIM_TIMEOUT,
+      timeout: NOMINATIM_CONFIG.TIMEOUT_MS,
       headers: {
-        'User-Agent': 'EvangelismoDigitalBackend/1.0 (contact@findhope.digital)',
+        'User-Agent': SHARED_PROVIDER_DEFAULTS.USER_AGENT_WITH_CONTACT,
       },
       agentOptions: {
-        keepAliveMsecs: this.KEEP_ALIVE_MSECS,
-        maxSockets: this.MAX_SOCKETS,
-        maxFreeSockets: this.MAX_FREE_SOCKETS,
-        timeout: this.HTTPS_AGENT_TIMEOUT,
+        keepAliveMsecs: NOMINATIM_CONFIG.HTTPS_AGENT.KEEP_ALIVE_MSECS,
+        maxSockets: NOMINATIM_CONFIG.HTTPS_AGENT.MAX_SOCKETS,
+        maxFreeSockets: NOMINATIM_CONFIG.HTTPS_AGENT.MAX_FREE_SOCKETS,
+        timeout: NOMINATIM_CONFIG.HTTPS_AGENT.TIMEOUT_MS,
       },
     })
   }
 
   async searchRaw(query: string, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
-    return this.performRequest({ q: query, limit: 1, format: 'json' }, signal)
+    return this.performRequest(
+      { q: query, limit: NOMINATIM_CONFIG.API_PARAMS.SEARCH_LIMIT, format: NOMINATIM_CONFIG.API_PARAMS.FORMAT },
+      signal,
+    )
   }
 
   async searchStructuredRaw(options: IGeoSearchOptions, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
@@ -53,8 +51,8 @@ export class NominatimGeoProvider implements IRawGeocodingProvider {
         city: options.city,
         state: options.state,
         country: options.country,
-        limit: 1,
-        format: 'json',
+        limit: NOMINATIM_CONFIG.API_PARAMS.SEARCH_LIMIT,
+        format: NOMINATIM_CONFIG.API_PARAMS.FORMAT,
       },
       signal,
     )

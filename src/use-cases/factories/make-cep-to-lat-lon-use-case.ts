@@ -11,6 +11,7 @@ import { getRedisCache, getRedisRateLimit } from '@lib/redis/clients/clients'
 import { ResilientAddressProviderDecorator } from 'providers/address-provider/decorators/resilient-address-provider.decorator'
 import { ResilientGeocodingProviderDecorator } from 'providers/geo-provider/decorators/resilient-geocoding-provider.decorator'
 import { serializeAppError, deserializeAppError } from 'errors/app-error-registry'
+import { CACHE_CONFIG } from 'messages/constants/cache/cache'
 
 let cachedUseCase: CepToLatLonUseCase | null = null
 
@@ -67,11 +68,11 @@ export function makeCepToLatLonUseCase(
     resilientAddressProvider,
     redisCacheConnection,
     {
-      prefix: 'cache:cep-coords:',
-      defaultTtlSeconds: 60 * 60 * 24 * 7, // 7 days
-      negativeTtlSeconds: 60 * 30, // 30 minutes (Negative Cache)
-      maxPendingFetches: 500,
-      fetchTimeoutMs: 25000,
+      prefix: CACHE_CONFIG.CEP_COORDS.PREFIX,
+      defaultTtlSeconds: CACHE_CONFIG.CEP_COORDS.DEFAULT_TTL_SECONDS,
+      negativeTtlSeconds: CACHE_CONFIG.CEP_COORDS.NEGATIVE_TTL_SECONDS,
+      maxPendingFetches: CACHE_CONFIG.CEP_COORDS.MAX_PENDING_FETCHES,
+      fetchTimeoutMs: CACHE_CONFIG.CEP_COORDS.FETCH_TIMEOUT_MS,
       serializeError: serializeAppError,
       deserializeError: deserializeAppError,
     },

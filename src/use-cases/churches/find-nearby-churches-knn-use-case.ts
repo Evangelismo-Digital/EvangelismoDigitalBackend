@@ -3,6 +3,7 @@ import { LatitudeRangeError } from '@use-cases/errors/latitude-range-error'
 import { LongitudeRangeError } from '@use-cases/errors/longitude-range-error'
 import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
+import { CHURCH_CONSTANTS } from 'messages/constants/churches/churches'
 
 interface FindNearbyChurchesKnnRequest {
   userLat: number
@@ -32,7 +33,7 @@ export class FindNearbyChurchesKnnUseCase {
     const result = await this.churchesRepository.findNearest({
       userLat,
       userLon,
-      limit: 5,
+      limit: CHURCH_CONSTANTS.KNN_LIMIT,
     })
 
     if (isErr(result)) {

@@ -12,6 +12,7 @@ import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
+import { CACHE_CONFIG } from 'messages/constants/cache/cache'
 import Redis from 'ioredis'
 
 export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingProvider {
@@ -26,13 +27,14 @@ export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingPr
   ) {
     this.providerName = rawProvider.providerName
     const timeoutMs = rawProvider.timeoutMs
+    const defaults = CACHE_CONFIG.STADIA_ROUTE_DECORATOR_DEFAULTS
     this.cacheManager = new ResilientCache<AppError>(redisCacheConnection, {
-      prefix: cacheOptionsOverride?.prefix ?? 'cache:stadia-route-distance:',
-      defaultTtlSeconds: cacheOptionsOverride?.defaultTtlSeconds ?? 60 * 60,
-      negativeTtlSeconds: cacheOptionsOverride?.negativeTtlSeconds ?? 0,
-      maxPendingFetches: cacheOptionsOverride?.maxPendingFetches ?? 500,
+      prefix: cacheOptionsOverride?.prefix ?? defaults.PREFIX,
+      defaultTtlSeconds: cacheOptionsOverride?.defaultTtlSeconds ?? defaults.DEFAULT_TTL_SECONDS,
+      negativeTtlSeconds: cacheOptionsOverride?.negativeTtlSeconds ?? defaults.NEGATIVE_TTL_SECONDS,
+      maxPendingFetches: cacheOptionsOverride?.maxPendingFetches ?? defaults.MAX_PENDING_FETCHES,
       fetchTimeoutMs: cacheOptionsOverride?.fetchTimeoutMs ?? timeoutMs,
-      ttlJitterPercentage: cacheOptionsOverride?.ttlJitterPercentage ?? 0.05,
+      ttlJitterPercentage: cacheOptionsOverride?.ttlJitterPercentage ?? defaults.TTL_JITTER_PERCENTAGE,
       serializeError: cacheOptionsOverride?.serializeError,
       deserializeError: cacheOptionsOverride?.deserializeError,
       isRetryable: cacheOptionsOverride?.isRetryable,

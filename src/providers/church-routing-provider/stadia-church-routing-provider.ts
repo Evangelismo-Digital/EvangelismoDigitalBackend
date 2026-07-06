@@ -4,6 +4,7 @@ import { createHttpClient } from '@lib/http/axios'
 import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { IRawChurchRoutingProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
+import { STADIA_CONFIG } from 'messages/constants/providers/stadia'
 
 interface StadiaChurchRoutingProviderConfig {
   apiUrl: string
@@ -36,7 +37,7 @@ export class StadiaChurchRoutingProvider implements IRawChurchRoutingProvider {
   readonly defaultCosting?: RoutingProfile
 
   constructor(private readonly config: StadiaChurchRoutingProviderConfig) {
-    this.timeoutMs = config.timeoutMs ?? 2_500
+    this.timeoutMs = config.timeoutMs ?? STADIA_CONFIG.DEFAULT_TIMEOUT_MS
     this.defaultCosting = config.defaultCosting
 
     this.api = createHttpClient({
@@ -61,13 +62,13 @@ export class StadiaChurchRoutingProvider implements IRawChurchRoutingProvider {
         ],
         costing,
         directions_options: {
-          units: 'kilometers',
+          units: STADIA_CONFIG.UNITS,
         },
       },
       {
         headers: {
-          Authorization: `Stadia-Auth ${this.config.apiToken}`,
-          'Content-Type': 'application/json',
+          Authorization: `${STADIA_CONFIG.AUTH_PREFIX} ${this.config.apiToken}`,
+          'Content-Type': STADIA_CONFIG.CONTENT_TYPE,
         },
         signal,
         validateStatus: (status) => (status >= 200 && status < 300) || status === 404,

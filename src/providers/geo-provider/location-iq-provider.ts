@@ -4,6 +4,7 @@ import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
 import { IGeoCoordinates, IGeoSearchOptions } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IRawGeocodingProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
+import { LOCATION_IQ_CONFIG } from 'messages/constants/providers/location-iq'
 
 interface LocationIqConfig {
   apiUrl: string
@@ -23,35 +24,31 @@ export class LocationIqProvider implements IRawGeocodingProvider {
 
   readonly providerName = 'LocationIQ'
   readonly rateLimitConfig = EnumProviderConfig.LOCATION_IQ_GEOCODING
-  readonly maxRetries = 2
-  readonly backoffMs = 200
-  private readonly TIMEOUT = 2000
-
-  // HTTPS Agent Settings
-  private readonly KEEP_ALIVE_MSECS = 1000
-  private readonly MAX_SOCKETS = 100
-  private readonly MAX_FREE_SOCKETS = 10
-  private readonly HTTPS_AGENT_TIMEOUT = 60000
+  readonly maxRetries = LOCATION_IQ_CONFIG.MAX_RETRIES
+  readonly backoffMs = LOCATION_IQ_CONFIG.BACKOFF_MS
 
   constructor(private readonly config: LocationIqConfig) {
     this.api = createHttpClient({
       baseURL: this.config.apiUrl,
-      timeout: this.TIMEOUT,
+      timeout: LOCATION_IQ_CONFIG.TIMEOUT_MS,
       params: {
         key: this.config.apiToken,
-        format: 'json',
+        format: LOCATION_IQ_CONFIG.API_PARAMS.FORMAT,
       },
       agentOptions: {
-        keepAliveMsecs: this.KEEP_ALIVE_MSECS,
-        maxSockets: this.MAX_SOCKETS,
-        maxFreeSockets: this.MAX_FREE_SOCKETS,
-        timeout: this.HTTPS_AGENT_TIMEOUT,
+        keepAliveMsecs: LOCATION_IQ_CONFIG.HTTPS_AGENT.KEEP_ALIVE_MSECS,
+        maxSockets: LOCATION_IQ_CONFIG.HTTPS_AGENT.MAX_SOCKETS,
+        maxFreeSockets: LOCATION_IQ_CONFIG.HTTPS_AGENT.MAX_FREE_SOCKETS,
+        timeout: LOCATION_IQ_CONFIG.HTTPS_AGENT.TIMEOUT_MS,
       },
     })
   }
 
   async searchRaw(query: string, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
-    return this.performRequest({ q: query, limit: 1, addressdetails: 1 }, signal)
+    return this.performRequest(
+      { q: query, limit: LOCATION_IQ_CONFIG.API_PARAMS.SEARCH_LIMIT, addressdetails: LOCATION_IQ_CONFIG.API_PARAMS.ADDRESS_DETAILS },
+      signal,
+    )
   }
 
   async searchStructuredRaw(options: IGeoSearchOptions, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
@@ -61,8 +58,8 @@ export class LocationIqProvider implements IRawGeocodingProvider {
         city: options.city,
         state: options.state,
         country: options.country,
-        limit: 1,
-        addressdetails: 1,
+        limit: LOCATION_IQ_CONFIG.API_PARAMS.SEARCH_LIMIT,
+        addressdetails: LOCATION_IQ_CONFIG.API_PARAMS.ADDRESS_DETAILS,
       },
       signal,
     )

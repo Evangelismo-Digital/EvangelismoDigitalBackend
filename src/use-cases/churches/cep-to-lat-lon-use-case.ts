@@ -13,6 +13,7 @@ import { ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilien
 import { Result, ok, err, isOk, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
+import { CHURCH_CONSTANTS } from 'messages/constants/churches/churches'
 
 interface CepToLatLonRequest {
   cep: string
@@ -79,7 +80,7 @@ export class CepToLatLonUseCase {
         userLat: data.lat,
         userLon: data.lon,
         precision: data.precision ?? EnumGeoPrecision.NO_CERTAINTY,
-        coordinatesProviderName: data.providerName ?? 'Unknown',
+        coordinatesProviderName: data.providerName ?? CHURCH_CONSTANTS.UNKNOWN_PROVIDER,
       })
     }
 
@@ -90,7 +91,7 @@ export class CepToLatLonUseCase {
 
     // Strategy A: Exact Match (Street)
     if (logradouro) {
-      const exactResult = await this.geocodingProvider.search(`${logradouro}, ${localidade} - ${uf}, Brazil`, signal)
+      const exactResult = await this.geocodingProvider.search(`${logradouro}, ${localidade} - ${uf}, ${CHURCH_CONSTANTS.GEOCODING_COUNTRY}`, signal)
       if (isOk(exactResult) && exactResult.value) {
         return ok(this.mapResponse(exactResult.value))
       }
@@ -101,7 +102,7 @@ export class CepToLatLonUseCase {
 
     // Strategy B: Approximate Match (Neighborhood)
     if (bairro) {
-      const approxResult = await this.geocodingProvider.search(`${bairro}, ${localidade} - ${uf}, Brazil`, signal)
+      const approxResult = await this.geocodingProvider.search(`${bairro}, ${localidade} - ${uf}, ${CHURCH_CONSTANTS.GEOCODING_COUNTRY}`, signal)
       if (isOk(approxResult) && approxResult.value) {
         return ok(this.mapResponse(approxResult.value))
       }
@@ -116,7 +117,7 @@ export class CepToLatLonUseCase {
         {
           city: localidade,
           state: uf,
-          country: 'Brazil',
+          country: CHURCH_CONSTANTS.GEOCODING_COUNTRY,
         },
         signal,
       )

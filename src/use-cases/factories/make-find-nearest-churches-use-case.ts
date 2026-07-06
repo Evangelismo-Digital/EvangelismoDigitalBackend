@@ -20,6 +20,8 @@ import { ResilientAddressProviderDecorator } from 'providers/address-provider/de
 import { ResilientGeocodingProviderDecorator } from 'providers/geo-provider/decorators/resilient-geocoding-provider.decorator'
 import { ResilientChurchRoutingProviderDecorator } from 'providers/church-routing-provider/decorators/resilient-church-routing-provider.decorator'
 import { serializeAppError, deserializeAppError } from 'errors/app-error-registry'
+import { CACHE_CONFIG } from 'messages/constants/cache/cache'
+import { STADIA_CONFIG } from 'messages/constants/providers/stadia'
 
 let cachedUseCase: FindNearestChurchesUseCase | null = null
 
@@ -74,11 +76,11 @@ export function makeFindNearestChurchesUseCase(
     resilientAddressProvider,
     redisCacheConnection,
     {
-      prefix: 'cache:cep-coords:',
-      defaultTtlSeconds: 60 * 60 * 24 * 7,
-      negativeTtlSeconds: 60 * 30,
-      maxPendingFetches: 500,
-      fetchTimeoutMs: 25000,
+      prefix: CACHE_CONFIG.CEP_COORDS.PREFIX,
+      defaultTtlSeconds: CACHE_CONFIG.CEP_COORDS.DEFAULT_TTL_SECONDS,
+      negativeTtlSeconds: CACHE_CONFIG.CEP_COORDS.NEGATIVE_TTL_SECONDS,
+      maxPendingFetches: CACHE_CONFIG.CEP_COORDS.MAX_PENDING_FETCHES,
+      fetchTimeoutMs: CACHE_CONFIG.CEP_COORDS.FETCH_TIMEOUT_MS,
       serializeError: serializeAppError,
       deserializeError: deserializeAppError,
     },
@@ -94,7 +96,7 @@ export function makeFindNearestChurchesUseCase(
     apiUrl: env.STADIA_MAPS_API_URL,
     apiToken: env.STADIA_API_TOKEN,
     defaultCosting: RoutingProfile.PEDESTRIAN,
-    timeoutMs: 2_500,
+    timeoutMs: STADIA_CONFIG.DEFAULT_TIMEOUT_MS,
   })
 
   // Wrap with Resilient Decorator
@@ -103,11 +105,11 @@ export function makeFindNearestChurchesUseCase(
     redisRateLimitConnection,
     redisCacheConnection,
     {
-      prefix: 'cache:stadia-route-distance:',
-      defaultTtlSeconds: 60 * 60 * 24 * 7,
-      negativeTtlSeconds: 0,
-      maxPendingFetches: 500,
-      fetchTimeoutMs: 2_500,
+      prefix: CACHE_CONFIG.STADIA_ROUTE.PREFIX,
+      defaultTtlSeconds: CACHE_CONFIG.STADIA_ROUTE.DEFAULT_TTL_SECONDS,
+      negativeTtlSeconds: CACHE_CONFIG.STADIA_ROUTE.NEGATIVE_TTL_SECONDS,
+      maxPendingFetches: CACHE_CONFIG.STADIA_ROUTE.MAX_PENDING_FETCHES,
+      fetchTimeoutMs: CACHE_CONFIG.STADIA_ROUTE.FETCH_TIMEOUT_MS,
       serializeError: serializeAppError,
       deserializeError: deserializeAppError,
     },
@@ -121,11 +123,11 @@ export function makeFindNearestChurchesUseCase(
     calculateChurchRouteDistancesUseCase,
     redisCacheConnection,
     {
-      prefix: 'cache:nearest-churches:',
-      defaultTtlSeconds: 60 * 60 * 24 * 7,
-      negativeTtlSeconds: 60 * 30,
-      maxPendingFetches: 500,
-      fetchTimeoutMs: 25000,
+      prefix: CACHE_CONFIG.NEAREST_CHURCHES.PREFIX,
+      defaultTtlSeconds: CACHE_CONFIG.NEAREST_CHURCHES.DEFAULT_TTL_SECONDS,
+      negativeTtlSeconds: CACHE_CONFIG.NEAREST_CHURCHES.NEGATIVE_TTL_SECONDS,
+      maxPendingFetches: CACHE_CONFIG.NEAREST_CHURCHES.MAX_PENDING_FETCHES,
+      fetchTimeoutMs: CACHE_CONFIG.NEAREST_CHURCHES.FETCH_TIMEOUT_MS,
       serializeError: serializeAppError,
       deserializeError: deserializeAppError,
     },
