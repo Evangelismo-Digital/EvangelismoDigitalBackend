@@ -1,9 +1,9 @@
-import { FastifyPluginAsync } from 'fastify'
+import { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import fp from 'fastify-plugin'
 import z, { ZodError } from 'zod'
 import * as Sentry from '@sentry/node'
 import { env } from '@env/index'
-import { logger } from '@lib/logger'
+import { logger, getRequestId, getUserId } from '@lib/logger'
 import { HTTP_ERRORS } from 'messages/errors/http'
 import { AppError } from 'errors/app-error'
 import { DomainError } from 'errors/domain-error'
@@ -11,8 +11,41 @@ import { ErrorType } from 'core/types/error-type/error-type'
 import { toHttpStatus } from 'errors/http-errors/http-error-status.mapper'
 import { ZodValidationError } from 'errors/http-errors/zod-validation-error'
 
+/**
+ * Captures an exception in Sentry with full request context isolation.
+ * Uses Sentry.withScope() to prevent context bleed between concurrent requests.
+ */
+function captureWithRequestContext(error: Error, request: FastifyRequest): void {
+  if (!env.SENTRY_DSN) {
+    return
+  }
+
+  Sentry.withScope((scope) => {
+    const requestId = getRequestId()
+    const userId = getUserId()
+
+    if (userId) {
+      scope.setUser({ id: userId })
+    }
+
+    scope.setContext('request', {
+      requestId,
+      method: request.method,
+      url: request.url,
+      ip: request.ip,
+      userAgent: request.headers['user-agent'],
+    })
+
+    scope.setTag('route', request.routeOptions?.url ?? request.url)
+    scope.setTag('method', request.method)
+    scope.setTag('errorType', error.constructor.name)
+
+    Sentry.captureException(error)
+  })
+}
+
 const errorHandlerPlugin: FastifyPluginAsync = async (app) => {
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     // 1. Zod validation errors → safe response with validation details
     if (error instanceof ZodError) {
       const zodValidationError = new ZodValidationError(z.treeifyError(error))
@@ -54,9 +87,7 @@ const errorHandlerPlugin: FastifyPluginAsync = async (app) => {
 
       logger.error({ err: error, cause: error.cause }, 'Infrastructure/System error occurred')
 
-      if (env.SENTRY_DSN) {
-        Sentry.captureException(error)
-      }
+      captureWithRequestContext(error, request)
 
       return reply.status(httpCode).send({
         message: isServiceUnavailable
@@ -76,9 +107,7 @@ const errorHandlerPlugin: FastifyPluginAsync = async (app) => {
     // 6. Unknown / unhandled errors → log full error, capture in Sentry, sanitize response
     logger.error(error, 'Unhandled error occurred')
 
-    if (env.SENTRY_DSN) {
-      Sentry.captureException(error)
-    }
+    captureWithRequestContext(error, request)
 
     reply.status(500).send({
       message: HTTP_ERRORS.INTERNAL_SERVER.message,
@@ -90,4 +119,3 @@ const errorHandlerPlugin: FastifyPluginAsync = async (app) => {
 export const errorHandler = fp(errorHandlerPlugin, {
   name: 'error-handler',
 })
-

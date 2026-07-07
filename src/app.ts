@@ -1,119 +1,35 @@
 import fastify from 'fastify'
 import { env } from '@env/index'
 import { appRoutes } from '@http/routes'
-import { logger, runWithRequestId, runWithUserContext } from '@lib/logger'
+import { logger } from '@lib/logger'
 import { v7 as uuidv7 } from 'uuid'
-import z, { ZodError } from 'zod'
+import z from 'zod'
 import fastifyJwt from '@fastify/jwt'
 import fastifyCors from '@fastify/cors'
-import * as Sentry from '@sentry/node'
-import { nodeProfilingIntegration } from '@sentry/profiling-node'
 import { RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { asyncContext } from '@http/plugins/async-context.plugin'
 import { closeAllRedisConnections } from '@lib/redis/clients/clients'
 import { httpRateLimit } from '@http/plugins/rate-limit.plugin'
 import { httpRateLimitDefaults } from '@http/plugins/rate-limit-defaults.plugin'
 import { errorHandler } from '@http/plugins/error-handler.plugin'
-import { DomainError } from 'errors/domain-error'
+import { sentry } from '@http/plugins/sentry.plugin'
+import { requestLifecycle } from '@http/plugins/request-lifecycle.plugin'
+import { memoryMonitor } from '@http/plugins/memory-monitor.plugin'
 z.config(z.locales.pt())
 
 export const app = fastify({
   logger: false,
   trustProxy: true,
+  genReqId: () => uuidv7(),
 })
 
-if (env.SENTRY_DSN) {
-  Sentry.init({
-    dsn: env.SENTRY_DSN,
-    environment: env.NODE_ENV,
-    integrations: [nodeProfilingIntegration()],
-    tracesSampleRate: 1.0,
-    profileSessionSampleRate: 1.0,
-    profileLifecycle: 'trace',
-  })
+// 1. Sentry — process-level init (no hooks)
+app.register(sentry)
 
-  Sentry.setupFastifyErrorHandler(app, {
-    shouldHandleError(error) {
-      // Domain errors (4xx) are expected business behavior — don't report
-      if (error instanceof DomainError) return false
-      if (error instanceof ZodError) return false
-
-      // Infrastructure, system, and unknown errors are bugs — report
-      return true
-    },
-  })
-}
-
-let memoryInterval: NodeJS.Timeout | null = null
-
-if (env.NODE_ENV === 'production') {
-  memoryInterval = setInterval(() => {
-    const memUsage = process.memoryUsage()
-    const heapUsedMB = memUsage.heapUsed / 1024 / 1024
-    const rssMB = memUsage.rss / 1024 / 1024
-
-    // Alert at 400MB heap usage (80% of 512MB Docker limit)
-    if (heapUsedMB > 400) {
-      logger.warn({
-        msg: 'High memory usage detected',
-        heapUsedMB: Math.round(heapUsedMB),
-        rssMB: Math.round(rssMB),
-        heapTotalMB: Math.round(memUsage.heapTotal / 1024 / 1024),
-      })
-    }
-  }, 60000)
-}
-
+// 2. AsyncContext — wraps every request in ALS with requestId from genReqId
 app.register(asyncContext)
 
-app.register(httpRateLimitDefaults)
-
-app.addHook('onRequest', (request, _reply, done) => {
-  const requestId = uuidv7()
-  const xff = request.headers['x-forwarded-for']
-  const clientIp = Array.isArray(xff) ? xff[0] : xff?.split(',')[0].trim() || request.ip
-
-  runWithRequestId(requestId, async () => {
-    try {
-      const decoded = await request.jwtVerify<{ sub: string }>()
-      runWithUserContext(decoded.sub, () => {
-        logRequestDetails()
-        done()
-      })
-    } catch {
-      logRequestDetails()
-      done()
-    }
-
-    function logRequestDetails() {
-      logger.info(
-        {
-          method: request.method,
-          url: request.url,
-          ip: clientIp,
-          remotePort: request.socket.remotePort,
-          userAgent: request.headers['user-agent'],
-        },
-        'Incoming request',
-      )
-    }
-  })
-})
-
-app.addHook('onResponse', (request, reply, done) => {
-  logger.info(
-    {
-      statusCode: reply.statusCode,
-      method: request.method,
-      url: request.url,
-      requestTime: reply.elapsedTime,
-    },
-    'Response sent',
-  )
-
-  done()
-})
-
+// 3. CORS — short-circuits OPTIONS before auth/lifecycle
 app.register(fastifyCors, {
   origin: env.FRONTEND_URL,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -122,23 +38,30 @@ app.register(fastifyCors, {
   maxAge: 3600,
 })
 
+// 4. Rate limiting — drops abusive traffic before any crypto work
+app.register(httpRateLimitDefaults)
 app.register(httpRateLimit)
 
+// 5. JWT — decorates app with jwtVerify (no interception)
 app.register(fastifyJwt, {
   secret: env.JWT_SECRET,
 })
 
+// 6. Request lifecycle — JWT extraction, userId population, request/response logging
+app.register(requestLifecycle)
+
+// 7. Memory monitor — production heap monitoring with self-contained lifecycle
+app.register(memoryMonitor)
+
+// 8. Routes
 app.register(appRoutes)
 
+// 9. Error handler — always last to catch anything thrown by plugins and routes
 app.register(errorHandler)
 
+// Graceful shutdown — application-level resource cleanup
 app.addHook('onClose', async () => {
   logger.info('🛑 Shutting down RateLimiter and Redis connections...')
-
-  if (memoryInterval) {
-    clearInterval(memoryInterval)
-    logger.info('✅ Memory monitor interval cleared')
-  }
 
   try {
     await RedisRateLimiter.destroyInstance()

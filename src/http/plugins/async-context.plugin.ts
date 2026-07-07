@@ -1,11 +1,10 @@
 import { asyncLocalStorage } from '@lib/async-local-storage'
 import { FastifyPluginAsync } from 'fastify'
 import fp from 'fastify-plugin'
-import { v7 as uuidv7 } from 'uuid'
 
 const asyncContextPlugin: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', (request, reply, done) => {
-    const requestId = uuidv7()
+    const requestId = request.id as string
 
     const requestInfo = {
       host: request.host,

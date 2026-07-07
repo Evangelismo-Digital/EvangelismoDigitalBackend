@@ -37,6 +37,8 @@ const envSchema = z.object({
   HTTP_RATE_LIMIT_CHURCHES_NEAREST_TIME_WINDOW: z.string().default('1 minute'),
 
   SENTRY_DSN: z.string().optional(),
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.2),
+  SENTRY_PROFILE_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
 
   // SMTP
   SMTP_EMAIL: z.email(),

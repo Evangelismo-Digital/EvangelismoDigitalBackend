@@ -1,8 +1,6 @@
 import pino, { multistream, StreamEntry, type LoggerOptions } from 'pino'
 import { env } from '@env/index'
-import { AsyncLocalStorage } from 'node:async_hooks'
-
-const asyncLocalStorage = new AsyncLocalStorage<{ requestId: string; userId?: string }>()
+import { asyncLocalStorage } from '@lib/async-local-storage'
 
 export function getRequestId() {
   return asyncLocalStorage.getStore()?.requestId
@@ -12,17 +10,11 @@ export function getUserId() {
   return asyncLocalStorage.getStore()?.userId
 }
 
-export function runWithRequestId<T>(requestId: string, fn: () => T) {
-  return asyncLocalStorage.run({ requestId }, fn)
-}
-
-export function runWithUserContext<T>(userId: string, fn: () => T) {
+export function setUserId(userId: string) {
   const store = asyncLocalStorage.getStore()
   if (store) {
     store.userId = userId
-    return asyncLocalStorage.run(store, fn)
   }
-  return fn()
 }
 
 const isDev = env.NODE_ENV === 'development'
