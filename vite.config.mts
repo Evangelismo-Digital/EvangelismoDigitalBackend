@@ -97,6 +97,14 @@ export default defineConfig(({ mode }) => {
         {
           extends: true,
           test: {
+            name: 'unit-lib',
+            dir: 'src/lib',
+            include: ['**/*.spec.ts'],
+          },
+        },
+        {
+          extends: true,
+          test: {
             name: 'unit-resilient-cache',
             dir: 'src/lib/infra/cache',
           },

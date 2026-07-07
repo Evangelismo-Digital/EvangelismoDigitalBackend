@@ -1,3 +1,8 @@
+import { initSentry } from '@lib/sentry/init'
+
+// Initialize Sentry at process startup
+initSentry()
+
 import { startOutboxCron } from '@lib/infra/jobs/outbox-cron'
 import { OutboxProcessor } from '@lib/infra/jobs/outbox-processor'
 import { logger } from '@lib/logger'
@@ -12,6 +17,7 @@ import {
 } from '@repositories/prisma/errors/outbox-error-mapping'
 import { Worker } from 'bullmq'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
+import { crashShutdown } from '@lib/shutdown/crash-shutdown'
 
 let worker: Worker | null = null
 let shuttingDown = false
@@ -49,58 +55,53 @@ async function bootstrap() {
     // ============================================================================
     startOutboxCron(outboxProcessor)
   } catch (error) {
-    logger.fatal({ error }, '🔥 Erro fatal ao iniciar os workers')
-    process.exit(1)
+    await crashShutdown(error, cleanup)
   }
 }
 
-// Graceful Shutdown
-async function shutdown(signal: string, exitCode: number = 0) {
-  if (shuttingDown) {
-    return
-  }
-
-  shuttingDown = true
-
-  logger.info(`Recebido sinal ${signal}. Iniciando shutdown do worker...`)
-
-  // Desconecta o OutboxSignal (publisher + subscriber) antes de tudo
+// Cleanup resources
+async function cleanup() {
   try {
     await OutboxSignal.disconnect()
     logger.info('OutboxSignal desconectado com sucesso')
   } catch (err) {
     logger.error(err, 'Erro ao desconectar o OutboxSignal')
-    exitCode = 1
   }
 
   if (worker) {
     try {
-      // Fecha o worker do BullMQ graciosamente (espera jobs ativos terminarem)
       await worker.close()
       logger.info('Worker finalizado com sucesso')
     } catch (err) {
       logger.error(err, 'Erro ao finalizar o worker')
-      exitCode = 1
     }
   }
+}
 
-  // O Cron (node-cron) é parado automaticamente quando o processo morre via process.exit
-  process.exit(exitCode)
+// Expected/Graceful Signal Shutdown (exit code 0)
+async function gracefulShutdown(signal: string) {
+  if (shuttingDown) {
+    return
+  }
+
+  shuttingDown = true
+  logger.info(`Recebido sinal ${signal}. Iniciando graceful shutdown do worker...`)
+  await cleanup()
+  process.exit(0)
 }
 
 // Signal handling
-process.on('SIGTERM', () => shutdown('SIGTERM'))
-process.on('SIGINT', () => shutdown('SIGINT'))
-process.on('SIGUSR2', () => shutdown('SIGUSR2'))
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))
+process.on('SIGUSR2', () => gracefulShutdown('SIGUSR2'))
 
 // Process-level error handling
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error({ reason, promise }, 'Unhandled Promise Rejection')
+process.on('unhandledRejection', (reason) => {
+  crashShutdown(reason, cleanup)
 })
 
-process.on('uncaughtException', async (error: unknown) => {
-  logger.fatal({ error }, 'Uncaught Exception thrown')
-  await shutdown('UNCAUGHT_EXCEPTION', 1)
+process.on('uncaughtException', (error) => {
+  crashShutdown(error, cleanup)
 })
 
 // Start

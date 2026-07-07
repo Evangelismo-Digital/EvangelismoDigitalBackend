@@ -12,7 +12,6 @@ import { closeAllRedisConnections } from '@lib/redis/clients/clients'
 import { httpRateLimit } from '@http/plugins/rate-limit.plugin'
 import { httpRateLimitDefaults } from '@http/plugins/rate-limit-defaults.plugin'
 import { errorHandler } from '@http/plugins/error-handler.plugin'
-import { sentry } from '@http/plugins/sentry.plugin'
 import { requestLifecycle } from '@http/plugins/request-lifecycle.plugin'
 import { memoryMonitor } from '@http/plugins/memory-monitor.plugin'
 
@@ -24,13 +23,10 @@ export const app = fastify({
   genReqId: () => uuidv7(),
 })
 
-// 1. Sentry — process-level init (no hooks)
-app.register(sentry)
-
-// 2. AsyncContext — wraps every request in ALS with requestId from genReqId
+// 1. AsyncContext — wraps every request in ALS with requestId from genReqId
 app.register(asyncContext)
 
-// 3. CORS — short-circuits OPTIONS before auth/lifecycle
+// 2. CORS — short-circuits OPTIONS before auth/lifecycle
 app.register(fastifyCors, {
   origin: env.FRONTEND_URL,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -39,25 +35,25 @@ app.register(fastifyCors, {
   maxAge: 3600,
 })
 
-// 4. Rate limiting — drops abusive traffic before any crypto work
+// 3. Rate limiting — drops abusive traffic before any crypto work
 app.register(httpRateLimitDefaults)
 app.register(httpRateLimit)
 
-// 5. JWT — decorates app with jwtVerify (no interception)
+// 4. JWT — decorates app with jwtVerify (no interception)
 app.register(fastifyJwt, {
   secret: env.JWT_SECRET,
 })
 
-// 6. Request lifecycle — JWT extraction, userId population, request/response logging
+// 5. Request lifecycle — JWT extraction, userId population, request/response logging
 app.register(requestLifecycle)
 
-// 7. Memory monitor — production heap monitoring with self-contained lifecycle
+// 6. Memory monitor — production heap monitoring with self-contained lifecycle
 app.register(memoryMonitor)
 
-// 8. Routes
+// 7. Routes
 app.register(appRoutes)
 
-// 9. Error handler — always last to catch anything thrown by plugins and routes
+// 8. Error handler — always last to catch anything thrown by plugins and routes
 app.register(errorHandler)
 
 // Graceful shutdown — application-level resource cleanup

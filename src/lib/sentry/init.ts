@@ -1,10 +1,8 @@
-import { FastifyPluginAsync } from 'fastify'
-import fp from 'fastify-plugin'
 import * as Sentry from '@sentry/node'
 import { nodeProfilingIntegration } from '@sentry/profiling-node'
 import { env } from '@env/index'
 
-const sentryPlugin: FastifyPluginAsync = async () => {
+export function initSentry(): void {
   if (!env.SENTRY_DSN) {
     return
   }
@@ -18,7 +16,3 @@ const sentryPlugin: FastifyPluginAsync = async () => {
     profileLifecycle: 'trace',
   })
 }
-
-export const sentry = fp(sentryPlugin, {
-  name: 'sentry',
-})

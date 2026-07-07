@@ -1,6 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
-// ----- Hoisted mocks -----
 const { mockSentryInit, mockNodeProfilingIntegration } = vi.hoisted(() => {
   const mockSentryInit = vi.fn()
   const mockNodeProfilingIntegration = vi.fn(() => 'profiling-integration')
@@ -25,15 +24,15 @@ vi.mock('@env/index', () => ({
   },
 }))
 
-import { sentry } from './sentry.plugin'
+import { initSentry } from './init'
 
-describe('sentryPlugin', () => {
+describe('initSentry', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('initializes Sentry with environment-configured sample rates', async () => {
-    await sentry({} as never, {} as never)
+  it('initializes Sentry when SENTRY_DSN is present', () => {
+    initSentry()
 
     expect(mockSentryInit).toHaveBeenCalledOnce()
     expect(mockSentryInit).toHaveBeenCalledWith(
@@ -45,12 +44,11 @@ describe('sentryPlugin', () => {
         profileLifecycle: 'trace',
       }),
     )
-
     expect(mockNodeProfilingIntegration).toHaveBeenCalledOnce()
   })
 })
 
-describe('sentryPlugin (no DSN)', () => {
+describe('initSentry (no DSN)', () => {
   it('does not initialize Sentry when SENTRY_DSN is absent', async () => {
     vi.resetModules()
 
@@ -72,11 +70,11 @@ describe('sentryPlugin (no DSN)', () => {
     }))
 
     // @ts-expect-error — Dynamic import after vi.resetModules() is unresolvable by tsc but works at runtime via vite-tsconfig-paths
-    const { sentry: sentryNoDsn } = await import('@http/plugins/sentry.plugin')
+    const { initSentry: initSentryNoDsn } = await import('@lib/sentry/init')
 
     mockSentryInit.mockClear()
 
-    await sentryNoDsn({} as never, {} as never)
+    initSentryNoDsn()
 
     expect(mockSentryInit).not.toHaveBeenCalled()
   })
