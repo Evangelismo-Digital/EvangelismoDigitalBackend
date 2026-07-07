@@ -1,4 +1,4 @@
-import { OUTBOX_CONSTANTS } from 'messages/constants/outbox/outbox'
+import { OUTBOX_CONSTANTS, OUTBOX_CONSTANTS as OUTBOX_CFG } from 'messages/constants/outbox/outbox'
 import { QUEUE } from 'messages/constants/queue/queue'
 import { logger } from '@lib/logger'
 import { getMailQueue } from '@lib/queue/mail-queue'
@@ -12,7 +12,6 @@ import {
   IOutboxEventType,
 } from 'core/contracts/repository/outbox-repository.interface'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
-import { OUTBOX_CONSTANTS as OUTBOX_CFG } from 'messages/constants/outbox/outbox'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 
 export class OutboxProcessor {
