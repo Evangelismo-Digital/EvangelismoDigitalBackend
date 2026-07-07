@@ -3,7 +3,7 @@ import { env } from '@env/index'
 import { appRoutes } from '@http/routes'
 import { logger, runWithRequestId, runWithUserContext } from '@lib/logger'
 import { v7 as uuidv7 } from 'uuid'
-import z from 'zod'
+import z, { ZodError } from 'zod'
 import fastifyJwt from '@fastify/jwt'
 import fastifyCors from '@fastify/cors'
 import * as Sentry from '@sentry/node'
@@ -14,6 +14,7 @@ import { closeAllRedisConnections } from '@lib/redis/clients/clients'
 import { httpRateLimit } from '@http/plugins/rate-limit.plugin'
 import { httpRateLimitDefaults } from '@http/plugins/rate-limit-defaults.plugin'
 import { errorHandler } from '@http/plugins/error-handler.plugin'
+import { DomainError } from 'errors/domain-error'
 z.config(z.locales.pt())
 
 export const app = fastify({
@@ -31,7 +32,16 @@ if (env.SENTRY_DSN) {
     profileLifecycle: 'trace',
   })
 
-  Sentry.setupFastifyErrorHandler(app)
+  Sentry.setupFastifyErrorHandler(app, {
+    shouldHandleError(error) {
+      // Domain errors (4xx) are expected business behavior — don't report
+      if (error instanceof DomainError) return false
+      if (error instanceof ZodError) return false
+
+      // Infrastructure, system, and unknown errors are bugs — report
+      return true
+    },
+  })
 }
 
 let memoryInterval: NodeJS.Timeout | null = null

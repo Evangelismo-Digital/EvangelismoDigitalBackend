@@ -20,10 +20,6 @@ export async function deleteChurch(request: FastifyRequest, reply: FastifyReply)
   })
 
   if (isErr(result)) {
-    logger.warn({
-      msg: 'Falha ao deletar a igreja',
-      error: result.error.message,
-    })
     return HttpErrorMapper.map(result.error, reply)
   }
 

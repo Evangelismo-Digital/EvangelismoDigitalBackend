@@ -18,10 +18,10 @@ export abstract class InfrastructureError extends AppError {
 
     this.originalError = originalError
 
-    //Seus loggers globais capturem a stack trace nativamente.
+    // Use native Error.cause to preserve the cause chain
+    // for logging/Sentry without leaking to error.body (HTTP response)
     if (originalError) {
-      this.body.originalError =
-        originalError instanceof Error ? originalError.stack || originalError.message : originalError
+      this.cause = originalError
     }
   }
 }

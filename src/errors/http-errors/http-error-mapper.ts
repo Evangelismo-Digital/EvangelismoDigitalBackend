@@ -1,10 +1,10 @@
 import { FastifyReply } from 'fastify'
-import { AppError } from '../app-error'
+import { DomainError } from '../domain-error'
 import { toHttpStatus } from './http-error-status.mapper'
 
 export class HttpErrorMapper {
   static map(error: Error, reply: FastifyReply) {
-    if (error instanceof AppError) {
+    if (error instanceof DomainError) {
       const httpCode = toHttpStatus(error.type)
       return reply.status(httpCode).send({
         message: error.body.message,
@@ -13,7 +13,8 @@ export class HttpErrorMapper {
       })
     }
 
-    // Handle unknown errors
+    // InfrastructureError, SystemError, and unknown errors are rethrown
+    // to reach the global Fastify error handler for sanitization
     throw error
   }
 }

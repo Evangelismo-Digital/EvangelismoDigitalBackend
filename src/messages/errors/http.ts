@@ -13,4 +13,8 @@ export const HTTP_ERRORS = {
     code: 'RESOURCE_NOT_FOUND',
     message: 'Recurso não encontrado!',
   },
+  SERVICE_UNAVAILABLE: {
+    code: 'SERVICE_UNAVAILABLE',
+    message: 'Serviço temporariamente indisponível. Por favor, tente novamente mais tarde.',
+  },
 } as const satisfies Record<string, IErrorDetail>

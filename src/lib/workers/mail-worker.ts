@@ -109,7 +109,7 @@ export async function startMailWorker(outboxRepository: IOutboxRepository) {
         {
           jobId: job?.id,
           code: infraError.body.code,
-          originalError: infraError.body.originalError,
+          cause: infraError.cause,
         },
         `❌ Falha de Infraestrutura: ${infraError.message}`,
       )

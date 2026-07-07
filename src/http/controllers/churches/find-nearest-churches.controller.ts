@@ -21,13 +21,7 @@ export async function findNearestChurches(
   const result = await findNearestChurchesUseCase.execute({ cep })
 
   if (isErr(result)) {
-    const error = result.error
-    logger.warn({
-      msg: 'Falha ao buscar igrejas próximas',
-      error: error.message,
-      cep: request.query.cep,
-    })
-    return HttpErrorMapper.map(error, reply)
+    return HttpErrorMapper.map(result.error, reply)
   }
 
   const response = result.value

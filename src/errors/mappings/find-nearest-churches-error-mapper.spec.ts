@@ -58,7 +58,9 @@ describe('FindNearestChurchesErrorMapper', () => {
     const err = createFakeAxiosError(429, undefined, 'https://viacep.com.br/ws/12345678/json')
     const mapped = FindNearestChurchesErrorMapper.map(err)
     expect(mapped).toBeInstanceOf(ServiceBusyError)
-    expect(mapped.message).toContain('ViaCEP')
+    expect(mapped.body.code).toBe('SERVICE_BUSY')
+    // Provider name is preserved as a class property, not in the user-facing message
+    expect((mapped as ServiceBusyError).provider).toBe('ViaCEP')
   })
 
   it('maps ERR_CANCELED to TimeoutExceededError', () => {
