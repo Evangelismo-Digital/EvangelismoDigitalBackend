@@ -101,10 +101,7 @@ export function makeFindNearestChurchesUseCase(
   })
 
   // Wrap with Resilient Decorator (rate limiting + error mapping only, cache is at L3)
-  const routingProvider = new ResilientChurchRoutingProviderDecorator(
-    rawRoutingProvider,
-    redisRateLimitConnection,
-  )
+  const routingProvider = new ResilientChurchRoutingProviderDecorator(rawRoutingProvider, redisRateLimitConnection)
 
   const calculateChurchRouteDistancesUseCase = new CalculateChurchRouteDistancesUseCase(routingProvider)
 

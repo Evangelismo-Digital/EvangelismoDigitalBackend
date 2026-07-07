@@ -194,12 +194,15 @@ describe('errorHandlerPlugin', () => {
       expect(mockCaptureException).toHaveBeenCalledWith(infraError)
 
       // Request context attached
-      expect(mockSetContext).toHaveBeenCalledWith('request', expect.objectContaining({
-        requestId: 'test-request-id',
-        method: 'GET',
-        url: '/test',
-        ip: '203.0.113.10',
-      }))
+      expect(mockSetContext).toHaveBeenCalledWith(
+        'request',
+        expect.objectContaining({
+          requestId: 'test-request-id',
+          method: 'GET',
+          url: '/test',
+          ip: '203.0.113.10',
+        }),
+      )
 
       expect(mockSetTag).toHaveBeenCalledWith('errorType', 'DatabaseQueryError')
 

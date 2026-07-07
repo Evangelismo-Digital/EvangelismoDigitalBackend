@@ -1,10 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 // ----- Hoisted mocks -----
-const {
-  mockSentryInit,
-  mockNodeProfilingIntegration,
-} = vi.hoisted(() => {
+const { mockSentryInit, mockNodeProfilingIntegration } = vi.hoisted(() => {
   const mockSentryInit = vi.fn()
   const mockNodeProfilingIntegration = vi.fn(() => 'profiling-integration')
 

@@ -46,7 +46,11 @@ export class LocationIqProvider implements IRawGeocodingProvider {
 
   async searchRaw(query: string, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
     return this.performRequest(
-      { q: query, limit: LOCATION_IQ_CONFIG.API_PARAMS.SEARCH_LIMIT, addressdetails: LOCATION_IQ_CONFIG.API_PARAMS.ADDRESS_DETAILS },
+      {
+        q: query,
+        limit: LOCATION_IQ_CONFIG.API_PARAMS.SEARCH_LIMIT,
+        addressdetails: LOCATION_IQ_CONFIG.API_PARAMS.ADDRESS_DETAILS,
+      },
       signal,
     )
   }

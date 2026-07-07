@@ -316,14 +316,17 @@ describe('ResilientCache Unit Tests', () => {
 
       // Fetcher that never resolves — simulates a library bug
       const fetcher = vi.fn().mockImplementation(
-        () => new Promise(() => { /* never settles */ }),
+        () =>
+          new Promise(() => {
+            /* never settles */
+          }),
       )
 
       const pendingMap = (resilientCache as any).pendingFetches
       expect(pendingMap.size).toBe(0)
 
       const resultPromise = resilientCache.getOrFetch(generatedKey, fetcher)
-      
+
       // Wait for event loop cycle so the Redis get resolves and sets the pending fetch
       await new Promise((resolve) => setTimeout(resolve, 10))
 

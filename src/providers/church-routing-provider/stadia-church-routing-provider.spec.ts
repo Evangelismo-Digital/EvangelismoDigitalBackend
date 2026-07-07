@@ -69,7 +69,7 @@ describe('StadiaChurchRoutingProvider', () => {
       origin: { lat: -23.5505, lon: -46.6333 },
       destinations: [
         { lat: -23.551, lon: -46.634 },
-        { lat: -23.560, lon: -46.640 },
+        { lat: -23.56, lon: -46.64 },
       ],
       signal: new AbortController().signal,
     })
@@ -91,7 +91,7 @@ describe('StadiaChurchRoutingProvider', () => {
         sources: [{ lat: -23.5505, lon: -46.6333 }],
         targets: [
           { lat: -23.551, lon: -46.634 },
-          { lat: -23.560, lon: -46.640 },
+          { lat: -23.56, lon: -46.64 },
         ],
         costing: 'pedestrian',
         units: 'kilometers',
@@ -107,9 +107,7 @@ describe('StadiaChurchRoutingProvider', () => {
     mockedPost.mockResolvedValueOnce({
       status: 200,
       data: {
-        sources_to_targets: [
-          [{ distance: 2.5, time: 300 }],
-        ],
+        sources_to_targets: [[{ distance: 2.5, time: 300 }]],
       },
     })
 
@@ -151,9 +149,7 @@ describe('StadiaChurchRoutingProvider', () => {
     mockedPost.mockResolvedValueOnce({
       status: 200,
       data: {
-        sources_to_targets: [
-          [{ distance: 1.2, time: 150 }],
-        ],
+        sources_to_targets: [[{ distance: 1.2, time: 150 }]],
       },
     })
 
@@ -202,7 +198,7 @@ describe('StadiaChurchRoutingProvider', () => {
       origin: { lat: -23.5505, lon: -46.6333 },
       destinations: [
         { lat: -23.551, lon: -46.634 },
-        { lat: -23.560, lon: -46.640 },
+        { lat: -23.56, lon: -46.64 },
       ],
     })
 
@@ -235,8 +231,8 @@ describe('StadiaChurchRoutingProvider', () => {
       origin: { lat: -23.5505, lon: -46.6333 },
       destinations: [
         { lat: -23.551, lon: -46.634 },
-        { lat: -23.560, lon: -46.640 },
-        { lat: -23.570, lon: -46.650 },
+        { lat: -23.56, lon: -46.64 },
+        { lat: -23.57, lon: -46.65 },
       ],
     })
 

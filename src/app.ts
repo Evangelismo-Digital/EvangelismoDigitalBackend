@@ -15,6 +15,7 @@ import { errorHandler } from '@http/plugins/error-handler.plugin'
 import { sentry } from '@http/plugins/sentry.plugin'
 import { requestLifecycle } from '@http/plugins/request-lifecycle.plugin'
 import { memoryMonitor } from '@http/plugins/memory-monitor.plugin'
+
 z.config(z.locales.pt())
 
 export const app = fastify({

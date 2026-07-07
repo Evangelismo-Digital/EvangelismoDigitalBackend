@@ -81,10 +81,7 @@ export const OutboxSignal = {
       await ensureConnected(client, 'OutboxPublisher')
       await client.publish(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL, JSON.stringify({ publicId, event }))
     } catch (err) {
-      logger.warn(
-        { err },
-        OUTBOX_LOGS.SIGNAL_PUBLISH_FAILED,
-      )
+      logger.warn({ err }, OUTBOX_LOGS.SIGNAL_PUBLISH_FAILED)
     }
   },
 

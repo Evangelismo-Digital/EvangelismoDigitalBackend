@@ -7,12 +7,7 @@ export class ServiceBusyError extends InfrastructureError {
   public readonly provider: string
 
   constructor(provider: string) {
-    super(
-      INFRA_ERRORS.SERVICE_BUSY,
-      undefined,
-      ErrorType.TOO_MANY_REQUESTS,
-      FailureMode.RETRYABLE,
-    )
+    super(INFRA_ERRORS.SERVICE_BUSY, undefined, ErrorType.TOO_MANY_REQUESTS, FailureMode.RETRYABLE)
     this.name = 'ServiceBusyError'
     this.provider = provider
   }

@@ -91,7 +91,10 @@ export class CepToLatLonUseCase {
 
     // Strategy A: Exact Match (Street)
     if (logradouro) {
-      const exactResult = await this.geocodingProvider.search(`${logradouro}, ${localidade} - ${uf}, ${CHURCH_CONSTANTS.GEOCODING_COUNTRY}`, signal)
+      const exactResult = await this.geocodingProvider.search(
+        `${logradouro}, ${localidade} - ${uf}, ${CHURCH_CONSTANTS.GEOCODING_COUNTRY}`,
+        signal,
+      )
       if (isOk(exactResult) && exactResult.value) {
         return ok(this.mapResponse(exactResult.value))
       }
@@ -102,7 +105,10 @@ export class CepToLatLonUseCase {
 
     // Strategy B: Approximate Match (Neighborhood)
     if (bairro) {
-      const approxResult = await this.geocodingProvider.search(`${bairro}, ${localidade} - ${uf}, ${CHURCH_CONSTANTS.GEOCODING_COUNTRY}`, signal)
+      const approxResult = await this.geocodingProvider.search(
+        `${bairro}, ${localidade} - ${uf}, ${CHURCH_CONSTANTS.GEOCODING_COUNTRY}`,
+        signal,
+      )
       if (isOk(approxResult) && approxResult.value) {
         return ok(this.mapResponse(approxResult.value))
       }

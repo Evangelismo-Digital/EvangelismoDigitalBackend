@@ -97,10 +97,7 @@ export class OutboxProcessor {
     const updateResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.SENDING)
 
     if (isErr(updateResult)) {
-      logger.error(
-        { publicId: event.publicId, error: updateResult.error },
-        OUTBOX_LOGS.STATUS_UPDATE_FAILED,
-      )
+      logger.error({ publicId: event.publicId, error: updateResult.error }, OUTBOX_LOGS.STATUS_UPDATE_FAILED)
       return
     }
 
@@ -111,10 +108,7 @@ export class OutboxProcessor {
       const revertResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.PENDING)
 
       if (isErr(revertResult)) {
-        logger.error(
-          { publicId: event.publicId, error: revertResult.error },
-          OUTBOX_LOGS.REVERT_FATAL,
-        )
+        logger.error({ publicId: event.publicId, error: revertResult.error }, OUTBOX_LOGS.REVERT_FATAL)
       } else {
         logger.error({ publicId: event.publicId, error }, OUTBOX_LOGS.DISPATCH_REVERTED)
       }

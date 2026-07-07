@@ -1,6 +1,7 @@
 export const OUTBOX_LOGS = {
   // outbox-signal
-  SIGNAL_PUBLISH_FAILED: 'Não foi possível publicar sinal de nova outbox. O cron job continuará funcionando como fallback.',
+  SIGNAL_PUBLISH_FAILED:
+    'Não foi possível publicar sinal de nova outbox. O cron job continuará funcionando como fallback.',
   SIGNAL_PROCESSING_ERROR: 'Erro ao processar sinal de Outbox',
   UNEXPECTED_CHANNEL: 'Mensagem recebida em canal inesperado. Ignorando.',
   LISTENER_REMOVED: 'Listener anterior de OutboxSignal removido com sucesso',

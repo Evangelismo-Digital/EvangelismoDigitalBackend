@@ -90,12 +90,8 @@ const errorHandlerPlugin: FastifyPluginAsync = async (app) => {
       captureWithRequestContext(error, request)
 
       return reply.status(httpCode).send({
-        message: isServiceUnavailable
-          ? HTTP_ERRORS.SERVICE_UNAVAILABLE.message
-          : HTTP_ERRORS.INTERNAL_SERVER.message,
-        code: isServiceUnavailable
-          ? HTTP_ERRORS.SERVICE_UNAVAILABLE.code
-          : HTTP_ERRORS.INTERNAL_SERVER.code,
+        message: isServiceUnavailable ? HTTP_ERRORS.SERVICE_UNAVAILABLE.message : HTTP_ERRORS.INTERNAL_SERVER.message,
+        code: isServiceUnavailable ? HTTP_ERRORS.SERVICE_UNAVAILABLE.code : HTTP_ERRORS.INTERNAL_SERVER.code,
       })
     }
 

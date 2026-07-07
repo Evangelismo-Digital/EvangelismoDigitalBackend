@@ -19,4 +19,3 @@ export {
   VIACEP_CONFIG,
   STADIA_CONFIG,
 } from './providers'
-
