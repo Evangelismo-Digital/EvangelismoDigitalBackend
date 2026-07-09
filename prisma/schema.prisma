@@ -118,3 +118,36 @@ model Church {
 
   @@map("churches")
 }
+
+model AnalyticsSession {
+  id          String           @id @default(uuid(7))
+  visitorId   String           @map("visitor_id")
+  sessionId   String           @unique @map("session_id")
+  ipAddress   String?          @map("ip_address")
+  userAgent   String?          @map("user_agent")
+  utmSource   String?          @map("utm_source")
+  utmMedium   String?          @map("utm_medium")
+  utmCampaign String?          @map("utm_campaign")
+  utmTerm     String?          @map("utm_term")
+  utmContent  String?          @map("utm_content")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  events      AnalyticsEvent[]
+
+  @@index([visitorId])
+  @@map("analytics_sessions")
+}
+
+model AnalyticsEvent {
+  id          String           @id @default(uuid(7))
+  sessionId   String           @map("session_id")
+  session     AnalyticsSession @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+  eventType   String           @map("event_type")
+  path        String
+  payload     Json?
+  occurredAt  DateTime         @default(now()) @map("occurred_at")
+
+  @@index([sessionId])
+  @@index([eventType])
+  @@map("analytics_events")
+}

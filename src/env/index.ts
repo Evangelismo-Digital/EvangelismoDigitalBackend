@@ -92,6 +92,7 @@ const envSchema = z.object({
   STADIA_MAPS_API_URL: z.url().default('https://api.stadiamaps.com/route/v1'),
   STADIA_MAPS_MATRIX_API_URL: z.url().default('https://api.stadiamaps.com/sources_to_targets'),
   STADIA_API_TOKEN: z.string().min(1, 'STADIA_API_TOKEN is required'),
+  COOKIE_SECRET: z.string().min(32, 'Cookie secret must be at least 32 characters long').default('super-secret-cookie-signing-key-for-local-development-must-be-long'),
 })
 
 const _env = envSchema.safeParse(process.env)

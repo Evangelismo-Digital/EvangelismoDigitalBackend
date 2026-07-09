@@ -6,6 +6,7 @@ import { v7 as uuidv7 } from 'uuid'
 import z from 'zod'
 import fastifyJwt from '@fastify/jwt'
 import fastifyCors from '@fastify/cors'
+import fastifyCookie from '@fastify/cookie'
 import { RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { asyncContext } from '@http/plugins/async-context.plugin'
 import { closeAllRedisConnections } from '@lib/redis/clients/clients'
@@ -13,6 +14,7 @@ import { httpRateLimit } from '@http/plugins/rate-limit.plugin'
 import { errorHandler } from '@http/plugins/error-handler.plugin'
 import { requestLifecycle } from '@http/plugins/request-lifecycle.plugin'
 import { memoryMonitor } from '@http/plugins/memory-monitor.plugin'
+import { analytics } from '@http/plugins/analytics.plugin'
 
 z.config(z.locales.pt())
 
@@ -25,17 +27,26 @@ export const app = fastify({
 // 1. AsyncContext — wraps every request in ALS with requestId from genReqId
 app.register(asyncContext)
 
-// 2. CORS — short-circuits OPTIONS before auth/lifecycle
+// 2. CORS — short-circuits OPTIONS before auth/lifecycle / rate limit
 app.register(fastifyCors, {
   origin: env.FRONTEND_URL,
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   exposedHeaders: ['Authorization'],
   maxAge: 3600,
 })
 
-// 3. Rate limiting — drops abusive traffic before any crypto work
+// 3. Rate limiting — drops abusive traffic before any crypto/cookie work
 app.register(httpRateLimit)
+
+// Cookies parser & signer
+app.register(fastifyCookie, {
+  secret: env.COOKIE_SECRET,
+})
+
+// Analytics sessions and events tracking
+app.register(analytics)
 
 // 4. JWT — decorates app with jwtVerify (no interception)
 app.register(fastifyJwt, {
