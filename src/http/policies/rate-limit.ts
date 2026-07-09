@@ -53,6 +53,7 @@ export const HTTP_RATE_LIMIT_POLICIES = {
     check: {
       max: 120,
       timeWindow: '1 minute',
+      skipOnError: true,
     },
   },
 } as const

@@ -10,7 +10,6 @@ import { RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { asyncContext } from '@http/plugins/async-context.plugin'
 import { closeAllRedisConnections } from '@lib/redis/clients/clients'
 import { httpRateLimit } from '@http/plugins/rate-limit.plugin'
-import { httpRateLimitDefaults } from '@http/plugins/rate-limit-defaults.plugin'
 import { errorHandler } from '@http/plugins/error-handler.plugin'
 import { requestLifecycle } from '@http/plugins/request-lifecycle.plugin'
 import { memoryMonitor } from '@http/plugins/memory-monitor.plugin'
@@ -36,7 +35,6 @@ app.register(fastifyCors, {
 })
 
 // 3. Rate limiting — drops abusive traffic before any crypto work
-app.register(httpRateLimitDefaults)
 app.register(httpRateLimit)
 
 // 4. JWT — decorates app with jwtVerify (no interception)
