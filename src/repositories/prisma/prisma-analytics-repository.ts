@@ -1,8 +1,9 @@
 import { prisma } from '@lib/prisma'
-import { AnalyticsSession, AnalyticsEvent } from '@prisma/client'
 import {
   AnalyticsRepository,
   CreateEventInput,
+  IAnalyticsEvent,
+  IAnalyticsSession,
   UpsertSessionInput,
 } from 'core/contracts/repository/analytics-repository.interface'
 import { Result, ok, err } from 'core/shared/result'
@@ -10,7 +11,7 @@ import { AppError } from 'errors/app-error'
 import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
 
 export class PrismaAnalyticsRepository implements AnalyticsRepository {
-  async upsertSession(data: UpsertSessionInput): Promise<Result<AnalyticsSession, AppError>> {
+  async upsertSession(data: UpsertSessionInput): Promise<Result<IAnalyticsSession, AppError>> {
     try {
       const session = await prisma.analyticsSession.upsert({
         where: { sessionId: data.sessionId },
@@ -42,7 +43,7 @@ export class PrismaAnalyticsRepository implements AnalyticsRepository {
     }
   }
 
-  async createEvent(data: CreateEventInput): Promise<Result<AnalyticsEvent, AppError>> {
+  async createEvent(data: CreateEventInput): Promise<Result<IAnalyticsEvent, AppError>> {
     try {
       const event = await prisma.analyticsEvent.create({
         data: {
@@ -58,7 +59,7 @@ export class PrismaAnalyticsRepository implements AnalyticsRepository {
     }
   }
 
-  async findSessionBySessionId(sessionId: string): Promise<Result<AnalyticsSession | null, AppError>> {
+  async findSessionBySessionId(sessionId: string): Promise<Result<IAnalyticsSession | null, AppError>> {
     try {
       const session = await prisma.analyticsSession.findUnique({
         where: { sessionId },

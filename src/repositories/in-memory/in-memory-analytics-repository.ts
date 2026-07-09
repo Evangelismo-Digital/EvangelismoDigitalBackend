@@ -1,18 +1,19 @@
-import { AnalyticsSession, AnalyticsEvent } from '@prisma/client'
 import { randomUUID } from 'node:crypto'
 import {
   AnalyticsRepository,
   CreateEventInput,
+  IAnalyticsEvent,
+  IAnalyticsSession,
   UpsertSessionInput,
 } from 'core/contracts/repository/analytics-repository.interface'
 import { Result, ok } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 
 export class InMemoryAnalyticsRepository implements AnalyticsRepository {
-  public sessions: AnalyticsSession[] = []
-  public events: AnalyticsEvent[] = []
+  public sessions: IAnalyticsSession[] = []
+  public events: IAnalyticsEvent[] = []
 
-  async upsertSession(data: UpsertSessionInput): Promise<Result<AnalyticsSession, AppError>> {
+  async upsertSession(data: UpsertSessionInput): Promise<Result<IAnalyticsSession, AppError>> {
     let session = this.sessions.find((s) => s.sessionId === data.sessionId)
 
     if (session) {
@@ -44,8 +45,8 @@ export class InMemoryAnalyticsRepository implements AnalyticsRepository {
     return ok(session)
   }
 
-  async createEvent(data: CreateEventInput): Promise<Result<AnalyticsEvent, AppError>> {
-    const event: AnalyticsEvent = {
+  async createEvent(data: CreateEventInput): Promise<Result<IAnalyticsEvent, AppError>> {
+    const event: IAnalyticsEvent = {
       id: randomUUID(),
       sessionId: data.sessionId,
       eventType: data.eventType,
@@ -59,7 +60,7 @@ export class InMemoryAnalyticsRepository implements AnalyticsRepository {
     return ok(event)
   }
 
-  async findSessionBySessionId(sessionId: string): Promise<Result<AnalyticsSession | null, AppError>> {
+  async findSessionBySessionId(sessionId: string): Promise<Result<IAnalyticsSession | null, AppError>> {
     const session = this.sessions.find((s) => s.sessionId === sessionId) || null
     return ok(session)
   }
