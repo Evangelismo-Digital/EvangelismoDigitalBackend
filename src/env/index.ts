@@ -1,8 +1,7 @@
+import 'dotenv/config'
 import { z } from 'zod'
 import ms from 'ms'
-import { ENV_CONSTANTS } from 'messages/constants/env/env'
-
-process.loadEnvFile?.('.env')
+import { ENV_CONSTANTS } from '../messages/constants/env/env'
 
 const envSchema = z.object({
   // Environment
