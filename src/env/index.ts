@@ -33,8 +33,33 @@ const envSchema = z.object({
   // HTTP rate limits (test overrides supported via env)
   HTTP_RATE_LIMIT_GLOBAL_MAX: z.coerce.number().int().positive().default(300),
   HTTP_RATE_LIMIT_GLOBAL_TIME_WINDOW: z.string().default('1 minute'),
+
+  HTTP_RATE_LIMIT_AUTH_SESSION_MAX: z.coerce.number().int().positive().default(15),
+  HTTP_RATE_LIMIT_AUTH_SESSION_TIME_WINDOW: z.string().default('1 minute'),
+
+  HTTP_RATE_LIMIT_AUTH_REGISTER_MAX: z.coerce.number().int().positive().default(5),
+  HTTP_RATE_LIMIT_AUTH_REGISTER_TIME_WINDOW: z.string().default('1 minute'),
+
+  HTTP_RATE_LIMIT_AUTH_FORGOT_PASSWORD_MAX: z.coerce.number().int().positive().default(5),
+  HTTP_RATE_LIMIT_AUTH_FORGOT_PASSWORD_TIME_WINDOW: z.string().default('1 hour'),
+
+  HTTP_RATE_LIMIT_AUTH_RESET_PASSWORD_MAX: z.coerce.number().int().positive().default(5),
+  HTTP_RATE_LIMIT_AUTH_RESET_PASSWORD_TIME_WINDOW: z.string().default('1 hour'),
+
+  HTTP_RATE_LIMIT_USERS_LIST_MAX: z.coerce.number().int().positive().default(20),
+  HTTP_RATE_LIMIT_USERS_LIST_TIME_WINDOW: z.string().default('1 hour'),
+
+  HTTP_RATE_LIMIT_USERS_DELETE_MAX: z.coerce.number().int().positive().default(10),
+  HTTP_RATE_LIMIT_USERS_DELETE_TIME_WINDOW: z.string().default('1 hour'),
+
   HTTP_RATE_LIMIT_CHURCHES_NEAREST_MAX: z.coerce.number().int().positive().default(30000),
   HTTP_RATE_LIMIT_CHURCHES_NEAREST_TIME_WINDOW: z.string().default('1 minute'),
+
+  HTTP_RATE_LIMIT_FORMS_SUBMIT_MAX: z.coerce.number().int().positive().default(60),
+  HTTP_RATE_LIMIT_FORMS_SUBMIT_TIME_WINDOW: z.string().default('1 minute'),
+
+  HTTP_RATE_LIMIT_HEALTH_CHECK_MAX: z.coerce.number().int().positive().default(120),
+  HTTP_RATE_LIMIT_HEALTH_CHECK_TIME_WINDOW: z.string().default('1 minute'),
 
   SENTRY_DSN: z.string().optional(),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.2),

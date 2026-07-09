@@ -26,10 +26,6 @@ const { nearestChurchesResponse, rateLimitPolicies, mockExecute, mockMakeFindNea
           max: 1000,
           timeWindow: '1 minute',
         },
-        registerAdmin: {
-          max: 15,
-          timeWindow: '1 hour',
-        },
         forgotPassword: {
           max: 100,
           timeWindow: '1 hour',

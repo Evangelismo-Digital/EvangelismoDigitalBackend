@@ -19,7 +19,7 @@ export async function usersRoutes(app: FastifyInstance) {
     '/register/admin',
     {
       onRequest: [verifyJwt, verifyUserRole([UserRole.ADMIN])],
-      config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.registerAdmin },
+      config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.register },
     },
     registerAdmin,
   )

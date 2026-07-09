@@ -7,34 +7,30 @@ export const HTTP_RATE_LIMIT_POLICIES = {
   },
   auth: {
     session: {
-      max: 1000,
-      timeWindow: '1 minute',
+      max: env.HTTP_RATE_LIMIT_AUTH_SESSION_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_AUTH_SESSION_TIME_WINDOW,
     },
     register: {
-      max: 1000,
-      timeWindow: '1 minute',
-    },
-    registerAdmin: {
-      max: 30,
-      timeWindow: '1 hour',
+      max: env.HTTP_RATE_LIMIT_AUTH_REGISTER_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_AUTH_REGISTER_TIME_WINDOW,
     },
     forgotPassword: {
-      max: 200,
-      timeWindow: '1 hour',
+      max: env.HTTP_RATE_LIMIT_AUTH_FORGOT_PASSWORD_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_AUTH_FORGOT_PASSWORD_TIME_WINDOW,
     },
     resetPassword: {
-      max: 200,
-      timeWindow: '1 hour',
+      max: env.HTTP_RATE_LIMIT_AUTH_RESET_PASSWORD_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_AUTH_RESET_PASSWORD_TIME_WINDOW,
     },
   },
   users: {
     list: {
-      max: 20,
-      timeWindow: '1 hour',
+      max: env.HTTP_RATE_LIMIT_USERS_LIST_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_USERS_LIST_TIME_WINDOW,
     },
     delete: {
-      max: 10,
-      timeWindow: '1 hour',
+      max: env.HTTP_RATE_LIMIT_USERS_DELETE_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_USERS_DELETE_TIME_WINDOW,
     },
   },
   churches: {
@@ -45,14 +41,14 @@ export const HTTP_RATE_LIMIT_POLICIES = {
   },
   forms: {
     submit: {
-      max: 60,
-      timeWindow: '1 minute',
+      max: env.HTTP_RATE_LIMIT_FORMS_SUBMIT_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_FORMS_SUBMIT_TIME_WINDOW,
     },
   },
   health: {
     check: {
-      max: 120,
-      timeWindow: '1 minute',
+      max: env.HTTP_RATE_LIMIT_HEALTH_CHECK_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_HEALTH_CHECK_TIME_WINDOW,
       skipOnError: true,
     },
   },
