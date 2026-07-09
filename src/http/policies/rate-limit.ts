@@ -7,7 +7,7 @@ export const HTTP_RATE_LIMIT_POLICIES = {
   },
   auth: {
     session: {
-      max: 30,
+      max: 1000,
       timeWindow: '1 minute',
     },
     register: {
@@ -15,11 +15,11 @@ export const HTTP_RATE_LIMIT_POLICIES = {
       timeWindow: '1 minute',
     },
     registerAdmin: {
-      max: 15,
+      max: 30,
       timeWindow: '1 hour',
     },
     forgotPassword: {
-      max: 100,
+      max: 200,
       timeWindow: '1 hour',
     },
     resetPassword: {
