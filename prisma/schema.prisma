@@ -84,6 +84,7 @@ model FormSubmission {
   email            String   @unique
   decisaoPorCristo Boolean
   location         String?
+  ipAddress        String?  @map("ip_address")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

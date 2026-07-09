@@ -18,6 +18,7 @@ export interface IFormSubmission {
   email: string
   decisaoPorCristo: boolean
   location?: string | null
+  ipAddress?: string | null
   createdAt: Date
   updatedAt: Date
 }

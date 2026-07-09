@@ -21,6 +21,7 @@ export class InMemoryFormsSubmissionRepository implements FormsRepository {
       email: data.email,
       decisaoPorCristo: data.decisaoPorCristo,
       location: data.location || null,
+      ipAddress: data.ipAddress || null,
       createdAt: now,
       updatedAt: now,
     }
