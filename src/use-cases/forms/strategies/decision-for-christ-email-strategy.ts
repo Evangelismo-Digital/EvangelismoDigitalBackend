@@ -49,12 +49,13 @@ export class DecisionForChristEmailStrategy implements IFormEmailStrategy {
     const name = nameResult.value
     const lastName = lastNameResult.value
     const location = locationResult.value
+    const ipAddress = typeof form.ipAddress === 'string' ? form.ipAddress : undefined
 
     return ok({
       to: env.ADMIN_EMAIL,
       subject: decisionForChristStaffSubjectText(),
-      message: decisionForChristStaffTextTemplate(name, email),
-      html: decisionForChristStaffHtmlTemplate(name, lastName, email, location),
+      message: decisionForChristStaffTextTemplate(name, email, ipAddress),
+      html: decisionForChristStaffHtmlTemplate(name, lastName, email, location, ipAddress),
       context: { type: 'decision-for-Christ', recipient: 'internal' },
     })
   }

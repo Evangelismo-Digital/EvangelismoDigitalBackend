@@ -16,6 +16,7 @@ export async function formSubmission(request: FastifyRequest, reply: FastifyRepl
   // 3. Execução
   const result = await formSubmissionUseCase.execute({
     ...data,
+    ipAddress: request.ip,
   })
 
   // 4. Tratamento de erro (HTTP Errors)

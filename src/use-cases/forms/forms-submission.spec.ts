@@ -68,6 +68,43 @@ describe('Forms Submission Use Case', async () => {
     }
   })
 
+  it('should set ipAddress to null if not provided', async () => {
+    const formsRepository = new InMemoryFormsSubmissionRepository()
+    const useCase = new FormsSubmissionUseCase(formsRepository, mockEventRegistration)
+
+    const data = {
+      name: 'John',
+      lastName: 'Smith',
+      email: 'john@example.com',
+      decisaoPorCristo: false,
+    }
+
+    const result = await useCase.execute(data)
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.value.sanitizedFormSubmission.ipAddress).toBeNull()
+    }
+  })
+
+  it('should map ipAddress properly if provided', async () => {
+    const formsRepository = new InMemoryFormsSubmissionRepository()
+    const useCase = new FormsSubmissionUseCase(formsRepository, mockEventRegistration)
+
+    const data = {
+      name: 'John',
+      lastName: 'Smith',
+      email: 'john@example.com',
+      decisaoPorCristo: false,
+      ipAddress: '192.168.1.1',
+    }
+
+    const result = await useCase.execute(data)
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.value.sanitizedFormSubmission.ipAddress).toBe('192.168.1.1')
+    }
+  })
+
   it('should return FormSubmissionError if repository returns null/failure', async () => {
     const formsRepository = new InMemoryFormsSubmissionRepository()
     vi.spyOn(formsRepository, 'create').mockResolvedValueOnce(err(new FormSubmissionError()))

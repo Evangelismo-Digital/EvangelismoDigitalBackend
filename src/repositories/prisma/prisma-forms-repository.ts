@@ -18,7 +18,7 @@ export class PrismaFormsRepository implements FormsRepository {
   async create(data: IFormSubmissionInputData): Promise<Result<IFormSubmission, AppError>> {
     try {
       const formSubmission = await this.dbContext.client.formSubmission.create({
-        data,
+        data
       })
 
       return ok(formSubmission)

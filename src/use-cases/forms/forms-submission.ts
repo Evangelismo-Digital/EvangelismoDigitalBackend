@@ -39,6 +39,7 @@ export class FormsSubmissionUseCase {
       email: request.email,
       decisaoPorCristo: request.decisaoPorCristo,
       location: request.location || undefined,
+      ipAddress: request.ipAddress || undefined,
     })
 
     if (isErr(formSubmissionResult)) {
@@ -55,6 +56,7 @@ export class FormsSubmissionUseCase {
       email: formSubmission.email,
       decisaoPorCristo: formSubmission.decisaoPorCristo,
       location: formSubmission.location ?? null,
+      ipAddress: request.ipAddress ?? null,
     }
 
     // 3. Side-Effect Seguro (Outbox Pattern)

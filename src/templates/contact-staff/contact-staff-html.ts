@@ -1,4 +1,5 @@
-export function contactStaffHtmlTemplate(name: string, lastName: string, email: string) {
+export function contactStaffHtmlTemplate(name: string, lastName: string, email: string, ipAddress?: string) {
+  const ipRow = ipAddress ? `<p><strong>IP de origem:</strong> ${ipAddress}</p>` : ''
   return `
             <div>
                 <table style="font-family: arial">
@@ -16,6 +17,7 @@ export function contactStaffHtmlTemplate(name: string, lastName: string, email: 
                         <td align="center" style="padding: 10px; font-size: 20px;">
                             <p><strong>Nome:</strong> ${name} ${lastName}</p>
                             <p><strong>Email:</strong> ${email}</p>
+                            ${ipRow}
                         </td>
                     </tr>
                 </table>

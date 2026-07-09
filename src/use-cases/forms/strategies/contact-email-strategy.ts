@@ -45,12 +45,13 @@ export class ContactEmailStrategy implements IFormEmailStrategy {
     const email = emailResult.value
     const name = nameResult.value
     const lastName = lastNameResult.value
+    const ipAddress = typeof form.ipAddress === 'string' ? form.ipAddress : undefined
 
     return ok({
       to: env.ADMIN_EMAIL,
       subject: contactStaffSubjectTextTemplate(),
-      message: contactStaffTextTemplate(name, email),
-      html: contactStaffHtmlTemplate(name, lastName, email),
+      message: contactStaffTextTemplate(name, email, ipAddress),
+      html: contactStaffHtmlTemplate(name, lastName, email, ipAddress),
       context: { type: 'contact', recipient: 'internal' },
     })
   }

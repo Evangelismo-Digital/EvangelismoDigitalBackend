@@ -48,11 +48,11 @@ app.register(requestLifecycle)
 // 6. Memory monitor — production heap monitoring with self-contained lifecycle
 app.register(memoryMonitor)
 
-// 7. Routes
-app.register(appRoutes)
-
-// 8. Error handler — always last to catch anything thrown by plugins and routes
+// 7. Error handler — catches anything thrown by plugins and routes
 app.register(errorHandler)
+
+// 8. Routes
+app.register(appRoutes)
 
 // Graceful shutdown — application-level resource cleanup
 app.addHook('onClose', async () => {

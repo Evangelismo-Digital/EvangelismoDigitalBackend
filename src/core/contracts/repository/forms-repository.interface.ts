@@ -7,6 +7,7 @@ export interface IFormSubmissionInputData {
   email: string
   decisaoPorCristo: boolean
   location?: string
+  ipAddress?: string
 }
 
 export interface IFormSubmission {

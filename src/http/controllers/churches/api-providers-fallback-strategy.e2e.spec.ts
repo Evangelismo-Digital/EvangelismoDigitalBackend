@@ -87,6 +87,8 @@ describe('Real Geocoding Fallback Scenarios (e2e)', () => {
 
     const response = await request(app.server).get('/churches/nearest').query({ cep: VALID_CEP })
 
+    console.log('Scenario 3 response body:', response.status, response.body)
+
     expect(response.statusCode).toEqual(503)
 
     expect(spyAwesome).toHaveBeenCalled()
@@ -159,7 +161,7 @@ describe('Real Geocoding Fallback Scenarios (e2e)', () => {
     vi.spyOn(LocationIqProvider.prototype, 'searchRaw').mockRejectedValue(new Error('LocationIQ Network error'))
     vi.spyOn(NominatimGeoProvider.prototype, 'searchRaw').mockRejectedValue(new Error('Nominatim Network error'))
 
-    const response = await request(app.server).get('/churches/nearest').query({ VALID_CEP })
+    const response = await request(app.server).get('/churches/nearest').query({ cep: VALID_CEP })
 
     expect(response.statusCode).toEqual(503)
     expect(response.body.message).toBeDefined()
