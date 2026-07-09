@@ -16,7 +16,7 @@ export async function listUsers(_request: FastifyRequest, reply: FastifyReply) {
 
   const { users } = result.value
 
-  logger.info('Users retrieved successfully!')
+  logger.info('Usuários obtidos com sucesso!')
 
   return reply.status(200).send({ users: UserPresenter.toHTTP(users) })
 }

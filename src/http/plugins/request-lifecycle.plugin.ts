@@ -22,7 +22,7 @@ const requestLifecyclePlugin: FastifyPluginAsync = async (app) => {
         remotePort: request.socket.remotePort,
         userAgent: request.headers['user-agent'],
       },
-      'Incoming request',
+      'Requisição recebida',
     )
   })
 
@@ -34,7 +34,7 @@ const requestLifecyclePlugin: FastifyPluginAsync = async (app) => {
         url: request.url,
         requestTime: reply.elapsedTime,
       },
-      'Response sent',
+      'Resposta enviada',
     )
 
     done()

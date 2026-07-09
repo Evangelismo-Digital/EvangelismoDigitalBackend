@@ -21,7 +21,7 @@ export async function getUserProfile(request: FastifyRequest, reply: FastifyRepl
 
   const { user } = result.value
 
-  logger.info('User profile retrieved successfully!')
+  logger.info('Perfil do usuário obtido com sucesso!')
 
   return reply.status(200).send(UserPresenter.toHTTP(user))
 }
@@ -39,7 +39,7 @@ export async function getUserByPublicId(request: FastifyRequest, reply: FastifyR
 
   const { user } = result.value
 
-  logger.info('User retrieved successfully!')
+  logger.info('Usuário obtido com sucesso!')
 
   return reply.status(200).send(UserPresenter.toHTTP(user))
 }

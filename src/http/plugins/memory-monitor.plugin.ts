@@ -22,7 +22,7 @@ const memoryMonitorPlugin: FastifyPluginAsync = async (app) => {
       // Alert at 400MB heap usage (80% of 512MB Docker limit)
       if (heapUsedMB > HEAP_WARNING_THRESHOLD_MB) {
         logger.warn({
-          msg: 'High memory usage detected',
+          msg: 'Alto uso de memória detectado',
           heapUsedMB: Math.round(heapUsedMB),
           rssMB: Math.round(rssMB),
           heapTotalMB: Math.round(memUsage.heapTotal / 1024 / 1024),
@@ -34,7 +34,7 @@ const memoryMonitorPlugin: FastifyPluginAsync = async (app) => {
   app.addHook('onClose', () => {
     if (interval) {
       clearInterval(interval)
-      logger.info('✅ Memory monitor interval cleared')
+      logger.info('✅ Intervalo do monitor de memória finalizado')
     }
   })
 }

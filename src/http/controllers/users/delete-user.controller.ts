@@ -16,7 +16,7 @@ export async function deleteUser(request: FastifyRequest, reply: FastifyReply) {
     return HttpErrorMapper.map(result.error, reply)
   }
 
-  logger.info('User deleted successfully!')
+  logger.info('Usuário deletado com sucesso!')
 
   return reply.status(204).send()
 }
@@ -34,7 +34,7 @@ export async function deleteUserByPublicId(request: FastifyRequest, reply: Fasti
     return HttpErrorMapper.map(result.error, reply)
   }
 
-  logger.info({ targetId: publicId }, 'User deleted successfully!')
+  logger.info({ targetId: publicId }, 'Usuário deletado com sucesso!')
 
   return reply.status(204).send()
 }

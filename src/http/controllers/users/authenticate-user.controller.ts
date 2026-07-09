@@ -29,12 +29,13 @@ export async function authenticateUser(request: FastifyRequest, reply: FastifyRe
   })
 
   if (isErr(result)) {
+    logger.warn({ login, ip: request.ip }, 'Tentativa de login falhou')
     return HttpErrorMapper.map(result.error, reply)
   }
 
   const { user } = result.value
 
-  logger.info('User authenticated successfully!')
+  logger.info('Usuário autenticado com sucesso!')
 
   const token = await reply.jwtSign({ sub: user.publicId, role: user.role }, { expiresIn: '1d' })
 

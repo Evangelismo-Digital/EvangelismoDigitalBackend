@@ -36,7 +36,7 @@ export async function updateUser(request: FastifyRequest, reply: FastifyReply) {
 
   const { user } = result.value
 
-  logger.info('User updated successfully!')
+  logger.info('Usuário atualizado com sucesso!')
 
   return reply.status(200).send(UserPresenter.toHTTP(user))
 }

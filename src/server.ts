@@ -14,9 +14,9 @@ closeWithGrace({ delay: 10000 }, async ({ signal, err }) => {
   if (err) {
     await crashShutdown(err, () => app.close())
   } else {
-    logger.info({ signal }, `Received signal ${signal}. Server closing gracefully...`)
+    logger.info({ signal }, `Sinal ${signal} recebido. Encerrando o servidor graciosamente...`)
     await app.close()
-    logger.info('✅ Server closed gracefully.')
+    logger.info('✅ Servidor encerrado graciosamente.')
     process.exit(0)
   }
 })
@@ -33,7 +33,7 @@ process.on('uncaughtException', (error) => {
 async function start() {
   try {
     await app.listen({ host: '0.0.0.0', port: env.APP_PORT })
-    logger.info(`Server started successfully! Listening on: ${env.APP_PORT}`)
+    logger.info(`Servidor iniciado com sucesso! Escutando na porta: ${env.APP_PORT}`)
   } catch (err) {
     await crashShutdown(err, () => app.close())
   }

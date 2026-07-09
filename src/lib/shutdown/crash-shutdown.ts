@@ -14,11 +14,11 @@ export async function crashShutdown(
 
   isShuttingDown = true
 
-  logger.fatal({ err: error }, '🔥 Unhandled crash detected, initiating crash shutdown sequence...')
+  logger.fatal({ err: error }, '🔥 Travamento não tratado detectado, iniciando sequência de encerramento por falha...')
 
   // Force exit after 15 seconds if cleanup hangs
   const hardTimeout = setTimeout(() => {
-    logger.fatal('❌ Crash shutdown cleanup timed out after 15s. Force exiting.')
+    logger.fatal('❌ O tempo limite de limpeza para encerramento expirou após 15s. Forçando a saída.')
     process.exit(1)
   }, 15_000)
 
@@ -27,9 +27,9 @@ export async function crashShutdown(
 
   try {
     await cleanup()
-    logger.info('✅ Crash shutdown cleanup completed successfully.')
+    logger.info('✅ Limpeza de encerramento por travamento concluída com sucesso.')
   } catch (cleanupError) {
-    logger.error({ err: cleanupError }, '❌ Error occurred during crash shutdown cleanup')
+    logger.error({ err: cleanupError }, '❌ Ocorreu um erro durante a limpeza de encerramento por travamento')
   }
 
   try {
@@ -39,9 +39,9 @@ export async function crashShutdown(
       Sentry.captureException(new Error(String(error)))
     }
     await Sentry.flush(2000)
-    logger.info('✅ Sentry flushed successfully.')
+    logger.info('✅ Logs do Sentry enviados com sucesso.')
   } catch (sentryError) {
-    logger.error({ err: sentryError }, '❌ Error flushing Sentry during crash shutdown')
+    logger.error({ err: sentryError }, '❌ Erro ao enviar os logs do Sentry durante o encerramento por travamento')
   } finally {
     clearTimeout(hardTimeout)
     process.exit(1)

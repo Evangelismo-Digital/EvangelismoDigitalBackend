@@ -17,6 +17,7 @@ vi.mock('@lib/logger', () => ({
 
 import { logger } from '@lib/logger'
 import { RedisOutageLogger, isRedisConnectivityError } from './redis-outage-logger'
+import { REDIS_LOGS } from 'messages/constants/logs/redis'
 
 describe('RedisOutageLogger', () => {
   beforeEach(() => {
@@ -40,7 +41,7 @@ describe('RedisOutageLogger', () => {
         subsystem: 'cache',
         errorCode: 'ECONNREFUSED',
       }),
-      'Redis connection degraded',
+      REDIS_LOGS.CONNECTION_DEGRADED,
     )
   })
 
@@ -67,7 +68,7 @@ describe('RedisOutageLogger', () => {
         subsystem: 'cache',
         suppressedEvents: 1,
       }),
-      'Redis connection still degraded',
+      REDIS_LOGS.CONNECTION_STILL_DEGRADED,
     )
   })
 
@@ -90,7 +91,7 @@ describe('RedisOutageLogger', () => {
         subsystem: 'bullmq',
         outageDurationMs: 5000,
       }),
-      'Redis connection recovered',
+      REDIS_LOGS.CONNECTION_RECOVERED,
     )
   })
 })

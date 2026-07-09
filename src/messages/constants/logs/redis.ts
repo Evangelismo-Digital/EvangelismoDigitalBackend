@@ -1,8 +1,8 @@
 export const REDIS_LOGS = {
-  BULLMQ_UNEXPECTED_ERROR: 'Unexpected Redis BullMQ connection error',
-  CACHE_UNEXPECTED_ERROR: 'Unexpected Redis cache connection error',
-  RATE_LIMITER_UNEXPECTED_ERROR: 'Unexpected Redis Rate Limiter connection error',
-  CONNECTION_DEGRADED: 'Redis connection degraded',
-  CONNECTION_STILL_DEGRADED: 'Redis connection still degraded',
-  CONNECTION_RECOVERED: 'Redis connection recovered',
+  BULLMQ_UNEXPECTED_ERROR: 'Erro inesperado na conexão Redis do BullMQ',
+  CACHE_UNEXPECTED_ERROR: 'Erro inesperado na conexão Redis do cache',
+  RATE_LIMITER_UNEXPECTED_ERROR: 'Erro inesperado na conexão Redis do limitador de taxa',
+  CONNECTION_DEGRADED: 'Conexão Redis degradada',
+  CONNECTION_STILL_DEGRADED: 'Conexão Redis continua degradada',
+  CONNECTION_RECOVERED: 'Conexão Redis restabelecida',
 } as const

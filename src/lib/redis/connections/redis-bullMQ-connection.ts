@@ -68,11 +68,11 @@ export function attachRedisLogger(redis: Redis, context: string) {
   })
 
   redis.on('connect', () => {
-    logger.info(`🔗 Redis (${context}) connection established`)
+    logger.info(`Conexão Redis (${context}) estabelecida`)
     outageLogger.onRecovery()
   })
   redis.on('ready', () => {
-    logger.info(`✅ Redis (${context}) is ready`)
+    logger.info(`Redis (${context}) pronto`)
     outageLogger.onRecovery()
   })
 
@@ -82,7 +82,7 @@ export function attachRedisLogger(redis: Redis, context: string) {
       return
     }
 
-    logger.error({ context, err: error.message }, '❌ Redis connection glitch')
+    logger.error({ context, err: error.message }, 'Instabilidade na conexão Redis')
   })
 
   redis.on('close', () => {

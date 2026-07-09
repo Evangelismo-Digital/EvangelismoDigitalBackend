@@ -51,7 +51,7 @@ const errorHandlerPlugin: FastifyPluginAsync = async (app) => {
       const zodValidationError = new ZodValidationError(z.treeifyError(error))
       const httpCode = toHttpStatus(zodValidationError.type)
 
-      logger.debug(z.treeifyError(error), 'Validation error occurred')
+      logger.debug(z.treeifyError(error), 'Ocorreu um erro de validação')
 
       return reply.status(httpCode).send({
         message: zodValidationError.body.message,
@@ -85,7 +85,7 @@ const errorHandlerPlugin: FastifyPluginAsync = async (app) => {
       const isServiceUnavailable =
         error.type === ErrorType.SERVICE_UNAVAILABLE || error.type === ErrorType.TOO_MANY_REQUESTS
 
-      logger.error({ err: error, cause: error.cause }, 'Infrastructure/System error occurred')
+      logger.error({ err: error, cause: error.cause }, 'Ocorreu um erro de infraestrutura/sistema')
 
       captureWithRequestContext(error, request)
 
@@ -101,7 +101,7 @@ const errorHandlerPlugin: FastifyPluginAsync = async (app) => {
     }
 
     // 6. Unknown / unhandled errors → log full error, capture in Sentry, sanitize response
-    logger.error(error, 'Unhandled error occurred')
+    logger.error(error, 'Ocorreu um erro não tratado')
 
     captureWithRequestContext(error, request)
 
