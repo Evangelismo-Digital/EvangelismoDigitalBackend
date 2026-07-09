@@ -16,7 +16,7 @@ closeWithGrace({ delay: 10000 }, async ({ signal, err }) => {
   } else {
     logger.info({ signal }, `Sinal ${signal} recebido. Encerrando o servidor graciosamente...`)
     await app.close()
-    logger.info('✅ Servidor encerrado graciosamente.')
+    logger.info('Servidor encerrado graciosamente.')
     process.exit(0)
   }
 })

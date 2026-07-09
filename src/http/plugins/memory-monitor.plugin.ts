@@ -34,7 +34,7 @@ const memoryMonitorPlugin: FastifyPluginAsync = async (app) => {
   app.addHook('onClose', () => {
     if (interval) {
       clearInterval(interval)
-      logger.info('✅ Intervalo do monitor de memória finalizado')
+      logger.info('Intervalo do monitor de memória finalizado')
     }
   })
 }

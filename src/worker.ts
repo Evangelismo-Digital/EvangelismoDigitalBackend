@@ -24,7 +24,7 @@ let shuttingDown = false
 
 async function bootstrap() {
   try {
-    logger.info('🔧 Inicializando serviços de background...')
+    logger.info('Inicializando serviços de background...')
 
     const dbContext = new DatabaseContext()
     const outboxHttpMapper = new PrismaErrorMapper(outboxHttpPrismaErrorMapping)
@@ -32,7 +32,7 @@ async function bootstrap() {
     const outboxRepository = new PrismaOutboxRepository(dbContext, outboxHttpMapper, outboxInfraMapper)
 
     worker = await startMailWorker(outboxRepository)
-    logger.info('✅ Mail worker iniciado')
+    logger.info('Mail worker iniciado')
 
     const outboxProcessor = new OutboxProcessor(outboxRepository)
 

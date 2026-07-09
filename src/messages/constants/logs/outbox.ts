@@ -19,7 +19,7 @@ export const OUTBOX_LOGS = {
   PHASE2_DONE: 'Fase 2 (eventos PENDING): concluída.',
   PHASE2_ERROR: 'Fase 2 (eventos PENDING): erro inesperado.',
   SCAN_DONE: 'Varredura de segurança da Outbox concluída.',
-  SCHEDULER_CONFIGURED: '🗓️ Agendador da Outbox configurado para 00:00 diariamente.',
+  SCHEDULER_CONFIGURED: 'Agendador da Outbox configurado para 00:00 diariamente.',
   // outbox-processor
   SKIPPED_ANOTHER_RUNNING: 'processEvents: Processamento ignorado. Outra instância já está rodando.',
   PENDING_FETCH_ERROR: 'Erro de Infra ao buscar eventos pendentes.',

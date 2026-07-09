@@ -56,19 +56,19 @@ app.register(errorHandler)
 
 // Graceful shutdown — application-level resource cleanup
 app.addHook('onClose', async () => {
-  logger.info('🛑 Finalizando as conexões do RateLimiter e Redis...')
+  logger.info('Finalizando as conexões do RateLimiter e Redis...')
 
   try {
     await RedisRateLimiter.destroyInstance()
-    logger.info('✅ RateLimiter finalizado com sucesso')
+    logger.info('RateLimiter finalizado com sucesso')
   } catch (error) {
-    logger.error(error, '❌ Erro ao finalizar o RateLimiter')
+    logger.error(error, 'Erro ao finalizar o RateLimiter')
   }
 
   try {
     await closeAllRedisConnections()
-    logger.info('✅ Conexões do Redis fechadas')
+    logger.info('Conexões do Redis fechadas')
   } catch (error) {
-    logger.error(error, '❌ Erro ao fechar as conexões do Redis')
+    logger.error(error, 'Erro ao fechar as conexões do Redis')
   }
 })

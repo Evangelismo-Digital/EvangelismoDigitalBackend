@@ -76,7 +76,7 @@ export class OutboxProcessor {
       const stuckEvents = stuckEventsResult.value
 
       if (stuckEvents.length > 0) {
-        logger.warn(`♻️ Encontrados ${stuckEvents.length} eventos travados em SENDING. Iniciando recuperação...`)
+        logger.warn(`Encontrados ${stuckEvents.length} eventos travados em SENDING. Iniciando recuperação...`)
         for (const event of stuckEvents) {
           await DistributedLock.renew(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, lockToken, this.LOCK_TTL_MS)
           await this.processSingleEvent(event)

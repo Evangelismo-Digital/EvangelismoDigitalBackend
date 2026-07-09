@@ -53,7 +53,7 @@ export async function startMailWorker(outboxRepository: IOutboxRepository) {
       }
 
       try {
-        childLogger.info(`📨 Processando lote de ${emails.length} e-mails...`)
+        childLogger.info(`Processando lote de ${emails.length} e-mails...`)
 
         const sendEmailUseCase = makeSendEmailUseCase()
         const results = await Promise.all(emails.map((email) => sendEmailUseCase.execute(email)))
@@ -63,7 +63,7 @@ export async function startMailWorker(outboxRepository: IOutboxRepository) {
           throw failedResult.error
         }
 
-        childLogger.info('✅ Lote de e-mails processado com sucesso.')
+        childLogger.info('Lote de e-mails processado com sucesso.')
 
         await redisCache.set(idempotencyKey, 'completed', 'EX', WORKER_CONSTANTS.IDEMPOTENCY_TTL.COMPLETED_SECONDS)
 
@@ -74,7 +74,7 @@ export async function startMailWorker(outboxRepository: IOutboxRepository) {
           throw deleteResult.error
         }
 
-        childLogger.info('🗑️ OutboxEvent deletado com sucesso do banco de dados')
+        childLogger.info('OutboxEvent deletado com sucesso do banco de dados')
       } catch (err) {
         await redisCache.del(idempotencyKey)
 
@@ -111,7 +111,7 @@ export async function startMailWorker(outboxRepository: IOutboxRepository) {
           code: infraError.body.code,
           cause: infraError.cause,
         },
-        `❌ Falha de Infraestrutura: ${infraError.message}`,
+        `Falha de Infraestrutura: ${infraError.message}`,
       )
       return
     }
