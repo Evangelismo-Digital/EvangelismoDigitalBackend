@@ -22,6 +22,14 @@ const envSchema = z.object({
   REDIS_PASSWORD: z.string().optional(),
   REDIS_LOG_OUTAGE_INTERVAL_MS: z.coerce.number().int().positive().default(ms('30s')),
 
+  // Metrics
+  METRICS_ENABLED: z.enum(['true', 'false']).transform((v) => v === 'true').default('true'),
+  METRICS_API_PORT: z.coerce.number().default(9091),
+  METRICS_WORKER_PORT: z.coerce.number().default(9092),
+
+  // Grafana (used in docker-compose.monitoring.yml)
+  GRAFANA_ADMIN_PASSWORD: z.string().min(8),
+
   // App
   APP_NAME: z.string().default('Backend Template Reborn'),
   APP_PORT: z.coerce.number().default(3000),
