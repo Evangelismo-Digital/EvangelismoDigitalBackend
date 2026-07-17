@@ -18,7 +18,7 @@ Comprehensive observability for the EvangelismoDigitalBackend — covering appli
 | Node Exporter                 | latest stable |
 
 | prom-client                   | latest stable |
-| @autotelic/fastify-metrics    | latest stable |
+| fastify-metrics               | latest stable |
 
 ---
 
@@ -111,7 +111,7 @@ METRICS_API_PORT: z.coerce.number().default(9091),
 METRICS_WORKER_PORT: z.coerce.number().default(9092),
 
 // Grafana (used in docker-compose.monitoring.yml)
-GRAFANA_ADMIN_PASSWORD: z.string().min(8).optional(),
+GRAFANA_ADMIN_PASSWORD: z.string().min(8),
 ```
 
 Add to `.env.example`:
@@ -242,11 +242,13 @@ Create a secondary Fastify instance. It must:
 
 - Bind to `0.0.0.0` on a configurable port (`METRICS_API_PORT` or `METRICS_WORKER_PORT`).
 - Expose a single `GET /metrics` route.
-- On each request:
-  1. Trigger `collectBullMQMetrics()` (lazy gauge collection).
-  2. Fetch Prisma native metrics via `prisma.$metrics.prometheus()`.
-  3. Merge with `register.metrics()` from `prom-client`.
-  4. Set `Content-Type` to `text/plain; version=0.0.4; charset=utf-8`.
+- Register a custom Counter: `metrics_collection_errors_total` with label `source` (`bullmq` or `prisma`).
+- On each request, protect against hanging upstream services (PostgreSQL/Redis) that could block the entire scrape:
+  1. Trigger `collectBullMQMetrics()` (lazy gauge collection) wrapped in a `Promise.race` with a 2-second timeout (since it performs async Redis checks to update gauges in the registry). If it times out or fails, increment `metrics_collection_errors_total{source="bullmq"}`, log a warning, and proceed.
+  2. Concurrently resolve text-based metrics using `Promise.allSettled`. This includes `register.metrics()` (which is asynchronous and returns a `Promise<string>` in `prom-client` v14+) and `prisma.$metrics.prometheus()` (if `includePrisma` is true, which returns a `Promise<string>`). Wrap both in their own 2-second timeout helpers.
+  3. If a promise in `Promise.allSettled` fails or times out, increment `metrics_collection_errors_total` with the corresponding label (`source="prom-client"` or `source="prisma"`), log a warning, and ignore the failed chunk.
+  4. Filter the successfully fulfilled promise results, extract their string contents, concatenate them separated by double newlines (`\n\n`), and return the aggregated plain-text metrics.
+  5. Set `Content-Type` to `text/plain; version=0.0.4; charset=utf-8`.
 - Expose a `GET /health` route returning `200 OK` for Docker healthchecks.
 - Accept an optional Prisma client parameter (null for worker, since worker doesn't use Prisma directly for metrics).
 - Guard startup behind `METRICS_ENABLED` check.
@@ -263,7 +265,7 @@ await app.listen({ host: '0.0.0.0', port: env.APP_PORT })
 await startMetricsServer({ port: env.METRICS_API_PORT, includePrisma: true })
 ```
 
-Add metrics server to graceful shutdown in `closeWithGrace`.
+Add metrics server to graceful shutdown in `closeWithGrace`. The metrics server must close **last** in the shutdown sequence (after the main API server closes and DB/Redis clients disconnect) so telemetry remains scraped during the shutdown procedure.
 
 #### [MODIFY] [worker.ts](file:///home/amaro/EvangelismoDigitalBackend/src/worker.ts)
 
@@ -276,7 +278,7 @@ import { startMetricsServer } from './metrics-server'
 await startMetricsServer({ port: env.METRICS_WORKER_PORT, includePrisma: false })
 ```
 
-Add metrics server to worker cleanup.
+Add metrics server to worker cleanup/shutdown handler. It must close **last** (after BullMQ queues and workers are paused/closed and Redis disconnects) to ensure metrics are visible throughout the shutdown sequence.
 
 ---
 
@@ -284,10 +286,10 @@ Add metrics server to worker cleanup.
 
 #### [MODIFY] [app.ts](file:///home/amaro/EvangelismoDigitalBackend/src/app.ts)
 
-Register `@autotelic/fastify-metrics` plugin:
+Register `fastify-metrics` plugin:
 
 ```typescript
-import metricsPlugin from '@autotelic/fastify-metrics'
+import metricsPlugin from 'fastify-metrics'
 
 // After asyncContext, before routes
 app.register(metricsPlugin, {
@@ -405,6 +407,9 @@ Services:
 - Enable lifecycle API (`--web.enable-lifecycle`) for hot config reloads.
 - No host port publishing (accessible only internally on the `monitoring` network or via reverse proxy/SSH tunnel).
 - Resource Limits: limits CPU to `0.5` cores, memory to `1GB`. Reservations: memory `256MB`.
+- Healthcheck: `test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/ready"]`, interval `10s`, timeout `5s`, retries `3`.
+- Restart Policy: `restart: unless-stopped`.
+- Dependencies: `depends_on` the exporters (`redis-exporter`, `postgres-exporter`, `node-exporter`) and `alertmanager` to guarantee scrape targets are online when starting.
 - Networks: `monitoring`.
 
 ##### `alertmanager` — `prom/alertmanager:v0.27.0`
@@ -413,35 +418,69 @@ Services:
 - Named volume `alertmanager_data` for state persistence (silences, inhibitions).
 - No host port publishing (accessible only internally).
 - Resource Limits: limits CPU to `0.1` cores, memory to `128MB`.
+- Healthcheck: `test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9093/-/ready"]`, interval `10s`, timeout `5s`, retries `3`.
+- Restart Policy: `restart: unless-stopped`.
 - Networks: `monitoring`.
 
 ##### `grafana` — `grafana/grafana:13.1.0`
 
-- Publish on host port `3001` (internal `3000`) or bind to `127.0.0.1:3001` to restrict access.
-- Mount `grafana/provisioning/` for datasource + dashboard auto-provisioning.
-- Mount `grafana/dashboards/` for pre-loaded JSON dashboards.
+- Publish on host port `3001` (internal `3000`) for public access (user selection).
+- > [!WARNING]
+  > **Security Warning**: Because Grafana is exposed publicly on port `3001`, enforce a very strong admin password via `GRAFANA_ADMIN_PASSWORD` (not standard passwords) and consider setting up a reverse proxy with rate limiting (like fail2ban or Caddy/Nginx limit_req) on the VPS, as Grafana has no native brute-force protection enabled by default.
+- > [!IMPORTANT]
+  > **Dashboard Durability / Backups**: Pre-loaded dashboards are read-only from `grafana/dashboards/*.json`. If you make custom changes or create new dashboards via the Grafana UI, they will be saved in the `grafana_data` named volume. To persist them in Git (GitOps flow), you must manually export the dashboard JSON from the UI, overwrite the local file, and commit to version control.
 - Named volume `grafana_data` for Grafana state.
 - Environment: `GF_USERS_ALLOW_SIGN_UP=false`, `GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}`.
 - Resource Limits: limits CPU to `0.5` cores, memory to `512MB`.
+- Healthcheck: `test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]`, interval `10s`, timeout `5s`, retries `3`.
+- Restart Policy: `restart: unless-stopped`.
+- Dependencies: `depends_on: prometheus` (ensures Prometheus is ready to receive queries).
 - Networks: `monitoring`.
+
+---
+
+### Docker Container Log Rotation (All Services)
+
+To prevent container logs from consuming all disk space over time, every service in `docker-compose.monitoring.yml` (and the core `docker-compose.yml`) should be configured with a strict log rotation policy:
+
+```yaml
+logging:
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+```
+This restricts logs for each container to a maximum of 30MB (3 files of 10MB each).
+
+---
 
 ##### `redis-exporter` — `oliver006/redis_exporter:v1.73.0`
 
 - Environment: `REDIS_ADDR=redis:6379`, `REDIS_PASSWORD=${REDIS_PASSWORD}`.
 - Resource Limits: limits CPU to `0.1` cores, memory to `64MB`.
+- Restart Policy: `restart: unless-stopped`.
 - Networks: `monitoring`, `evangelismo-network` (to reach Redis).
 
 ##### `postgres-exporter` — `quay.io/prometheuscommunity/postgres-exporter:v0.16.0`
 
 - Environment: `DATA_SOURCE_NAME=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable`.
 - Resource Limits: limits CPU to `0.1` cores, memory to `64MB`.
+- Restart Policy: `restart: unless-stopped`.
 - Networks: `monitoring`, `evangelismo-network` (to reach PostgreSQL).
 
 ##### `node-exporter` — `prom/node-exporter:v1.9.1`
 
-- Mount host paths for `/proc`, `/sys`, `/` as read-only.
+- Mount volumes to expose host directories inside the container:
+  - `/proc:/host/proc:ro`
+  - `/sys:/host/sys:ro`
+  - `/:/rootfs:ro`
+- Command flags to tell Node Exporter where to find the host resources:
+  - `--path.procfs=/host/proc`
+  - `--path.sysfs=/host/sys`
+  - `--path.rootfs=/rootfs`
 - No host port publishing (accessible only internally on `monitoring` network).
 - Resource Limits: limits CPU to `0.1` cores, memory to `64MB`.
+- Restart Policy: `restart: unless-stopped`.
 - Networks: `monitoring`.
 - `pid: host` for accurate process metrics.
 
@@ -473,10 +512,18 @@ scrape_configs:
   - job_name: 'fastify-api'
     static_configs:
       - targets: ['fastify-backend:9091']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'nodejs_gc_duration_seconds_bucket'
+        action: drop
 
   - job_name: 'fastify-worker'
     static_configs:
       - targets: ['fastify-worker:9092']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'nodejs_gc_duration_seconds_bucket'
+        action: drop
 
   # Infrastructure exporters
   - job_name: 'redis'
@@ -512,6 +559,7 @@ Alert rules organized by domain:
 |-------|-----------|----------|----------|
 | `BackendApiDown` | Scrape target `fastify-api` is down | 2 min | critical |
 | `BackendWorkerDown` | Scrape target `fastify-worker` is down | 2 min | critical |
+| `Watchdog` | Always active (`vector(1)`) for external heartbeat monitoring | — | critical |
 
 ##### HTTP
 
@@ -580,11 +628,17 @@ Alert rules organized by domain:
 
 - **Global SMTP**: Reuse existing `SMTP_HOST`, `SMTP_PORT`, `SMTP_EMAIL`, `SMTP_PASSWORD` from `.env` (passed as Docker env vars).
 - **Routes**:
-  - `critical` severity → `email-critical` receiver (immediate, 30s group wait).
-  - `warning` severity → `email-warnings` receiver (batched, 5 min group interval).
+  - `critical` severity → `critical-alerts` receiver (routed to email AND webhook fallback immediately).
+  - `warning` severity → `warning-alerts` receiver (batched, 5 min group interval).
 - **Receivers**:
-  - `email-critical`: sends to `ADMIN_EMAIL` with urgency subject formatting.
-  - `email-warnings`: sends to `ADMIN_EMAIL`, batched.
+  - `critical-alerts`:
+    - Sends to `ADMIN_EMAIL` (via SMTP).
+    - Sends to a fallback webhook (`webhook-critical`), e.g., Discord or Telegram webhook URL passed via `ALERTMANAGER_WEBHOOK_URL` env var.
+  - `warning-alerts`:
+    - Sends to `ADMIN_EMAIL` (SMTP), batched.
+    - Sends to `webhook-warning` (Webhook) if configured, batched.
+- > [!NOTE]
+  > **Redundant Webhook Fallback**: To ensure alerts are delivered even if SMTP fails or the host network degrades, the webhook is configured as a secondary receiver for all critical alerts.
 - **Inhibit rules**: Suppress `warning` when `critical` with same `alertname` is firing.
 
 ---
@@ -619,7 +673,7 @@ Add to `dependencies`:
 
 ```json
 "prom-client": "^15.x",
-"@autotelic/fastify-metrics": "^11.x"
+"fastify-metrics": "^13.x"
 ```
 
 ---
@@ -629,12 +683,18 @@ Add to `dependencies`:
 | Question | Resolution |
 |----------|-----------|
 | `host.docker.internal` for Prometheus? | Not needed. All services inside Docker. Prometheus reaches backend at `fastify-backend:9091` / `fastify-worker:9092` via `monitoring` network. |
-| `@autotelic/fastify-metrics` + Fastify 5? | Try plugin first. Fall back to manual `onResponse` hook with `prom-client` Histogram if breaking changes found. |
+| `fastify-metrics` + Fastify 5? | Try plugin first. Fall back to manual `onResponse` hook with `prom-client` Histogram if breaking changes found. Note: Route matching URLs (like `/church/:id`) are used by default, protecting against metric cardinality issues. |
 | SMTP for Alertmanager? | Reuse existing SMTP credentials from `.env`. Route critical alerts to `ADMIN_EMAIL`. |
 | Where do monitoring services live? | Separate `docker-compose.monitoring.yml` overlay file. |
 | Worker process instrumentation? | Yes — separate metrics server on `:9092` with its own Prometheus scrape job. |
 | Memory monitor plugin? | Deprecated in favor of `prom-client` defaults + Prometheus alert. |
 | Metrics in tests? | `METRICS_ENABLED=false` in `.env.test`. No metrics server started, no port conflicts. |
+| Prisma Metrics GA? | In Prisma 5.x+, metrics are GA and available by default on the client instance, meaning no generator feature flag is required in `schema.prisma`. |
+| pg_stat_statements note? | Community PostgreSQL dashboard panels (query statistics) require `shared_preload_libraries = 'pg_stat_statements'` and `CREATE EXTENSION pg_stat_statements;` enabled on the DB. |
+| Alertmanager Route grouping? | Added explicit `group_by: ['alertname', 'environment']` in `alertmanager.yml` to prevent alert storms and enable email batching. |
+| BullMQ queue stalled alert limit? | Set to 500 jobs / 10m. Adjust this threshold based on actual email campaign peaks and baseline measurements. |
+| Silence Expiration Policy? | Silences must be configured with a short, explicit expiration time (TTL) in Alertmanager UI to avoid suppressing alerts forever. |
+| Timezone consistency? | All containers run in UTC. Time synchronization is verified on host KVM. |
 
 ---
 
@@ -672,6 +732,9 @@ docker exec -it <fastify-worker> curl http://localhost:9092/metrics
 # http://localhost:3001 (admin / $GRAFANA_ADMIN_PASSWORD)
 # Confirm: Prometheus datasource connected
 # Confirm: All dashboards show populated data
+
+# 7. Inspect /metrics raw response to verify there are no duplicate metric names (colliding prom-client with Prisma metrics)
+# curl http://localhost:9091/metrics | sort | uniq -d
 ```
 
 ### Alert Smoke Test
@@ -690,41 +753,45 @@ docker compose start fastify-backend
 ## Architecture Overview
 
 ```
- Browser / Next.js
+ Browser / Next.js / Admin
        │
-       ▼
- ┌─────────────────────────┐     ┌──────────────────────────┐
- │  Fastify API :3000      │     │  Fastify Worker          │
- │  ├─ HTTP routes         │     │  ├─ BullMQ mail worker   │
- │  ├─ Rate limiter        │     │  ├─ Outbox cron          │
- │  ├─ Resilient cache     │     │  ├─ OutboxSignal sub     │
- │  ├─ Providers chain     │     │  ├─ Distributed locks    │
- │  └─ Metrics :9091       │     │  └─ Metrics :9092        │
- └────────┬────────────────┘     └────────┬─────────────────┘
-          │                               │
-          ▼                               ▼
- ┌─────────────────────────────────────────────────────────────┐
- │                     Prometheus :9090                        │
- │  Scrapes: api:9091, worker:9092, redis:9121, pg:9187,      │
- │           node-exp:9100, self, alertmanager                 │
- │  Evaluates: alerts.yml                                      │
- └──────────┬──────────────────────────────────────────────────┘
-            │
-            ▼
- ┌──────────────────────┐        ┌──────────────────────┐
- │  Alertmanager :9093  │───────▶│  Email (SMTP)        │
- │  Routes:             │        │  → ADMIN_EMAIL       │
- │  ├─ critical → now   │        └──────────────────────┘
- │  └─ warning → batch  │
- └──────────────────────┘
-
+       ▼ (Public Port 3001)
  ┌──────────────────────┐
- │  Grafana :3001       │
+ │  Grafana             │
  │  ├─ Prometheus DS    │
  │  ├─ Node.js dash     │
  │  ├─ HTTP + BullMQ    │
  │  ├─ Prisma DB        │
  │  ├─ Redis dash       │
  │  └─ PostgreSQL dash  │
- └──────────────────────┘
+ └──────────┬───────────┘
+            │ (Internal Query)
+            ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │                     Prometheus (Internal)                   │
+ │  Scrapes: api:9091, worker:9092, redis:9121, pg:9187,      │
+ │           node-exp:9100, self, alertmanager                 │
+ │  Evaluates: alerts.yml (Watchdog, availability, latency...) │
+ └──────────┬──────────────────────────────────────────────────┘
+            │
+            ▼ (Internal Network)
+ ┌─────────────────────────────────────────────────────────────┐
+ │                     Alertmanager (Internal)                 │
+ │  Routes:                                                    │
+ │  ├─ critical → Immediate (Email + Webhook)                  │
+ │  ├─ warning  → Batched (Email)                              │
+ │  └─ watchdog → Continuous Heartbeat Webhook                 │
+ └──────────┬───────────────────────┬──────────────────────────┘
+            │                       │
+            ▼                       ▼
+ ┌──────────────────────┐        ┌──────────────────────┐
+ │  Email (SMTP)        │        │  Webhook Fallback    │
+ │  → ADMIN_EMAIL       │        │  → Discord/Telegram  │
+ └──────────────────────┘        └──────────┬───────────┘
+                                            │
+                                            ▼ (Watchdog Heartbeat)
+                                 ┌──────────────────────┐
+                                 │ External Watchdog    │
+                                 │ (Healthchecks.io)    │
+                                 └──────────────────────┘
 ```
