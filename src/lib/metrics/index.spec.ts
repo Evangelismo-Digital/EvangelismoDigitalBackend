@@ -47,9 +47,7 @@ describe('getRegistry (disabled)', () => {
       },
     }))
 
-    // @ts-expect-error — Dynamic import after vi.resetModules() is unresolvable by tsc but works at runtime via vite-tsconfig-paths
-    const { getRegistry: getRegistryDisabled, isMetricsEnabled: isMetricsEnabledDisabled } =
-      await import('@lib/metrics')
+    const { getRegistry: getRegistryDisabled, isMetricsEnabled: isMetricsEnabledDisabled } = await import('./index.js')
 
     expect(getRegistryDisabled()).toBeNull()
     expect(isMetricsEnabledDisabled()).toBe(false)

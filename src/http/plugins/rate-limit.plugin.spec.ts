@@ -77,4 +77,3 @@ describe('httpRateLimitPlugin', () => {
     expect(route4.config.rateLimit).toBe(customPolicy)
   })
 })
-

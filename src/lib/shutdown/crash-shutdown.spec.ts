@@ -20,7 +20,7 @@ describe('crashShutdown', () => {
     vi.clearAllMocks()
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
     vi.useFakeTimers()
-    
+
     // Ensure fresh module state for each test by dynamic import
     // @ts-expect-error — Dynamic import after vi.resetModules() is unresolvable by tsc but works at runtime via vite-tsconfig-paths
     const module = await import('@lib/shutdown/crash-shutdown')

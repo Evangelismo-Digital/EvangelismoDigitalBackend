@@ -41,4 +41,3 @@ export const httpRateLimitPlugin: FastifyPluginAsync = async (app) => {
 export const httpRateLimit = fp(httpRateLimitPlugin, {
   name: 'http-rate-limit',
 })
-

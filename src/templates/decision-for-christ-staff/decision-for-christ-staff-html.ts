@@ -1,8 +1,16 @@
-export function decisionForChristStaffHtmlTemplate(name: string, lastName: string, email: string, location?: string, ipAddress?: string) {
-  const ipSection = ipAddress ? `
+export function decisionForChristStaffHtmlTemplate(
+  name: string,
+  lastName: string,
+  email: string,
+  location?: string,
+  ipAddress?: string,
+) {
+  const ipSection = ipAddress
+    ? `
                 <li>
                     IP de origem: ${ipAddress}
-                </li>` : ''
+                </li>`
+    : ''
   return `
             <p>
                 Nova decisão por Cristo:

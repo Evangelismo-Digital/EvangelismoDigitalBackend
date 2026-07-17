@@ -1,4 +1,5 @@
 import { prisma } from '@lib/prisma'
+import { Prisma } from '@prisma/client'
 import {
   AnalyticsRepository,
   CreateEventInput,
@@ -50,7 +51,7 @@ export class PrismaAnalyticsRepository implements AnalyticsRepository {
           sessionId: data.sessionId,
           eventType: data.eventType,
           path: data.path,
-          payload: data.payload ?? null,
+          payload: (data.payload ?? null) as Prisma.InputJsonValue,
         },
       })
       return ok(event)

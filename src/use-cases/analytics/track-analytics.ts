@@ -1,6 +1,4 @@
-import {
-  AnalyticsRepository,
-} from 'core/contracts/repository/analytics-repository.interface'
+import { AnalyticsRepository } from 'core/contracts/repository/analytics-repository.interface'
 import { Result, ok, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 
@@ -16,7 +14,7 @@ interface TrackAnalyticsRequest {
   utmCampaign?: string | null
   utmTerm?: string | null
   utmContent?: string | null
-  payload?: any
+  payload?: unknown
 }
 
 export class TrackAnalyticsUseCase {

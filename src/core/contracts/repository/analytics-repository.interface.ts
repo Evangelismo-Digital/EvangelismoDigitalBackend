@@ -20,7 +20,7 @@ export interface IAnalyticsEvent {
   sessionId: string
   eventType: string
   path: string
-  payload: any
+  payload: unknown
   occurredAt: Date
 }
 
@@ -40,7 +40,7 @@ export interface CreateEventInput {
   sessionId: string
   eventType: string
   path: string
-  payload?: any
+  payload?: unknown
 }
 
 export interface AnalyticsRepository {

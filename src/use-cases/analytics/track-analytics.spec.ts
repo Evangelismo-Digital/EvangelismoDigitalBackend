@@ -60,7 +60,7 @@ describe('Track Analytics Use Case', () => {
     expect(isOk(result)).toBe(true)
     expect(analyticsRepository.sessions).toHaveLength(1)
     expect(analyticsRepository.events).toHaveLength(2)
-    
+
     expect(analyticsRepository.events[1].eventType).toBe('click')
     expect(analyticsRepository.events[1].path).toBe('/churches/map-view')
     expect(analyticsRepository.events[1].payload).toEqual({ elementId: 'btn-view-map' })

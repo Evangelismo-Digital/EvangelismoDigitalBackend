@@ -3,10 +3,7 @@ import { logger } from '@lib/logger'
 
 let isShuttingDown = false
 
-export async function crashShutdown(
-  error: unknown,
-  cleanup: () => Promise<void> | void,
-): Promise<never> {
+export async function crashShutdown(error: unknown, cleanup: () => Promise<void> | void): Promise<never> {
   if (isShuttingDown) {
     process.exit(1)
     return undefined as never

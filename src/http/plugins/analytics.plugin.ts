@@ -5,7 +5,6 @@ import { randomUUID } from 'node:crypto'
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
 
-
 declare module 'fastify' {
   interface FastifyRequest {
     visitorId: string
@@ -19,7 +18,7 @@ const analyticsPlugin: FastifyPluginAsync = async (app) => {
     try {
       let visitorId: string | null = null
       const visitorCookie = request.cookies['visitor_id']
-      
+
       if (visitorCookie) {
         const unsigned = request.unsignCookie(visitorCookie)
         if (unsigned.valid && unsigned.value) {
@@ -41,7 +40,7 @@ const analyticsPlugin: FastifyPluginAsync = async (app) => {
 
       let sessionId: string | null = null
       const sessionCookie = request.cookies['session_id']
-      
+
       if (sessionCookie) {
         const unsigned = request.unsignCookie(sessionCookie)
         if (unsigned.valid && unsigned.value) {
