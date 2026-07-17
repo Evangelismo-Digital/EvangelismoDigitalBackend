@@ -25,6 +25,413 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
+// node_modules/dotenv/package.json
+var require_package = __commonJS({
+  "node_modules/dotenv/package.json"(exports2, module2) {
+    module2.exports = {
+      name: "dotenv",
+      version: "16.6.1",
+      description: "Loads environment variables from .env file",
+      main: "lib/main.js",
+      types: "lib/main.d.ts",
+      exports: {
+        ".": {
+          types: "./lib/main.d.ts",
+          require: "./lib/main.js",
+          default: "./lib/main.js"
+        },
+        "./config": "./config.js",
+        "./config.js": "./config.js",
+        "./lib/env-options": "./lib/env-options.js",
+        "./lib/env-options.js": "./lib/env-options.js",
+        "./lib/cli-options": "./lib/cli-options.js",
+        "./lib/cli-options.js": "./lib/cli-options.js",
+        "./package.json": "./package.json"
+      },
+      scripts: {
+        "dts-check": "tsc --project tests/types/tsconfig.json",
+        lint: "standard",
+        pretest: "npm run lint && npm run dts-check",
+        test: "tap run --allow-empty-coverage --disable-coverage --timeout=60000",
+        "test:coverage": "tap run --show-full-coverage --timeout=60000 --coverage-report=text --coverage-report=lcov",
+        prerelease: "npm test",
+        release: "standard-version"
+      },
+      repository: {
+        type: "git",
+        url: "git://github.com/motdotla/dotenv.git"
+      },
+      homepage: "https://github.com/motdotla/dotenv#readme",
+      funding: "https://dotenvx.com",
+      keywords: [
+        "dotenv",
+        "env",
+        ".env",
+        "environment",
+        "variables",
+        "config",
+        "settings"
+      ],
+      readmeFilename: "README.md",
+      license: "BSD-2-Clause",
+      devDependencies: {
+        "@types/node": "^18.11.3",
+        decache: "^4.6.2",
+        sinon: "^14.0.1",
+        standard: "^17.0.0",
+        "standard-version": "^9.5.0",
+        tap: "^19.2.0",
+        typescript: "^4.8.4"
+      },
+      engines: {
+        node: ">=12"
+      },
+      browser: {
+        fs: false
+      }
+    };
+  }
+});
+
+// node_modules/dotenv/lib/main.js
+var require_main = __commonJS({
+  "node_modules/dotenv/lib/main.js"(exports2, module2) {
+    "use strict";
+    var fs = require("fs");
+    var path = require("path");
+    var os = require("os");
+    var crypto2 = require("crypto");
+    var packageJson = require_package();
+    var version = packageJson.version;
+    var LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg;
+    function parse(src) {
+      const obj = {};
+      let lines = src.toString();
+      lines = lines.replace(/\r\n?/mg, "\n");
+      let match;
+      while ((match = LINE.exec(lines)) != null) {
+        const key = match[1];
+        let value = match[2] || "";
+        value = value.trim();
+        const maybeQuote = value[0];
+        value = value.replace(/^(['"`])([\s\S]*)\1$/mg, "$2");
+        if (maybeQuote === '"') {
+          value = value.replace(/\\n/g, "\n");
+          value = value.replace(/\\r/g, "\r");
+        }
+        obj[key] = value;
+      }
+      return obj;
+    }
+    function _parseVault(options) {
+      options = options || {};
+      const vaultPath = _vaultPath(options);
+      options.path = vaultPath;
+      const result = DotenvModule.configDotenv(options);
+      if (!result.parsed) {
+        const err2 = new Error(`MISSING_DATA: Cannot parse ${vaultPath} for an unknown reason`);
+        err2.code = "MISSING_DATA";
+        throw err2;
+      }
+      const keys = _dotenvKey(options).split(",");
+      const length = keys.length;
+      let decrypted;
+      for (let i = 0; i < length; i++) {
+        try {
+          const key = keys[i].trim();
+          const attrs = _instructions(result, key);
+          decrypted = DotenvModule.decrypt(attrs.ciphertext, attrs.key);
+          break;
+        } catch (error) {
+          if (i + 1 >= length) {
+            throw error;
+          }
+        }
+      }
+      return DotenvModule.parse(decrypted);
+    }
+    function _warn(message) {
+      console.log(`[dotenv@${version}][WARN] ${message}`);
+    }
+    function _debug(message) {
+      console.log(`[dotenv@${version}][DEBUG] ${message}`);
+    }
+    function _log(message) {
+      console.log(`[dotenv@${version}] ${message}`);
+    }
+    function _dotenvKey(options) {
+      if (options && options.DOTENV_KEY && options.DOTENV_KEY.length > 0) {
+        return options.DOTENV_KEY;
+      }
+      if (process.env.DOTENV_KEY && process.env.DOTENV_KEY.length > 0) {
+        return process.env.DOTENV_KEY;
+      }
+      return "";
+    }
+    function _instructions(result, dotenvKey) {
+      let uri;
+      try {
+        uri = new URL(dotenvKey);
+      } catch (error) {
+        if (error.code === "ERR_INVALID_URL") {
+          const err2 = new Error("INVALID_DOTENV_KEY: Wrong format. Must be in valid uri format like dotenv://:key_1234@dotenvx.com/vault/.env.vault?environment=development");
+          err2.code = "INVALID_DOTENV_KEY";
+          throw err2;
+        }
+        throw error;
+      }
+      const key = uri.password;
+      if (!key) {
+        const err2 = new Error("INVALID_DOTENV_KEY: Missing key part");
+        err2.code = "INVALID_DOTENV_KEY";
+        throw err2;
+      }
+      const environment = uri.searchParams.get("environment");
+      if (!environment) {
+        const err2 = new Error("INVALID_DOTENV_KEY: Missing environment part");
+        err2.code = "INVALID_DOTENV_KEY";
+        throw err2;
+      }
+      const environmentKey = `DOTENV_VAULT_${environment.toUpperCase()}`;
+      const ciphertext = result.parsed[environmentKey];
+      if (!ciphertext) {
+        const err2 = new Error(`NOT_FOUND_DOTENV_ENVIRONMENT: Cannot locate environment ${environmentKey} in your .env.vault file.`);
+        err2.code = "NOT_FOUND_DOTENV_ENVIRONMENT";
+        throw err2;
+      }
+      return { ciphertext, key };
+    }
+    function _vaultPath(options) {
+      let possibleVaultPath = null;
+      if (options && options.path && options.path.length > 0) {
+        if (Array.isArray(options.path)) {
+          for (const filepath of options.path) {
+            if (fs.existsSync(filepath)) {
+              possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
+            }
+          }
+        } else {
+          possibleVaultPath = options.path.endsWith(".vault") ? options.path : `${options.path}.vault`;
+        }
+      } else {
+        possibleVaultPath = path.resolve(process.cwd(), ".env.vault");
+      }
+      if (fs.existsSync(possibleVaultPath)) {
+        return possibleVaultPath;
+      }
+      return null;
+    }
+    function _resolveHome(envPath) {
+      return envPath[0] === "~" ? path.join(os.homedir(), envPath.slice(1)) : envPath;
+    }
+    function _configVault(options) {
+      const debug = Boolean(options && options.debug);
+      const quiet = options && "quiet" in options ? options.quiet : true;
+      if (debug || !quiet) {
+        _log("Loading env from encrypted .env.vault");
+      }
+      const parsed = DotenvModule._parseVault(options);
+      let processEnv = process.env;
+      if (options && options.processEnv != null) {
+        processEnv = options.processEnv;
+      }
+      DotenvModule.populate(processEnv, parsed, options);
+      return { parsed };
+    }
+    function configDotenv(options) {
+      const dotenvPath = path.resolve(process.cwd(), ".env");
+      let encoding = "utf8";
+      const debug = Boolean(options && options.debug);
+      const quiet = options && "quiet" in options ? options.quiet : true;
+      if (options && options.encoding) {
+        encoding = options.encoding;
+      } else {
+        if (debug) {
+          _debug("No encoding is specified. UTF-8 is used by default");
+        }
+      }
+      let optionPaths = [dotenvPath];
+      if (options && options.path) {
+        if (!Array.isArray(options.path)) {
+          optionPaths = [_resolveHome(options.path)];
+        } else {
+          optionPaths = [];
+          for (const filepath of options.path) {
+            optionPaths.push(_resolveHome(filepath));
+          }
+        }
+      }
+      let lastError;
+      const parsedAll = {};
+      for (const path2 of optionPaths) {
+        try {
+          const parsed = DotenvModule.parse(fs.readFileSync(path2, { encoding }));
+          DotenvModule.populate(parsedAll, parsed, options);
+        } catch (e) {
+          if (debug) {
+            _debug(`Failed to load ${path2} ${e.message}`);
+          }
+          lastError = e;
+        }
+      }
+      let processEnv = process.env;
+      if (options && options.processEnv != null) {
+        processEnv = options.processEnv;
+      }
+      DotenvModule.populate(processEnv, parsedAll, options);
+      if (debug || !quiet) {
+        const keysCount = Object.keys(parsedAll).length;
+        const shortPaths = [];
+        for (const filePath of optionPaths) {
+          try {
+            const relative = path.relative(process.cwd(), filePath);
+            shortPaths.push(relative);
+          } catch (e) {
+            if (debug) {
+              _debug(`Failed to load ${filePath} ${e.message}`);
+            }
+            lastError = e;
+          }
+        }
+        _log(`injecting env (${keysCount}) from ${shortPaths.join(",")}`);
+      }
+      if (lastError) {
+        return { parsed: parsedAll, error: lastError };
+      } else {
+        return { parsed: parsedAll };
+      }
+    }
+    function config(options) {
+      if (_dotenvKey(options).length === 0) {
+        return DotenvModule.configDotenv(options);
+      }
+      const vaultPath = _vaultPath(options);
+      if (!vaultPath) {
+        _warn(`You set DOTENV_KEY but you are missing a .env.vault file at ${vaultPath}. Did you forget to build it?`);
+        return DotenvModule.configDotenv(options);
+      }
+      return DotenvModule._configVault(options);
+    }
+    function decrypt(encrypted, keyStr) {
+      const key = Buffer.from(keyStr.slice(-64), "hex");
+      let ciphertext = Buffer.from(encrypted, "base64");
+      const nonce = ciphertext.subarray(0, 12);
+      const authTag = ciphertext.subarray(-16);
+      ciphertext = ciphertext.subarray(12, -16);
+      try {
+        const aesgcm = crypto2.createDecipheriv("aes-256-gcm", key, nonce);
+        aesgcm.setAuthTag(authTag);
+        return `${aesgcm.update(ciphertext)}${aesgcm.final()}`;
+      } catch (error) {
+        const isRange = error instanceof RangeError;
+        const invalidKeyLength = error.message === "Invalid key length";
+        const decryptionFailed = error.message === "Unsupported state or unable to authenticate data";
+        if (isRange || invalidKeyLength) {
+          const err2 = new Error("INVALID_DOTENV_KEY: It must be 64 characters long (or more)");
+          err2.code = "INVALID_DOTENV_KEY";
+          throw err2;
+        } else if (decryptionFailed) {
+          const err2 = new Error("DECRYPTION_FAILED: Please check your DOTENV_KEY");
+          err2.code = "DECRYPTION_FAILED";
+          throw err2;
+        } else {
+          throw error;
+        }
+      }
+    }
+    function populate(processEnv, parsed, options = {}) {
+      const debug = Boolean(options && options.debug);
+      const override = Boolean(options && options.override);
+      if (typeof parsed !== "object") {
+        const err2 = new Error("OBJECT_REQUIRED: Please check the processEnv argument being passed to populate");
+        err2.code = "OBJECT_REQUIRED";
+        throw err2;
+      }
+      for (const key of Object.keys(parsed)) {
+        if (Object.prototype.hasOwnProperty.call(processEnv, key)) {
+          if (override === true) {
+            processEnv[key] = parsed[key];
+          }
+          if (debug) {
+            if (override === true) {
+              _debug(`"${key}" is already defined and WAS overwritten`);
+            } else {
+              _debug(`"${key}" is already defined and was NOT overwritten`);
+            }
+          }
+        } else {
+          processEnv[key] = parsed[key];
+        }
+      }
+    }
+    var DotenvModule = {
+      configDotenv,
+      _configVault,
+      _parseVault,
+      config,
+      decrypt,
+      parse,
+      populate
+    };
+    module2.exports.configDotenv = DotenvModule.configDotenv;
+    module2.exports._configVault = DotenvModule._configVault;
+    module2.exports._parseVault = DotenvModule._parseVault;
+    module2.exports.config = DotenvModule.config;
+    module2.exports.decrypt = DotenvModule.decrypt;
+    module2.exports.parse = DotenvModule.parse;
+    module2.exports.populate = DotenvModule.populate;
+    module2.exports = DotenvModule;
+  }
+});
+
+// node_modules/dotenv/lib/env-options.js
+var require_env_options = __commonJS({
+  "node_modules/dotenv/lib/env-options.js"(exports2, module2) {
+    "use strict";
+    var options = {};
+    if (process.env.DOTENV_CONFIG_ENCODING != null) {
+      options.encoding = process.env.DOTENV_CONFIG_ENCODING;
+    }
+    if (process.env.DOTENV_CONFIG_PATH != null) {
+      options.path = process.env.DOTENV_CONFIG_PATH;
+    }
+    if (process.env.DOTENV_CONFIG_QUIET != null) {
+      options.quiet = process.env.DOTENV_CONFIG_QUIET;
+    }
+    if (process.env.DOTENV_CONFIG_DEBUG != null) {
+      options.debug = process.env.DOTENV_CONFIG_DEBUG;
+    }
+    if (process.env.DOTENV_CONFIG_OVERRIDE != null) {
+      options.override = process.env.DOTENV_CONFIG_OVERRIDE;
+    }
+    if (process.env.DOTENV_CONFIG_DOTENV_KEY != null) {
+      options.DOTENV_KEY = process.env.DOTENV_CONFIG_DOTENV_KEY;
+    }
+    module2.exports = options;
+  }
+});
+
+// node_modules/dotenv/lib/cli-options.js
+var require_cli_options = __commonJS({
+  "node_modules/dotenv/lib/cli-options.js"(exports2, module2) {
+    "use strict";
+    var re = /^dotenv_config_(encoding|path|quiet|debug|override|DOTENV_KEY)=(.+)$/;
+    module2.exports = function optionMatcher(args) {
+      const options = args.reduce(function(acc, cur) {
+        const matches = cur.match(re);
+        if (matches) {
+          acc[matches[1]] = matches[2];
+        }
+        return acc;
+      }, {});
+      if (!("quiet" in options)) {
+        options.quiet = "true";
+      }
+      return options;
+    };
+  }
+});
+
 // node_modules/fastify-plugin/lib/getPluginName.js
 var require_getPluginName = __commonJS({
   "node_modules/fastify-plugin/lib/getPluginName.js"(exports2, module2) {
@@ -115,13 +522,31 @@ var require_plugin = __commonJS({
   }
 });
 
-// src/app.ts
-var import_fastify = __toESM(require("fastify"));
+// src/lib/sentry/init.ts
+var Sentry = __toESM(require("@sentry/node"));
+var import_profiling_node = require("@sentry/profiling-node");
+
+// node_modules/dotenv/config.js
+(function() {
+  require_main().config(
+    Object.assign(
+      {},
+      require_env_options(),
+      require_cli_options()(process.argv)
+    )
+  );
+})();
 
 // src/env/index.ts
 var import_zod = require("zod");
 var import_ms = __toESM(require("ms"));
-process.loadEnvFile?.(".env");
+
+// src/messages/constants/env/env.ts
+var ENV_CONSTANTS = {
+  INVALID_VARIABLES: "Invalid environment variables. Please check your .env file or environment configuration."
+};
+
+// src/env/index.ts
 var envSchema = import_zod.z.object({
   // Environment
   NODE_ENV: import_zod.z.enum(["development", "staging", "production", "test"]).default("development"),
@@ -138,6 +563,12 @@ var envSchema = import_zod.z.object({
   REDIS_PORT: import_zod.z.coerce.number().default(6379),
   REDIS_PASSWORD: import_zod.z.string().optional(),
   REDIS_LOG_OUTAGE_INTERVAL_MS: import_zod.z.coerce.number().int().positive().default((0, import_ms.default)("30s")),
+  // Metrics
+  METRICS_ENABLED: import_zod.z.enum(["true", "false"]).transform((v) => v === "true").default("true"),
+  METRICS_API_PORT: import_zod.z.coerce.number().default(9091),
+  METRICS_WORKER_PORT: import_zod.z.coerce.number().default(9092),
+  // Grafana (used in docker-compose.monitoring.yml)
+  GRAFANA_ADMIN_PASSWORD: import_zod.z.string().min(8),
   // App
   APP_NAME: import_zod.z.string().default("Backend Template Reborn"),
   APP_PORT: import_zod.z.coerce.number().default(3e3),
@@ -147,9 +578,27 @@ var envSchema = import_zod.z.object({
   // HTTP rate limits (test overrides supported via env)
   HTTP_RATE_LIMIT_GLOBAL_MAX: import_zod.z.coerce.number().int().positive().default(300),
   HTTP_RATE_LIMIT_GLOBAL_TIME_WINDOW: import_zod.z.string().default("1 minute"),
+  HTTP_RATE_LIMIT_AUTH_SESSION_MAX: import_zod.z.coerce.number().int().positive().default(15),
+  HTTP_RATE_LIMIT_AUTH_SESSION_TIME_WINDOW: import_zod.z.string().default("1 minute"),
+  HTTP_RATE_LIMIT_AUTH_REGISTER_MAX: import_zod.z.coerce.number().int().positive().default(5),
+  HTTP_RATE_LIMIT_AUTH_REGISTER_TIME_WINDOW: import_zod.z.string().default("1 minute"),
+  HTTP_RATE_LIMIT_AUTH_FORGOT_PASSWORD_MAX: import_zod.z.coerce.number().int().positive().default(5),
+  HTTP_RATE_LIMIT_AUTH_FORGOT_PASSWORD_TIME_WINDOW: import_zod.z.string().default("1 hour"),
+  HTTP_RATE_LIMIT_AUTH_RESET_PASSWORD_MAX: import_zod.z.coerce.number().int().positive().default(5),
+  HTTP_RATE_LIMIT_AUTH_RESET_PASSWORD_TIME_WINDOW: import_zod.z.string().default("1 hour"),
+  HTTP_RATE_LIMIT_USERS_LIST_MAX: import_zod.z.coerce.number().int().positive().default(20),
+  HTTP_RATE_LIMIT_USERS_LIST_TIME_WINDOW: import_zod.z.string().default("1 hour"),
+  HTTP_RATE_LIMIT_USERS_DELETE_MAX: import_zod.z.coerce.number().int().positive().default(10),
+  HTTP_RATE_LIMIT_USERS_DELETE_TIME_WINDOW: import_zod.z.string().default("1 hour"),
   HTTP_RATE_LIMIT_CHURCHES_NEAREST_MAX: import_zod.z.coerce.number().int().positive().default(3e4),
   HTTP_RATE_LIMIT_CHURCHES_NEAREST_TIME_WINDOW: import_zod.z.string().default("1 minute"),
+  HTTP_RATE_LIMIT_FORMS_SUBMIT_MAX: import_zod.z.coerce.number().int().positive().default(60),
+  HTTP_RATE_LIMIT_FORMS_SUBMIT_TIME_WINDOW: import_zod.z.string().default("1 minute"),
+  HTTP_RATE_LIMIT_HEALTH_CHECK_MAX: import_zod.z.coerce.number().int().positive().default(120),
+  HTTP_RATE_LIMIT_HEALTH_CHECK_TIME_WINDOW: import_zod.z.string().default("1 minute"),
   SENTRY_DSN: import_zod.z.string().optional(),
+  SENTRY_TRACES_SAMPLE_RATE: import_zod.z.coerce.number().min(0).max(1).default(0.2),
+  SENTRY_PROFILE_SAMPLE_RATE: import_zod.z.coerce.number().min(0).max(1).default(0.1),
   // SMTP
   SMTP_EMAIL: import_zod.z.email(),
   SMTP_PASSWORD: import_zod.z.string().min(1),
@@ -171,188 +620,46 @@ var envSchema = import_zod.z.object({
   LOCATION_IQ_API_TOKEN: import_zod.z.string().min(1),
   // Stadia API
   STADIA_MAPS_API_URL: import_zod.z.url().default("https://api.stadiamaps.com/route/v1"),
-  STADIA_API_TOKEN: import_zod.z.string().min(1, "STADIA_API_TOKEN is required")
+  STADIA_MAPS_MATRIX_API_URL: import_zod.z.url().default("https://api.stadiamaps.com/sources_to_targets"),
+  STADIA_API_TOKEN: import_zod.z.string().min(1, "STADIA_API_TOKEN is required"),
+  COOKIE_SECRET: import_zod.z.string().min(32, "Cookie secret must be at least 32 characters long").default("super-secret-cookie-signing-key-for-local-development-must-be-long")
 });
 var _env = envSchema.safeParse(process.env);
 if (!_env.success) {
-  console.error("Invalid environment variables:", import_zod.z.treeifyError(_env.error));
-  throw new Error("Invalid environment variables. Please check your .env file or environment configuration.");
+  console.error("Vari\xE1veis de ambiente inv\xE1lidas:", import_zod.z.treeifyError(_env.error));
+  throw new Error(ENV_CONSTANTS.INVALID_VARIABLES);
 }
 var env = _env.data;
 
-// src/lib/prisma/index.ts
-var import_client = require("@prisma/client");
-
-// src/lib/prisma/helpers/configuration.ts
-var import_adapter_pg = require("@prisma/adapter-pg");
-var import_pg = require("pg");
-var pool = new import_pg.Pool({
-  connectionString: env.DATABASE_URL_LOCAL || env.DATABASE_URL,
-  max: env.DB_POOL_MAX,
-  min: env.DB_POOL_MIN,
-  connectionTimeoutMillis: env.DB_CONNECTION_TIMEOUT,
-  idleTimeoutMillis: env.DB_IDLE_TIMEOUT
-});
-var adapter = new import_adapter_pg.PrismaPg(pool);
-
-// src/lib/prisma/index.ts
-var prisma = new import_client.PrismaClient({
-  adapter,
-  log: env.LOG_LEVEL === "debug" ? ["query", "info", "warn", "error"] : []
-});
-
-// src/core/shared/error-handlers.ts
-function ensureError(value) {
-  if (value instanceof Error) {
-    return value;
+// src/lib/sentry/init.ts
+function initSentry() {
+  if (!env.SENTRY_DSN) {
+    return;
   }
-  if (typeof value === "string") {
-    return new Error(value);
-  }
-  if (typeof value === "object" && value !== null) {
-    const raw = value;
-    const message = typeof raw.message === "string" ? raw.message : JSON.stringify(raw);
-    const error = new Error(message);
-    Object.assign(error, raw);
-    return error;
-  }
-  return new Error(String(value));
+  Sentry.init({
+    dsn: env.SENTRY_DSN,
+    environment: env.NODE_ENV,
+    integrations: [(0, import_profiling_node.nodeProfilingIntegration)()],
+    tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+    profileSessionSampleRate: env.SENTRY_PROFILE_SAMPLE_RATE,
+    profileLifecycle: "trace"
+  });
 }
 
-// src/core/shared/result.ts
-var ok = (value) => ({
-  success: true,
-  value
-});
-var err = (error) => ({
-  success: false,
-  error: ensureError(error)
-});
-var errOf = (error) => ({
-  success: false,
-  error
-});
-function isOk(result) {
-  return result.success;
-}
-function isErr(result) {
-  return !result.success;
-}
+// src/app.ts
+var import_fastify = __toESM(require("fastify"));
 
-// src/repositories/prisma/prisma-users-repository.ts
-var PrismaUsersRepository = class {
-  constructor(errorMapper) {
-    this.errorMapper = errorMapper;
-  }
-  async create(data) {
-    try {
-      const user = await prisma.user.create({
-        data: {
-          name: data.name,
-          email: data.email,
-          cpf: data.cpf,
-          username: data.username,
-          passwordHash: data.passwordHash,
-          role: data.role
-        }
-      });
-      return ok(user);
-    } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
-    }
-  }
-  async findBy(where) {
-    try {
-      const prismaWhere = {};
-      if (where.id !== void 0) prismaWhere.id = where.id;
-      if (where.publicId !== void 0) prismaWhere.publicId = where.publicId;
-      if (where.email !== void 0) prismaWhere.email = where.email;
-      if (where.username !== void 0) prismaWhere.username = where.username;
-      if (where.cpf !== void 0) prismaWhere.cpf = where.cpf;
-      if (where.token !== void 0) prismaWhere.token = where.token;
-      const user = await prisma.user.findUnique({
-        where: prismaWhere
-      });
-      return ok(user);
-    } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
-    }
-  }
-  async findByToken({ token }) {
-    try {
-      const user = await prisma.user.findFirst({
-        where: {
-          token
-        }
-      });
-      return ok(user);
-    } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
-    }
-  }
-  async list() {
-    try {
-      const users = await prisma.user.findMany();
-      return ok(users);
-    } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
-    }
-  }
-  async search(query, page) {
-    try {
-      const users = await prisma.user.findMany({
-        where: {
-          name: {
-            contains: query,
-            mode: "insensitive"
-          }
-        },
-        skip: (page - 1) * 20,
-        take: 20
-      });
-      return ok(users);
-    } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
-    }
-  }
-  async update(publicId, data) {
-    try {
-      const user = await prisma.user.update({
-        where: { publicId },
-        data
-      });
-      return ok(user);
-    } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
-    }
-  }
-  async updatePassword(publicId, data) {
-    try {
-      const user = await prisma.user.update({
-        where: { publicId },
-        data
-      });
-      return ok(user);
-    } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
-    }
-  }
-  async delete(publicId) {
-    try {
-      const user = await prisma.user.delete({
-        where: {
-          publicId
-        }
-      });
-      return ok(user);
-    } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
-    }
+// src/lib/async-local-storage/index.ts
+var import_node_async_hooks = require("async_hooks");
+var asyncLocalStorage = new import_node_async_hooks.AsyncLocalStorage();
+
+// src/messages/errors/system.ts
+var SYSTEM_ERRORS = {
+  ASYNC_LOCAL_STORAGE_NOT_INITIALIZED: {
+    code: "ASYNC_LOCAL_STORAGE_NOT_INITIALIZED",
+    message: "Async Local Storage is not initialized."
   }
 };
-
-// src/lib/prisma/utils/prisma-error-mapper.ts
-var import_client2 = require("@prisma/client");
 
 // src/errors/app-error.ts
 var AppError = class extends Error {
@@ -386,6 +693,231 @@ var AppError = class extends Error {
   }
 };
 
+// src/errors/system-error.ts
+var SystemError = class extends AppError {
+  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
+  constructor(detail, type) {
+    super(detail, type);
+  }
+};
+
+// src/lib/errors/async-local-storage/async-local-storage-not-initialized-error.ts
+var AsyncLocalStorageNotInitializedError = class extends SystemError {
+  constructor() {
+    super(SYSTEM_ERRORS.ASYNC_LOCAL_STORAGE_NOT_INITIALIZED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+  }
+};
+
+// src/lib/prisma/index.ts
+var import_client = require("@prisma/client");
+
+// src/lib/prisma/helpers/configuration.ts
+var import_adapter_pg = require("@prisma/adapter-pg");
+var import_pg = require("pg");
+var pool = new import_pg.Pool({
+  connectionString: env.DATABASE_URL_LOCAL || env.DATABASE_URL,
+  max: env.DB_POOL_MAX,
+  min: env.DB_POOL_MIN,
+  connectionTimeoutMillis: env.DB_CONNECTION_TIMEOUT,
+  idleTimeoutMillis: env.DB_IDLE_TIMEOUT
+});
+var adapter = new import_adapter_pg.PrismaPg(pool);
+
+// src/lib/prisma/index.ts
+var prisma = new import_client.PrismaClient({
+  adapter,
+  log: env.LOG_LEVEL === "debug" ? ["query", "info", "warn", "error"] : []
+});
+
+// src/lib/prisma/helpers/database-context.ts
+var DatabaseContext = class {
+  constructor(prisma2 = prisma) {
+    this.prisma = prisma2;
+  }
+  get client() {
+    const prismaTx = asyncLocalStorage.getStore()?.prismaTransaction;
+    return prismaTx ?? this.prisma;
+  }
+  /**
+   * Executes a callback function within a database transaction.
+   *
+   * This method provides automatic transaction management with the following features:
+   * - **Nested transaction support**: If already in a transaction, reuses the existing one
+   * - **Automatic rollback**: Rolls back on errors
+   * - **Context propagation**: Transaction context is available to all nested calls
+   *
+   * @template T - The return type of the callback function
+   * @param callback - The async function to execute within the transaction
+   * @param options - Optional transaction configuration
+   * @param options.isolationLevel - The isolation level for the transaction (e.g., 'ReadCommitted', 'Serializable')
+   * @param options.maxWait - Maximum time to wait for a transaction slot (in milliseconds)
+   * @param options.timeout - Maximum time for the transaction to complete (in milliseconds)
+   *
+   * @returns A promise that resolves with the callback's return value
+   *
+   * @throws {AsyncLocalStorageNotInitializedError} When AsyncLocalStorage is not properly initialized
+   * @throws {Error} Any error thrown by the callback will cause a rollback and be re-thrown
+   * @remarks
+   * - When nested, the inner transaction options are ignored and the outer transaction is reused
+   * - All database operations within the callback should use `db.client` to participate in the transaction
+   * - The transaction will automatically commit if the callback completes successfully
+   * - The transaction will automatically rollback if the callback throws an error
+   */
+  async runInTransaction(callback, options) {
+    const store = asyncLocalStorage.getStore();
+    if (!store) {
+      throw new AsyncLocalStorageNotInitializedError();
+    }
+    if (store.prismaTransaction) {
+      return await callback();
+    }
+    return await this.prisma.$transaction(async (tx) => {
+      return await asyncLocalStorage.run(
+        {
+          ...store,
+          prismaTransaction: tx
+        },
+        callback
+      );
+    }, options);
+  }
+};
+
+// src/core/shared/result.ts
+var ok = (value) => ({
+  success: true,
+  value
+});
+var err = (error) => ({
+  success: false,
+  error
+});
+function isOk(result) {
+  return result.success;
+}
+function isErr(result) {
+  return !result.success;
+}
+
+// src/repositories/prisma/prisma-users-repository.ts
+var PrismaUsersRepository = class {
+  constructor(errorMapper, dbContext = new DatabaseContext()) {
+    this.errorMapper = errorMapper;
+    this.dbContext = dbContext;
+  }
+  async create(data) {
+    try {
+      const user = await this.dbContext.client.user.create({
+        data: {
+          name: data.name,
+          email: data.email,
+          cpf: data.cpf,
+          username: data.username,
+          passwordHash: data.passwordHash,
+          role: data.role
+        }
+      });
+      return ok(user);
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error));
+    }
+  }
+  async findBy(where) {
+    try {
+      const conditions = [];
+      if (where.id !== void 0) conditions.push({ id: where.id });
+      if (where.publicId !== void 0) conditions.push({ publicId: where.publicId });
+      if (where.email !== void 0) conditions.push({ email: where.email });
+      if (where.username !== void 0) conditions.push({ username: where.username });
+      if (where.cpf !== void 0) conditions.push({ cpf: where.cpf });
+      if (where.token !== void 0) conditions.push({ token: where.token });
+      if (conditions.length === 0) {
+        return ok(null);
+      }
+      const user = await this.dbContext.client.user.findFirst({
+        where: conditions.length === 1 ? conditions[0] : { OR: conditions }
+      });
+      return ok(user);
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error));
+    }
+  }
+  async findByToken({ token }) {
+    try {
+      const user = await this.dbContext.client.user.findFirst({
+        where: {
+          token
+        }
+      });
+      return ok(user);
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error));
+    }
+  }
+  async list() {
+    try {
+      const users = await this.dbContext.client.user.findMany();
+      return ok(users);
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error));
+    }
+  }
+  async search(query, page) {
+    try {
+      const users = await this.dbContext.client.user.findMany({
+        where: {
+          name: {
+            contains: query,
+            mode: "insensitive"
+          }
+        },
+        skip: (page - 1) * 20,
+        take: 20
+      });
+      return ok(users);
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error));
+    }
+  }
+  async update(publicId, data) {
+    try {
+      const user = await this.dbContext.client.user.update({
+        where: { publicId },
+        data
+      });
+      return ok(user);
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error));
+    }
+  }
+  async updatePassword(publicId, data) {
+    try {
+      const user = await this.dbContext.client.user.update({
+        where: { publicId },
+        data
+      });
+      return ok(user);
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error));
+    }
+  }
+  async delete(publicId) {
+    try {
+      const user = await this.dbContext.client.user.delete({
+        where: {
+          publicId
+        }
+      });
+      return ok(user);
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error));
+    }
+  }
+};
+
+// src/lib/prisma/utils/prisma-error-mapper.ts
+var import_client2 = require("@prisma/client");
+
 // src/errors/infrastructure-error.ts
 var InfrastructureError = class extends AppError {
   originalError;
@@ -393,39 +925,35 @@ var InfrastructureError = class extends AppError {
     super(detail, type, failureMode);
     this.originalError = originalError;
     if (originalError) {
-      this.body.originalError = originalError instanceof Error ? originalError.stack || originalError.message : originalError;
+      this.cause = originalError;
     }
   }
 };
 
-// src/messages/errors/providers/providers-error-messages.ts
-var SERVICE_BUSY_ERROR = {
-  code: "SERVICE_BUSY",
-  message: "Servi\xE7o temporariamente indispon\xEDvel devido ao limite de requisi\xE7\xF5es."
+// src/messages/errors/infrastructure.ts
+var INFRA_ERRORS = {
+  SERVICE_BUSY: {
+    code: "SERVICE_BUSY",
+    message: "Servi\xE7o temporariamente indispon\xEDvel devido ao limite de requisi\xE7\xF5es."
+  },
+  PROVIDER_FAILURE: {
+    code: "PROVIDER_FAILURE",
+    message: "Falha de sistema ao processar dados no provedor de servi\xE7os externos."
+  },
+  DATABASE_QUERY_FAILURE: {
+    code: "DATABASE_QUERY_FAILURE",
+    message: "Falha de sistema ao processar consulta no banco de dados."
+  },
+  SERVICE_OVERLOAD: {
+    code: "SERVICE_OVERLOAD",
+    message: "N\xFAmero de requisi\xE7\xF5es simult\xE2neas excedeu o limite de maxPendingFetches na mem\xF3ria cache do Redis."
+  }
 };
-var PROVIDER_FAILURE_ERROR = {
-  code: "PROVIDER_FAILURE",
-  message: "Falha de sistema ao processar dados no provedor de servi\xE7os externos."
-};
-var DATABASE_QUERY_FAILURE_ERROR = {
-  code: "DATABASE_QUERY_FAILURE",
-  message: "Falha de sistema ao processar consulta no banco de dados."
-};
-var SERVICE_OVERLOAD_ERROR = {
-  code: "SERVICE_OVERLOAD",
-  message: "N\xFAmero de requisi\xE7\xF5es simult\xE2neas excedeu o limite de maxPendingFetches na mem\xF3ria cache do Redis."
-};
-var TIMEOUT_EXCEEDED_ERROR = {
-  code: "TIMEOUT_EXCEEDED",
-  message: "Tempo limite excedido ao buscar dados nos provedores externos."
-};
-var NO_GEO_PROVIDER_ERROR_MESSAGE = "Provedor resiliente de geolocaliza\xE7\xE3o requer pelo menos um provedor de geolocaliza\xE7\xE3o configurado.";
-var NO_ADDRESS_PROVIDER_ERROR_MESSAGE = "Provedor resiliente de endere\xE7o requer pelo menos um provedor de endere\xE7o configurado.";
 
 // src/errors/infrastructure/database-query-error.ts
 var DatabaseQueryError = class extends InfrastructureError {
   constructor(originalError) {
-    super(DATABASE_QUERY_FAILURE_ERROR, originalError, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+    super(INFRA_ERRORS.DATABASE_QUERY_FAILURE, originalError, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
     this.name = "DatabaseQueryError";
   }
 };
@@ -458,43 +986,37 @@ var DomainError = class extends AppError {
   }
 };
 
-// src/messages/errors/use-cases/users/users-error-messages.ts
-var USER_NOT_FOUND_ERROR = {
-  code: "USER_NOT_FOUND",
-  message: "Usu\xE1rio n\xE3o encontrado."
-};
-var USER_ALREADY_EXISTS_ERROR = {
-  code: "USER_ALREADY_EXISTS",
-  message: "Usu\xE1rio j\xE1 existe !"
-};
-var USER_NOT_CREATED_ERROR = {
-  code: "USER_NOT_CREATED",
-  message: "Falha ao criar o usu\xE1rio."
-};
-var USER_NOT_FOUND_FOR_PASSWORD_RESET_ERROR = {
-  code: "USER_NOT_FOUND_FOR_PASSWORD_RESET",
-  message: "Se o usu\xE1rio existir, voc\xEA receber\xE1 um e-mail com instru\xE7\xF5es para redefinir a senha."
-};
-var INVALID_CREDENTIALS_ERROR = {
-  code: "INVALID_CREDENTIALS",
-  message: "Credenciais inv\xE1lidas!"
-};
-var INVALID_TOKEN_ERROR = {
-  code: "INVALID_TOKEN",
-  message: "Token inv\xE1lido ou expirado!"
+// src/messages/errors/users.ts
+var USER_ERRORS = {
+  NOT_FOUND: {
+    code: "USER_NOT_FOUND",
+    message: "Usu\xE1rio n\xE3o encontrado."
+  },
+  ALREADY_EXISTS: {
+    code: "USER_ALREADY_EXISTS",
+    message: "Usu\xE1rio j\xE1 existe !"
+  },
+  NOT_CREATED: {
+    code: "USER_NOT_CREATED",
+    message: "Falha ao criar o usu\xE1rio."
+  },
+  NOT_FOUND_FOR_PASSWORD_RESET: {
+    code: "USER_NOT_FOUND_FOR_PASSWORD_RESET",
+    message: "Se o usu\xE1rio existir, voc\xEA receber\xE1 um e-mail com instru\xE7\xF5es para redefinir a senha."
+  }
 };
 
 // src/use-cases/errors/user-already-exists-error.ts
 var UserAlreadyExistsError = class extends DomainError {
   constructor() {
-    super(USER_ALREADY_EXISTS_ERROR, "CONFLICT" /* CONFLICT */);
+    super(USER_ERRORS.ALREADY_EXISTS, "CONFLICT" /* CONFLICT */);
   }
 };
 
 // src/use-cases/errors/user-not-found-error.ts
 var UserNotFoundError = class extends DomainError {
   constructor() {
-    super(USER_NOT_FOUND_ERROR, "NOT_FOUND" /* NOT_FOUND */);
+    super(USER_ERRORS.NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
   }
 };
 
@@ -509,10 +1031,34 @@ var userPrismaErrorMapping = {
 // src/use-cases/users/reset-password.ts
 var import_bcryptjs = require("bcryptjs");
 
+// src/messages/errors/auth.ts
+var AUTH_ERRORS = {
+  UNAUTHORIZED: {
+    code: "UNAUTHORIZED",
+    message: "N\xE3o autorizado!"
+  },
+  FORBIDDEN: {
+    code: "FORBIDDEN",
+    message: "Acesso negado!"
+  },
+  INVALID_CREDENTIALS: {
+    code: "INVALID_CREDENTIALS",
+    message: "Credenciais inv\xE1lidas!"
+  },
+  INVALID_TOKEN: {
+    code: "INVALID_TOKEN",
+    message: "Token inv\xE1lido ou expirado!"
+  },
+  PASSWORD_CHANGE_REQUIRED: {
+    code: "PASSWORD_CHANGE_REQUIRED",
+    message: "\xC9 necess\xE1rio alterar a senha antes de acessar o sistema!"
+  }
+};
+
 // src/use-cases/errors/invalid-token-error.ts
 var InvalidTokenError = class extends DomainError {
   constructor() {
-    super(INVALID_TOKEN_ERROR, "UNAUTHORIZED" /* UNAUTHORIZED */);
+    super(AUTH_ERRORS.INVALID_TOKEN, "UNAUTHORIZED" /* UNAUTHORIZED */);
   }
 };
 
@@ -531,7 +1077,7 @@ var ResetPasswordUseCase = class {
     }
     const userExists = userResult.value;
     if (!userExists || !userExists.tokenExpiresAt || userExists.tokenExpiresAt < /* @__PURE__ */ new Date()) {
-      return errOf(new InvalidTokenError());
+      return err(new InvalidTokenError());
     }
     const passwordHash = await (0, import_bcryptjs.hash)(password, env.HASH_SALT_ROUNDS);
     const updateResult = await this.usersRepository.updatePassword(userExists.publicId, {
@@ -563,43 +1109,27 @@ var import_zod3 = require("zod");
 // src/http/schemas/utils/password.ts
 var import_zod2 = require("zod");
 
-// src/core/constants/messages.ts
-var messages = {
-  validation: {
-    invalidData: "Dados de registro inv\xE1lidos!",
-    userAlreadyExists: "Usu\xE1rio j\xE1 existe !",
-    invalidCpf: "CPF inv\xE1lido!",
-    invalidJson: "O corpo da requisi\xE7\xE3o n\xE3o est\xE1 em formato JSON v\xE1lido. Verifique a estrutura dos dados enviados.",
-    passwordTooShort: "A senha deve ter pelo menos 8 caracteres.",
-    passwordTooLong: "A senha deve ter no m\xE1ximo 64 caracteres.",
-    passwordUppercase: "A senha deve conter pelo menos uma letra mai\xFAscula.",
-    passwordLowercase: "A senha deve conter pelo menos uma letra min\xFAscula.",
-    passwordDigit: "A senha deve conter pelo menos um n\xFAmero.",
-    passwordSpecial: "A senha deve conter pelo menos um caractere especial.",
-    passwordNoSpaces: "A senha n\xE3o pode conter espa\xE7os."
+// src/messages/constants/validation/validation.ts
+var VALIDATION_CONSTANTS = {
+  CPF: {
+    INVALID: "CPF inv\xE1lido!"
   },
-  errors: {
-    internalServer: "Erro interno do servidor!",
-    invalidCredentials: "Credenciais inv\xE1lidas!",
-    resourceNotFound: "Recurso n\xE3o encontrado!",
-    forbidden: "Acesso negado!",
-    unauthorized: "N\xE3o autorizado!",
-    invalidToken: "Token inv\xE1lido ou expirado!",
-    passwordChangeRequired: "\xC9 necess\xE1rio alterar a senha antes de acessar o sistema!",
-    formSubmissionFailed: "Falha ao enviar o formul\xE1rio.",
-    createUserFailed: "Falha ao criar o usu\xE1rio.",
-    operationAbortedError: "Opera\xE7\xE3o abortada pelo cache manager."
+  PASSWORD: {
+    TOO_SHORT: "A senha deve ter pelo menos 8 caracteres.",
+    TOO_LONG: "A senha deve ter no m\xE1ximo 64 caracteres.",
+    UPPERCASE: "A senha deve conter pelo menos uma letra mai\xFAscula.",
+    LOWERCASE: "A senha deve conter pelo menos uma letra min\xFAscula.",
+    DIGIT: "A senha deve conter pelo menos um n\xFAmero.",
+    SPECIAL: "A senha deve conter pelo menos um caractere especial.",
+    NO_SPACES: "A senha n\xE3o pode conter espa\xE7os."
   },
-  info: {
-    passwordResetGeneric: "Se o usu\xE1rio existir, voc\xEA receber\xE1 um e-mail com instru\xE7\xF5es para redefinir a senha."
-  },
-  email: {
-    passwordRecoverySubject: "Recupera\xE7\xE3o de senha"
+  CEP: {
+    INVALID_FORMAT: "CEP inv\xE1lido. Use o formato 12345-678 ou 12345678."
   }
 };
 
 // src/http/schemas/utils/password.ts
-var passwordSchema = import_zod2.z.string().trim().min(8, { message: messages.validation.passwordTooShort }).max(64, { message: messages.validation.passwordTooLong }).regex(/[A-Z]/, { message: messages.validation.passwordUppercase }).regex(/[a-z]/, { message: messages.validation.passwordLowercase }).regex(/[0-9]/, { message: messages.validation.passwordDigit }).regex(/[\W_]/, { message: messages.validation.passwordSpecial }).refine((val) => !val.includes(" "), { message: messages.validation.passwordNoSpaces });
+var passwordSchema = import_zod2.z.string().trim().min(8, { message: VALIDATION_CONSTANTS.PASSWORD.TOO_SHORT }).max(64, { message: VALIDATION_CONSTANTS.PASSWORD.TOO_LONG }).regex(/[A-Z]/, { message: VALIDATION_CONSTANTS.PASSWORD.UPPERCASE }).regex(/[a-z]/, { message: VALIDATION_CONSTANTS.PASSWORD.LOWERCASE }).regex(/[0-9]/, { message: VALIDATION_CONSTANTS.PASSWORD.DIGIT }).regex(/[\W_]/, { message: VALIDATION_CONSTANTS.PASSWORD.SPECIAL }).refine((val) => !val.includes(" "), { message: VALIDATION_CONSTANTS.PASSWORD.NO_SPACES });
 
 // src/http/schemas/users/reset-password-schema.ts
 var resetPasswordSchema = import_zod3.z.object({
@@ -609,24 +1139,17 @@ var resetPasswordSchema = import_zod3.z.object({
 
 // src/lib/logger/index.ts
 var import_pino = __toESM(require("pino"));
-var import_node_async_hooks = require("async_hooks");
-var asyncLocalStorage = new import_node_async_hooks.AsyncLocalStorage();
 function getRequestId() {
   return asyncLocalStorage.getStore()?.requestId;
 }
 function getUserId() {
   return asyncLocalStorage.getStore()?.userId;
 }
-function runWithRequestId(requestId, fn) {
-  return asyncLocalStorage.run({ requestId }, fn);
-}
-function runWithUserContext(userId, fn) {
+function setUserId(userId) {
   const store = asyncLocalStorage.getStore();
   if (store) {
     store.userId = userId;
-    return asyncLocalStorage.run(store, fn);
   }
-  return fn();
 }
 var isDev = env.NODE_ENV === "development";
 var baseConfig = {
@@ -659,6 +1182,7 @@ var logger = isDev ? (0, import_pino.default)(loggerConfig) : (0, import_pino.de
 
 // src/errors/http-errors/http-error-status.mapper.ts
 var STATUS_MAP = {
+  ["OK" /* OK */]: 200,
   ["BAD_REQUEST" /* BAD_REQUEST */]: 400,
   ["UNAUTHORIZED" /* UNAUTHORIZED */]: 401,
   ["FORBIDDEN" /* FORBIDDEN */]: 403,
@@ -676,7 +1200,7 @@ function toHttpStatus(type) {
 // src/errors/http-errors/http-error-mapper.ts
 var HttpErrorMapper = class {
   static map(error, reply) {
-    if (error instanceof AppError) {
+    if (error instanceof DomainError) {
       const httpCode = toHttpStatus(error.type);
       return reply.status(httpCode).send({
         message: error.body.message,
@@ -688,6 +1212,11 @@ var HttpErrorMapper = class {
   }
 };
 
+// src/messages/constants/auth/auth.ts
+var AUTH_CONSTANTS = {
+  PASSWORD_CHANGED_SUCCESS: "Password changed successfully!"
+};
+
 // src/http/controllers/users/reset-password.controller.ts
 async function resetPassword(request, reply) {
   const { password, token } = resetPasswordSchema.parse(request.body);
@@ -697,8 +1226,8 @@ async function resetPassword(request, reply) {
     return HttpErrorMapper.map(result.error, reply);
   }
   const { user } = result.value;
-  logger.info({ userId: user.id }, "Password changed successfully!");
-  return reply.status(200).send({ message: "Password changed successfully!" });
+  logger.info({ userId: user.publicId }, AUTH_CONSTANTS.PASSWORD_CHANGED_SUCCESS);
+  return reply.status(200).send({ message: AUTH_CONSTANTS.PASSWORD_CHANGED_SUCCESS });
 }
 
 // src/http/schemas/users/register-schema.ts
@@ -709,7 +1238,7 @@ var import_zod4 = require("zod");
 var import_cpf_cnpj_validator = require("cpf-cnpj-validator");
 var cpfSchema = import_zod4.z.preprocess(
   (val) => typeof val === "string" ? val.replace(/\D/g, "") : val,
-  import_zod4.z.string().length(11, { message: messages.validation.invalidCpf }).refine(import_cpf_cnpj_validator.cpf.isValid, { message: messages.validation.invalidCpf }).transform(import_cpf_cnpj_validator.cpf.format)
+  import_zod4.z.string().length(11, { message: VALIDATION_CONSTANTS.CPF.INVALID }).refine(import_cpf_cnpj_validator.cpf.isValid, { message: VALIDATION_CONSTANTS.CPF.INVALID }).transform(import_cpf_cnpj_validator.cpf.format)
 );
 
 // src/http/schemas/utils/email.ts
@@ -735,7 +1264,7 @@ var import_bcryptjs2 = require("bcryptjs");
 // src/use-cases/errors/user-not-created-error.ts
 var UserNotCreatedError = class extends DomainError {
   constructor() {
-    super(USER_NOT_CREATED_ERROR, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+    super(USER_ERRORS.NOT_CREATED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
   }
 };
 
@@ -752,26 +1281,12 @@ var RegisterUserUseCase = class {
     password,
     role
   }) {
-    const userWithExistingEmail = await this.usersRepository.findBy({ email });
-    if (isErr(userWithExistingEmail)) {
-      return userWithExistingEmail;
+    const userWithExistingParams = await this.usersRepository.findBy({ email, cpf: cpf2, username });
+    if (isErr(userWithExistingParams)) {
+      return userWithExistingParams;
     }
-    if (userWithExistingEmail.value) {
-      return errOf(new UserAlreadyExistsError());
-    }
-    const userWithExistingCpf = await this.usersRepository.findBy({ cpf: cpf2 });
-    if (isErr(userWithExistingCpf)) {
-      return userWithExistingCpf;
-    }
-    if (userWithExistingCpf.value) {
-      return errOf(new UserAlreadyExistsError());
-    }
-    const userWithExistingUsername = await this.usersRepository.findBy({ username });
-    if (isErr(userWithExistingUsername)) {
-      return userWithExistingUsername;
-    }
-    if (userWithExistingUsername.value) {
-      return errOf(new UserAlreadyExistsError());
+    if (userWithExistingParams.value) {
+      return err(new UserAlreadyExistsError());
     }
     const passwordHash = await (0, import_bcryptjs2.hash)(password, env.HASH_SALT_ROUNDS);
     const createResult = await this.usersRepository.create({
@@ -787,18 +1302,49 @@ var RegisterUserUseCase = class {
     }
     const user = createResult.value;
     if (!user) {
-      return errOf(new UserNotCreatedError());
+      return err(new UserNotCreatedError());
     }
     return ok({ user });
   }
 };
 
+// src/use-cases/decorators/transactional-use-case.decorator.ts
+var RollbackTransactionError = class extends Error {
+  constructor(result) {
+    super("Rollback requested by domain logic");
+    this.result = result;
+  }
+};
+var TransactionalUseCaseDecorator = class {
+  constructor(useCase, dbContext) {
+    this.useCase = useCase;
+    this.dbContext = dbContext;
+  }
+  async execute(request) {
+    try {
+      return await this.dbContext.runInTransaction(async () => {
+        const result = await this.useCase.execute(request);
+        if (result.success === false) {
+          throw new RollbackTransactionError(result);
+        }
+        return result;
+      });
+    } catch (error) {
+      if (error instanceof RollbackTransactionError) {
+        return error.result;
+      }
+      throw error;
+    }
+  }
+};
+
 // src/use-cases/factories/make-register-user-use-case.ts
 function makeRegisterUserUseCase() {
+  const dbContext = new DatabaseContext();
   const errorMapper = new PrismaErrorMapper(userPrismaErrorMapping);
-  const usersRepository = new PrismaUsersRepository(errorMapper);
+  const usersRepository = new PrismaUsersRepository(errorMapper, dbContext);
   const registerUseCase = new RegisterUserUseCase(usersRepository);
-  return registerUseCase;
+  return new TransactionalUseCaseDecorator(registerUseCase, dbContext);
 }
 
 // src/http/presenters/user-presenter.ts
@@ -835,7 +1381,7 @@ async function register(request, reply) {
     return HttpErrorMapper.map(result.error, reply);
   }
   const { user } = result.value;
-  logger.info({ userId: user.publicId }, "Default user registered successfully!");
+  logger.info({ userId: user.publicId }, "Usu\xE1rio comum registrado com sucesso!");
   return reply.status(201).send({ user: UserPresenter.toHTTP(user) });
 }
 async function registerAdmin(request, reply) {
@@ -853,7 +1399,7 @@ async function registerAdmin(request, reply) {
     return HttpErrorMapper.map(result.error, reply);
   }
   const { user } = result.value;
-  logger.info({ userId: user.publicId }, "Admin user registered successfully!");
+  logger.info({ userId: user.publicId }, "Usu\xE1rio administrador registrado com sucesso!");
   return reply.status(201).send({ user: UserPresenter.toHTTP(user) });
 }
 
@@ -862,7 +1408,7 @@ async function verifyJwt(request, reply) {
   try {
     await request.jwtVerify();
   } catch {
-    return reply.status(401).send({ message: messages.errors.unauthorized ?? "Unauthorized" });
+    return reply.status(401).send({ message: AUTH_ERRORS.UNAUTHORIZED.message });
   }
 }
 
@@ -871,16 +1417,13 @@ function verifyUserRole(allowedRoles) {
   return async (request, reply) => {
     const { role } = request.user;
     if (!role) {
-      return reply.status(401).send({ message: messages.errors.unauthorized ?? "Unauthorized" });
+      return reply.status(401).send({ message: AUTH_ERRORS.UNAUTHORIZED.message });
     }
     if (!allowedRoles.includes(role)) {
-      return reply.status(403).send({ message: messages.errors.forbidden ?? "Forbidden" });
+      return reply.status(403).send({ message: AUTH_ERRORS.FORBIDDEN.message });
     }
   };
 }
-
-// src/http/controllers/users/authenticate-user.controller.ts
-var import_client4 = require("@prisma/client");
 
 // src/http/schemas/users/authenticate-schema.ts
 var import_zod8 = require("zod");
@@ -895,7 +1438,7 @@ var import_client3 = require("@prisma/client");
 // src/use-cases/errors/invalid-credentials-error.ts
 var InvalidCredentialsError = class extends DomainError {
   constructor() {
-    super(INVALID_CREDENTIALS_ERROR, "BAD_REQUEST" /* BAD_REQUEST */);
+    super(AUTH_ERRORS.INVALID_CREDENTIALS, "UNAUTHORIZED" /* UNAUTHORIZED */);
   }
 };
 
@@ -926,7 +1469,7 @@ var AuthenticateUserUseCase = class {
         ...auditContext,
         status: import_client3.AuthenticationStatus.USER_NOT_EXISTS
       });
-      return errOf(new InvalidCredentialsError());
+      return err(new InvalidCredentialsError());
     }
     const hashToCompare = user.passwordHash;
     const doesPasswordMatch = await (0, import_bcryptjs3.compare)(password, hashToCompare);
@@ -936,7 +1479,7 @@ var AuthenticateUserUseCase = class {
         status: import_client3.AuthenticationStatus.INCORRECT_PASSWORD,
         userId: user.id
       });
-      return errOf(new InvalidCredentialsError());
+      return err(new InvalidCredentialsError());
     }
     await this.authenticationAuditUseCase.execute({
       ...auditContext,
@@ -963,7 +1506,7 @@ var PrismaAuthenticationAuditRepository = class {
       });
       return ok(audit);
     } catch (error) {
-      return errOf(new DatabaseQueryError(error));
+      return err(new DatabaseQueryError(error));
     }
   }
 };
@@ -974,11 +1517,12 @@ var AuthenticationAuditUseCase = class {
     this.authenticationAuditRepository = authenticationAuditRepository;
   }
   async execute(data) {
-    try {
-      await this.authenticationAuditRepository.create(data);
-    } catch (error) {
-      logger.error(error, "Falha ao criar registro de auditoria de autentica\xE7\xE3o");
+    const result = await this.authenticationAuditRepository.create(data);
+    if (isErr(result)) {
+      logger.error({ error: result.error.message }, "Falha ao criar registro de auditoria de autentica\xE7\xE3o");
+      return result;
     }
+    return ok(void 0);
   }
 };
 
@@ -999,7 +1543,6 @@ function makeAuthenticateUserUseCase() {
 }
 
 // src/http/controllers/users/authenticate-user.controller.ts
-var import_zod9 = require("zod");
 function getAuthenticationAuditContext(request) {
   return {
     ipAddress: request.ip,
@@ -1009,27 +1552,20 @@ function getAuthenticationAuditContext(request) {
   };
 }
 async function authenticateUser(request, reply) {
-  const authenticationAuditUseCase = makeAuthenticationAuditUseCase();
+  const { login, password } = authenticateSchema.parse(request.body);
   const auditContext = getAuthenticationAuditContext(request);
-  const parsedBody = authenticateSchema.safeParse(request.body);
-  if (!parsedBody.success) {
-    await authenticationAuditUseCase.execute({
-      ...auditContext,
-      status: import_client4.AuthenticationStatus.INVALID_REQUEST
-    });
-    return reply.status(400).send({ message: messages.validation.invalidData, details: import_zod9.z.treeifyError(parsedBody.error) });
-  }
   const authenticateUserUseCase = makeAuthenticateUserUseCase();
   const result = await authenticateUserUseCase.execute({
-    login: parsedBody.data.login,
-    password: parsedBody.data.password,
+    login,
+    password,
     auditContext
   });
   if (isErr(result)) {
+    logger.warn({ login, ip: request.ip }, "Tentativa de login falhou");
     return HttpErrorMapper.map(result.error, reply);
   }
   const { user } = result.value;
-  logger.info("User authenticated successfully!");
+  logger.info("Usu\xE1rio autenticado com sucesso!");
   const token = await reply.jwtSign({ sub: user.publicId, role: user.role }, { expiresIn: "1d" });
   return reply.status(200).send({ token, user: UserPresenter.toHTTP(user) });
 }
@@ -1046,7 +1582,7 @@ var DeleteUserUseCase = class {
     }
     const userExists = userResult.value;
     if (!userExists) {
-      return errOf(new UserNotFoundError());
+      return err(new UserNotFoundError());
     }
     const deleteResult = await this.usersRepository.delete(userExists.publicId);
     if (isErr(deleteResult)) {
@@ -1065,9 +1601,9 @@ function makeDeleteUserUseCase() {
 }
 
 // src/http/schemas/utils/public-id-schema.ts
-var import_zod10 = require("zod");
-var publicIdSchema = import_zod10.z.object({
-  publicId: import_zod10.z.uuid()
+var import_zod9 = require("zod");
+var publicIdSchema = import_zod9.z.object({
+  publicId: import_zod9.z.uuid()
 });
 
 // src/http/controllers/users/delete-user.controller.ts
@@ -1079,7 +1615,7 @@ async function deleteUser(request, reply) {
   if (isErr(result)) {
     return HttpErrorMapper.map(result.error, reply);
   }
-  logger.info("User deleted successfully!");
+  logger.info("Usu\xE1rio deletado com sucesso!");
   return reply.status(204).send();
 }
 async function deleteUserByPublicId(request, reply) {
@@ -1091,13 +1627,13 @@ async function deleteUserByPublicId(request, reply) {
   if (isErr(result)) {
     return HttpErrorMapper.map(result.error, reply);
   }
-  logger.info({ targetId: publicId }, "User deleted successfully!");
+  logger.info({ targetId: publicId }, "Usu\xE1rio deletado com sucesso!");
   return reply.status(204).send();
 }
 
 // src/http/schemas/users/forgot-password-schema.ts
-var import_zod11 = require("zod");
-var forgotPasswordSchema = import_zod11.z.object({
+var import_zod10 = require("zod");
+var forgotPasswordSchema = import_zod10.z.object({
   email: emailSchema
 });
 
@@ -1107,118 +1643,30 @@ var import_crypto = require("crypto");
 // src/use-cases/errors/user-not-found-for-password-reset-error.ts
 var UserNotFoundForPasswordResetError = class extends DomainError {
   constructor() {
-    super(USER_NOT_FOUND_FOR_PASSWORD_RESET_ERROR, "BAD_REQUEST" /* BAD_REQUEST */);
+    super(USER_ERRORS.NOT_FOUND_FOR_PASSWORD_RESET, "NOT_FOUND" /* NOT_FOUND */);
   }
 };
 
-// src/use-cases/users/forgot-password.ts
-var EXPIRES_IN_MINUTES = 15;
-var TOKEN_LENGTH = 32;
-var ForgotPasswordUseCase = class {
-  constructor(usersRepository) {
-    this.usersRepository = usersRepository;
-  }
-  async execute({ email }) {
-    let userExists = null;
-    if (emailSchema.safeParse(email).success) {
-      const userResult = await this.usersRepository.findBy({ email });
-      if (isErr(userResult)) {
-        return userResult;
-      }
-      userExists = userResult.value;
-    }
-    if (!userExists) {
-      return errOf(new UserNotFoundForPasswordResetError());
-    }
-    const passwordToken = (0, import_crypto.randomBytes)(TOKEN_LENGTH).toString("hex");
-    const tokenExpiresAt = new Date(Date.now() + EXPIRES_IN_MINUTES * 60 * 1e3);
-    const tokenData = {
-      token: passwordToken,
-      tokenExpiresAt
-    };
-    const updateResult = await this.usersRepository.updatePassword(userExists.publicId, {
-      ...tokenData
-    });
-    if (isErr(updateResult)) {
-      return updateResult;
-    }
-    const user = updateResult.value;
-    if (!user) {
-      return errOf(new UserNotFoundForPasswordResetError());
-    }
-    return ok({
-      user,
-      token: passwordToken
-    });
+// src/messages/errors/email.ts
+var EMAIL_ERRORS = {
+  FAILED_TO_SEND: {
+    code: "FAILED_TO_SEND_EMAIL",
+    message: "N\xE3o foi poss\xEDvel enviar o e-mail. Por favor, tente novamente."
   }
 };
 
-// src/use-cases/factories/make-forgot-password-use-case.ts
-function makeForgotPasswordUseCase() {
-  const errorMapper = new PrismaErrorMapper(userPrismaErrorMapping);
-  const usersRepository = new PrismaUsersRepository(errorMapper);
-  const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository);
-  return forgotPasswordUseCase;
-}
-
-// src/utils/send-email.ts
-var import_nodemailer = __toESM(require("nodemailer"));
-var transporter = null;
-var isVerified = false;
-async function getTransporter() {
-  if (!transporter) {
-    transporter = import_nodemailer.default.createTransport({
-      host: env.SMTP_HOST,
-      port: env.SMTP_PORT,
-      secure: env.SMTP_SECURE,
-      auth: {
-        user: env.SMTP_EMAIL,
-        pass: env.SMTP_PASSWORD
-      }
-    });
-    if (!isVerified) {
-      try {
-        await transporter.verify();
-        logger.info("transportador SMTP verificado com sucesso");
-        isVerified = true;
-      } catch (error) {
-        logger.error({ error }, "transportador SMTP falhou na verifica\xE7\xE3o");
-        throw error;
-      }
-    }
-  }
-  return transporter;
-}
-async function sendEmail({
-  to,
-  subject,
-  message,
-  html,
-  attachments
-}) {
-  const emailTransporter = await getTransporter();
-  const info = await emailTransporter.sendMail({
-    from: env.SMTP_EMAIL,
-    to,
-    subject,
-    text: message,
-    html,
-    ...attachments ? { attachments } : {}
-  });
-  return info;
-}
-
-// src/use-cases/email/send-email.ts
-var SendEmailUseCase = class {
-  async execute({ to, subject, message, html, attachments }) {
-    return await sendEmail({ to, subject, message, html, attachments });
+// src/use-cases/errors/failed-to-send-email-error.ts
+var FailedToSendEmailError = class extends DomainError {
+  constructor() {
+    super(EMAIL_ERRORS.FAILED_TO_SEND, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
   }
 };
 
-// src/use-cases/factories/make-send-email-use-case.ts
-function makeSendEmailUseCase() {
-  return new SendEmailUseCase();
-}
+// src/messages/constants/email/email.ts
+var EMAIL_CONSTANTS = {
+  PASSWORD_RECOVERY_SUBJECT: "Recupera\xE7\xE3o de senha",
+  PASSWORD_RESET_GENERIC_MESSAGE: "Se o usu\xE1rio existir, voc\xEA receber\xE1 um e-mail com instru\xE7\xF5es para redefinir a senha."
+};
 
 // src/templates/forgot-password/forgot-password-text.ts
 function forgotPasswordTextTemplate(userName, token) {
@@ -1269,30 +1717,164 @@ function forgotPasswordHtmlTemplate(userName, token) {
   `;
 }
 
+// src/use-cases/users/forgot-password.ts
+var EXPIRES_IN_MINUTES = 15;
+var TOKEN_LENGTH = 32;
+var ForgotPasswordUseCase = class {
+  constructor(usersRepository, sendEmailUseCase) {
+    this.usersRepository = usersRepository;
+    this.sendEmailUseCase = sendEmailUseCase;
+  }
+  async execute({ email }) {
+    let userExists = null;
+    if (emailSchema.safeParse(email).success) {
+      const userResult = await this.usersRepository.findBy({ email });
+      if (isErr(userResult)) {
+        return userResult;
+      }
+      userExists = userResult.value;
+    }
+    if (!userExists) {
+      return err(new UserNotFoundForPasswordResetError());
+    }
+    const passwordToken = (0, import_crypto.randomBytes)(TOKEN_LENGTH).toString("hex");
+    const tokenExpiresAt = new Date(Date.now() + EXPIRES_IN_MINUTES * 60 * 1e3);
+    const updateResult = await this.usersRepository.updatePassword(userExists.publicId, {
+      token: passwordToken,
+      tokenExpiresAt
+    });
+    if (isErr(updateResult)) {
+      return updateResult;
+    }
+    const user = updateResult.value;
+    if (!user) {
+      return err(new UserNotFoundForPasswordResetError());
+    }
+    const emailResult = await this.sendEmailUseCase.execute({
+      to: user.email,
+      subject: EMAIL_CONSTANTS.PASSWORD_RECOVERY_SUBJECT,
+      message: forgotPasswordTextTemplate(user.name, passwordToken),
+      html: forgotPasswordHtmlTemplate(user.name, passwordToken)
+    });
+    if (isErr(emailResult)) {
+      await this.usersRepository.updatePassword(user.publicId, {
+        token: null,
+        tokenExpiresAt: null
+      });
+      return err(new FailedToSendEmailError());
+    }
+    return ok({
+      user,
+      token: passwordToken
+    });
+  }
+};
+
+// src/utils/send-email.ts
+var import_nodemailer = __toESM(require("nodemailer"));
+var transporter = null;
+var isVerified = false;
+async function getTransporter() {
+  if (!transporter) {
+    transporter = import_nodemailer.default.createTransport({
+      host: env.SMTP_HOST,
+      port: env.SMTP_PORT,
+      secure: env.SMTP_SECURE,
+      auth: {
+        user: env.SMTP_EMAIL,
+        pass: env.SMTP_PASSWORD
+      }
+    });
+    if (!isVerified) {
+      try {
+        await transporter.verify();
+        logger.info("transportador SMTP verificado com sucesso");
+        isVerified = true;
+      } catch (error) {
+        logger.error({ error }, "transportador SMTP falhou na verifica\xE7\xE3o");
+        throw error;
+      }
+    }
+  }
+  return transporter;
+}
+async function sendEmail({
+  to,
+  subject,
+  message,
+  html,
+  attachments
+}) {
+  const emailTransporter = await getTransporter();
+  const info = await emailTransporter.sendMail({
+    from: env.SMTP_EMAIL,
+    to,
+    subject,
+    text: message,
+    html,
+    ...attachments ? { attachments } : {}
+  });
+  return info;
+}
+
+// src/messages/errors/queue.ts
+var QUEUE_ERRORS = {
+  JOB_ALREADY_PROCESSING: {
+    code: "JOB_ALREADY_PROCESSING",
+    message: "Bloqueio de Idempot\xEAncia: Job em processamento simult\xE2neo por outra thread."
+  },
+  SMTP_DISPATCH_FAILED: {
+    code: "SMTP_DISPATCH_FAILED",
+    message: "Falha cr\xEDtica ao despachar os e-mails via servidor SMTP."
+  }
+};
+
+// src/lib/errors/queue/smtp-dispatch-error.ts
+var SmtpDispatchError = class extends InfrastructureError {
+  constructor(originalError) {
+    super(QUEUE_ERRORS.SMTP_DISPATCH_FAILED, originalError);
+  }
+};
+
+// src/use-cases/email/send-email.ts
+var SendEmailUseCase = class {
+  async execute({
+    to,
+    subject,
+    message,
+    html,
+    attachments
+  }) {
+    try {
+      const info = await sendEmail({ to, subject, message, html, attachments });
+      return ok(info);
+    } catch (error) {
+      return err(new SmtpDispatchError(error));
+    }
+  }
+};
+
+// src/use-cases/factories/make-forgot-password-use-case.ts
+function makeForgotPasswordUseCase() {
+  const errorMapper = new PrismaErrorMapper(userPrismaErrorMapping);
+  const usersRepository = new PrismaUsersRepository(errorMapper);
+  const sendEmailUseCase = new SendEmailUseCase();
+  const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase);
+  return forgotPasswordUseCase;
+}
+
 // src/http/controllers/users/forgot-password.controller.ts
 async function forgotPassword(request, reply) {
   const { email } = forgotPasswordSchema.parse(request.body);
   if (!email) {
-    return reply.status(200).send({ message: messages.info.passwordResetGeneric });
+    return reply.status(200).send({ message: EMAIL_CONSTANTS.PASSWORD_RESET_GENERIC_MESSAGE });
   }
   const forgotPasswordUseCase = makeForgotPasswordUseCase();
   const result = await forgotPasswordUseCase.execute({ email });
   if (isErr(result)) {
-    if (result.error instanceof UserNotFoundForPasswordResetError) {
-      return reply.status(200).send({ message: result.error.message });
-    }
     return HttpErrorMapper.map(result.error, reply);
   }
-  const { user, token } = result.value;
-  const sendEmailUseCase = makeSendEmailUseCase();
-  await sendEmailUseCase.execute({
-    to: user.email,
-    subject: messages.email.passwordRecoverySubject,
-    message: forgotPasswordTextTemplate(user.name, token),
-    html: forgotPasswordHtmlTemplate(user.name, token)
-  });
-  logger.info({ targetId: user.publicId }, "Password reset email sent");
-  return reply.status(200).send({ message: messages.info.passwordResetGeneric });
+  return reply.status(200).send({ message: EMAIL_CONSTANTS.PASSWORD_RESET_GENERIC_MESSAGE });
 }
 
 // src/use-cases/users/get-user-profile.ts
@@ -1307,7 +1889,7 @@ var GetUserProfileUseCase = class {
     }
     const user = userResult.value;
     if (!user) {
-      return errOf(new UserNotFoundError());
+      return err(new UserNotFoundError());
     }
     return ok({ user });
   }
@@ -1331,7 +1913,7 @@ async function getUserProfile(request, reply) {
     return HttpErrorMapper.map(result.error, reply);
   }
   const { user } = result.value;
-  logger.info("User profile retrieved successfully!");
+  logger.info("Perfil do usu\xE1rio obtido com sucesso!");
   return reply.status(200).send(UserPresenter.toHTTP(user));
 }
 async function getUserByPublicId(request, reply) {
@@ -1342,7 +1924,7 @@ async function getUserByPublicId(request, reply) {
     return HttpErrorMapper.map(result.error, reply);
   }
   const { user } = result.value;
-  logger.info("User retrieved successfully!");
+  logger.info("Usu\xE1rio obtido com sucesso!");
   return reply.status(200).send(UserPresenter.toHTTP(user));
 }
 
@@ -1363,31 +1945,31 @@ var UpdateUserUseCase = class {
     }
     const userToBeUpdated = userResult.value;
     if (!userToBeUpdated) {
-      return errOf(new UserNotFoundError());
+      return err(new UserNotFoundError());
     }
     const data = {};
-    if (name) data.name = name;
-    if (email) data.email = email;
-    if (username) data.username = username;
+    if (name !== void 0) data.name = name;
+    if (email !== void 0) data.email = email;
+    if (username !== void 0) data.username = username;
     data.updatedAt = /* @__PURE__ */ new Date();
-    if (email) {
+    if (email !== void 0) {
       const emailResult = await this.usersRepository.findBy({ email });
       if (isErr(emailResult)) {
         return emailResult;
       }
       const userWithExistingEmail = emailResult.value;
       if (userWithExistingEmail && userWithExistingEmail.publicId !== userToBeUpdated.publicId) {
-        return errOf(new UserAlreadyExistsError());
+        return err(new UserAlreadyExistsError());
       }
     }
-    if (username) {
+    if (username !== void 0) {
       const usernameResult = await this.usersRepository.findBy({ username });
       if (isErr(usernameResult)) {
         return usernameResult;
       }
       const usernameWithExistingUsername = usernameResult.value;
       if (usernameWithExistingUsername && usernameWithExistingUsername.publicId !== userToBeUpdated.publicId) {
-        return errOf(new UserAlreadyExistsError());
+        return err(new UserAlreadyExistsError());
       }
     }
     const updateResult = await this.usersRepository.update(userToBeUpdated.publicId, {
@@ -1410,36 +1992,25 @@ function makeUpdateUserUseCase() {
 }
 
 // src/http/schemas/users/update-schema.ts
-var import_zod12 = require("zod");
-var updateSchema = import_zod12.z.object({
-  name: import_zod12.z.string().trim().min(4).optional(),
+var import_zod11 = require("zod");
+var updateSchema = import_zod11.z.object({
+  name: import_zod11.z.string().trim().min(4).optional(),
   email: emailSchema.optional(),
   username: usernameSchema.optional()
 });
 
 // src/http/controllers/users/update-user.controller.ts
 async function updateUser(request, reply) {
-  const bodyParse = updateSchema.safeParse(request.body);
-  if (!bodyParse.success) {
-    return reply.status(400).send({
-      message: "Dados de registro inv\xE1lidos!"
-    });
-  }
-  const { name, username, email } = bodyParse.data;
+  const { name, username, email } = updateSchema.parse(request.body);
   const authUser = request.user;
   const publicId = authUser?.publicId ?? authUser?.sub;
   if (!publicId) {
-    return reply.status(401).send({ message: messages.errors.unauthorized ?? "Unauthorized" });
+    return reply.status(401).send({ message: AUTH_ERRORS.UNAUTHORIZED.message });
   }
-  const fallbackValid = publicIdSchema.safeParse({ publicId });
-  if (!fallbackValid.success) {
-    return reply.status(400).send({
-      message: "Par\xE2metros inv\xE1lidos!"
-    });
-  }
+  const { publicId: validatedPublicId } = publicIdSchema.parse({ publicId });
   const updateUserUseCase = makeUpdateUserUseCase();
   const result = await updateUserUseCase.execute({
-    publicId,
+    publicId: validatedPublicId,
     name,
     email,
     username
@@ -1448,12 +2019,12 @@ async function updateUser(request, reply) {
     return HttpErrorMapper.map(result.error, reply);
   }
   const { user } = result.value;
-  logger.info("User updated successfully!");
+  logger.info("Usu\xE1rio atualizado com sucesso!");
   return reply.status(200).send(UserPresenter.toHTTP(user));
 }
 
 // src/http/controllers/users/users.routes.ts
-var import_client5 = require("@prisma/client");
+var import_client4 = require("@prisma/client");
 
 // src/use-cases/users/list-users.ts
 var ListUsersUseCase = class {
@@ -1465,10 +2036,7 @@ var ListUsersUseCase = class {
     if (isErr(listResult)) {
       return listResult;
     }
-    const users = listResult.value;
-    if (!users || users.length === 0) {
-      return errOf(new UserNotFoundError());
-    }
+    const users = listResult.value || [];
     return ok({ users });
   }
 };
@@ -1489,7 +2057,7 @@ async function listUsers(_request, reply) {
     return HttpErrorMapper.map(result.error, reply);
   }
   const { users } = result.value;
-  logger.info("Users retrieved successfully!");
+  logger.info("Usu\xE1rios obtidos com sucesso!");
   return reply.status(200).send({ users: UserPresenter.toHTTP(users) });
 }
 
@@ -1503,10 +2071,7 @@ var SearchUsersUseCase = class {
     if (isErr(searchResult)) {
       return searchResult;
     }
-    const users = searchResult.value;
-    if (!users || users.length === 0) {
-      return errOf(new UserNotFoundError());
-    }
+    const users = searchResult.value || [];
     return ok({ users });
   }
 };
@@ -1519,24 +2084,26 @@ function makeSearchUsersUseCase() {
   return searchUsersUseCase;
 }
 
+// src/http/schemas/users/search-users-schema.ts
+var import_zod12 = require("zod");
+var searchUsersSchema = import_zod12.z.object({
+  query: import_zod12.z.string().optional().default(""),
+  page: import_zod12.z.coerce.number().int().positive().default(1)
+});
+
 // src/http/controllers/users/search-users.controller.ts
 async function searchUsersController(request, reply) {
-  const { query, page } = request.query;
-  const searchQuery = query || "";
-  const pageNumber = page ? parseInt(page, 10) : 1;
-  if (isNaN(pageNumber) || pageNumber < 1) {
-    return reply.status(400).send({ message: "N\xFAmero de p\xE1gina inv\xE1lido. A p\xE1gina deve ser um n\xFAmero inteiro maior que zero." });
-  }
+  const { query, page } = searchUsersSchema.parse(request.query);
   const searchUsersUseCase = makeSearchUsersUseCase();
   const result = await searchUsersUseCase.execute({
-    query: searchQuery,
-    page: pageNumber
+    query,
+    page
   });
   if (isErr(result)) {
     return HttpErrorMapper.map(result.error, reply);
   }
   const { users } = result.value;
-  logger.info(`Encontrados ${users.length} usu\xE1rios para a consulta: "${searchQuery}" na p\xE1gina ${pageNumber}.`);
+  logger.info(`Encontrados ${users.length} usu\xE1rios para a consulta: "${query}" na p\xE1gina ${page}.`);
   return reply.status(200).send({ users });
 }
 
@@ -1548,34 +2115,30 @@ var HTTP_RATE_LIMIT_POLICIES = {
   },
   auth: {
     session: {
-      max: 30,
-      timeWindow: "1 minute"
+      max: env.HTTP_RATE_LIMIT_AUTH_SESSION_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_AUTH_SESSION_TIME_WINDOW
     },
     register: {
-      max: 1e3,
-      timeWindow: "1 minute"
-    },
-    registerAdmin: {
-      max: 15,
-      timeWindow: "1 hour"
+      max: env.HTTP_RATE_LIMIT_AUTH_REGISTER_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_AUTH_REGISTER_TIME_WINDOW
     },
     forgotPassword: {
-      max: 100,
-      timeWindow: "1 hour"
+      max: env.HTTP_RATE_LIMIT_AUTH_FORGOT_PASSWORD_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_AUTH_FORGOT_PASSWORD_TIME_WINDOW
     },
     resetPassword: {
-      max: 200,
-      timeWindow: "1 hour"
+      max: env.HTTP_RATE_LIMIT_AUTH_RESET_PASSWORD_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_AUTH_RESET_PASSWORD_TIME_WINDOW
     }
   },
   users: {
     list: {
-      max: 20,
-      timeWindow: "1 hour"
+      max: env.HTTP_RATE_LIMIT_USERS_LIST_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_USERS_LIST_TIME_WINDOW
     },
     delete: {
-      max: 10,
-      timeWindow: "1 hour"
+      max: env.HTTP_RATE_LIMIT_USERS_DELETE_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_USERS_DELETE_TIME_WINDOW
     }
   },
   churches: {
@@ -1586,14 +2149,15 @@ var HTTP_RATE_LIMIT_POLICIES = {
   },
   forms: {
     submit: {
-      max: 60,
-      timeWindow: "1 minute"
+      max: env.HTTP_RATE_LIMIT_FORMS_SUBMIT_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_FORMS_SUBMIT_TIME_WINDOW
     }
   },
   health: {
     check: {
-      max: 120,
-      timeWindow: "1 minute"
+      max: env.HTTP_RATE_LIMIT_HEALTH_CHECK_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_HEALTH_CHECK_TIME_WINDOW,
+      skipOnError: true
     }
   }
 };
@@ -1603,8 +2167,8 @@ async function usersRoutes(app2) {
   app2.post(
     "/register/admin",
     {
-      onRequest: [verifyJwt, verifyUserRole([import_client5.UserRole.ADMIN])],
-      config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.registerAdmin }
+      onRequest: [verifyJwt, verifyUserRole([import_client4.UserRole.ADMIN])],
+      config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.register }
     },
     registerAdmin
   );
@@ -1642,22 +2206,22 @@ async function usersRoutes(app2) {
   app2.get(
     "/",
     {
-      onRequest: [verifyJwt, verifyUserRole([import_client5.UserRole.ADMIN])],
+      onRequest: [verifyJwt, verifyUserRole([import_client4.UserRole.ADMIN])],
       config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.users.list }
     },
     listUsers
   );
-  app2.get("/search", { onRequest: [verifyJwt, verifyUserRole([import_client5.UserRole.ADMIN])] }, searchUsersController);
-  app2.patch("/:publicId", { onRequest: [verifyJwt, verifyUserRole([import_client5.UserRole.ADMIN])] }, updateUser);
+  app2.get("/search", { onRequest: [verifyJwt, verifyUserRole([import_client4.UserRole.ADMIN])] }, searchUsersController);
+  app2.patch("/:publicId", { onRequest: [verifyJwt, verifyUserRole([import_client4.UserRole.ADMIN])] }, updateUser);
   app2.delete(
     "/:publicId",
     {
-      onRequest: [verifyJwt, verifyUserRole([import_client5.UserRole.ADMIN])],
+      onRequest: [verifyJwt, verifyUserRole([import_client4.UserRole.ADMIN])],
       config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.users.delete }
     },
     deleteUserByPublicId
   );
-  app2.get("/:publicId", { onRequest: [verifyJwt, verifyUserRole([import_client5.UserRole.ADMIN])] }, getUserByPublicId);
+  app2.get("/:publicId", { onRequest: [verifyJwt, verifyUserRole([import_client4.UserRole.ADMIN])] }, getUserByPublicId);
 }
 
 // src/lib/logger/helpers.ts
@@ -1682,6 +2246,11 @@ function logError(error, context = {}, msg = "Unexpected error") {
   }
 }
 
+// src/messages/constants/health-check/health-check.ts
+var HEALTH_CHECK_CONSTANTS = {
+  INTERNAL_ERROR: "Internal healthcheck error"
+};
+
 // src/http/controllers/health-check/health-check.controller.ts
 async function healthCheck(_request, reply) {
   const memoryUsage = process.memoryUsage();
@@ -1691,7 +2260,7 @@ async function healthCheck(_request, reply) {
     const uptime = process.uptime();
     const timestamp = (/* @__PURE__ */ new Date()).toISOString();
     const duration = Date.now() - startTime;
-    logger.info({ uptime, duration }, "Healthcheck successful");
+    logger.info({ uptime, duration }, "Healthcheck realizado com sucesso");
     return reply.status(200).send({
       status: "ok",
       uptime,
@@ -1705,8 +2274,8 @@ async function healthCheck(_request, reply) {
     });
   } catch (error) {
     const duration = Date.now() - startTime;
-    logError(error, { duration }, "Healthcheck failed");
-    return reply.status(500).send({ status: "error", message: "Internal healthcheck error" });
+    logError(error, { duration }, "Falha no healthcheck");
+    return reply.status(500).send({ status: "error", message: HEALTH_CHECK_CONSTANTS.INTERNAL_ERROR });
   }
 }
 
@@ -1747,103 +2316,26 @@ var OutboxEventUseCase = class {
   }
 };
 
-// src/lib/async-local-storage/index.ts
-var import_node_async_hooks2 = require("async_hooks");
-var asyncLocalStorage2 = new import_node_async_hooks2.AsyncLocalStorage();
-
-// src/messages/errors/system/async-local-storage.ts
-var ASYNC_LOCAL_STORAGE_NOT_INITIALIZED_ERROR = {
-  message: "Async Local Storage is not initialized.",
-  code: "ASYNC_LOCAL_STORAGE_NOT_INITIALIZED"
-};
-
-// src/errors/system-error.ts
-var SystemError = class extends AppError {
-  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
-  constructor(detail, type) {
-    super(detail, type);
+// src/messages/errors/forms.ts
+var FORM_ERRORS = {
+  SUBMISSION: {
+    code: "FORM_SUBMISSION_ERROR",
+    message: "Ocorreu um erro ao submeter o formul\xE1rio."
+  },
+  ALREADY_EXISTS: {
+    code: "FORM_ALREADY_EXISTS",
+    message: "J\xE1 existe um formul\xE1rio submetido com este email."
+  },
+  NOT_FOUND: {
+    code: "FORM_NOT_FOUND",
+    message: "Nenhum formul\xE1rio encontrado para o email fornecido."
   }
-};
-
-// src/lib/errors/async-local-storage/async-local-storage-not-initialized-error.ts
-var AsyncLocalStorageNotInitializedError = class extends SystemError {
-  constructor() {
-    super(ASYNC_LOCAL_STORAGE_NOT_INITIALIZED_ERROR, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
-  }
-};
-
-// src/lib/prisma/helpers/database-context.ts
-var DatabaseContext = class {
-  constructor(prisma2 = prisma) {
-    this.prisma = prisma2;
-  }
-  get client() {
-    const prismaTx = asyncLocalStorage2.getStore()?.prismaTransaction;
-    return prismaTx ?? this.prisma;
-  }
-  /**
-   * Executes a callback function within a database transaction.
-   *
-   * This method provides automatic transaction management with the following features:
-   * - **Nested transaction support**: If already in a transaction, reuses the existing one
-   * - **Automatic rollback**: Rolls back on errors
-   * - **Context propagation**: Transaction context is available to all nested calls
-   *
-   * @template T - The return type of the callback function
-   * @param callback - The async function to execute within the transaction
-   * @param options - Optional transaction configuration
-   * @param options.isolationLevel - The isolation level for the transaction (e.g., 'ReadCommitted', 'Serializable')
-   * @param options.maxWait - Maximum time to wait for a transaction slot (in milliseconds)
-   * @param options.timeout - Maximum time for the transaction to complete (in milliseconds)
-   *
-   * @returns A promise that resolves with the callback's return value
-   *
-   * @throws {AsyncLocalStorageNotInitializedError} When AsyncLocalStorage is not properly initialized
-   * @throws {Error} Any error thrown by the callback will cause a rollback and be re-thrown
-   * @remarks
-   * - When nested, the inner transaction options are ignored and the outer transaction is reused
-   * - All database operations within the callback should use `db.client` to participate in the transaction
-   * - The transaction will automatically commit if the callback completes successfully
-   * - The transaction will automatically rollback if the callback throws an error
-   */
-  async runInTransaction(callback, options) {
-    const store = asyncLocalStorage2.getStore();
-    if (!store) {
-      throw new AsyncLocalStorageNotInitializedError();
-    }
-    if (store.prismaTransaction) {
-      return await callback();
-    }
-    return await this.prisma.$transaction(async (tx) => {
-      return await asyncLocalStorage2.run(
-        {
-          ...store,
-          prismaTransaction: tx
-        },
-        callback
-      );
-    }, options);
-  }
-};
-
-// src/messages/errors/use-cases/forms/forms-error-messages.ts
-var FORM_SUBMISSION_ERROR = {
-  code: "FORM_SUBMISSION_ERROR",
-  message: "Ocorreu um erro ao submeter o formul\xE1rio."
-};
-var FORM_ALREADY_EXISTS_ERROR = {
-  code: "FORM_ALREADY_EXISTS",
-  message: "J\xE1 existe um formul\xE1rio submetido com este email."
-};
-var FORM_NOT_FOUND_ERROR = {
-  code: "FORM_NOT_FOUND",
-  message: "Nenhum formul\xE1rio encontrado para o email fornecido."
 };
 
 // src/use-cases/errors/forms/forms-not-found-error.ts
 var FormsNotFoundError = class extends DomainError {
   constructor() {
-    super(FORM_NOT_FOUND_ERROR, "NOT_FOUND" /* NOT_FOUND */);
+    super(FORM_ERRORS.NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
   }
 };
 
@@ -1860,7 +2352,7 @@ var PrismaFormsRepository = class {
       });
       return ok(formSubmission2);
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
+      return err(this.errorMapper.mapToKnownError(error));
     }
   }
   async findByEmail(email) {
@@ -1871,11 +2363,11 @@ var PrismaFormsRepository = class {
         }
       });
       if (!formSubmission2) {
-        return errOf(new FormsNotFoundError());
+        return err(new FormsNotFoundError());
       }
       return ok(formSubmission2);
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
+      return err(this.errorMapper.mapToKnownError(error));
     }
   }
 };
@@ -1898,7 +2390,7 @@ var PrismaOutboxRepository = class {
       });
       return ok(this.toEntity(outboxEvent));
     } catch (error) {
-      return errOf(this.httpErrorMapper.mapToKnownError(error));
+      return err(this.httpErrorMapper.mapToKnownError(error));
     }
   }
   async findPending(limit) {
@@ -1910,7 +2402,7 @@ var PrismaOutboxRepository = class {
       });
       return ok(events.map((e) => this.toEntity(e)));
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error));
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async findStuck(stuckBefore) {
@@ -1924,7 +2416,7 @@ var PrismaOutboxRepository = class {
       });
       return ok(events.map((e) => this.toEntity(e)));
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error));
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async findByPublicId(publicId) {
@@ -1934,7 +2426,7 @@ var PrismaOutboxRepository = class {
       });
       return ok(event ? this.toEntity(event) : null);
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error));
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async updateStatus(publicId, status) {
@@ -1948,7 +2440,7 @@ var PrismaOutboxRepository = class {
       });
       return ok(void 0);
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error));
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async delete(publicId) {
@@ -1958,7 +2450,7 @@ var PrismaOutboxRepository = class {
       });
       return ok(void 0);
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error));
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   // ─── Mapper ──────────────────────────────────────────────────────────────────
@@ -1975,40 +2467,10 @@ var PrismaOutboxRepository = class {
   }
 };
 
-// src/use-cases/decorators/transactional-use-case.decorator.ts
-var RollbackTransactionError = class extends Error {
-  constructor(result) {
-    super("Rollback requested by domain logic");
-    this.result = result;
-  }
-};
-var TransactionalUseCaseDecorator = class {
-  constructor(useCase, dbContext) {
-    this.useCase = useCase;
-    this.dbContext = dbContext;
-  }
-  async execute(request) {
-    try {
-      return await this.dbContext.runInTransaction(async () => {
-        const result = await this.useCase.execute(request);
-        if (result.success === false) {
-          throw new RollbackTransactionError(result);
-        }
-        return result;
-      });
-    } catch (error) {
-      if (error instanceof RollbackTransactionError) {
-        return error.result;
-      }
-      throw error;
-    }
-  }
-};
-
 // src/use-cases/errors/forms/forms-already-exists-error.ts
 var FormsAlreadyExistsError = class extends DomainError {
   constructor() {
-    super(FORM_ALREADY_EXISTS_ERROR, "CONFLICT" /* CONFLICT */);
+    super(FORM_ERRORS.ALREADY_EXISTS, "CONFLICT" /* CONFLICT */);
   }
 };
 
@@ -2020,10 +2482,10 @@ var FormsSubmissionUseCase = class {
   }
   async execute(request) {
     const findEmailResult = await this.formsSubmissionRepository.findByEmail(request.email);
-    if (findEmailResult.success === true) {
+    if (isOk(findEmailResult)) {
       return err(new FormsAlreadyExistsError());
     }
-    if (!(findEmailResult.error instanceof FormsNotFoundError)) {
+    if (findEmailResult.error.body.code !== "FORM_NOT_FOUND") {
       return findEmailResult;
     }
     const formSubmissionResult = await this.formsSubmissionRepository.create({
@@ -2031,9 +2493,10 @@ var FormsSubmissionUseCase = class {
       lastName: request.lastName,
       email: request.email,
       decisaoPorCristo: request.decisaoPorCristo,
-      location: request.location || void 0
+      location: request.location || void 0,
+      ipAddress: request.ipAddress || void 0
     });
-    if (formSubmissionResult.success === false) {
+    if (isErr(formSubmissionResult)) {
       return formSubmissionResult;
     }
     const formSubmission2 = formSubmissionResult.value;
@@ -2042,10 +2505,11 @@ var FormsSubmissionUseCase = class {
       lastName: formSubmission2.lastName,
       email: formSubmission2.email,
       decisaoPorCristo: formSubmission2.decisaoPorCristo,
-      location: formSubmission2.location ?? null
+      location: formSubmission2.location ?? null,
+      ipAddress: formSubmission2.ipAddress ?? null
     };
     const outboxEvent = await this.eventRegistration.register(sanitizedFormSubmission);
-    if (outboxEvent.success === false) {
+    if (isErr(outboxEvent)) {
       return outboxEvent;
     }
     return ok({
@@ -2058,7 +2522,7 @@ var FormsSubmissionUseCase = class {
 // src/use-cases/errors/forms/forms-submission-error.ts
 var FormsSubmissionError = class extends DomainError {
   constructor() {
-    super(FORM_SUBMISSION_ERROR, "BAD_REQUEST" /* BAD_REQUEST */);
+    super(FORM_ERRORS.SUBMISSION, "BAD_REQUEST" /* BAD_REQUEST */);
   }
 };
 
@@ -2069,35 +2533,37 @@ var formsPrismaErrorMapping = {
   P2003: () => new FormsSubmissionError()
 };
 
-// src/messages/errors/use-cases/outbox-events/outbox-error-messages.ts
-var OUTBOX_EVENT_NOT_FOUND_ERROR = {
-  code: "OUTBOX_EVENT_NOT_FOUND",
-  message: "O evento de outbox solicitado n\xE3o foi encontrado no banco de dados."
-};
-var OUTBOX_OPERATION_FAILED_ERROR = {
-  code: "OUTBOX_OPERATION_FAILED",
-  message: "Falha ao processar opera\xE7\xE3o da outbox no banco de dados."
+// src/messages/errors/outbox.ts
+var OUTBOX_ERRORS = {
+  EVENT_NOT_FOUND: {
+    code: "OUTBOX_EVENT_NOT_FOUND",
+    message: "O evento de outbox solicitado n\xE3o foi encontrado no banco de dados."
+  },
+  OPERATION_FAILED: {
+    code: "OUTBOX_OPERATION_FAILED",
+    message: "Falha ao processar opera\xE7\xE3o da outbox no banco de dados."
+  }
 };
 
 // src/use-cases/errors/outbox/outbox-errors.ts
 var OutboxEventNotFoundHttpError = class extends DomainError {
   constructor() {
-    super(OUTBOX_EVENT_NOT_FOUND_ERROR, "NOT_FOUND" /* NOT_FOUND */);
+    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
   }
 };
 var OutboxOperationFailedHttpError = class extends SystemError {
   constructor() {
-    super(OUTBOX_OPERATION_FAILED_ERROR, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+    super(OUTBOX_ERRORS.OPERATION_FAILED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
   }
 };
 var OutboxEventNotFoundInfraError = class extends InfrastructureError {
   constructor(originalError) {
-    super(OUTBOX_EVENT_NOT_FOUND_ERROR, originalError);
+    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, originalError);
   }
 };
 var OutboxOperationFailedInfraError = class extends InfrastructureError {
   constructor(originalError) {
-    super(OUTBOX_OPERATION_FAILED_ERROR, originalError);
+    super(OUTBOX_ERRORS.OPERATION_FAILED, originalError);
   }
 };
 
@@ -2124,9 +2590,48 @@ function makeFormSubmissionUseCase() {
   return new TransactionalUseCaseDecorator(useCase, dbContext);
 }
 
-// src/core/constants/redis/redis-channells.ts
-var REDIS_CHANNELS = {
-  OUTBOX_SIGNAL: "outbox-signal"
+// src/messages/constants/redis/redis.ts
+var REDIS_CONSTANTS = {
+  CHANNELS: {
+    OUTBOX_SIGNAL: "outbox-signal"
+  },
+  KEYS: {
+    IDEMPOTENCY_EMAIL_PREFIX: "idempotency:email:",
+    RATE_LIMIT_PREFIX: "ratelimit:v1:"
+  }
+};
+
+// src/messages/constants/logs/outbox.ts
+var OUTBOX_LOGS = {
+  // outbox-signal
+  SIGNAL_PUBLISH_FAILED: "N\xE3o foi poss\xEDvel publicar sinal de envio da nova outbox. O cron job continuar\xE1 funcionando como fallback.",
+  SIGNAL_PROCESSING_ERROR: "Erro ao processar sinal de envio do Outbox",
+  UNEXPECTED_CHANNEL: "Mensagem recebida em canal inesperado. Ignorando.",
+  LISTENER_REMOVED: "Listener anterior de OutboxSignal removido com sucesso",
+  SUBSCRIBE_ERROR: "Erro ao se inscrever no canal de OutboxSignal",
+  PUBLISHER_CONNECTED: "Redis publisher conectado ao outbox-signal",
+  PUBLISHER_ERROR: "Erro no publicador Redis do outbox-signal",
+  PUBLISHER_CLOSED: "Conex\xE3o do publicador Redis fechada para outbox-signal",
+  SUBSCRIBER_CONNECTED: "Redis subscriber conectado para outbox-signal",
+  SUBSCRIBER_ERROR: "Erro no assinante Redis do outbox-signal",
+  SUBSCRIBER_CLOSED: "Conex\xE3o do assinante Redis fechada para outbox-signal",
+  // outbox-cron
+  CRON_START: "Cron de meia-noite: iniciando varredura de seguran\xE7a da Outbox...",
+  PHASE1_DONE: "Fase 1 (recupera\xE7\xE3o SENDING): conclu\xEDda.",
+  PHASE1_ERROR: "Fase 1 (recupera\xE7\xE3o SENDING): erro inesperado.",
+  PHASE2_DONE: "Fase 2 (eventos PENDING): conclu\xEDda.",
+  PHASE2_ERROR: "Fase 2 (eventos PENDING): erro inesperado.",
+  SCAN_DONE: "Varredura de seguran\xE7a da Outbox conclu\xEDda.",
+  SCHEDULER_CONFIGURED: "Agendador da Outbox configurado para 00:00 diariamente.",
+  // outbox-processor
+  SKIPPED_ANOTHER_RUNNING: "processEvents: Processamento ignorado. Outra inst\xE2ncia j\xE1 est\xE1 rodando.",
+  PENDING_FETCH_ERROR: "Erro de Infra ao buscar eventos pendentes.",
+  STUCK_FETCH_ERROR: "Erro de Infra ao buscar eventos travados na Outbox.",
+  STATUS_UPDATE_FAILED: "Falha ao atualizar status para SENDING. Evento permanece em PENDING.",
+  REVERT_FATAL: "FATAL: Falha ao reverter status para PENDING. Inconsist\xEAncia na DB.",
+  DISPATCH_REVERTED: "Falha no dispatch, revertido para PENDING",
+  CRITICAL_LOOP_ERROR: "Erro cr\xEDtico inesperado no loop principal de processEvents",
+  CRITICAL_RECOVERY_ERROR: "Erro cr\xEDtico inesperado no recoverStuckSendingEvents"
 };
 
 // src/lib/infra/events/outbox-signal.ts
@@ -2146,9 +2651,9 @@ function getPublisher() {
       enableOfflineQueue: true,
       commandTimeout: 2e3
     });
-    publisher.on("connect", () => logger.info("\u2705 Redis publisher conectado ao outbox-signal"));
-    publisher.on("error", (err2) => logger.error({ err: err2 }, "\u274C Redis publisher error no outbox-signal"));
-    publisher.on("close", () => logger.warn("\u26A0\uFE0F Redis publisher connection fechada para outbox-signal"));
+    publisher.on("connect", () => logger.info(OUTBOX_LOGS.PUBLISHER_CONNECTED));
+    publisher.on("error", (err2) => logger.error({ err: err2 }, OUTBOX_LOGS.PUBLISHER_ERROR));
+    publisher.on("close", () => logger.warn(OUTBOX_LOGS.PUBLISHER_CLOSED));
   }
   return publisher;
 }
@@ -2167,9 +2672,9 @@ function getSubscriber() {
         return delay;
       }
     });
-    subscriber.on("connect", () => logger.info("\u2705 Redis subscriber conectado para outbox-signal"));
-    subscriber.on("error", (err2) => logger.error({ err: err2 }, "\u274C Redis subscriber error no outbox-signal"));
-    subscriber.on("close", () => logger.warn("\u26A0\uFE0F Redis subscriber connection fechada para outbox-signal"));
+    subscriber.on("connect", () => logger.info(OUTBOX_LOGS.SUBSCRIBER_CONNECTED));
+    subscriber.on("error", (err2) => logger.error({ err: err2 }, OUTBOX_LOGS.SUBSCRIBER_ERROR));
+    subscriber.on("close", () => logger.warn(OUTBOX_LOGS.SUBSCRIBER_CLOSED));
   }
   return subscriber;
 }
@@ -2192,12 +2697,9 @@ var OutboxSignal = {
     try {
       const client = getPublisher();
       await ensureConnected(client, "OutboxPublisher");
-      await client.publish(REDIS_CHANNELS.OUTBOX_SIGNAL, JSON.stringify({ publicId, event }));
+      await client.publish(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL, JSON.stringify({ publicId, event }));
     } catch (err2) {
-      logger.warn(
-        { err: err2 },
-        "N\xE3o foi poss\xEDvel publicar sinal de nova outbox. O cron job continuar\xE1 funcionando como fallback."
-      );
+      logger.warn({ err: err2 }, OUTBOX_LOGS.SIGNAL_PUBLISH_FAILED);
     }
   },
   /**
@@ -2219,24 +2721,24 @@ var OutboxSignal = {
       await ensureConnected(client, "OutboxSubscriber");
       if (activeMessageListener !== null) {
         client.off("message", activeMessageListener);
-        logger.info("Listener anterior de OutboxSignal removido com sucesso");
+        logger.info(OUTBOX_LOGS.LISTENER_REMOVED);
       }
       activeMessageListener = async (channel, message) => {
-        if (channel !== REDIS_CHANNELS.OUTBOX_SIGNAL) {
-          logger.warn({ channel }, "Mensagem recebida em canal inesperado. Ignorando.");
+        if (channel !== REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL) {
+          logger.warn({ channel }, OUTBOX_LOGS.UNEXPECTED_CHANNEL);
           return;
         }
         try {
           const parsed = JSON.parse(message);
           await onSignal(parsed.publicId, parsed.event);
         } catch (err2) {
-          logger.error({ err: err2, publicId: message }, "Erro ao processar sinal de Outbox");
+          logger.error({ err: err2, publicId: message }, OUTBOX_LOGS.SIGNAL_PROCESSING_ERROR);
         }
       };
       client.on("message", activeMessageListener);
-      await client.subscribe(REDIS_CHANNELS.OUTBOX_SIGNAL);
+      await client.subscribe(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL);
     } catch (err2) {
-      logger.error({ err: err2 }, "\u274C Erro ao subscrever ao canal de OutboxSignal");
+      logger.error({ err: err2 }, OUTBOX_LOGS.SUBSCRIBE_ERROR);
     }
   },
   async disconnect() {
@@ -2258,9 +2760,10 @@ async function formSubmission(request, reply) {
   const data = formsSchema.parse(request.body);
   const formSubmissionUseCase = makeFormSubmissionUseCase();
   const result = await formSubmissionUseCase.execute({
-    ...data
+    ...data,
+    ipAddress: request.ip
   });
-  if (result.success === false) {
+  if (isErr(result)) {
     return HttpErrorMapper.map(result.error, reply);
   }
   const { sanitizedFormSubmission, outboxEvent } = result.value;
@@ -2284,11 +2787,21 @@ async function formsRoutes(app2) {
 // src/http/schemas/utils/cep.ts
 var import_zod14 = require("zod");
 var cepSchema = import_zod14.z.string().regex(/^\d{5}-?\d{3}$/, {
-  message: "CEP inv\xE1lido. Use o formato 12345-678 ou 12345678."
+  message: VALIDATION_CONSTANTS.CEP.INVALID_FORMAT
 });
 
 // src/lib/redis/connections/redis-bullMQ-connection.ts
 var import_ioredis2 = __toESM(require("ioredis"));
+
+// src/messages/constants/logs/redis.ts
+var REDIS_LOGS = {
+  BULLMQ_UNEXPECTED_ERROR: "Erro inesperado na conex\xE3o Redis do BullMQ",
+  CACHE_UNEXPECTED_ERROR: "Erro inesperado na conex\xE3o Redis do cache",
+  RATE_LIMITER_UNEXPECTED_ERROR: "Erro inesperado na conex\xE3o Redis do limitador de taxa",
+  CONNECTION_DEGRADED: "Conex\xE3o Redis degradada",
+  CONNECTION_STILL_DEGRADED: "Conex\xE3o Redis continua degradada",
+  CONNECTION_RECOVERED: "Conex\xE3o Redis restabelecida"
+};
 
 // src/lib/redis/connections/redis-outage-logger.ts
 var CONNECTIVITY_ERROR_CODES = /* @__PURE__ */ new Set([
@@ -2334,7 +2847,7 @@ var RedisOutageLogger = class {
           errorName: err2.name,
           errorMessage: err2.message
         },
-        "Redis connection degraded"
+        REDIS_LOGS.CONNECTION_DEGRADED
       );
       return;
     }
@@ -2351,7 +2864,7 @@ var RedisOutageLogger = class {
           outageDurationMs: now - this.outageStartedAt,
           suppressedEvents: this.suppressedEvents
         },
-        "Redis connection still degraded"
+        REDIS_LOGS.CONNECTION_STILL_DEGRADED
       );
       this.lastWarnAt = now;
       this.suppressedEvents = 0;
@@ -2372,7 +2885,7 @@ var RedisOutageLogger = class {
         outageDurationMs: now - this.outageStartedAt,
         suppressedEvents: this.suppressedEvents
       },
-      "Redis connection recovered"
+      REDIS_LOGS.CONNECTION_RECOVERED
     );
     this.outageStartedAt = null;
     this.lastWarnAt = 0;
@@ -2388,6 +2901,7 @@ function createRedisCacheConnection() {
     port: env.REDIS_PORT,
     password: env.REDIS_PASSWORD || void 0,
     commandTimeout: 1e3,
+    connectTimeout: 2e3,
     enableOfflineQueue: true,
     maxRetriesPerRequest: 1,
     retryStrategy: (times) => {
@@ -2420,7 +2934,7 @@ function createRedisCacheConnection() {
         stack: error?.stack,
         name: error?.name
       },
-      "Unexpected Redis cache connection error"
+      REDIS_LOGS.CACHE_UNEXPECTED_ERROR
     );
   });
   redis.on("close", () => {
@@ -2441,6 +2955,7 @@ function createRedisRateLimiterConnection() {
     // Se demorar mais que 100ms, aborta para não segurar a API.
     commandTimeout: env.NODE_ENV === "test" ? 1e3 : 100,
     // Cache costuma ser 1000ms
+    connectTimeout: 2e3,
     // 2. SEM fila offline.
     // Se a conexão cair, falhe o comando imediatamente (throw error).
     // Não queremos acumular verificações de limite na RAM.
@@ -2474,7 +2989,7 @@ function createRedisRateLimiterConnection() {
         errorMessage: error?.message,
         stack: error?.stack
       },
-      "Unexpected Redis Rate Limiter connection error"
+      REDIS_LOGS.RATE_LIMITER_UNEXPECTED_ERROR
     );
   });
   redis.on("close", () => {
@@ -2503,73 +3018,77 @@ async function closeAllRedisConnections() {
   const targets = [redisCacheInstance, redisRateLimitInstance, redisForQueueInstance].filter(
     (connection) => connection !== null
   );
-  await Promise.all(targets.map((connection) => connection.quit()));
+  await Promise.allSettled(
+    targets.map((connection) => connection.status !== "end" ? connection.quit() : Promise.resolve())
+  );
   redisCacheInstance = null;
   redisRateLimitInstance = null;
   redisForQueueInstance = null;
 }
 
-// src/messages/errors/use-cases/churches/churches-error-messages.ts
-var CHURCH_NOT_FOUND_ERROR = {
-  code: "CHURCH_NOT_FOUND",
-  message: "Igreja n\xE3o encontrada."
+// src/messages/errors/churches.ts
+var CHURCH_ERRORS = {
+  NOT_FOUND: {
+    code: "CHURCH_NOT_FOUND",
+    message: "Igreja n\xE3o encontrada."
+  },
+  ALREADY_EXISTS: {
+    code: "CHURCH_ALREADY_EXISTS",
+    message: "J\xE1 existe uma igreja cadastrada com este nome e/ou coordenadas"
+  },
+  INVALID_CEP: {
+    code: "INVALID_CEP",
+    message: "O CEP fornecido n\xE3o existe."
+  },
+  COORDINATES_NOT_FOUND: {
+    code: "COORDINATES_NOT_FOUND",
+    message: "Coordenadas n\xE3o encontradas para o endere\xE7o fornecido."
+  },
+  NO_ADDRESS_PROVIDED: {
+    code: "NO_ADDRESS_PROVIDED",
+    message: "Nenhum endere\xE7o fornecido para convers\xE3o de CEP."
+  },
+  LATITUDE_OUT_OF_RANGE: {
+    code: "LATITUDE_OUT_OF_RANGE",
+    message: "A Latitude deve estar entre -90 e 90 graus."
+  },
+  LONGITUDE_OUT_OF_RANGE: {
+    code: "LONGITUDE_OUT_OF_RANGE",
+    message: "A longitude deve estar entre -180 e 180 graus."
+  },
+  CREATE_FAILED: {
+    code: "CREATE_CHURCH_FAILED",
+    message: "Falha ao criar a igreja."
+  },
+  EMPTY_LIST: {
+    code: "EMPTY_CHURCH_LIST",
+    message: "Lista de igrejas vazia!"
+  },
+  NO_NEARBY_FOUND: {
+    code: "NO_NEARBY_CHURCHES_FOUND",
+    message: "Nenhuma igreja encontrada nas proximidades."
+  },
+  CEP_TO_LAT_LON_FAILED: {
+    code: "CEP_TO_LAT_LON_FAILED",
+    message: "Falha ao processar o CEP"
+  }
 };
-var CHURCH_ALREADY_EXISTS_ERROR = {
-  code: "CHURCH_ALREADY_EXISTS",
-  message: "J\xE1 existe uma igreja cadastrada com este nome e/ou coordenadas"
-};
-var INVALID_CEP_ERROR = {
+var INVALID_CEP_ERROR_FN = (cep) => ({
   code: "INVALID_CEP",
-  message: "O CEP fornecido n\xE3o existe."
-};
-var COORDINATES_NOT_FOUND_ERROR = {
-  code: "COORDINATES_NOT_FOUND",
-  message: "Coordenadas n\xE3o encontradas para o endere\xE7o fornecido."
-};
-var NO_ADDRESS_PROVIDED_ERROR = {
-  code: "NO_ADDRESS_PROVIDED",
-  message: "Nenhum endere\xE7o fornecido para convers\xE3o de CEP."
-};
-var LATITUDE_OUT_OF_RANGE_ERROR = {
-  code: "LATITUDE_OUT_OF_RANGE",
-  message: "A Latitude deve estar entre -90 e 90 graus."
-};
-var LONGITUDE_OUT_OF_RANGE_ERROR = {
-  code: "LONGITUDE_OUT_OF_RANGE",
-  message: "A longitude deve estar entre -180 e 180 graus."
-};
-var CREATE_CHURCH_FAILED_ERROR = {
-  code: "CREATE_CHURCH_FAILED",
-  message: "Falha ao criar a igreja."
-};
-var EMPTY_CHURCH_LIST_ERROR = {
-  code: "EMPTY_CHURCH_LIST",
-  message: "Lista de igrejas vazia!"
-};
-var NO_NEARBY_CHURCHES_FOUND_ERROR = {
-  code: "NO_NEARBY_CHURCHES_FOUND",
-  message: "Nenhuma igreja encontrada nas proximidades."
-};
-var CEP_TO_LAT_LON_ERROR = {
-  code: "CEP_TO_LAT_LON_FAILED",
-  message: "Falha ao processar o CEP"
-};
+  message: cep ? `O CEP fornecido ${cep} n\xE3o existe.` : "O CEP fornecido n\xE3o existe."
+});
 
 // src/use-cases/errors/coordinates-not-found-error.ts
 var CoordinatesNotFoundError = class extends DomainError {
   constructor() {
-    super(COORDINATES_NOT_FOUND_ERROR, "NOT_FOUND" /* NOT_FOUND */, "NOT_FOUND" /* NOT_FOUND */);
+    super(CHURCH_ERRORS.COORDINATES_NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */, "NOT_FOUND" /* NOT_FOUND */);
   }
 };
 
 // src/use-cases/errors/invalid-cep-error.ts
 var InvalidCepError = class extends DomainError {
   constructor(cep) {
-    const detail = {
-      code: INVALID_CEP_ERROR.code,
-      message: cep ? `O CEP fornecido ${cep} n\xE3o existe.` : INVALID_CEP_ERROR.message
-    };
-    super(detail, "NOT_FOUND" /* NOT_FOUND */, "NOT_FOUND" /* NOT_FOUND */);
+    super(INVALID_CEP_ERROR_FN(cep), "NOT_FOUND" /* NOT_FOUND */, "NOT_FOUND" /* NOT_FOUND */);
   }
 };
 
@@ -2578,8 +3097,8 @@ var CepToLatLonError = class extends DomainError {
   constructor(cep) {
     super(
       {
-        code: CEP_TO_LAT_LON_ERROR.code,
-        message: `${CEP_TO_LAT_LON_ERROR.message} ${cep}.`
+        code: CHURCH_ERRORS.CEP_TO_LAT_LON_FAILED.code,
+        message: `${CHURCH_ERRORS.CEP_TO_LAT_LON_FAILED.message} ${cep}.`
       },
       "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */
     );
@@ -2589,18 +3108,46 @@ var CepToLatLonError = class extends DomainError {
 // src/lib/infra/cache/resilient-cache.ts
 var import_crypto2 = __toESM(require("crypto"));
 
+// src/messages/constants/logs/cache.ts
+var CACHE_LOGS = {
+  READ_ERROR: "Erro de leitura ou falha do Redis. Continuando sem cache.",
+  WRITE_ERROR: "Falha ao escrever no Redis (n\xE3o fatal, continuando)",
+  CORRUPTED_ENVELOPE: "Cache corrompida detectada: CacheEnvelope de sucesso sem valor",
+  TTL_SKIP: "TTL <= 0, pulando escrita no cache"
+};
+
 // src/errors/infrastructure/service-overload-error.ts
 var ServiceOverloadError = class extends InfrastructureError {
   constructor() {
-    super(SERVICE_OVERLOAD_ERROR, void 0, "TOO_MANY_REQUESTS" /* TOO_MANY_REQUESTS */);
+    super(INFRA_ERRORS.SERVICE_OVERLOAD, void 0, "TOO_MANY_REQUESTS" /* TOO_MANY_REQUESTS */);
     this.name = "ServiceOverloadError";
+  }
+};
+
+// src/messages/errors/geolocation.ts
+var GEO_ERRORS = {
+  NO_PROVIDER: {
+    code: "NO_GEO_PROVIDER",
+    message: "Provedor resiliente de geolocaliza\xE7\xE3o requer pelo menos um provedor de geolocaliza\xE7\xE3o configurado."
+  },
+  NO_ADDRESS_PROVIDER: {
+    code: "NO_ADDRESS_PROVIDER",
+    message: "Provedor resiliente de endere\xE7o requer pelo menos um provedor de endere\xE7o configurado."
+  },
+  ADDRESS_PROVIDER_FAILURE: {
+    code: "ADDRESS_PROVIDER_FAILURE",
+    message: "Falha no provedor de endere\xE7os."
+  },
+  TIMEOUT_EXCEEDED: {
+    code: "TIMEOUT_EXCEEDED",
+    message: "Tempo limite excedido ao buscar dados nos provedores externos."
   }
 };
 
 // src/errors/infrastructure/timeout-exceeded-error.ts
 var TimeoutExceededError = class extends InfrastructureError {
   constructor(reason) {
-    super(TIMEOUT_EXCEEDED_ERROR, reason, "SERVICE_UNAVAILABLE" /* SERVICE_UNAVAILABLE */, "RETRYABLE" /* RETRYABLE */);
+    super(GEO_ERRORS.TIMEOUT_EXCEEDED, reason, "SERVICE_UNAVAILABLE" /* SERVICE_UNAVAILABLE */, "RETRYABLE" /* RETRYABLE */);
     this.name = "TimeoutExceededError";
   }
 };
@@ -2610,8 +3157,8 @@ var ProviderFailureError = class extends InfrastructureError {
   constructor(provider, layer, originalError) {
     super(
       {
-        code: PROVIDER_FAILURE_ERROR.code,
-        message: PROVIDER_FAILURE_ERROR.message,
+        code: INFRA_ERRORS.PROVIDER_FAILURE.code,
+        message: INFRA_ERRORS.PROVIDER_FAILURE.message,
         providerContext: { provider, layer }
       },
       originalError,
@@ -2642,7 +3189,7 @@ var ResilientCache = class {
   }
   async getOrFetch(key, fetcher, parentSignal) {
     if (this.pendingFetches.size >= this.MAX_PENDING) {
-      return errOf(new ServiceOverloadError());
+      return err(new ServiceOverloadError());
     }
     const existing = this.pendingFetches.get(key);
     if (existing) {
@@ -2654,8 +3201,8 @@ var ResilientCache = class {
         const envelope = JSON.parse(cached);
         if (envelope.s) {
           if (!("v" in envelope)) {
-            logger.error({ key, envelope }, "Cache corrompida detectada: CacheEnvelope de sucesso sem valor");
-            return errOf(
+            logger.error({ key, envelope }, CACHE_LOGS.CORRUPTED_ENVELOPE);
+            return err(
               new ProviderFailureError("Cache", "AddressProvider" /* Address */, new Error("Corrupted Cache: Missing value"))
             );
           }
@@ -2666,10 +3213,10 @@ var ResilientCache = class {
           if (deserializer) {
             const deserialized = deserializer(envelope.e.type, envelope.e.message, envelope.e.data);
             if (deserialized) {
-              return errOf(deserialized);
+              return err(deserialized);
             }
           }
-          return errOf(
+          return err(
             new ProviderFailureError(
               "Cache",
               "AddressProvider" /* Address */,
@@ -2679,7 +3226,7 @@ var ResilientCache = class {
         }
       }
     } catch (err2) {
-      logger.warn({ err: err2, key }, "Erro de leitura ou falha do Redis. Continuando sem cache.");
+      logger.warn({ err: err2, key }, CACHE_LOGS.READ_ERROR);
     }
     const existingAfterRedis = this.pendingFetches.get(key);
     if (existingAfterRedis) {
@@ -2701,43 +3248,58 @@ var ResilientCache = class {
     }
     const effectiveSignal = AbortSignal.any(signals);
     if (effectiveSignal.aborted) {
-      return errOf(new TimeoutExceededError(effectiveSignal.reason));
+      return err(new TimeoutExceededError(effectiveSignal.reason || "Timeout Exceeded"));
     }
+    let timeoutId;
+    let abortListener;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new TimeoutExceededError("Timeout Exceeded"));
+      }, this.FETCH_TIMEOUT);
+      abortListener = () => {
+        reject(new TimeoutExceededError(effectiveSignal.reason || "Timeout Exceeded"));
+      };
+      effectiveSignal.addEventListener("abort", abortListener, { once: true });
+    });
     try {
-      const result = await fetcher(effectiveSignal);
+      const fetchPromise = fetcher(effectiveSignal);
+      const result = await Promise.race([fetchPromise, timeoutPromise]);
       if (effectiveSignal.aborted) {
-        return errOf(new TimeoutExceededError(effectiveSignal.reason));
+        return err(new TimeoutExceededError(effectiveSignal.reason || "Timeout Exceeded"));
       }
       if (isErr(result)) {
-        const err2 = result.error;
-        const isRetryableFn = this.options.isRetryable ?? ((error) => error?.failureMode === "RETRYABLE");
-        if (!isRetryableFn(err2)) {
-          const serializer = this.options.serializeError ?? ((error) => ({
-            type: error.constructor?.name || "Error",
-            message: error.message || String(error),
-            data: error
+        const error = result.error;
+        const isRetryableFn = this.options.isRetryable ?? ((errVal) => errVal?.failureMode === "RETRYABLE");
+        if (!isRetryableFn(error)) {
+          const serializer = this.options.serializeError ?? ((errVal) => ({
+            type: errVal.constructor?.name || "Error",
+            message: errVal.message || String(errVal),
+            data: errVal
           }));
           await this.setResult(key, {
             s: false,
-            e: serializer(err2)
+            e: serializer(error)
           });
         }
-        return errOf(err2);
+        return err(error);
       }
       await this.setResult(key, { s: true, v: result.value });
       return ok(result.value);
     } catch (error) {
-      if (effectiveSignal.aborted) {
+      if (effectiveSignal.aborted || error instanceof TimeoutExceededError) {
         const abortReason = parentSignal?.aborted ? parentSignal.reason : "Timeout Exceeded";
-        return errOf(new TimeoutExceededError(abortReason));
+        return err(new TimeoutExceededError(abortReason));
       }
-      return errOf(new ProviderFailureError("Fetcher", "AddressProvider" /* Address */, error));
+      return err(new ProviderFailureError("Fetcher", "AddressProvider" /* Address */, error));
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (abortListener) effectiveSignal.removeEventListener("abort", abortListener);
     }
   }
   async setResult(key, envelope) {
     const baseTtl = !envelope.s ? this.options.negativeTtlSeconds : this.options.defaultTtlSeconds;
     if (baseTtl <= 0) {
-      logger.debug({ key }, "TTL <= 0, pulando escrita no cache");
+      logger.debug({ key }, CACHE_LOGS.TTL_SKIP);
       return;
     }
     try {
@@ -2746,9 +3308,16 @@ var ResilientCache = class {
       const finalTtl = Math.max(1, baseTtl + randomOffset);
       await this.redis.set(key, JSON.stringify(envelope), "EX", finalTtl);
     } catch (err2) {
-      logger.warn({ err: err2, key }, "Falha ao escrever no Redis (n\xE3o fatal, continuando)");
+      logger.warn({ err: err2, key }, CACHE_LOGS.WRITE_ERROR);
     }
   }
+};
+
+// src/messages/constants/churches/churches.ts
+var CHURCH_CONSTANTS = {
+  KNN_LIMIT: 5,
+  GEOCODING_COUNTRY: "Brazil",
+  UNKNOWN_PROVIDER: "Unknown"
 };
 
 // src/use-cases/churches/cep-to-lat-lon-use-case.ts
@@ -2758,17 +3327,7 @@ var CepToLatLonUseCase = class {
     this.addressProvider = addressProvider;
     this.redis = redis;
     this.cacheSuccessResults = cacheSuccessResults;
-    this.cacheManager = new ResilientCache(redis, {
-      prefix: optionsOverride.prefix,
-      defaultTtlSeconds: optionsOverride.defaultTtlSeconds,
-      negativeTtlSeconds: optionsOverride.negativeTtlSeconds,
-      maxPendingFetches: optionsOverride.maxPendingFetches,
-      fetchTimeoutMs: optionsOverride.fetchTimeoutMs,
-      ttlJitterPercentage: optionsOverride.ttlJitterPercentage,
-      serializeError: optionsOverride.serializeError,
-      deserializeError: optionsOverride.deserializeError,
-      isRetryable: optionsOverride.isRetryable
-    });
+    this.cacheManager = new ResilientCache(redis, optionsOverride);
   }
   cacheManager;
   redis;
@@ -2787,38 +3346,44 @@ var CepToLatLonUseCase = class {
   async processCep(cleanCep, signal) {
     const addrResult = await this.addressProvider.fetchAddress(cleanCep, signal);
     if (isErr(addrResult)) {
-      return errOf(addrResult.error);
+      return err(addrResult.error);
     }
     const data = addrResult.value;
     if (!data) {
-      return errOf(new InvalidCepError());
+      return err(new InvalidCepError());
     }
     if (data.lat && data.lon) {
       return ok({
         userLat: data.lat,
         userLon: data.lon,
         precision: data.precision ?? "NO_CERTAINTY" /* NO_CERTAINTY */,
-        coordinatesProviderName: data.providerName ?? "Unknown"
+        coordinatesProviderName: data.providerName ?? CHURCH_CONSTANTS.UNKNOWN_PROVIDER
       });
     }
     const address = data;
     const { logradouro, localidade, uf, bairro } = address;
     if (logradouro) {
-      const exactResult = await this.geocodingProvider.search(`${logradouro}, ${localidade} - ${uf}, Brazil`, signal);
+      const exactResult = await this.geocodingProvider.search(
+        `${logradouro}, ${localidade} - ${uf}, ${CHURCH_CONSTANTS.GEOCODING_COUNTRY}`,
+        signal
+      );
       if (isOk(exactResult) && exactResult.value) {
         return ok(this.mapResponse(exactResult.value));
       }
       if (isErr(exactResult) && exactResult.error.failureMode !== "NOT_FOUND" /* NOT_FOUND */) {
-        return errOf(exactResult.error);
+        return err(exactResult.error);
       }
     }
     if (bairro) {
-      const approxResult = await this.geocodingProvider.search(`${bairro}, ${localidade} - ${uf}, Brazil`, signal);
+      const approxResult = await this.geocodingProvider.search(
+        `${bairro}, ${localidade} - ${uf}, ${CHURCH_CONSTANTS.GEOCODING_COUNTRY}`,
+        signal
+      );
       if (isOk(approxResult) && approxResult.value) {
         return ok(this.mapResponse(approxResult.value));
       }
       if (isErr(approxResult) && approxResult.error.failureMode !== "NOT_FOUND" /* NOT_FOUND */) {
-        return errOf(approxResult.error);
+        return err(approxResult.error);
       }
     }
     if (localidade) {
@@ -2826,21 +3391,21 @@ var CepToLatLonUseCase = class {
         {
           city: localidade,
           state: uf,
-          country: "Brazil"
+          country: CHURCH_CONSTANTS.GEOCODING_COUNTRY
         },
         signal
       );
       if (isOk(cityResult)) {
         if (cityResult.value === null) {
-          return errOf(new CoordinatesNotFoundError());
+          return err(new CoordinatesNotFoundError());
         }
         return ok(this.mapResponse(cityResult.value));
       } else {
-        return errOf(cityResult.error);
+        return err(cityResult.error);
       }
     }
     logger.error({ cep: cleanCep, city: localidade }, "Cr\xEDtico: Geocoding Provider n\xE3o encontrou a cidade.");
-    return errOf(new CepToLatLonError(cleanCep));
+    return err(new CepToLatLonError(cleanCep));
   }
   mapResponse(coords) {
     return {
@@ -2855,14 +3420,14 @@ var CepToLatLonUseCase = class {
 // src/use-cases/errors/empty-church-list-error.ts
 var EmptyChurchListError = class extends DomainError {
   constructor() {
-    super(EMPTY_CHURCH_LIST_ERROR, "BAD_REQUEST" /* BAD_REQUEST */);
+    super(CHURCH_ERRORS.EMPTY_LIST, "NOT_FOUND" /* NOT_FOUND */);
   }
 };
 
 // src/use-cases/errors/no-nearby-churches-found-error.ts
 var NoNearbyChurchesFoundError = class extends DomainError {
   constructor() {
-    super(NO_NEARBY_CHURCHES_FOUND_ERROR, "NOT_FOUND" /* NOT_FOUND */);
+    super(CHURCH_ERRORS.NO_NEARBY_FOUND, "NOT_FOUND" /* NOT_FOUND */);
   }
 };
 
@@ -2873,7 +3438,7 @@ var CalculateChurchRouteDistancesUseCase = class {
   }
   async findNearest({ churches, user, signal }, profile) {
     if (!churches.length) {
-      return errOf(new EmptyChurchListError());
+      return err(new EmptyChurchListError());
     }
     const routeResult = await this.routingProvider.getDistances({
       origin: {
@@ -2900,7 +3465,7 @@ var CalculateChurchRouteDistancesUseCase = class {
       };
     }).filter((church) => church !== null).sort((firstChurch, secondChurch) => firstChurch.distanceKm - secondChurch.distanceKm);
     if (!rankedChurches.length) {
-      return errOf(new NoNearbyChurchesFoundError());
+      return err(new NoNearbyChurchesFoundError());
     }
     return ok(rankedChurches);
   }
@@ -2947,17 +3512,7 @@ var FindNearestChurchesUseCase = class {
     this.cepToLatLonUseCase = cepToLatLonUseCase;
     this.findNearbyChurchesKnnUseCase = findNearbyChurchesKnnUseCase;
     this.calculateChurchRouteDistancesUseCase = calculateChurchRouteDistancesUseCase;
-    this.cacheManager = new ResilientCache(redis, {
-      prefix: optionsOverride.prefix,
-      defaultTtlSeconds: optionsOverride.defaultTtlSeconds,
-      negativeTtlSeconds: optionsOverride.negativeTtlSeconds,
-      maxPendingFetches: optionsOverride.maxPendingFetches,
-      fetchTimeoutMs: optionsOverride.fetchTimeoutMs,
-      ttlJitterPercentage: optionsOverride.ttlJitterPercentage,
-      serializeError: optionsOverride.serializeError,
-      deserializeError: optionsOverride.deserializeError,
-      isRetryable: optionsOverride.isRetryable
-    });
+    this.cacheManager = new ResilientCache(redis, optionsOverride);
     this.defaultProfile = defaultProfile;
   }
   cacheManager;
@@ -2970,7 +3525,7 @@ var FindNearestChurchesUseCase = class {
         cep: cleanCep
       });
       if (isErr(cepResult)) {
-        return errOf(cepResult.error);
+        return err(cepResult.error);
       }
       const { userLat, userLon, precision, coordinatesProviderName } = cepResult.value;
       const knnResult = await this.findNearbyChurchesKnnUseCase.execute({
@@ -2978,7 +3533,7 @@ var FindNearestChurchesUseCase = class {
         userLon
       });
       if (isErr(knnResult)) {
-        return errOf(knnResult.error);
+        return err(knnResult.error);
       }
       const { churches, totalFound } = knnResult.value;
       const nearestChurchesResult = await this.calculateChurchRouteDistancesUseCase.findNearest(
@@ -2990,7 +3545,7 @@ var FindNearestChurchesUseCase = class {
         this.defaultProfile
       );
       if (isErr(nearestChurchesResult)) {
-        return errOf(nearestChurchesResult.error);
+        return err(nearestChurchesResult.error);
       }
       const nearestChurches = nearestChurchesResult.value;
       return ok({
@@ -3006,14 +3561,14 @@ var FindNearestChurchesUseCase = class {
 // src/use-cases/errors/latitude-range-error.ts
 var LatitudeRangeError = class extends DomainError {
   constructor() {
-    super(LATITUDE_OUT_OF_RANGE_ERROR, "BAD_REQUEST" /* BAD_REQUEST */);
+    super(CHURCH_ERRORS.LATITUDE_OUT_OF_RANGE, "BAD_REQUEST" /* BAD_REQUEST */);
   }
 };
 
 // src/use-cases/errors/longitude-range-error.ts
 var LongitudeRangeError = class extends DomainError {
   constructor() {
-    super(LONGITUDE_OUT_OF_RANGE_ERROR, "BAD_REQUEST" /* BAD_REQUEST */);
+    super(CHURCH_ERRORS.LONGITUDE_OUT_OF_RANGE, "BAD_REQUEST" /* BAD_REQUEST */);
   }
 };
 
@@ -3027,15 +3582,15 @@ var FindNearbyChurchesKnnUseCase = class {
     userLon
   }) {
     if (userLat < -90 || userLat > 90) {
-      return errOf(new LatitudeRangeError());
+      return err(new LatitudeRangeError());
     }
     if (userLon < -180 || userLon > 180) {
-      return errOf(new LongitudeRangeError());
+      return err(new LongitudeRangeError());
     }
     const result = await this.churchesRepository.findNearest({
       userLat,
       userLon,
-      limit: 5
+      limit: CHURCH_CONSTANTS.KNN_LIMIT
     });
     if (isErr(result)) {
       return result;
@@ -3051,14 +3606,14 @@ var FindNearbyChurchesKnnUseCase = class {
 // src/use-cases/errors/church-not-found-error.ts
 var ChurchNotFoundError = class extends DomainError {
   constructor() {
-    super(CHURCH_NOT_FOUND_ERROR, "NOT_FOUND" /* NOT_FOUND */);
+    super(CHURCH_ERRORS.NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
   }
 };
 
 // src/use-cases/errors/create-church-error.ts
 var CreateChurchError = class extends DomainError {
   constructor() {
-    super(CREATE_CHURCH_FAILED_ERROR, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+    super(CHURCH_ERRORS.CREATE_FAILED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
   }
 };
 
@@ -3112,7 +3667,7 @@ var PrismaChurchesRepository = class {
       }));
       return ok(mappedChurches);
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
+      return err(this.errorMapper.mapToKnownError(error));
     }
   }
   async findByParams(params) {
@@ -3141,7 +3696,7 @@ var PrismaChurchesRepository = class {
       `;
       return ok(results[0] ?? null);
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
+      return err(this.errorMapper.mapToKnownError(error));
     }
   }
   async findByName(name) {
@@ -3163,7 +3718,7 @@ var PrismaChurchesRepository = class {
       `;
       return ok(results[0] ?? null);
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
+      return err(this.errorMapper.mapToKnownError(error));
     }
   }
   async createChurch(data) {
@@ -3192,11 +3747,11 @@ var PrismaChurchesRepository = class {
       `;
       const church = rows[0];
       if (!church) {
-        return errOf(new CreateChurchError());
+        return err(new CreateChurchError());
       }
       return ok(church);
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
+      return err(this.errorMapper.mapToKnownError(error));
     }
   }
   async deleteChurchByPublicId(publicId) {
@@ -3217,11 +3772,11 @@ var PrismaChurchesRepository = class {
       `;
       const church = rows[0];
       if (!church) {
-        return errOf(new ChurchNotFoundError());
+        return err(new ChurchNotFoundError());
       }
       return ok(church);
     } catch (error) {
-      return errOf(this.errorMapper.mapToKnownError(error));
+      return err(this.errorMapper.mapToKnownError(error));
     }
   }
 };
@@ -3229,7 +3784,7 @@ var PrismaChurchesRepository = class {
 // src/use-cases/errors/church-already-exists-error.ts
 var ChurchAlreadyExistsError = class extends DomainError {
   constructor() {
-    super(CHURCH_ALREADY_EXISTS_ERROR, "CONFLICT" /* CONFLICT */);
+    super(CHURCH_ERRORS.ALREADY_EXISTS, "CONFLICT" /* CONFLICT */);
   }
 };
 
@@ -3242,9 +3797,9 @@ var churchPrismaErrorMapping = {
 };
 
 // src/providers/address-provider/error/no-address-provider-error.ts
-var NoAddressProviderError = class extends Error {
+var NoAddressProviderError = class extends InfrastructureError {
   constructor() {
-    super(NO_ADDRESS_PROVIDER_ERROR_MESSAGE);
+    super(GEO_ERRORS.NO_ADDRESS_PROVIDER);
   }
 };
 
@@ -3265,7 +3820,7 @@ var ResilientAddressProvider = class {
     for (const [index, provider] of this.providers.entries()) {
       const providerName = provider.providerName ?? provider.constructor.name;
       if (effectiveSignal.aborted) {
-        return errOf(new TimeoutExceededError(effectiveSignal.reason));
+        return err(new TimeoutExceededError(effectiveSignal.reason));
       }
       const result = await provider.fetchAddress(cleanCep, effectiveSignal);
       if (isOk(result)) {
@@ -3296,23 +3851,23 @@ var ResilientAddressProvider = class {
         continue;
       }
       logger.error({ provider: providerName, error: error.message }, "Provedor retornou erro fatal. Abortando cadeia.");
-      return errOf(error);
+      return err(error);
     }
     if (notFoundCount === this.providers.length) {
       logger.warn(
         { cep: cleanCep, notFoundCount, totalProviders: this.providers.length },
         "TODOS os provedores confirmaram CEP inv\xE1lido/n\xE3o encontrado"
       );
-      return errOf(new InvalidCepError());
+      return err(new InvalidCepError());
     }
     if (lastRetryableError) {
       logger.error(
         { cep: cleanCep, provider: lastProviderName, notFoundCount },
         "Provedores de endere\xE7o falharam com erros de sistema"
       );
-      return errOf(lastRetryableError);
+      return err(lastRetryableError);
     }
-    return errOf(
+    return err(
       new ProviderFailureError(
         "ResilientAddressProvider",
         "AddressProvider" /* Address */,
@@ -3333,7 +3888,7 @@ var DEFAULT_CONFIG = {
   keepAliveMsecs: 1e3,
   maxSockets: 128,
   maxFreeSockets: 32,
-  timeout: 6e4,
+  timeout: 3e4,
   scheduling: "lifo"
 };
 var getHttpsAgent = (options = {}) => {
@@ -3367,17 +3922,13 @@ var createHttpClient = (config = {}) => {
 // src/lib/infra/rate-limiter/redis-rate-limiter.ts
 var import_rate_limiter_flexible = require("rate-limiter-flexible");
 
-// src/lib/errors/infra/rate-limiter/noRateLimiterSetError.ts
-var NoRateLimiterSetError = class extends Error {
-  constructor(reason) {
-    super(`Rate limiter n\xE3o configurado. Reason: ${reason ?? "Unknown"}`);
-  }
-};
-
-// src/core/constants/redis/redis-keys.ts
-var REDIS_KEYS = {
-  IDEMPOTENCY_EMAIL_PREFIX: "idempotency:email:",
-  RATE_LIMIT_PREFIX: "ratelimit:v1:"
+// src/messages/constants/logs/rate-limiter.ts
+var RATE_LIMITER_LOGS = {
+  INFRA_DEGRADED: "RedisRateLimiter com erro: Redis n\xE3o dispon\xEDvel, permitindo requisi\xE7\xF5es (fail-open).",
+  INFRA_STILL_DEGRADED: "RedisRateLimiter continua degradado: Redis indispon\xEDvel, permitindo requisi\xE7\xF5es (fail-open).",
+  INFRA_RECOVERED: "RedisRateLimiter restabelecido: Redis dispon\xEDvel novamente.",
+  TOO_MANY_LIMITERS: "ALERTA: Muitos RateLimiters instanciados. Verifique se providers est\xE3o est\xE1ticos.",
+  NO_INSTANCE_TO_DESTROY: "Nenhuma inst\xE2ncia de RedisRateLimiter para destruir."
 };
 
 // src/lib/infra/rate-limiter/redis-rate-limiter.ts
@@ -3437,17 +3988,14 @@ var RedisRateLimiter = class _RedisRateLimiter {
    * ❗ Provider PRECISA existir em providerConfigs.
    */
   getLimiter(provider) {
-    const config = this.providerConfigs[provider];
-    if (!config) {
-      throw new NoRateLimiterSetError(provider);
-    }
+    const config = this.providerConfigs[provider] || { points: 10, windowSeconds: 1 };
     const existingLimiter = this.limiters.get(provider);
     if (existingLimiter) {
       return existingLimiter;
     }
     const limiter = new import_rate_limiter_flexible.RateLimiterRedis({
       storeClient: this.redis,
-      keyPrefix: `${REDIS_KEYS.RATE_LIMIT_PREFIX}${provider}`,
+      keyPrefix: `${REDIS_CONSTANTS.KEYS.RATE_LIMIT_PREFIX}${provider}`,
       points: config.points,
       duration: config.windowSeconds,
       execEvenly: false,
@@ -3498,7 +4046,7 @@ var RedisRateLimiter = class _RedisRateLimiter {
           code: typeof obj.code === "string" ? obj.code : void 0,
           name: typeof obj.name === "string" ? obj.name : void 0
         },
-        "RedisRateLimiter com erro: Redis n\xE3o dispon\xEDvel, permitindo requisi\xE7\xF5es (fail-open)."
+        RATE_LIMITER_LOGS.INFRA_DEGRADED
       );
       return;
     }
@@ -3514,7 +4062,7 @@ var RedisRateLimiter = class _RedisRateLimiter {
           code: typeof obj.code === "string" ? obj.code : void 0,
           name: typeof obj.name === "string" ? obj.name : void 0
         },
-        "RedisRateLimiter still degraded: Redis n\xE3o dispon\xEDvel, permitindo requisi\xE7\xF5es (fail-open)."
+        RATE_LIMITER_LOGS.INFRA_STILL_DEGRADED
       );
       this.infraLastWarnAt = now;
       this.infraSuppressedLogs = 0;
@@ -3533,7 +4081,7 @@ var RedisRateLimiter = class _RedisRateLimiter {
         outageDurationMs: now - this.infraOutageStartedAt,
         suppressedLogs: this.infraSuppressedLogs
       },
-      "RedisRateLimiter recovered: Redis available again."
+      RATE_LIMITER_LOGS.INFRA_RECOVERED
     );
     this.infraOutageStartedAt = null;
     this.infraLastWarnAt = 0;
@@ -3541,7 +4089,7 @@ var RedisRateLimiter = class _RedisRateLimiter {
   }
   static async destroyInstance() {
     if (!this.instance) {
-      logger.debug("Nenhuma inst\xE2ncia de RedisRateLimiter para destruir.");
+      logger.debug(RATE_LIMITER_LOGS.NO_INSTANCE_TO_DESTROY);
       return;
     }
     await this.instance.destroyRateLimiterMap();
@@ -3589,40 +4137,52 @@ var PrecisionHelper = class {
   }
 };
 
+// src/messages/constants/providers/shared.ts
+var SHARED_PROVIDER_DEFAULTS = {
+  HTTPS_AGENT: {
+    KEEP_ALIVE_MSECS: 1e3,
+    MAX_SOCKETS: 100,
+    MAX_FREE_SOCKETS: 10,
+    TIMEOUT_MS: 3e4
+  },
+  USER_AGENT: "EvangelismoDigitalBackend/1.0",
+  USER_AGENT_WITH_CONTACT: "EvangelismoDigitalBackend/1.0 (contact@findhope.digital)"
+};
+
+// src/messages/constants/providers/awesome-api.ts
+var AWESOME_API_CONFIG = {
+  TIMEOUT_MS: 2e3,
+  MAX_RETRIES: 2,
+  BACKOFF_MS: 100,
+  HTTPS_AGENT: SHARED_PROVIDER_DEFAULTS.HTTPS_AGENT
+};
+
 // src/providers/address-provider/awesome-api-provider.ts
-var AwesomeApiProvider = class _AwesomeApiProvider {
+var AwesomeApiProvider = class {
   constructor(config) {
     this.config = config;
-    if (!_AwesomeApiProvider.api) {
-      _AwesomeApiProvider.api = createHttpClient({
-        baseURL: this.config.apiUrl,
-        timeout: this.TIMEOUT,
-        headers: {
-          "User-Agent": "EvangelismoDigitalBackend/1.0"
-        },
-        agentOptions: {
-          keepAliveMsecs: this.KEEP_ALIVE_MSECS,
-          maxSockets: this.MAX_SOCKETS,
-          maxFreeSockets: this.MAX_FREE_SOCKETS,
-          timeout: this.HTTPS_AGENT_TIMEOUT
-        }
-      });
-    }
+    this.api = createHttpClient({
+      baseURL: this.config.apiUrl,
+      timeout: AWESOME_API_CONFIG.TIMEOUT_MS,
+      headers: {
+        "User-Agent": SHARED_PROVIDER_DEFAULTS.USER_AGENT
+      },
+      agentOptions: {
+        keepAliveMsecs: AWESOME_API_CONFIG.HTTPS_AGENT.KEEP_ALIVE_MSECS,
+        maxSockets: AWESOME_API_CONFIG.HTTPS_AGENT.MAX_SOCKETS,
+        maxFreeSockets: AWESOME_API_CONFIG.HTTPS_AGENT.MAX_FREE_SOCKETS,
+        timeout: AWESOME_API_CONFIG.HTTPS_AGENT.TIMEOUT_MS
+      }
+    });
   }
-  static api;
+  api;
   providerName = "AwesomeAPI";
   rateLimitConfig = "awesomeApiAddressProvider" /* AWESOME_API_ADDRESS */;
-  maxRetries = 2;
-  backoffMs = 100;
-  TIMEOUT = 1500;
-  // HTTPS Agent Settings
-  KEEP_ALIVE_MSECS = 1e3;
-  MAX_SOCKETS = 100;
-  MAX_FREE_SOCKETS = 10;
-  HTTPS_AGENT_TIMEOUT = 6e4;
+  maxRetries = AWESOME_API_CONFIG.MAX_RETRIES;
+  backoffMs = AWESOME_API_CONFIG.BACKOFF_MS;
   async fetchRawAddress(cep, signal) {
     const cleanCep = cep.replace(/\D/g, "");
-    const { data } = await _AwesomeApiProvider.api.get(`/${cleanCep}`, {
+    const { data } = await this.api.get(`/${cleanCep}`, {
       signal
     });
     if (!data || !data.cep) {
@@ -3648,40 +4208,40 @@ var AwesomeApiProvider = class _AwesomeApiProvider {
   }
 };
 
+// src/messages/constants/providers/brasil-api.ts
+var BRASIL_API_CONFIG = {
+  TIMEOUT_MS: 2e3,
+  MAX_RETRIES: 2,
+  BACKOFF_MS: 100,
+  HTTPS_AGENT: SHARED_PROVIDER_DEFAULTS.HTTPS_AGENT
+};
+
 // src/providers/address-provider/brasil-api-provider.ts
-var BrasilApiProvider = class _BrasilApiProvider {
+var BrasilApiProvider = class {
   constructor(config) {
     this.config = config;
-    if (!_BrasilApiProvider.api) {
-      _BrasilApiProvider.api = createHttpClient({
-        baseURL: this.config.apiUrl,
-        timeout: this.TIMEOUT,
-        headers: {
-          "User-Agent": "EvangelismoDigitalBackend/1.0"
-        },
-        agentOptions: {
-          keepAliveMsecs: this.KEEP_ALIVE_MSECS,
-          maxSockets: this.MAX_SOCKETS,
-          maxFreeSockets: this.MAX_FREE_SOCKETS,
-          timeout: this.HTTPS_AGENT_TIMEOUT
-        }
-      });
-    }
+    this.api = createHttpClient({
+      baseURL: this.config.apiUrl,
+      timeout: BRASIL_API_CONFIG.TIMEOUT_MS,
+      headers: {
+        "User-Agent": SHARED_PROVIDER_DEFAULTS.USER_AGENT
+      },
+      agentOptions: {
+        keepAliveMsecs: BRASIL_API_CONFIG.HTTPS_AGENT.KEEP_ALIVE_MSECS,
+        maxSockets: BRASIL_API_CONFIG.HTTPS_AGENT.MAX_SOCKETS,
+        maxFreeSockets: BRASIL_API_CONFIG.HTTPS_AGENT.MAX_FREE_SOCKETS,
+        timeout: BRASIL_API_CONFIG.HTTPS_AGENT.TIMEOUT_MS
+      }
+    });
   }
-  static api;
+  api;
   providerName = "BrasilAPI";
   rateLimitConfig = "brasilApiAddressProvider" /* BRASIL_API_ADDRESS */;
-  maxRetries = 2;
-  backoffMs = 100;
-  TIMEOUT = 1500;
-  // HTTPS Agent Settings
-  KEEP_ALIVE_MSECS = 1e3;
-  MAX_SOCKETS = 100;
-  MAX_FREE_SOCKETS = 10;
-  HTTPS_AGENT_TIMEOUT = 6e4;
+  maxRetries = BRASIL_API_CONFIG.MAX_RETRIES;
+  backoffMs = BRASIL_API_CONFIG.BACKOFF_MS;
   async fetchRawAddress(cep, signal) {
     const cleanCep = cep.replace(/\D/g, "");
-    const { data } = await _BrasilApiProvider.api.get(`/${cleanCep}`, {
+    const { data } = await this.api.get(`/${cleanCep}`, {
       signal
     });
     if (!data || !data.cep || !data.city || !data.state) {
@@ -3702,44 +4262,44 @@ var BrasilApiProvider = class _BrasilApiProvider {
   }
 };
 
+// src/messages/constants/providers/viacep.ts
+var VIACEP_CONFIG = {
+  TIMEOUT_MS: 2500,
+  MAX_RETRIES: 2,
+  BACKOFF_MS: 200,
+  HTTPS_AGENT: SHARED_PROVIDER_DEFAULTS.HTTPS_AGENT
+};
+
 // src/providers/address-provider/viaCep-provider.ts
-var ViaCepProvider = class _ViaCepProvider {
+var ViaCepProvider = class {
   constructor(config) {
     this.config = config;
-    if (!_ViaCepProvider.api) {
-      _ViaCepProvider.api = createHttpClient({
-        baseURL: this.config.apiUrl,
-        timeout: this.VIACEP_TIMEOUT,
-        headers: {
-          "User-Agent": "EvangelismoDigitalBackend/1.0"
-        },
-        agentOptions: {
-          keepAliveMsecs: this.KEEP_ALIVE_MSECS,
-          maxSockets: this.MAX_SOCKETS,
-          maxFreeSockets: this.MAX_FREE_SOCKETS,
-          timeout: this.HTTPS_AGENT_TIMEOUT
-        }
-      });
-    }
+    this.api = createHttpClient({
+      baseURL: this.config.apiUrl,
+      timeout: VIACEP_CONFIG.TIMEOUT_MS,
+      headers: {
+        "User-Agent": SHARED_PROVIDER_DEFAULTS.USER_AGENT
+      },
+      agentOptions: {
+        keepAliveMsecs: VIACEP_CONFIG.HTTPS_AGENT.KEEP_ALIVE_MSECS,
+        maxSockets: VIACEP_CONFIG.HTTPS_AGENT.MAX_SOCKETS,
+        maxFreeSockets: VIACEP_CONFIG.HTTPS_AGENT.MAX_FREE_SOCKETS,
+        timeout: VIACEP_CONFIG.HTTPS_AGENT.TIMEOUT_MS
+      }
+    });
   }
-  static api;
+  api;
   providerName = "ViaCEP";
   rateLimitConfig = "viacepAddressProvider" /* VIACEP_ADDRESS */;
-  maxRetries = 2;
-  backoffMs = 200;
-  VIACEP_TIMEOUT = 3e3;
-  // HTTPS Agent Settings
-  KEEP_ALIVE_MSECS = 1e3;
-  MAX_SOCKETS = 100;
-  MAX_FREE_SOCKETS = 10;
-  HTTPS_AGENT_TIMEOUT = 6e4;
+  maxRetries = VIACEP_CONFIG.MAX_RETRIES;
+  backoffMs = VIACEP_CONFIG.BACKOFF_MS;
   async fetchRawAddress(cep, signal) {
     const cleanCep = cep.replace(/\D/g, "");
-    const { data } = await _ViaCepProvider.api.get(`/${cleanCep}/json`, {
+    const { data } = await this.api.get(`/${cleanCep}/json`, {
       signal
     });
     if (!data || data.erro) {
-      throw new InvalidCepError(cleanCep);
+      return null;
     }
     const precision = PrecisionHelper.fromAddressData(data);
     return {
@@ -3753,39 +4313,46 @@ var ViaCepProvider = class _ViaCepProvider {
   }
 };
 
+// src/messages/constants/providers/nominatim.ts
+var NOMINATIM_CONFIG = {
+  TIMEOUT_MS: 3e3,
+  MAX_RETRIES: 2,
+  BACKOFF_MS: 200,
+  HTTPS_AGENT: SHARED_PROVIDER_DEFAULTS.HTTPS_AGENT,
+  API_PARAMS: {
+    FORMAT: "json",
+    SEARCH_LIMIT: 1
+  }
+};
+
 // src/providers/geo-provider/nominatim-provider.ts
-var NominatimGeoProvider = class _NominatimGeoProvider {
+var NominatimGeoProvider = class {
   constructor(config) {
     this.config = config;
-    if (!_NominatimGeoProvider.api) {
-      _NominatimGeoProvider.api = createHttpClient({
-        baseURL: this.config.apiUrl,
-        timeout: this.NOMINATIM_TIMEOUT,
-        headers: {
-          "User-Agent": "EvangelismoDigitalBackend/1.0 (contact@findhope.digital)"
-        },
-        agentOptions: {
-          keepAliveMsecs: this.KEEP_ALIVE_MSECS,
-          maxSockets: this.MAX_SOCKETS,
-          maxFreeSockets: this.MAX_FREE_SOCKETS,
-          timeout: this.HTTPS_AGENT_TIMEOUT
-        }
-      });
-    }
+    this.api = createHttpClient({
+      baseURL: this.config.apiUrl,
+      timeout: NOMINATIM_CONFIG.TIMEOUT_MS,
+      headers: {
+        "User-Agent": SHARED_PROVIDER_DEFAULTS.USER_AGENT_WITH_CONTACT
+      },
+      agentOptions: {
+        keepAliveMsecs: NOMINATIM_CONFIG.HTTPS_AGENT.KEEP_ALIVE_MSECS,
+        maxSockets: NOMINATIM_CONFIG.HTTPS_AGENT.MAX_SOCKETS,
+        maxFreeSockets: NOMINATIM_CONFIG.HTTPS_AGENT.MAX_FREE_SOCKETS,
+        timeout: NOMINATIM_CONFIG.HTTPS_AGENT.TIMEOUT_MS
+      }
+    });
   }
-  static api;
+  api;
   providerName = "Nominatim";
   rateLimitConfig = "nominatimGeocodingProvider" /* NOMINATIM_GEOCODING */;
-  maxRetries = 2;
-  backoffMs = 200;
-  NOMINATIM_TIMEOUT = 4e3;
-  // HTTPS Agent Settings
-  KEEP_ALIVE_MSECS = 1e3;
-  MAX_SOCKETS = 100;
-  MAX_FREE_SOCKETS = 10;
-  HTTPS_AGENT_TIMEOUT = 6e4;
+  maxRetries = NOMINATIM_CONFIG.MAX_RETRIES;
+  backoffMs = NOMINATIM_CONFIG.BACKOFF_MS;
   async searchRaw(query, signal) {
-    return this.performRequest({ q: query, limit: 1, format: "json" }, signal);
+    return this.performRequest(
+      { q: query, limit: NOMINATIM_CONFIG.API_PARAMS.SEARCH_LIMIT, format: NOMINATIM_CONFIG.API_PARAMS.FORMAT },
+      signal
+    );
   }
   async searchStructuredRaw(options, signal) {
     return this.performRequest(
@@ -3794,15 +4361,15 @@ var NominatimGeoProvider = class _NominatimGeoProvider {
         city: options.city,
         state: options.state,
         country: options.country,
-        limit: 1,
-        format: "json"
+        limit: NOMINATIM_CONFIG.API_PARAMS.SEARCH_LIMIT,
+        format: NOMINATIM_CONFIG.API_PARAMS.FORMAT
       },
       signal
     );
   }
   async performRequest(params, signal) {
     const cleanParams = this.cleanParams(params);
-    const response = await _NominatimGeoProvider.api.get("/search", {
+    const response = await this.api.get("/search", {
       params: cleanParams,
       signal
     });
@@ -3828,40 +4395,52 @@ var NominatimGeoProvider = class _NominatimGeoProvider {
   }
 };
 
+// src/messages/constants/providers/location-iq.ts
+var LOCATION_IQ_CONFIG = {
+  TIMEOUT_MS: 2500,
+  MAX_RETRIES: 2,
+  BACKOFF_MS: 200,
+  HTTPS_AGENT: SHARED_PROVIDER_DEFAULTS.HTTPS_AGENT,
+  API_PARAMS: {
+    FORMAT: "json",
+    SEARCH_LIMIT: 1,
+    ADDRESS_DETAILS: 1
+  }
+};
+
 // src/providers/geo-provider/location-iq-provider.ts
-var LocationIqProvider = class _LocationIqProvider {
+var LocationIqProvider = class {
   constructor(config) {
     this.config = config;
-    if (!_LocationIqProvider.api) {
-      _LocationIqProvider.api = createHttpClient({
-        baseURL: this.config.apiUrl,
-        timeout: this.TIMEOUT,
-        params: {
-          key: this.config.apiToken,
-          format: "json"
-        },
-        agentOptions: {
-          keepAliveMsecs: this.KEEP_ALIVE_MSECS,
-          maxSockets: this.MAX_SOCKETS,
-          maxFreeSockets: this.MAX_FREE_SOCKETS,
-          timeout: this.HTTPS_AGENT_TIMEOUT
-        }
-      });
-    }
+    this.api = createHttpClient({
+      baseURL: this.config.apiUrl,
+      timeout: LOCATION_IQ_CONFIG.TIMEOUT_MS,
+      params: {
+        key: this.config.apiToken,
+        format: LOCATION_IQ_CONFIG.API_PARAMS.FORMAT
+      },
+      agentOptions: {
+        keepAliveMsecs: LOCATION_IQ_CONFIG.HTTPS_AGENT.KEEP_ALIVE_MSECS,
+        maxSockets: LOCATION_IQ_CONFIG.HTTPS_AGENT.MAX_SOCKETS,
+        maxFreeSockets: LOCATION_IQ_CONFIG.HTTPS_AGENT.MAX_FREE_SOCKETS,
+        timeout: LOCATION_IQ_CONFIG.HTTPS_AGENT.TIMEOUT_MS
+      }
+    });
   }
-  static api;
+  api;
   providerName = "LocationIQ";
   rateLimitConfig = "locationIqGeocodingProvider" /* LOCATION_IQ_GEOCODING */;
-  maxRetries = 2;
-  backoffMs = 200;
-  TIMEOUT = 2e3;
-  // HTTPS Agent Settings
-  KEEP_ALIVE_MSECS = 1e3;
-  MAX_SOCKETS = 100;
-  MAX_FREE_SOCKETS = 10;
-  HTTPS_AGENT_TIMEOUT = 6e4;
+  maxRetries = LOCATION_IQ_CONFIG.MAX_RETRIES;
+  backoffMs = LOCATION_IQ_CONFIG.BACKOFF_MS;
   async searchRaw(query, signal) {
-    return this.performRequest({ q: query, limit: 1, addressdetails: 1 }, signal);
+    return this.performRequest(
+      {
+        q: query,
+        limit: LOCATION_IQ_CONFIG.API_PARAMS.SEARCH_LIMIT,
+        addressdetails: LOCATION_IQ_CONFIG.API_PARAMS.ADDRESS_DETAILS
+      },
+      signal
+    );
   }
   async searchStructuredRaw(options, signal) {
     return this.performRequest(
@@ -3870,14 +4449,14 @@ var LocationIqProvider = class _LocationIqProvider {
         city: options.city,
         state: options.state,
         country: options.country,
-        limit: 1,
-        addressdetails: 1
+        limit: LOCATION_IQ_CONFIG.API_PARAMS.SEARCH_LIMIT,
+        addressdetails: LOCATION_IQ_CONFIG.API_PARAMS.ADDRESS_DETAILS
       },
       signal
     );
   }
   async performRequest(params, signal) {
-    const response = await _LocationIqProvider.api.get("/search", {
+    const response = await this.api.get("/search", {
       params,
       signal
     });
@@ -3895,9 +4474,9 @@ var LocationIqProvider = class _LocationIqProvider {
 };
 
 // src/providers/geo-provider/error/no-geo-provider-error.ts
-var NoGeoProviderError = class extends Error {
+var NoGeoProviderError = class extends InfrastructureError {
   constructor() {
-    super(NO_GEO_PROVIDER_ERROR_MESSAGE);
+    super(GEO_ERRORS.NO_PROVIDER);
   }
 };
 
@@ -3927,7 +4506,7 @@ var ResilientGeoProvider = class {
     for (const [index, provider] of this.providers.entries()) {
       const providerName = provider.providerName ?? provider.constructor.name;
       if (signal.aborted) {
-        return errOf(new TimeoutExceededError(signal.reason));
+        return err(new TimeoutExceededError(signal.reason));
       }
       const result = await action(provider, signal);
       if (isOk(result)) {
@@ -3955,45 +4534,51 @@ var ResilientGeoProvider = class {
         continue;
       }
       logger.error({ provider: providerName, error: error.message }, "Provedor retornou erro fatal. Abortando cadeia.");
-      return errOf(error);
+      return err(error);
     }
     if (notFoundCount === this.providers.length) {
       logger.warn(
         { notFoundCount, totalProviders: this.providers.length },
         "Nenhum provedor retornou resultados - coordenadas n\xE3o encontradas"
       );
-      return errOf(new CoordinatesNotFoundError());
+      return err(new CoordinatesNotFoundError());
     }
     if (lastRetryableError) {
       logger.error({ provider: lastProviderName }, "Geocodifica\xE7\xE3o falhou com erros de sistema");
-      return errOf(lastRetryableError);
+      return err(lastRetryableError);
     }
-    return errOf(
+    return err(
       new ProviderFailureError("ResilientGeoProvider", "GeoProvider" /* Geo */, new Error("TODOS os provedores falharam"))
     );
   }
 };
 
+// src/messages/constants/providers/stadia.ts
+var STADIA_CONFIG = {
+  DEFAULT_TIMEOUT_MS: 3e3,
+  AUTH_PREFIX: "Stadia-Auth",
+  UNITS: "kilometers",
+  CONTENT_TYPE: "application/json"
+};
+
 // src/providers/church-routing-provider/stadia-church-routing-provider.ts
-var StadiaChurchRoutingProvider = class _StadiaChurchRoutingProvider {
+var StadiaChurchRoutingProvider = class {
   constructor(config) {
     this.config = config;
-    this.timeoutMs = config.timeoutMs ?? 2500;
+    this.timeoutMs = config.timeoutMs ?? STADIA_CONFIG.DEFAULT_TIMEOUT_MS;
     this.defaultCosting = config.defaultCosting;
-    if (!_StadiaChurchRoutingProvider.api) {
-      _StadiaChurchRoutingProvider.api = createHttpClient({
-        timeout: this.timeoutMs
-      });
-    }
+    this.api = createHttpClient({
+      timeout: this.timeoutMs
+    });
   }
-  static api;
+  api;
   providerName = "Stadia Maps";
   rateLimitConfig = "stadiaRoutingProvider" /* STADIA_ROUTING */;
   timeoutMs;
   defaultCosting;
   async fetchRawDistance(origin, destination, profile, signal) {
     const costing = profile ?? this.config.defaultCosting ?? "auto" /* AUTO */;
-    const response = await _StadiaChurchRoutingProvider.api.post(
+    const response = await this.api.post(
       this.config.apiUrl.replace(/\/$/, ""),
       {
         locations: [
@@ -4002,13 +4587,13 @@ var StadiaChurchRoutingProvider = class _StadiaChurchRoutingProvider {
         ],
         costing,
         directions_options: {
-          units: "kilometers"
+          units: STADIA_CONFIG.UNITS
         }
       },
       {
         headers: {
-          Authorization: `Stadia-Auth ${this.config.apiToken}`,
-          "Content-Type": "application/json"
+          Authorization: `${STADIA_CONFIG.AUTH_PREFIX} ${this.config.apiToken}`,
+          "Content-Type": STADIA_CONFIG.CONTENT_TYPE
         },
         signal,
         validateStatus: (status2) => status2 >= 200 && status2 < 300 || status2 === 404
@@ -4033,6 +4618,37 @@ var StadiaChurchRoutingProvider = class _StadiaChurchRoutingProvider {
       status: typeof status === "number" ? status : 0
     };
   }
+  async fetchRawDistances(origin, destinations, profile, signal) {
+    const costing = profile ?? this.config.defaultCosting ?? "auto" /* AUTO */;
+    const response = await this.api.post(
+      this.config.matrixApiUrl.replace(/\/$/, ""),
+      {
+        sources: [{ lat: origin.lat, lon: origin.lon }],
+        targets: destinations.map((d) => ({ lat: d.lat, lon: d.lon })),
+        costing,
+        units: STADIA_CONFIG.UNITS
+      },
+      {
+        headers: {
+          Authorization: `${STADIA_CONFIG.AUTH_PREFIX} ${this.config.apiToken}`,
+          "Content-Type": STADIA_CONFIG.CONTENT_TYPE
+        },
+        signal,
+        validateStatus: (status) => status >= 200 && status < 300 || status === 404
+      }
+    );
+    if (response.status === 404 || !response.data?.sources_to_targets?.length) {
+      return destinations.map(() => ({ distance: null, status: 404 }));
+    }
+    const row = response.data.sources_to_targets[0];
+    return destinations.map((_, index) => {
+      const entry = row?.[index];
+      if (!entry || entry.distance == null) {
+        return { distance: null, status: 0 };
+      }
+      return { distance: entry.distance, status: 0 };
+    });
+  }
   extractDistanceKm(responseData) {
     if (typeof responseData?.distance === "number") {
       return responseData.distance;
@@ -4051,21 +4667,15 @@ var StadiaChurchRoutingProvider = class _StadiaChurchRoutingProvider {
 
 // src/errors/mappings/find-nearest-churches-error-mapper.ts
 var import_axios8 = require("axios");
-var import_client6 = require("@prisma/client");
+var import_client5 = require("@prisma/client");
 
 // src/errors/infrastructure/service-busy-error.ts
 var ServiceBusyError = class extends InfrastructureError {
+  provider;
   constructor(provider) {
-    super(
-      {
-        code: SERVICE_BUSY_ERROR.code,
-        message: `${SERVICE_BUSY_ERROR.message} [Provedor: ${provider}]`
-      },
-      void 0,
-      "TOO_MANY_REQUESTS" /* TOO_MANY_REQUESTS */,
-      "RETRYABLE" /* RETRYABLE */
-    );
+    super(INFRA_ERRORS.SERVICE_BUSY, void 0, "TOO_MANY_REQUESTS" /* TOO_MANY_REQUESTS */, "RETRYABLE" /* RETRYABLE */);
     this.name = "ServiceBusyError";
+    this.provider = provider;
   }
 };
 
@@ -4075,7 +4685,7 @@ var FindNearestChurchesErrorMapper = class _FindNearestChurchesErrorMapper {
     try {
       return await fn();
     } catch (error) {
-      return errOf(_FindNearestChurchesErrorMapper.map(error));
+      return err(_FindNearestChurchesErrorMapper.map(error));
     }
   }
   static map(error) {
@@ -4106,7 +4716,7 @@ var FindNearestChurchesErrorMapper = class _FindNearestChurchesErrorMapper {
         error
       );
     }
-    if (error instanceof import_client6.Prisma.PrismaClientKnownRequestError || error instanceof import_client6.Prisma.PrismaClientUnknownRequestError) {
+    if (error instanceof import_client5.Prisma.PrismaClientKnownRequestError || error instanceof import_client5.Prisma.PrismaClientUnknownRequestError) {
       return new DatabaseQueryError(error);
     }
     return new ProviderFailureError(
@@ -4157,11 +4767,11 @@ var ResilientAddressProviderDecorator = class {
     const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection);
     const allowed = await rateLimiter.tryConsume(this.rawProvider.rateLimitConfig);
     if (!allowed) {
-      return errOf(new ServiceBusyError(this.rawProvider.providerName));
+      return err(new ServiceBusyError(this.rawProvider.providerName));
     }
     for (let attempt = 1; attempt <= this.rawProvider.maxRetries; attempt++) {
       if (signal?.aborted) {
-        return errOf(new TimeoutExceededError(signal.reason));
+        return err(new TimeoutExceededError(signal.reason));
       }
       try {
         const data = await this.rawProvider.fetchRawAddress(cleanCep, signal);
@@ -4178,18 +4788,31 @@ var ResilientAddressProviderDecorator = class {
             },
             `Falha ao buscar endere\xE7o ${this.rawProvider.providerName} ap\xF3s tentativas`
           );
-          return errOf(appError);
+          return err(appError);
         }
         const delay = this.rawProvider.backoffMs * Math.pow(2, attempt - 1);
         logger.warn({ cep: cleanCep, attempt, delay }, `Repetindo solicita\xE7\xE3o para ${this.rawProvider.providerName}`);
-        await this.sleep(delay);
+        await this.sleep(delay, signal);
       }
     }
     logger.error({ cep: cleanCep }, `${this.rawProvider.providerName} - todas as tentativas esgotadas sem sucesso`);
-    return errOf(new ServiceBusyError(this.rawProvider.providerName));
+    return err(new ServiceBusyError(this.rawProvider.providerName));
   }
-  sleep(ms2) {
-    return new Promise((resolve) => setTimeout(resolve, ms2));
+  sleep(ms2, signal) {
+    return new Promise((resolve) => {
+      if (signal?.aborted) {
+        return resolve();
+      }
+      const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, ms2);
+      function onAbort() {
+        clearTimeout(timer);
+        resolve();
+      }
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
   }
 };
 
@@ -4211,11 +4834,11 @@ var ResilientGeocodingProviderDecorator = class {
     const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection);
     const allowed = await rateLimiter.tryConsume(this.rawProvider.rateLimitConfig);
     if (!allowed) {
-      return errOf(new ServiceBusyError(this.rawProvider.providerName));
+      return err(new ServiceBusyError(this.rawProvider.providerName));
     }
     for (let attempt = 1; attempt <= this.rawProvider.maxRetries; attempt++) {
       if (signal?.aborted) {
-        return errOf(new TimeoutExceededError(signal.reason));
+        return err(new TimeoutExceededError(signal.reason));
       }
       try {
         const data = await action(signal);
@@ -4232,83 +4855,63 @@ var ResilientGeocodingProviderDecorator = class {
             },
             `Falha ao buscar coordenadas geogr\xE1ficas ${this.rawProvider.providerName} ap\xF3s tentativas`
           );
-          return errOf(appError);
+          return err(appError);
         }
         const delay = this.rawProvider.backoffMs * Math.pow(2, attempt - 1);
         logger.warn({ ...logContext, attempt, delay }, `Repetindo solicita\xE7\xE3o para ${this.rawProvider.providerName}`);
-        await this.sleep(delay);
+        await this.sleep(delay, signal);
       }
     }
     logger.error(logContext, `${this.rawProvider.providerName} - todas as tentativas esgotadas sem sucesso`);
-    return errOf(new ServiceBusyError(this.rawProvider.providerName));
+    return err(new ServiceBusyError(this.rawProvider.providerName));
   }
-  sleep(ms2) {
-    return new Promise((resolve) => setTimeout(resolve, ms2));
+  sleep(ms2, signal) {
+    return new Promise((resolve) => {
+      if (signal?.aborted) {
+        return resolve();
+      }
+      const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, ms2);
+      function onAbort() {
+        clearTimeout(timer);
+        resolve();
+      }
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
   }
 };
 
 // src/providers/church-routing-provider/decorators/resilient-church-routing-provider.decorator.ts
 var ResilientChurchRoutingProviderDecorator = class {
-  constructor(rawProvider, redisRateLimiterConnection, redisCacheConnection, cacheOptionsOverride) {
+  constructor(rawProvider, redisRateLimiterConnection) {
     this.rawProvider = rawProvider;
     this.redisRateLimiterConnection = redisRateLimiterConnection;
     this.providerName = rawProvider.providerName;
-    const timeoutMs = rawProvider.timeoutMs;
-    this.cacheManager = new ResilientCache(redisCacheConnection, {
-      prefix: cacheOptionsOverride?.prefix ?? "cache:stadia-route-distance:",
-      defaultTtlSeconds: cacheOptionsOverride?.defaultTtlSeconds ?? 60 * 60,
-      negativeTtlSeconds: cacheOptionsOverride?.negativeTtlSeconds ?? 0,
-      maxPendingFetches: cacheOptionsOverride?.maxPendingFetches ?? 500,
-      fetchTimeoutMs: cacheOptionsOverride?.fetchTimeoutMs ?? timeoutMs,
-      ttlJitterPercentage: cacheOptionsOverride?.ttlJitterPercentage ?? 0.05,
-      serializeError: cacheOptionsOverride?.serializeError,
-      deserializeError: cacheOptionsOverride?.deserializeError,
-      isRetryable: cacheOptionsOverride?.isRetryable
-    });
   }
-  cacheManager;
   providerName;
   async getDistances(params) {
-    const results = [];
-    for (const destination of params.destinations) {
-      const fetchResult = await this.fetchDistance(params.origin, destination, params.profile, params.signal);
-      if (!fetchResult.success) {
-        return fetchResult;
-      }
-      results.push(fetchResult.value);
+    const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection);
+    const allowed = await rateLimiter.tryConsume(this.rawProvider.rateLimitConfig);
+    if (!allowed) {
+      return err(new ServiceBusyError(this.rawProvider.providerName));
     }
-    return ok(results);
-  }
-  async fetchDistance(origin, destination, profile, parentSignal) {
-    const costing = profile ?? this.rawProvider.defaultCosting ?? "auto" /* AUTO */;
-    const cacheKey = this.cacheManager.generateKey({
-      oLat: origin.lat,
-      oLon: origin.lon,
-      dLat: destination.lat,
-      dLon: destination.lon,
-      profile: costing
-    });
-    const result = await this.cacheManager.getOrFetch(
-      cacheKey,
-      async (signal) => {
-        const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection);
-        const allowed = await rateLimiter.tryConsume(this.rawProvider.rateLimitConfig);
-        if (!allowed) {
-          return errOf(new ServiceBusyError(this.rawProvider.providerName));
-        }
-        if (signal.aborted) {
-          return errOf(new TimeoutExceededError(signal.reason));
-        }
-        try {
-          const data = await this.rawProvider.fetchRawDistance(origin, destination, costing, signal);
-          return ok(data);
-        } catch (error) {
-          return errOf(FindNearestChurchesErrorMapper.map(error));
-        }
-      },
-      parentSignal
-    );
-    return result;
+    if (params.signal?.aborted) {
+      return err(new TimeoutExceededError(params.signal.reason));
+    }
+    try {
+      const costing = params.profile ?? this.rawProvider.defaultCosting ?? "auto" /* AUTO */;
+      const results = await this.rawProvider.fetchRawDistances(
+        params.origin,
+        params.destinations,
+        costing,
+        params.signal
+      );
+      return ok(results);
+    } catch (error) {
+      return err(FindNearestChurchesErrorMapper.map(error));
+    }
   }
 };
 
@@ -4343,6 +4946,14 @@ function serializeAppError(err2) {
     data: err2.data || err2
   };
 }
+var UnknownDeserializationError = class extends InfrastructureError {
+  constructor(message) {
+    super({
+      code: "UNKNOWN_DESERIALIZATION_ERROR",
+      message
+    });
+  }
+};
 function deserializeAppError(type, message, data) {
   const factory = AppErrorRegistry[type];
   if (factory) {
@@ -4351,8 +4962,30 @@ function deserializeAppError(type, message, data) {
     } catch {
     }
   }
-  return new Error(message);
+  return new UnknownDeserializationError(message);
 }
+
+// src/messages/constants/cache/cache.ts
+var CACHE_CONFIG = {
+  CEP_COORDS: {
+    PREFIX: "cache:cep-coords:",
+    DEFAULT_TTL_SECONDS: 60 * 60 * 24 * 7,
+    // 7 days
+    NEGATIVE_TTL_SECONDS: 60 * 30,
+    // 30 min
+    MAX_PENDING_FETCHES: 500,
+    FETCH_TIMEOUT_MS: 1e4
+  },
+  NEAREST_CHURCHES: {
+    PREFIX: "cache:nearest-churches:",
+    DEFAULT_TTL_SECONDS: 60 * 60 * 24 * 7,
+    // 7 days
+    NEGATIVE_TTL_SECONDS: 60 * 30,
+    // 30 min
+    MAX_PENDING_FETCHES: 500,
+    FETCH_TIMEOUT_MS: 15e3
+  }
+};
 
 // src/use-cases/factories/make-find-nearest-churches-use-case.ts
 var cachedUseCase = null;
@@ -4389,11 +5022,11 @@ function makeFindNearestChurchesUseCase(redisCacheConnection = getRedisCache(), 
     resilientAddressProvider,
     redisCacheConnection,
     {
-      prefix: "cache:cep-coords:",
-      defaultTtlSeconds: 60 * 60 * 24 * 7,
-      negativeTtlSeconds: 60 * 30,
-      maxPendingFetches: 500,
-      fetchTimeoutMs: 25e3,
+      prefix: CACHE_CONFIG.CEP_COORDS.PREFIX,
+      defaultTtlSeconds: CACHE_CONFIG.CEP_COORDS.DEFAULT_TTL_SECONDS,
+      negativeTtlSeconds: CACHE_CONFIG.CEP_COORDS.NEGATIVE_TTL_SECONDS,
+      maxPendingFetches: CACHE_CONFIG.CEP_COORDS.MAX_PENDING_FETCHES,
+      fetchTimeoutMs: CACHE_CONFIG.CEP_COORDS.FETCH_TIMEOUT_MS,
       serializeError: serializeAppError,
       deserializeError: deserializeAppError
     },
@@ -4404,24 +5037,12 @@ function makeFindNearestChurchesUseCase(redisCacheConnection = getRedisCache(), 
   const findNearbyChurchesKnnUseCase = new FindNearbyChurchesKnnUseCase(churchesRepository);
   const rawRoutingProvider = new StadiaChurchRoutingProvider({
     apiUrl: env.STADIA_MAPS_API_URL,
+    matrixApiUrl: env.STADIA_MAPS_MATRIX_API_URL,
     apiToken: env.STADIA_API_TOKEN,
     defaultCosting: "pedestrian" /* PEDESTRIAN */,
-    timeoutMs: 2500
+    timeoutMs: STADIA_CONFIG.DEFAULT_TIMEOUT_MS
   });
-  const routingProvider = new ResilientChurchRoutingProviderDecorator(
-    rawRoutingProvider,
-    redisRateLimitConnection,
-    redisCacheConnection,
-    {
-      prefix: "cache:stadia-route-distance:",
-      defaultTtlSeconds: 60 * 60 * 24 * 7,
-      negativeTtlSeconds: 0,
-      maxPendingFetches: 500,
-      fetchTimeoutMs: 2500,
-      serializeError: serializeAppError,
-      deserializeError: deserializeAppError
-    }
-  );
+  const routingProvider = new ResilientChurchRoutingProviderDecorator(rawRoutingProvider, redisRateLimitConnection);
   const calculateChurchRouteDistancesUseCase = new CalculateChurchRouteDistancesUseCase(routingProvider);
   cachedUseCase = new FindNearestChurchesUseCase(
     cepToLatLonUseCase,
@@ -4429,11 +5050,11 @@ function makeFindNearestChurchesUseCase(redisCacheConnection = getRedisCache(), 
     calculateChurchRouteDistancesUseCase,
     redisCacheConnection,
     {
-      prefix: "cache:nearest-churches:",
-      defaultTtlSeconds: 60 * 60 * 24 * 7,
-      negativeTtlSeconds: 60 * 30,
-      maxPendingFetches: 500,
-      fetchTimeoutMs: 25e3,
+      prefix: CACHE_CONFIG.NEAREST_CHURCHES.PREFIX,
+      defaultTtlSeconds: CACHE_CONFIG.NEAREST_CHURCHES.DEFAULT_TTL_SECONDS,
+      negativeTtlSeconds: CACHE_CONFIG.NEAREST_CHURCHES.NEGATIVE_TTL_SECONDS,
+      maxPendingFetches: CACHE_CONFIG.NEAREST_CHURCHES.MAX_PENDING_FETCHES,
+      fetchTimeoutMs: CACHE_CONFIG.NEAREST_CHURCHES.FETCH_TIMEOUT_MS,
       serializeError: serializeAppError,
       deserializeError: deserializeAppError
     },
@@ -4452,13 +5073,7 @@ async function findNearestChurches(request, reply) {
   const findNearestChurchesUseCase = makeFindNearestChurchesUseCase();
   const result = await findNearestChurchesUseCase.execute({ cep });
   if (isErr(result)) {
-    const error = result.error;
-    logger.warn({
-      msg: "Falha ao buscar igrejas pr\xF3ximas",
-      error: error.message,
-      cep: request.query.cep
-    });
-    return HttpErrorMapper.map(error, reply);
+    return HttpErrorMapper.map(result.error, reply);
   }
   const response = result.value;
   logger.info({
@@ -4480,7 +5095,7 @@ var createChurchBodySchema = import_zod15.default.object({
 // src/use-cases/errors/no-address-error.ts
 var NoAddressError = class extends DomainError {
   constructor() {
-    super(NO_ADDRESS_PROVIDED_ERROR, "BAD_REQUEST" /* BAD_REQUEST */);
+    super(CHURCH_ERRORS.NO_ADDRESS_PROVIDED, "BAD_REQUEST" /* BAD_REQUEST */);
   }
 };
 
@@ -4496,14 +5111,14 @@ var CreateChurchUseCase = class {
     lon
   }) {
     if (!address || address.trim() === "") {
-      return errOf(new NoAddressError());
+      return err(new NoAddressError());
     }
     const nameResult = await this.churchesRepository.findByName(name);
     if (isErr(nameResult)) {
       return nameResult;
     }
     if (nameResult.value !== null) {
-      return errOf(new ChurchAlreadyExistsError());
+      return err(new ChurchAlreadyExistsError());
     }
     const paramsResult = await this.churchesRepository.findByParams({
       name,
@@ -4514,7 +5129,7 @@ var CreateChurchUseCase = class {
       return paramsResult;
     }
     if (paramsResult.value !== null) {
-      return errOf(new ChurchAlreadyExistsError());
+      return err(new ChurchAlreadyExistsError());
     }
     const createResult = await this.churchesRepository.createChurch({
       name,
@@ -4551,10 +5166,6 @@ async function createChurch(request, reply) {
     lon
   });
   if (isErr(result)) {
-    logger.warn({
-      msg: "Falha ao criar a igreja",
-      error: result.error.message
-    });
     return HttpErrorMapper.map(result.error, reply);
   }
   const sanitizedChurch = ChurchPresenter.toHTTP(result.value);
@@ -4566,7 +5177,7 @@ async function createChurch(request, reply) {
 }
 
 // src/http/controllers/churches/churches.routes.ts
-var import_client7 = require("@prisma/client");
+var import_client6 = require("@prisma/client");
 
 // src/http/schemas/churches/delete-church-schema.ts
 var import_zod16 = __toESM(require("zod"));
@@ -4608,10 +5219,6 @@ async function deleteChurch(request, reply) {
     publicId
   });
   if (isErr(result)) {
-    logger.warn({
-      msg: "Falha ao deletar a igreja",
-      error: result.error.message
-    });
     return HttpErrorMapper.map(result.error, reply);
   }
   const sanitizedChurch = ChurchPresenter.toHTTP(result.value.church);
@@ -4642,7 +5249,7 @@ var FindChurchPublicIdByNameUseCase = class {
     }
     const church = result.value;
     if (!church) {
-      return errOf(new ChurchNotFoundError());
+      return err(new ChurchNotFoundError());
     }
     const publicId = church.publicId;
     return ok({ publicId });
@@ -4680,8 +5287,148 @@ async function churchesRoutes(app2) {
     findNearestChurches
   );
   app2.post("/find-church-publicId-by-name", { onRequest: [verifyJwt] }, findChurchPublicIdByName);
-  app2.post("/create", { onRequest: [verifyJwt, verifyUserRole([import_client7.UserRole.ADMIN])] }, createChurch);
-  app2.delete("/delete", { onRequest: [verifyJwt, verifyUserRole([import_client7.UserRole.ADMIN])] }, deleteChurch);
+  app2.post("/create", { onRequest: [verifyJwt, verifyUserRole([import_client6.UserRole.ADMIN])] }, createChurch);
+  app2.delete("/delete", { onRequest: [verifyJwt, verifyUserRole([import_client6.UserRole.ADMIN])] }, deleteChurch);
+}
+
+// src/http/schemas/analytics/track-event-schema.ts
+var import_zod18 = require("zod");
+var trackEventSchema = import_zod18.z.object({
+  eventType: import_zod18.z.string().min(1),
+  path: import_zod18.z.string().min(1),
+  payload: import_zod18.z.record(import_zod18.z.string(), import_zod18.z.any()).optional()
+});
+
+// src/repositories/prisma/prisma-analytics-repository.ts
+var PrismaAnalyticsRepository = class {
+  async upsertSession(data) {
+    try {
+      const session = await prisma.analyticsSession.upsert({
+        where: { sessionId: data.sessionId },
+        update: {
+          visitorId: data.visitorId,
+          ipAddress: data.ipAddress ?? null,
+          userAgent: data.userAgent ?? null,
+          utmSource: data.utmSource ?? null,
+          utmMedium: data.utmMedium ?? null,
+          utmCampaign: data.utmCampaign ?? null,
+          utmTerm: data.utmTerm ?? null,
+          utmContent: data.utmContent ?? null
+        },
+        create: {
+          visitorId: data.visitorId,
+          sessionId: data.sessionId,
+          ipAddress: data.ipAddress ?? null,
+          userAgent: data.userAgent ?? null,
+          utmSource: data.utmSource ?? null,
+          utmMedium: data.utmMedium ?? null,
+          utmCampaign: data.utmCampaign ?? null,
+          utmTerm: data.utmTerm ?? null,
+          utmContent: data.utmContent ?? null
+        }
+      });
+      return ok(session);
+    } catch (error) {
+      return err(new DatabaseQueryError(error));
+    }
+  }
+  async createEvent(data) {
+    try {
+      const event = await prisma.analyticsEvent.create({
+        data: {
+          sessionId: data.sessionId,
+          eventType: data.eventType,
+          path: data.path,
+          payload: data.payload ?? null
+        }
+      });
+      return ok(event);
+    } catch (error) {
+      return err(new DatabaseQueryError(error));
+    }
+  }
+  async findSessionBySessionId(sessionId) {
+    try {
+      const session = await prisma.analyticsSession.findUnique({
+        where: { sessionId }
+      });
+      return ok(session);
+    } catch (error) {
+      return err(new DatabaseQueryError(error));
+    }
+  }
+};
+
+// src/use-cases/analytics/track-analytics.ts
+var TrackAnalyticsUseCase = class {
+  constructor(analyticsRepository) {
+    this.analyticsRepository = analyticsRepository;
+  }
+  async execute(request) {
+    const sessionResult = await this.analyticsRepository.upsertSession({
+      visitorId: request.visitorId,
+      sessionId: request.sessionId,
+      ipAddress: request.ipAddress,
+      userAgent: request.userAgent,
+      utmSource: request.utmSource,
+      utmMedium: request.utmMedium,
+      utmCampaign: request.utmCampaign,
+      utmTerm: request.utmTerm,
+      utmContent: request.utmContent
+    });
+    if (isErr(sessionResult)) {
+      return sessionResult;
+    }
+    const eventResult = await this.analyticsRepository.createEvent({
+      sessionId: request.sessionId,
+      eventType: request.eventType,
+      path: request.path,
+      payload: request.payload
+    });
+    if (isErr(eventResult)) {
+      return eventResult;
+    }
+    return ok(void 0);
+  }
+};
+
+// src/use-cases/factories/make-track-analytics-use-case.ts
+function makeTrackAnalyticsUseCase() {
+  const analyticsRepository = new PrismaAnalyticsRepository();
+  const trackAnalyticsUseCase = new TrackAnalyticsUseCase(analyticsRepository);
+  return trackAnalyticsUseCase;
+}
+
+// src/http/controllers/analytics/track-event.controller.ts
+async function trackEvent(request, reply) {
+  const { eventType, path, payload } = trackEventSchema.parse(request.body);
+  const xff = request.headers["x-forwarded-for"];
+  const clientIp = Array.isArray(xff) ? xff[0] : xff?.split(",")[0].trim() || request.ip;
+  const query = request.query;
+  const trackAnalyticsUseCase = makeTrackAnalyticsUseCase();
+  const result = await trackAnalyticsUseCase.execute({
+    visitorId: request.visitorId,
+    sessionId: request.sessionId,
+    eventType,
+    path,
+    ipAddress: clientIp,
+    userAgent: request.headers["user-agent"] || null,
+    utmSource: query?.["utm_source"] || null,
+    utmMedium: query?.["utm_medium"] || null,
+    utmCampaign: query?.["utm_campaign"] || null,
+    utmTerm: query?.["utm_term"] || null,
+    utmContent: query?.["utm_content"] || null,
+    payload
+  });
+  if (isErr(result)) {
+    return HttpErrorMapper.map(result.error, reply);
+  }
+  return reply.status(201).send();
+}
+
+// src/http/controllers/analytics/analytics.routes.ts
+async function analyticsRoutes(app2) {
+  app2.post("/events", trackEvent);
 }
 
 // src/http/routes.ts
@@ -4690,28 +5437,27 @@ async function appRoutes(app2) {
   app2.register(healthCheckRoutes, { prefix: "/health" });
   app2.register(formsRoutes, { prefix: "/forms" });
   app2.register(churchesRoutes, { prefix: "/churches" });
+  app2.register(analyticsRoutes, { prefix: "/analytics" });
 }
 
 // src/app.ts
-var import_uuid2 = require("uuid");
-var import_zod18 = __toESM(require("zod"));
+var import_uuid = require("uuid");
+var import_zod20 = __toESM(require("zod"));
 var import_jwt = __toESM(require("@fastify/jwt"));
 var import_cors = __toESM(require("@fastify/cors"));
-var Sentry = __toESM(require("@sentry/node"));
-var import_profiling_node = require("@sentry/profiling-node");
+var import_cookie2 = __toESM(require("@fastify/cookie"));
 
 // src/http/plugins/async-context.plugin.ts
 var import_fastify_plugin = __toESM(require_plugin());
-var import_uuid = require("uuid");
 var asyncContextPlugin = async (app2) => {
   app2.addHook("onRequest", (request, reply, done) => {
-    const requestId = (0, import_uuid.v7)();
+    const requestId = request.id;
     const requestInfo = {
       host: request.host,
       protocol: request.protocol,
       userAgent: request.headers["user-agent"] || ""
     };
-    asyncLocalStorage2.run(
+    asyncLocalStorage.run(
       {
         requestId,
         requestInfo
@@ -4728,23 +5474,6 @@ var asyncContext = (0, import_fastify_plugin.default)(asyncContextPlugin, {
 var import_rate_limit5 = __toESM(require("@fastify/rate-limit"));
 var import_fastify_plugin2 = __toESM(require_plugin());
 var httpRateLimitPlugin = async (app2) => {
-  await app2.register(import_rate_limit5.default, {
-    global: true,
-    max: HTTP_RATE_LIMIT_POLICIES.global.max,
-    timeWindow: HTTP_RATE_LIMIT_POLICIES.global.timeWindow,
-    hook: "onRequest",
-    keyGenerator: (request) => request.ip,
-    redis: getRedisRateLimit(),
-    skipOnError: true
-  });
-};
-var httpRateLimit = (0, import_fastify_plugin2.default)(httpRateLimitPlugin, {
-  name: "http-rate-limit"
-});
-
-// src/http/plugins/rate-limit-defaults.plugin.ts
-var import_fastify_plugin3 = __toESM(require_plugin());
-var rateLimitDefaultsPlugin = async (app2) => {
   app2.addHook("onRoute", (routeOptions) => {
     try {
       if (!routeOptions.config) {
@@ -4760,140 +5489,478 @@ var rateLimitDefaultsPlugin = async (app2) => {
     } catch {
     }
   });
+  await app2.register(import_rate_limit5.default, {
+    global: true,
+    max: HTTP_RATE_LIMIT_POLICIES.global.max,
+    timeWindow: HTTP_RATE_LIMIT_POLICIES.global.timeWindow,
+    hook: "onRequest",
+    keyGenerator: (request) => request.ip,
+    redis: getRedisRateLimit(),
+    skipOnError: false
+  });
 };
-var httpRateLimitDefaults = (0, import_fastify_plugin3.default)(rateLimitDefaultsPlugin, {
-  name: "http-rate-limit-defaults"
+var httpRateLimit = (0, import_fastify_plugin2.default)(httpRateLimitPlugin, {
+  name: "http-rate-limit"
+});
+
+// src/http/plugins/error-handler.plugin.ts
+var import_fastify_plugin3 = __toESM(require_plugin());
+var import_zod19 = __toESM(require("zod"));
+var Sentry2 = __toESM(require("@sentry/node"));
+
+// src/messages/errors/http.ts
+var HTTP_ERRORS = {
+  INTERNAL_SERVER: {
+    code: "INTERNAL_SERVER_ERROR",
+    message: "Erro interno do servidor!"
+  },
+  INVALID_JSON: {
+    code: "INVALID_JSON",
+    message: "O corpo da requisi\xE7\xE3o n\xE3o est\xE1 em formato JSON v\xE1lido. Verifique a estrutura dos dados enviados."
+  },
+  RESOURCE_NOT_FOUND: {
+    code: "RESOURCE_NOT_FOUND",
+    message: "Recurso n\xE3o encontrado!"
+  },
+  SERVICE_UNAVAILABLE: {
+    code: "SERVICE_UNAVAILABLE",
+    message: "Servi\xE7o temporariamente indispon\xEDvel. Por favor, tente novamente mais tarde."
+  }
+};
+
+// src/messages/errors/validation.ts
+var VALIDATION_ERRORS = {
+  ZOD_VALIDATION: {
+    code: "VALIDATION_ERROR",
+    message: "Dados de registro inv\xE1lidos!"
+  }
+};
+
+// src/errors/http-errors/zod-validation-error.ts
+var ZodValidationError = class extends AppError {
+  constructor(issues) {
+    super(
+      {
+        code: VALIDATION_ERRORS.ZOD_VALIDATION.code,
+        message: VALIDATION_ERRORS.ZOD_VALIDATION.message,
+        issues
+      },
+      "BAD_REQUEST" /* BAD_REQUEST */
+    );
+  }
+};
+
+// src/http/plugins/error-handler.plugin.ts
+function captureWithRequestContext(error, request) {
+  if (!env.SENTRY_DSN) {
+    return;
+  }
+  Sentry2.withScope((scope) => {
+    const requestId = getRequestId();
+    const userId = getUserId();
+    if (userId) {
+      scope.setUser({ id: userId });
+    }
+    scope.setContext("request", {
+      requestId,
+      method: request.method,
+      url: request.url,
+      ip: request.ip,
+      userAgent: request.headers["user-agent"]
+    });
+    scope.setTag("route", request.routeOptions?.url ?? request.url);
+    scope.setTag("method", request.method);
+    scope.setTag("errorType", error.constructor.name);
+    Sentry2.captureException(error);
+  });
+}
+var errorHandlerPlugin = async (app2) => {
+  app2.setErrorHandler((error, request, reply) => {
+    if (error instanceof import_zod19.ZodError) {
+      const zodValidationError = new ZodValidationError(import_zod19.default.treeifyError(error));
+      const httpCode = toHttpStatus(zodValidationError.type);
+      logger.debug(import_zod19.default.treeifyError(error), "Ocorreu um erro de valida\xE7\xE3o");
+      return reply.status(httpCode).send({
+        message: zodValidationError.body.message,
+        code: zodValidationError.body.code,
+        issues: zodValidationError.body.issues
+      });
+    }
+    if (error instanceof SyntaxError) {
+      logger.error(error, "JSON inv\xE1lido recebido");
+      return reply.status(400).send({
+        message: HTTP_ERRORS.INVALID_JSON.message,
+        code: HTTP_ERRORS.INVALID_JSON.code
+      });
+    }
+    if (error instanceof DomainError) {
+      const httpCode = toHttpStatus(error.type);
+      return reply.status(httpCode).send({
+        message: error.body.message,
+        code: error.body.code,
+        issues: error.body.issues
+      });
+    }
+    if (error instanceof AppError) {
+      const httpCode = toHttpStatus(error.type);
+      const isServiceUnavailable = error.type === "SERVICE_UNAVAILABLE" /* SERVICE_UNAVAILABLE */ || error.type === "TOO_MANY_REQUESTS" /* TOO_MANY_REQUESTS */;
+      logger.error({ err: error, cause: error.cause }, "Ocorreu um erro de infraestrutura/sistema");
+      captureWithRequestContext(error, request);
+      return reply.status(httpCode).send({
+        message: isServiceUnavailable ? HTTP_ERRORS.SERVICE_UNAVAILABLE.message : HTTP_ERRORS.INTERNAL_SERVER.message,
+        code: isServiceUnavailable ? HTTP_ERRORS.SERVICE_UNAVAILABLE.code : HTTP_ERRORS.INTERNAL_SERVER.code
+      });
+    }
+    if (error.statusCode) {
+      return reply.status(error.statusCode).send({ message: error.message });
+    }
+    logger.error(error, "Ocorreu um erro n\xE3o tratado");
+    captureWithRequestContext(error, request);
+    reply.status(500).send({
+      message: HTTP_ERRORS.INTERNAL_SERVER.message,
+      code: HTTP_ERRORS.INTERNAL_SERVER.code
+    });
+  });
+};
+var errorHandler = (0, import_fastify_plugin3.default)(errorHandlerPlugin, {
+  name: "error-handler"
+});
+
+// src/http/plugins/request-lifecycle.plugin.ts
+var import_fastify_plugin4 = __toESM(require_plugin());
+var requestLifecyclePlugin = async (app2) => {
+  app2.addHook("onRequest", async (request) => {
+    const xff = request.headers["x-forwarded-for"];
+    const clientIp = Array.isArray(xff) ? xff[0] : xff?.split(",")[0].trim() || request.ip;
+    try {
+      const decoded = await request.jwtVerify();
+      setUserId(decoded.sub);
+    } catch {
+    }
+    logger.info(
+      {
+        method: request.method,
+        url: request.url,
+        ip: clientIp,
+        remotePort: request.socket.remotePort,
+        userAgent: request.headers["user-agent"]
+      },
+      "Requisi\xE7\xE3o recebida"
+    );
+  });
+  app2.addHook("onResponse", (request, reply, done) => {
+    logger.info(
+      {
+        statusCode: reply.statusCode,
+        method: request.method,
+        url: request.url,
+        requestTime: reply.elapsedTime
+      },
+      "Resposta enviada"
+    );
+    done();
+  });
+};
+var requestLifecycle = (0, import_fastify_plugin4.default)(requestLifecyclePlugin, {
+  name: "request-lifecycle",
+  dependencies: ["async-context"]
+});
+
+// src/http/plugins/memory-monitor.plugin.ts
+var import_fastify_plugin5 = __toESM(require_plugin());
+var MEMORY_CHECK_INTERVAL_MS = 6e4;
+var HEAP_WARNING_THRESHOLD_MB = 400;
+var memoryMonitorPlugin = async (app2) => {
+  if (env.NODE_ENV !== "production") {
+    return;
+  }
+  let interval = null;
+  app2.addHook("onReady", () => {
+    interval = setInterval(() => {
+      const memUsage = process.memoryUsage();
+      const heapUsedMB = memUsage.heapUsed / 1024 / 1024;
+      const rssMB = memUsage.rss / 1024 / 1024;
+      if (heapUsedMB > HEAP_WARNING_THRESHOLD_MB) {
+        logger.warn({
+          msg: "Alto uso de mem\xF3ria detectado",
+          heapUsedMB: Math.round(heapUsedMB),
+          rssMB: Math.round(rssMB),
+          heapTotalMB: Math.round(memUsage.heapTotal / 1024 / 1024)
+        });
+      }
+    }, MEMORY_CHECK_INTERVAL_MS);
+  });
+  app2.addHook("onClose", () => {
+    if (interval) {
+      clearInterval(interval);
+      logger.info("Intervalo do monitor de mem\xF3ria finalizado");
+    }
+  });
+};
+var memoryMonitor = (0, import_fastify_plugin5.default)(memoryMonitorPlugin, {
+  name: "memory-monitor"
+});
+
+// src/http/plugins/analytics.plugin.ts
+var import_fastify_plugin6 = __toESM(require_plugin());
+var import_cookie = require("@fastify/cookie");
+var import_node_crypto = require("crypto");
+var analyticsPlugin = async (app2) => {
+  app2.addHook("onRequest", async (request, reply) => {
+    try {
+      let visitorId = null;
+      const visitorCookie = request.cookies["visitor_id"];
+      if (visitorCookie) {
+        const unsigned = request.unsignCookie(visitorCookie);
+        if (unsigned.valid && unsigned.value) {
+          visitorId = unsigned.value;
+        }
+      }
+      if (!visitorId) {
+        visitorId = (0, import_node_crypto.randomUUID)();
+        reply.setCookie("visitor_id", visitorId, {
+          path: "/",
+          httpOnly: true,
+          secure: env.NODE_ENV === "production",
+          sameSite: "lax",
+          signed: true,
+          maxAge: 365 * 24 * 60 * 60
+          // 1 year in seconds
+        });
+      }
+      let sessionId = null;
+      const sessionCookie = request.cookies["session_id"];
+      if (sessionCookie) {
+        const unsigned = request.unsignCookie(sessionCookie);
+        if (unsigned.valid && unsigned.value) {
+          sessionId = unsigned.value;
+        }
+      }
+      if (!sessionId) {
+        sessionId = (0, import_node_crypto.randomUUID)();
+        reply.setCookie("session_id", sessionId, {
+          path: "/",
+          httpOnly: true,
+          secure: env.NODE_ENV === "production",
+          sameSite: "lax",
+          signed: true
+          // session-scoped (expires when browser is closed)
+        });
+      }
+      request.visitorId = visitorId;
+      request.sessionId = sessionId;
+    } catch (error) {
+      logger.warn(error, "Erro n\xE3o cr\xEDtico ao extrair/definir cookies de analytics, prosseguindo com IDs tempor\xE1rios");
+      request.visitorId = request.visitorId || (0, import_node_crypto.randomUUID)();
+      request.sessionId = request.sessionId || (0, import_node_crypto.randomUUID)();
+    }
+  });
+};
+var analytics = (0, import_fastify_plugin6.default)(analyticsPlugin, {
+  name: "analytics",
+  dependencies: ["async-context"]
 });
 
 // src/app.ts
-import_zod18.default.config(import_zod18.default.locales.pt());
+var import_fastify_metrics = __toESM(require("fastify-metrics"));
+var import_prom_client3 = __toESM(require("prom-client"));
+
+// src/lib/metrics/index.ts
+var import_prom_client = require("prom-client");
+var import_prom_client2 = require("prom-client");
+var registry = null;
+var initialized = false;
+function getRegistry() {
+  if (!env.METRICS_ENABLED) return null;
+  if (!initialized) {
+    registry = new import_prom_client.Registry();
+    (0, import_prom_client.collectDefaultMetrics)({ register: registry });
+    initialized = true;
+  }
+  return registry;
+}
+
+// src/app.ts
+import_zod20.default.config(import_zod20.default.locales.pt());
 var app = (0, import_fastify.default)({
   logger: false,
-  trustProxy: true
+  trustProxy: true,
+  genReqId: () => (0, import_uuid.v7)()
 });
-if (env.SENTRY_DSN) {
-  Sentry.init({
-    dsn: env.SENTRY_DSN,
-    environment: env.NODE_ENV,
-    integrations: [(0, import_profiling_node.nodeProfilingIntegration)()],
-    tracesSampleRate: 1,
-    profileSessionSampleRate: 1,
-    profileLifecycle: "trace"
-  });
-  Sentry.setupFastifyErrorHandler(app);
-}
-if (env.NODE_ENV === "production") {
-  setInterval(() => {
-    const memUsage = process.memoryUsage();
-    const heapUsedMB = memUsage.heapUsed / 1024 / 1024;
-    const rssMB = memUsage.rss / 1024 / 1024;
-    if (heapUsedMB > 400) {
-      logger.warn({
-        msg: "High memory usage detected",
-        heapUsedMB: Math.round(heapUsedMB),
-        rssMB: Math.round(rssMB),
-        heapTotalMB: Math.round(memUsage.heapTotal / 1024 / 1024)
-      });
-    }
-  }, 6e4);
-}
 app.register(asyncContext);
-app.register(httpRateLimitDefaults);
-app.addHook("onRequest", (request, _reply, done) => {
-  const requestId = (0, import_uuid2.v7)();
-  const xff = request.headers["x-forwarded-for"];
-  const clientIp = Array.isArray(xff) ? xff[0] : xff?.split(",")[0].trim() || request.ip;
-  runWithRequestId(requestId, async () => {
-    try {
-      const decoded = await request.jwtVerify();
-      runWithUserContext(decoded.sub, () => {
-        logRequestDetails();
-        done();
-      });
-    } catch {
-      logRequestDetails();
-      done();
-    }
-    function logRequestDetails() {
-      logger.info(
-        {
-          method: request.method,
-          url: request.url,
-          ip: clientIp,
-          remotePort: request.socket.remotePort,
-          userAgent: request.headers["user-agent"]
-        },
-        "Incoming request"
-      );
+var metricsRegistry = getRegistry();
+if (metricsRegistry) {
+  app.register(import_fastify_metrics.default, {
+    promClient: import_prom_client3.default,
+    endpoint: null,
+    defaultMetrics: { enabled: false },
+    routeMetrics: {
+      enabled: { histogram: true, summary: false },
+      overrides: {
+        histogram: { registers: [metricsRegistry] }
+      }
     }
   });
-});
-app.addHook("onResponse", (request, reply, done) => {
-  logger.info(
-    {
-      statusCode: reply.statusCode,
-      method: request.method,
-      url: request.url,
-      requestTime: reply.elapsedTime
-    },
-    "Response sent"
-  );
-  done();
-});
+}
 app.register(import_cors.default, {
   origin: env.FRONTEND_URL,
+  credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   exposedHeaders: ["Authorization"],
   maxAge: 3600
 });
 app.register(httpRateLimit);
+app.register(import_cookie2.default, {
+  secret: env.COOKIE_SECRET
+});
+app.register(analytics);
 app.register(import_jwt.default, {
   secret: env.JWT_SECRET
 });
+app.register(requestLifecycle);
+app.register(memoryMonitor);
+app.register(errorHandler);
 app.register(appRoutes);
-app.setErrorHandler((error, _request, reply) => {
-  if (error instanceof import_zod18.ZodError) {
-    logger.debug(import_zod18.default.treeifyError(error), "Validation error occurred");
-    return reply.status(400).send({ message: messages.validation.invalidData, details: import_zod18.default.treeifyError(error) });
-  }
-  if (error instanceof SyntaxError) {
-    logger.error(error, "JSON inv\xE1lido recebido");
-    return reply.status(400).send({ message: messages.validation.invalidJson });
-  }
-  if (error.statusCode) {
-    return reply.status(error.statusCode).send({ message: error.message });
-  }
-  if (env.NODE_ENV === "development") {
-    logError(error, {}, "Unhandled error occurred");
-  } else {
-    if (env.SENTRY_DSN) {
-      Sentry.captureException(error);
-    }
-    logger.error(error, "Unhandled error occurred");
-  }
-  reply.status(500).send({ message: messages.errors.internalServer, error: error.message });
-});
 app.addHook("onClose", async () => {
-  logger.info("\u{1F6D1} Shutting down RateLimiter and Redis connections...");
+  logger.info("Finalizando as conex\xF5es do RateLimiter e Redis...");
   try {
     await RedisRateLimiter.destroyInstance();
-    logger.info("\u2705 RateLimiter destroyed");
+    logger.info("RateLimiter finalizado com sucesso");
   } catch (error) {
-    logger.error(error, "\u274C Error destroying RateLimiter");
+    logger.error(error, "Erro ao finalizar o RateLimiter");
   }
   try {
     await closeAllRedisConnections();
-    logger.info("\u2705 Redis connections closed");
+    logger.info("Conex\xF5es do Redis fechadas");
   } catch (error) {
-    logger.error(error, "\u274C Error closing Redis connections");
+    logger.error(error, "Erro ao fechar as conex\xF5es do Redis");
   }
 });
 
 // src/server.ts
-app.listen({ host: "0.0.0.0", port: env.APP_PORT }).then(() => {
-  logger.info(`Server started successfully! Listening on: ${env.APP_PORT}`);
-}).catch((err2) => {
-  logError(err2, {}, "Failed to start server");
-  process.exit(1);
+var import_close_with_grace = __toESM(require("close-with-grace"));
+
+// src/lib/shutdown/crash-shutdown.ts
+var Sentry3 = __toESM(require("@sentry/node"));
+var isShuttingDown = false;
+async function crashShutdown(error, cleanup) {
+  if (isShuttingDown) {
+    process.exit(1);
+    return void 0;
+  }
+  isShuttingDown = true;
+  logger.fatal({ err: error }, "Travamento n\xE3o tratado detectado, iniciando sequ\xEAncia de encerramento por falha...");
+  const hardTimeout = setTimeout(() => {
+    logger.fatal("O tempo limite de limpeza para encerramento expirou ap\xF3s 15s. For\xE7ando a sa\xEDda.");
+    process.exit(1);
+  }, 15e3);
+  hardTimeout.unref();
+  try {
+    await cleanup();
+    logger.info("Limpeza de encerramento por travamento conclu\xEDda com sucesso.");
+  } catch (cleanupError) {
+    logger.error({ err: cleanupError }, "Ocorreu um erro durante a limpeza de encerramento por travamento");
+  }
+  try {
+    if (error instanceof Error) {
+      Sentry3.captureException(error);
+    } else {
+      Sentry3.captureException(new Error(String(error)));
+    }
+    await Sentry3.flush(2e3);
+    logger.info("Logs do Sentry enviados com sucesso.");
+  } catch (sentryError) {
+    logger.error({ err: sentryError }, "Erro ao enviar os logs do Sentry durante o encerramento por travamento");
+  } finally {
+    clearTimeout(hardTimeout);
+    process.exit(1);
+  }
+}
+
+// src/metrics-server.ts
+var import_fastify2 = __toESM(require("fastify"));
+var import_prom_client4 = require("prom-client");
+var metricsServer = null;
+var registry2 = getRegistry();
+var metricsCollectionErrors = registry2 ? new import_prom_client4.Counter({
+  name: "metrics_collection_errors_total",
+  help: "Errors during metrics collection",
+  labelNames: ["source"],
+  registers: [registry2]
+}) : null;
+function withTimeout(promise, ms2, source) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => {
+        metricsCollectionErrors?.inc({ source });
+        reject(new Error(`${source} timeout`));
+      }, ms2);
+    })
+  ]);
+}
+async function startMetricsServer(options) {
+  if (!env.METRICS_ENABLED) {
+    logger.info("Metrics server disabled");
+    return;
+  }
+  metricsServer = (0, import_fastify2.default)({ logger: false });
+  metricsServer.get("/metrics", async (_request, reply) => {
+    const currentRegistry = getRegistry();
+    if (!currentRegistry) {
+      return reply.status(503).send("Metrics disabled");
+    }
+    const results = await Promise.allSettled([withTimeout(currentRegistry.metrics(), 2e3, "prom-client")]);
+    const output = results.filter((r) => r.status === "fulfilled").map((r) => r.value).join("\n\n");
+    reply.header("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+    return output;
+  });
+  metricsServer.get("/health", async () => ({ status: "ok" }));
+  await metricsServer.listen({ host: "0.0.0.0", port: options.port });
+  logger.info({ port: options.port }, "Metrics server started");
+}
+async function stopMetricsServer() {
+  if (metricsServer) {
+    await metricsServer.close();
+    metricsServer = null;
+    logger.info("Metrics server stopped");
+  }
+}
+
+// src/server.ts
+initSentry();
+async function shutdown() {
+  await app.close();
+  await stopMetricsServer();
+}
+(0, import_close_with_grace.default)({ delay: 1e4 }, async ({ signal, err: err2 }) => {
+  if (err2) {
+    await crashShutdown(err2, shutdown);
+  } else {
+    logger.info({ signal }, `Sinal ${signal} recebido. Encerrando o servidor graciosamente...`);
+    await shutdown();
+    logger.info("Servidor encerrado graciosamente.");
+    process.exit(0);
+  }
 });
+process.on("unhandledRejection", (reason) => {
+  crashShutdown(reason, shutdown);
+});
+process.on("uncaughtException", (error) => {
+  crashShutdown(error, shutdown);
+});
+async function start() {
+  try {
+    await app.listen({ host: "0.0.0.0", port: env.APP_PORT });
+    logger.info(`Servidor iniciado com sucesso! Escutando na porta: ${env.APP_PORT}`);
+    try {
+      await startMetricsServer({ port: env.METRICS_API_PORT });
+    } catch (metricsErr) {
+      logger.error({ err: metricsErr }, "Falha ao iniciar o servidor de m\xE9tricas; a API continuar\xE1 sem m\xE9tricas");
+    }
+  } catch (err2) {
+    await crashShutdown(err2, shutdown);
+  }
+}
+start();

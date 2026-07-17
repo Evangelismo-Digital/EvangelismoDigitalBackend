@@ -15,6 +15,9 @@ import { errorHandler } from '@http/plugins/error-handler.plugin'
 import { requestLifecycle } from '@http/plugins/request-lifecycle.plugin'
 import { memoryMonitor } from '@http/plugins/memory-monitor.plugin'
 import { analytics } from '@http/plugins/analytics.plugin'
+import metricsPlugin from 'fastify-metrics'
+import promClient from 'prom-client'
+import { getRegistry } from '@lib/metrics'
 
 z.config(z.locales.pt())
 
@@ -26,6 +29,24 @@ export const app = fastify({
 
 // 1. AsyncContext — wraps every request in ALS with requestId from genReqId
 app.register(asyncContext)
+
+// 1.5 HTTP metrics — per-route request duration histogram into the shared
+// metrics registry (served by the dedicated metrics-server, not this port).
+// Skipped entirely when METRICS_ENABLED=false (getRegistry() returns null).
+const metricsRegistry = getRegistry()
+if (metricsRegistry) {
+  app.register(metricsPlugin, {
+    promClient,
+    endpoint: null,
+    defaultMetrics: { enabled: false },
+    routeMetrics: {
+      enabled: { histogram: true, summary: false },
+      overrides: {
+        histogram: { registers: [metricsRegistry] },
+      },
+    },
+  })
+}
 
 // 2. CORS — short-circuits OPTIONS before auth/lifecycle / rate limit
 app.register(fastifyCors, {

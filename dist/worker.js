@@ -5,6 +5,9 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
@@ -22,33 +25,438 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// src/lib/infra/jobs/outbox-cron.ts
-var import_node_cron = __toESM(require("node-cron"));
+// node_modules/dotenv/package.json
+var require_package = __commonJS({
+  "node_modules/dotenv/package.json"(exports2, module2) {
+    module2.exports = {
+      name: "dotenv",
+      version: "16.6.1",
+      description: "Loads environment variables from .env file",
+      main: "lib/main.js",
+      types: "lib/main.d.ts",
+      exports: {
+        ".": {
+          types: "./lib/main.d.ts",
+          require: "./lib/main.js",
+          default: "./lib/main.js"
+        },
+        "./config": "./config.js",
+        "./config.js": "./config.js",
+        "./lib/env-options": "./lib/env-options.js",
+        "./lib/env-options.js": "./lib/env-options.js",
+        "./lib/cli-options": "./lib/cli-options.js",
+        "./lib/cli-options.js": "./lib/cli-options.js",
+        "./package.json": "./package.json"
+      },
+      scripts: {
+        "dts-check": "tsc --project tests/types/tsconfig.json",
+        lint: "standard",
+        pretest: "npm run lint && npm run dts-check",
+        test: "tap run --allow-empty-coverage --disable-coverage --timeout=60000",
+        "test:coverage": "tap run --show-full-coverage --timeout=60000 --coverage-report=text --coverage-report=lcov",
+        prerelease: "npm test",
+        release: "standard-version"
+      },
+      repository: {
+        type: "git",
+        url: "git://github.com/motdotla/dotenv.git"
+      },
+      homepage: "https://github.com/motdotla/dotenv#readme",
+      funding: "https://dotenvx.com",
+      keywords: [
+        "dotenv",
+        "env",
+        ".env",
+        "environment",
+        "variables",
+        "config",
+        "settings"
+      ],
+      readmeFilename: "README.md",
+      license: "BSD-2-Clause",
+      devDependencies: {
+        "@types/node": "^18.11.3",
+        decache: "^4.6.2",
+        sinon: "^14.0.1",
+        standard: "^17.0.0",
+        "standard-version": "^9.5.0",
+        tap: "^19.2.0",
+        typescript: "^4.8.4"
+      },
+      engines: {
+        node: ">=12"
+      },
+      browser: {
+        fs: false
+      }
+    };
+  }
+});
 
-// src/core/constants/outbox/locks.ts
-var LOCK_KEYS = {
-  OUTBOX_PROCESSOR: "lock:outbox-processor",
-  OUTBOX_RECOVERY: "lock:outbox-recovery"
-};
-var LOCK_TTL_MS = {
-  DEFAULT: 1e4
-};
+// node_modules/dotenv/lib/main.js
+var require_main = __commonJS({
+  "node_modules/dotenv/lib/main.js"(exports2, module2) {
+    "use strict";
+    var fs = require("fs");
+    var path = require("path");
+    var os = require("os");
+    var crypto = require("crypto");
+    var packageJson = require_package();
+    var version = packageJson.version;
+    var LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg;
+    function parse(src) {
+      const obj = {};
+      let lines = src.toString();
+      lines = lines.replace(/\r\n?/mg, "\n");
+      let match;
+      while ((match = LINE.exec(lines)) != null) {
+        const key = match[1];
+        let value = match[2] || "";
+        value = value.trim();
+        const maybeQuote = value[0];
+        value = value.replace(/^(['"`])([\s\S]*)\1$/mg, "$2");
+        if (maybeQuote === '"') {
+          value = value.replace(/\\n/g, "\n");
+          value = value.replace(/\\r/g, "\r");
+        }
+        obj[key] = value;
+      }
+      return obj;
+    }
+    function _parseVault(options) {
+      options = options || {};
+      const vaultPath = _vaultPath(options);
+      options.path = vaultPath;
+      const result = DotenvModule.configDotenv(options);
+      if (!result.parsed) {
+        const err2 = new Error(`MISSING_DATA: Cannot parse ${vaultPath} for an unknown reason`);
+        err2.code = "MISSING_DATA";
+        throw err2;
+      }
+      const keys = _dotenvKey(options).split(",");
+      const length = keys.length;
+      let decrypted;
+      for (let i = 0; i < length; i++) {
+        try {
+          const key = keys[i].trim();
+          const attrs = _instructions(result, key);
+          decrypted = DotenvModule.decrypt(attrs.ciphertext, attrs.key);
+          break;
+        } catch (error) {
+          if (i + 1 >= length) {
+            throw error;
+          }
+        }
+      }
+      return DotenvModule.parse(decrypted);
+    }
+    function _warn(message) {
+      console.log(`[dotenv@${version}][WARN] ${message}`);
+    }
+    function _debug(message) {
+      console.log(`[dotenv@${version}][DEBUG] ${message}`);
+    }
+    function _log(message) {
+      console.log(`[dotenv@${version}] ${message}`);
+    }
+    function _dotenvKey(options) {
+      if (options && options.DOTENV_KEY && options.DOTENV_KEY.length > 0) {
+        return options.DOTENV_KEY;
+      }
+      if (process.env.DOTENV_KEY && process.env.DOTENV_KEY.length > 0) {
+        return process.env.DOTENV_KEY;
+      }
+      return "";
+    }
+    function _instructions(result, dotenvKey) {
+      let uri;
+      try {
+        uri = new URL(dotenvKey);
+      } catch (error) {
+        if (error.code === "ERR_INVALID_URL") {
+          const err2 = new Error("INVALID_DOTENV_KEY: Wrong format. Must be in valid uri format like dotenv://:key_1234@dotenvx.com/vault/.env.vault?environment=development");
+          err2.code = "INVALID_DOTENV_KEY";
+          throw err2;
+        }
+        throw error;
+      }
+      const key = uri.password;
+      if (!key) {
+        const err2 = new Error("INVALID_DOTENV_KEY: Missing key part");
+        err2.code = "INVALID_DOTENV_KEY";
+        throw err2;
+      }
+      const environment = uri.searchParams.get("environment");
+      if (!environment) {
+        const err2 = new Error("INVALID_DOTENV_KEY: Missing environment part");
+        err2.code = "INVALID_DOTENV_KEY";
+        throw err2;
+      }
+      const environmentKey = `DOTENV_VAULT_${environment.toUpperCase()}`;
+      const ciphertext = result.parsed[environmentKey];
+      if (!ciphertext) {
+        const err2 = new Error(`NOT_FOUND_DOTENV_ENVIRONMENT: Cannot locate environment ${environmentKey} in your .env.vault file.`);
+        err2.code = "NOT_FOUND_DOTENV_ENVIRONMENT";
+        throw err2;
+      }
+      return { ciphertext, key };
+    }
+    function _vaultPath(options) {
+      let possibleVaultPath = null;
+      if (options && options.path && options.path.length > 0) {
+        if (Array.isArray(options.path)) {
+          for (const filepath of options.path) {
+            if (fs.existsSync(filepath)) {
+              possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
+            }
+          }
+        } else {
+          possibleVaultPath = options.path.endsWith(".vault") ? options.path : `${options.path}.vault`;
+        }
+      } else {
+        possibleVaultPath = path.resolve(process.cwd(), ".env.vault");
+      }
+      if (fs.existsSync(possibleVaultPath)) {
+        return possibleVaultPath;
+      }
+      return null;
+    }
+    function _resolveHome(envPath) {
+      return envPath[0] === "~" ? path.join(os.homedir(), envPath.slice(1)) : envPath;
+    }
+    function _configVault(options) {
+      const debug = Boolean(options && options.debug);
+      const quiet = options && "quiet" in options ? options.quiet : true;
+      if (debug || !quiet) {
+        _log("Loading env from encrypted .env.vault");
+      }
+      const parsed = DotenvModule._parseVault(options);
+      let processEnv = process.env;
+      if (options && options.processEnv != null) {
+        processEnv = options.processEnv;
+      }
+      DotenvModule.populate(processEnv, parsed, options);
+      return { parsed };
+    }
+    function configDotenv(options) {
+      const dotenvPath = path.resolve(process.cwd(), ".env");
+      let encoding = "utf8";
+      const debug = Boolean(options && options.debug);
+      const quiet = options && "quiet" in options ? options.quiet : true;
+      if (options && options.encoding) {
+        encoding = options.encoding;
+      } else {
+        if (debug) {
+          _debug("No encoding is specified. UTF-8 is used by default");
+        }
+      }
+      let optionPaths = [dotenvPath];
+      if (options && options.path) {
+        if (!Array.isArray(options.path)) {
+          optionPaths = [_resolveHome(options.path)];
+        } else {
+          optionPaths = [];
+          for (const filepath of options.path) {
+            optionPaths.push(_resolveHome(filepath));
+          }
+        }
+      }
+      let lastError;
+      const parsedAll = {};
+      for (const path2 of optionPaths) {
+        try {
+          const parsed = DotenvModule.parse(fs.readFileSync(path2, { encoding }));
+          DotenvModule.populate(parsedAll, parsed, options);
+        } catch (e) {
+          if (debug) {
+            _debug(`Failed to load ${path2} ${e.message}`);
+          }
+          lastError = e;
+        }
+      }
+      let processEnv = process.env;
+      if (options && options.processEnv != null) {
+        processEnv = options.processEnv;
+      }
+      DotenvModule.populate(processEnv, parsedAll, options);
+      if (debug || !quiet) {
+        const keysCount = Object.keys(parsedAll).length;
+        const shortPaths = [];
+        for (const filePath of optionPaths) {
+          try {
+            const relative = path.relative(process.cwd(), filePath);
+            shortPaths.push(relative);
+          } catch (e) {
+            if (debug) {
+              _debug(`Failed to load ${filePath} ${e.message}`);
+            }
+            lastError = e;
+          }
+        }
+        _log(`injecting env (${keysCount}) from ${shortPaths.join(",")}`);
+      }
+      if (lastError) {
+        return { parsed: parsedAll, error: lastError };
+      } else {
+        return { parsed: parsedAll };
+      }
+    }
+    function config(options) {
+      if (_dotenvKey(options).length === 0) {
+        return DotenvModule.configDotenv(options);
+      }
+      const vaultPath = _vaultPath(options);
+      if (!vaultPath) {
+        _warn(`You set DOTENV_KEY but you are missing a .env.vault file at ${vaultPath}. Did you forget to build it?`);
+        return DotenvModule.configDotenv(options);
+      }
+      return DotenvModule._configVault(options);
+    }
+    function decrypt(encrypted, keyStr) {
+      const key = Buffer.from(keyStr.slice(-64), "hex");
+      let ciphertext = Buffer.from(encrypted, "base64");
+      const nonce = ciphertext.subarray(0, 12);
+      const authTag = ciphertext.subarray(-16);
+      ciphertext = ciphertext.subarray(12, -16);
+      try {
+        const aesgcm = crypto.createDecipheriv("aes-256-gcm", key, nonce);
+        aesgcm.setAuthTag(authTag);
+        return `${aesgcm.update(ciphertext)}${aesgcm.final()}`;
+      } catch (error) {
+        const isRange = error instanceof RangeError;
+        const invalidKeyLength = error.message === "Invalid key length";
+        const decryptionFailed = error.message === "Unsupported state or unable to authenticate data";
+        if (isRange || invalidKeyLength) {
+          const err2 = new Error("INVALID_DOTENV_KEY: It must be 64 characters long (or more)");
+          err2.code = "INVALID_DOTENV_KEY";
+          throw err2;
+        } else if (decryptionFailed) {
+          const err2 = new Error("DECRYPTION_FAILED: Please check your DOTENV_KEY");
+          err2.code = "DECRYPTION_FAILED";
+          throw err2;
+        } else {
+          throw error;
+        }
+      }
+    }
+    function populate(processEnv, parsed, options = {}) {
+      const debug = Boolean(options && options.debug);
+      const override = Boolean(options && options.override);
+      if (typeof parsed !== "object") {
+        const err2 = new Error("OBJECT_REQUIRED: Please check the processEnv argument being passed to populate");
+        err2.code = "OBJECT_REQUIRED";
+        throw err2;
+      }
+      for (const key of Object.keys(parsed)) {
+        if (Object.prototype.hasOwnProperty.call(processEnv, key)) {
+          if (override === true) {
+            processEnv[key] = parsed[key];
+          }
+          if (debug) {
+            if (override === true) {
+              _debug(`"${key}" is already defined and WAS overwritten`);
+            } else {
+              _debug(`"${key}" is already defined and was NOT overwritten`);
+            }
+          }
+        } else {
+          processEnv[key] = parsed[key];
+        }
+      }
+    }
+    var DotenvModule = {
+      configDotenv,
+      _configVault,
+      _parseVault,
+      config,
+      decrypt,
+      parse,
+      populate
+    };
+    module2.exports.configDotenv = DotenvModule.configDotenv;
+    module2.exports._configVault = DotenvModule._configVault;
+    module2.exports._parseVault = DotenvModule._parseVault;
+    module2.exports.config = DotenvModule.config;
+    module2.exports.decrypt = DotenvModule.decrypt;
+    module2.exports.parse = DotenvModule.parse;
+    module2.exports.populate = DotenvModule.populate;
+    module2.exports = DotenvModule;
+  }
+});
 
-// src/core/constants/queue/queue.ts
-var QUEUE_NAMES = {
-  MAIL: "mail-queue"
-};
-var JOB_NAMES = {
-  OUTBOX_DISPATCH: "outbox-dispatch"
-};
+// node_modules/dotenv/lib/env-options.js
+var require_env_options = __commonJS({
+  "node_modules/dotenv/lib/env-options.js"(exports2, module2) {
+    "use strict";
+    var options = {};
+    if (process.env.DOTENV_CONFIG_ENCODING != null) {
+      options.encoding = process.env.DOTENV_CONFIG_ENCODING;
+    }
+    if (process.env.DOTENV_CONFIG_PATH != null) {
+      options.path = process.env.DOTENV_CONFIG_PATH;
+    }
+    if (process.env.DOTENV_CONFIG_QUIET != null) {
+      options.quiet = process.env.DOTENV_CONFIG_QUIET;
+    }
+    if (process.env.DOTENV_CONFIG_DEBUG != null) {
+      options.debug = process.env.DOTENV_CONFIG_DEBUG;
+    }
+    if (process.env.DOTENV_CONFIG_OVERRIDE != null) {
+      options.override = process.env.DOTENV_CONFIG_OVERRIDE;
+    }
+    if (process.env.DOTENV_CONFIG_DOTENV_KEY != null) {
+      options.DOTENV_KEY = process.env.DOTENV_CONFIG_DOTENV_KEY;
+    }
+    module2.exports = options;
+  }
+});
 
-// src/lib/logger/index.ts
-var import_pino = __toESM(require("pino"));
+// node_modules/dotenv/lib/cli-options.js
+var require_cli_options = __commonJS({
+  "node_modules/dotenv/lib/cli-options.js"(exports2, module2) {
+    "use strict";
+    var re = /^dotenv_config_(encoding|path|quiet|debug|override|DOTENV_KEY)=(.+)$/;
+    module2.exports = function optionMatcher(args) {
+      const options = args.reduce(function(acc, cur) {
+        const matches = cur.match(re);
+        if (matches) {
+          acc[matches[1]] = matches[2];
+        }
+        return acc;
+      }, {});
+      if (!("quiet" in options)) {
+        options.quiet = "true";
+      }
+      return options;
+    };
+  }
+});
+
+// src/lib/sentry/init.ts
+var Sentry = __toESM(require("@sentry/node"));
+var import_profiling_node = require("@sentry/profiling-node");
+
+// node_modules/dotenv/config.js
+(function() {
+  require_main().config(
+    Object.assign(
+      {},
+      require_env_options(),
+      require_cli_options()(process.argv)
+    )
+  );
+})();
 
 // src/env/index.ts
 var import_zod = require("zod");
 var import_ms = __toESM(require("ms"));
-process.loadEnvFile?.(".env");
+
+// src/messages/constants/env/env.ts
+var ENV_CONSTANTS = {
+  INVALID_VARIABLES: "Invalid environment variables. Please check your .env file or environment configuration."
+};
+
+// src/env/index.ts
 var envSchema = import_zod.z.object({
   // Environment
   NODE_ENV: import_zod.z.enum(["development", "staging", "production", "test"]).default("development"),
@@ -65,6 +473,12 @@ var envSchema = import_zod.z.object({
   REDIS_PORT: import_zod.z.coerce.number().default(6379),
   REDIS_PASSWORD: import_zod.z.string().optional(),
   REDIS_LOG_OUTAGE_INTERVAL_MS: import_zod.z.coerce.number().int().positive().default((0, import_ms.default)("30s")),
+  // Metrics
+  METRICS_ENABLED: import_zod.z.enum(["true", "false"]).transform((v) => v === "true").default("true"),
+  METRICS_API_PORT: import_zod.z.coerce.number().default(9091),
+  METRICS_WORKER_PORT: import_zod.z.coerce.number().default(9092),
+  // Grafana (used in docker-compose.monitoring.yml)
+  GRAFANA_ADMIN_PASSWORD: import_zod.z.string().min(8),
   // App
   APP_NAME: import_zod.z.string().default("Backend Template Reborn"),
   APP_PORT: import_zod.z.coerce.number().default(3e3),
@@ -74,9 +488,27 @@ var envSchema = import_zod.z.object({
   // HTTP rate limits (test overrides supported via env)
   HTTP_RATE_LIMIT_GLOBAL_MAX: import_zod.z.coerce.number().int().positive().default(300),
   HTTP_RATE_LIMIT_GLOBAL_TIME_WINDOW: import_zod.z.string().default("1 minute"),
+  HTTP_RATE_LIMIT_AUTH_SESSION_MAX: import_zod.z.coerce.number().int().positive().default(15),
+  HTTP_RATE_LIMIT_AUTH_SESSION_TIME_WINDOW: import_zod.z.string().default("1 minute"),
+  HTTP_RATE_LIMIT_AUTH_REGISTER_MAX: import_zod.z.coerce.number().int().positive().default(5),
+  HTTP_RATE_LIMIT_AUTH_REGISTER_TIME_WINDOW: import_zod.z.string().default("1 minute"),
+  HTTP_RATE_LIMIT_AUTH_FORGOT_PASSWORD_MAX: import_zod.z.coerce.number().int().positive().default(5),
+  HTTP_RATE_LIMIT_AUTH_FORGOT_PASSWORD_TIME_WINDOW: import_zod.z.string().default("1 hour"),
+  HTTP_RATE_LIMIT_AUTH_RESET_PASSWORD_MAX: import_zod.z.coerce.number().int().positive().default(5),
+  HTTP_RATE_LIMIT_AUTH_RESET_PASSWORD_TIME_WINDOW: import_zod.z.string().default("1 hour"),
+  HTTP_RATE_LIMIT_USERS_LIST_MAX: import_zod.z.coerce.number().int().positive().default(20),
+  HTTP_RATE_LIMIT_USERS_LIST_TIME_WINDOW: import_zod.z.string().default("1 hour"),
+  HTTP_RATE_LIMIT_USERS_DELETE_MAX: import_zod.z.coerce.number().int().positive().default(10),
+  HTTP_RATE_LIMIT_USERS_DELETE_TIME_WINDOW: import_zod.z.string().default("1 hour"),
   HTTP_RATE_LIMIT_CHURCHES_NEAREST_MAX: import_zod.z.coerce.number().int().positive().default(3e4),
   HTTP_RATE_LIMIT_CHURCHES_NEAREST_TIME_WINDOW: import_zod.z.string().default("1 minute"),
+  HTTP_RATE_LIMIT_FORMS_SUBMIT_MAX: import_zod.z.coerce.number().int().positive().default(60),
+  HTTP_RATE_LIMIT_FORMS_SUBMIT_TIME_WINDOW: import_zod.z.string().default("1 minute"),
+  HTTP_RATE_LIMIT_HEALTH_CHECK_MAX: import_zod.z.coerce.number().int().positive().default(120),
+  HTTP_RATE_LIMIT_HEALTH_CHECK_TIME_WINDOW: import_zod.z.string().default("1 minute"),
   SENTRY_DSN: import_zod.z.string().optional(),
+  SENTRY_TRACES_SAMPLE_RATE: import_zod.z.coerce.number().min(0).max(1).default(0.2),
+  SENTRY_PROFILE_SAMPLE_RATE: import_zod.z.coerce.number().min(0).max(1).default(0.1),
   // SMTP
   SMTP_EMAIL: import_zod.z.email(),
   SMTP_PASSWORD: import_zod.z.string().min(1),
@@ -98,18 +530,70 @@ var envSchema = import_zod.z.object({
   LOCATION_IQ_API_TOKEN: import_zod.z.string().min(1),
   // Stadia API
   STADIA_MAPS_API_URL: import_zod.z.url().default("https://api.stadiamaps.com/route/v1"),
-  STADIA_API_TOKEN: import_zod.z.string().min(1, "STADIA_API_TOKEN is required")
+  STADIA_MAPS_MATRIX_API_URL: import_zod.z.url().default("https://api.stadiamaps.com/sources_to_targets"),
+  STADIA_API_TOKEN: import_zod.z.string().min(1, "STADIA_API_TOKEN is required"),
+  COOKIE_SECRET: import_zod.z.string().min(32, "Cookie secret must be at least 32 characters long").default("super-secret-cookie-signing-key-for-local-development-must-be-long")
 });
 var _env = envSchema.safeParse(process.env);
 if (!_env.success) {
-  console.error("Invalid environment variables:", import_zod.z.treeifyError(_env.error));
-  throw new Error("Invalid environment variables. Please check your .env file or environment configuration.");
+  console.error("Vari\xE1veis de ambiente inv\xE1lidas:", import_zod.z.treeifyError(_env.error));
+  throw new Error(ENV_CONSTANTS.INVALID_VARIABLES);
 }
 var env = _env.data;
 
+// src/lib/sentry/init.ts
+function initSentry() {
+  if (!env.SENTRY_DSN) {
+    return;
+  }
+  Sentry.init({
+    dsn: env.SENTRY_DSN,
+    environment: env.NODE_ENV,
+    integrations: [(0, import_profiling_node.nodeProfilingIntegration)()],
+    tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+    profileSessionSampleRate: env.SENTRY_PROFILE_SAMPLE_RATE,
+    profileLifecycle: "trace"
+  });
+}
+
+// src/lib/infra/jobs/outbox-cron.ts
+var import_node_cron = __toESM(require("node-cron"));
+
+// src/messages/constants/outbox/outbox.ts
+var OUTBOX_CONSTANTS = {
+  LOCK_KEYS: {
+    OUTBOX_PROCESSOR: "lock:outbox-processor",
+    OUTBOX_RECOVERY: "lock:outbox-recovery"
+  },
+  LOCK_TTL_MS: {
+    DEFAULT: 1e4
+  },
+  THRESHOLDS: {
+    /** Time in ms after which a SENDING event is considered stuck (e.g., after a crash) */
+    STUCK_SENDING_MS: 3e4,
+    /** Maximum number of pending events fetched per processing cycle */
+    PENDING_FETCH_LIMIT: 50
+  }
+};
+
+// src/messages/constants/queue/queue.ts
+var QUEUE = {
+  NAMES: {
+    MAIL: "mail-queue"
+  },
+  JOBS: {
+    OUTBOX_DISPATCH: "outbox-dispatch"
+  }
+};
+
 // src/lib/logger/index.ts
+var import_pino = __toESM(require("pino"));
+
+// src/lib/async-local-storage/index.ts
 var import_node_async_hooks = require("async_hooks");
 var asyncLocalStorage = new import_node_async_hooks.AsyncLocalStorage();
+
+// src/lib/logger/index.ts
 function getRequestId() {
   return asyncLocalStorage.getStore()?.requestId;
 }
@@ -148,6 +632,16 @@ var logger = isDev ? (0, import_pino.default)(loggerConfig) : (0, import_pino.de
 // src/lib/redis/connections/redis-bullMQ-connection.ts
 var import_ioredis = __toESM(require("ioredis"));
 
+// src/messages/constants/logs/redis.ts
+var REDIS_LOGS = {
+  BULLMQ_UNEXPECTED_ERROR: "Erro inesperado na conex\xE3o Redis do BullMQ",
+  CACHE_UNEXPECTED_ERROR: "Erro inesperado na conex\xE3o Redis do cache",
+  RATE_LIMITER_UNEXPECTED_ERROR: "Erro inesperado na conex\xE3o Redis do limitador de taxa",
+  CONNECTION_DEGRADED: "Conex\xE3o Redis degradada",
+  CONNECTION_STILL_DEGRADED: "Conex\xE3o Redis continua degradada",
+  CONNECTION_RECOVERED: "Conex\xE3o Redis restabelecida"
+};
+
 // src/lib/redis/connections/redis-outage-logger.ts
 var CONNECTIVITY_ERROR_CODES = /* @__PURE__ */ new Set([
   "ECONNREFUSED",
@@ -158,9 +652,9 @@ var CONNECTIVITY_ERROR_CODES = /* @__PURE__ */ new Set([
   "EAI_AGAIN"
 ]);
 function isRedisConnectivityError(error) {
-  const err = error ?? {};
-  const message = (err.message ?? "").toUpperCase();
-  const code = (err.code ?? "").toUpperCase();
+  const err2 = error ?? {};
+  const message = (err2.message ?? "").toUpperCase();
+  const code = (err2.code ?? "").toUpperCase();
   if (CONNECTIVITY_ERROR_CODES.has(code)) {
     return true;
   }
@@ -177,7 +671,7 @@ var RedisOutageLogger = class {
   suppressedEvents = 0;
   onOutage(event, error) {
     const now = Date.now();
-    const err = error ?? {};
+    const err2 = error ?? {};
     if (this.outageStartedAt === null) {
       this.outageStartedAt = now;
       this.lastWarnAt = now;
@@ -188,11 +682,11 @@ var RedisOutageLogger = class {
           redisHost: this.config.host,
           redisPort: this.config.port,
           event,
-          errorCode: err.code,
-          errorName: err.name,
-          errorMessage: err.message
+          errorCode: err2.code,
+          errorName: err2.name,
+          errorMessage: err2.message
         },
-        "Redis connection degraded"
+        REDIS_LOGS.CONNECTION_DEGRADED
       );
       return;
     }
@@ -203,13 +697,13 @@ var RedisOutageLogger = class {
           redisHost: this.config.host,
           redisPort: this.config.port,
           event,
-          errorCode: err.code,
-          errorName: err.name,
-          errorMessage: err.message,
+          errorCode: err2.code,
+          errorName: err2.name,
+          errorMessage: err2.message,
           outageDurationMs: now - this.outageStartedAt,
           suppressedEvents: this.suppressedEvents
         },
-        "Redis connection still degraded"
+        REDIS_LOGS.CONNECTION_STILL_DEGRADED
       );
       this.lastWarnAt = now;
       this.suppressedEvents = 0;
@@ -230,7 +724,7 @@ var RedisOutageLogger = class {
         outageDurationMs: now - this.outageStartedAt,
         suppressedEvents: this.suppressedEvents
       },
-      "Redis connection recovered"
+      REDIS_LOGS.CONNECTION_RECOVERED
     );
     this.outageStartedAt = null;
     this.lastWarnAt = 0;
@@ -279,7 +773,7 @@ function createRedisBullMQConnection() {
         stack: error?.stack,
         name: error?.name
       },
-      "Unexpected Redis BullMQ connection error"
+      REDIS_LOGS.BULLMQ_UNEXPECTED_ERROR
     );
   });
   redis.on("close", () => {
@@ -294,11 +788,11 @@ function attachRedisLogger(redis, context) {
     port: env.REDIS_PORT
   });
   redis.on("connect", () => {
-    logger.info(`\u{1F517} Redis (${context}) connection established`);
+    logger.info(`Conex\xE3o Redis (${context}) estabelecida`);
     outageLogger.onRecovery();
   });
   redis.on("ready", () => {
-    logger.info(`\u2705 Redis (${context}) is ready`);
+    logger.info(`Redis (${context}) pronto`);
     outageLogger.onRecovery();
   });
   redis.on("error", (error) => {
@@ -306,7 +800,7 @@ function attachRedisLogger(redis, context) {
       outageLogger.onOutage("error", error);
       return;
     }
-    logger.error({ context, err: error.message }, "\u274C Redis connection glitch");
+    logger.error({ context, err: error.message }, "Instabilidade na conex\xE3o Redis");
   });
   redis.on("close", () => {
     outageLogger.onOutage("close");
@@ -321,6 +815,7 @@ function createRedisCacheConnection() {
     port: env.REDIS_PORT,
     password: env.REDIS_PASSWORD || void 0,
     commandTimeout: 1e3,
+    connectTimeout: 2e3,
     enableOfflineQueue: true,
     maxRetriesPerRequest: 1,
     retryStrategy: (times) => {
@@ -353,7 +848,7 @@ function createRedisCacheConnection() {
         stack: error?.stack,
         name: error?.name
       },
-      "Unexpected Redis cache connection error"
+      REDIS_LOGS.CACHE_UNEXPECTED_ERROR
     );
   });
   redis.on("close", () => {
@@ -386,23 +881,48 @@ function createWorkerConnection() {
 
 // src/lib/queue/mail-queue.ts
 var import_bullmq = require("bullmq");
-var redisForQueue = getRedisForQueue();
-attachRedisLogger(redisForQueue, QUEUE_NAMES.MAIL);
-var mailQueue = new import_bullmq.Queue(QUEUE_NAMES.MAIL, {
-  connection: redisForQueue,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: "exponential",
-      delay: 1e4
-    },
-    removeOnComplete: true,
-    removeOnFail: true
+
+// src/messages/constants/logs/worker.ts
+var WORKER_LOGS = {
+  BATCH_ALREADY_SENT: "Lote j\xE1 enviado anteriormente. Limpando DB e abortando duplicata.",
+  BULLMQ_NETWORK_GLITCH: "Falha de rede interna do BullMQ ap\xF3s processamento. Ignorando.",
+  GENERIC_WORKER_FAILURE: "Falha gen\xE9rica n\xE3o mapeada no worker",
+  MAIL_QUEUE_ERROR: "Erro na MailQueue (Producer)"
+};
+
+// src/lib/queue/mail-queue.ts
+var mailQueueInstance = null;
+function getMailQueue() {
+  if (!mailQueueInstance) {
+    const redisForQueue = getRedisForQueue();
+    attachRedisLogger(redisForQueue, QUEUE.NAMES.MAIL);
+    mailQueueInstance = new import_bullmq.Queue(QUEUE.NAMES.MAIL, {
+      connection: redisForQueue,
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+          type: "exponential",
+          delay: 1e4
+        },
+        removeOnComplete: true,
+        removeOnFail: true
+      }
+    });
+    mailQueueInstance.on("error", (err2) => {
+      logger.error({ err: err2 }, WORKER_LOGS.MAIL_QUEUE_ERROR);
+    });
   }
-});
-mailQueue.on("error", (err) => {
-  logger.error({ err }, "\u274C Erro na MailQueue (Producer)");
-});
+  return mailQueueInstance;
+}
+
+// src/messages/constants/logs/distributed-lock.ts
+var LOCK_LOGS = {
+  ACQUIRE_FAILED: "Falha ao tentar adquirir Distributed Lock",
+  RENEW_FAILED: "Falha ao tentar renovar Distributed Lock",
+  RENEW_EXPIRED: "Distributed Lock n\xE3o renovado: expirou ou pertence a outra inst\xE2ncia",
+  RELEASE_EXPIRED: "Distributed Lock j\xE1 havia expirado ou pertencia a outra inst\xE2ncia no momento do release",
+  RELEASE_FAILED: "Falha ao liberar Distributed Lock (ele expirar\xE1 sozinho pelo TTL)"
+};
 
 // src/lib/infra/distributed-lock/distributed-lock.ts
 var import_node_crypto = require("crypto");
@@ -443,7 +963,7 @@ var DistributedLock = class {
       }
       return token;
     } catch (error) {
-      logger.error({ error, key }, "Falha ao tentar adquirir Distributed Lock");
+      logger.error({ error, key }, LOCK_LOGS.ACQUIRE_FAILED);
       return null;
     }
   }
@@ -467,11 +987,11 @@ var DistributedLock = class {
       const result = await redisCache.eval(RENEW_SCRIPT, 1, key, token, String(ttlMs));
       const renewed = result === 1;
       if (!renewed) {
-        logger.warn({ key }, "Distributed Lock n\xE3o renovado: expirou ou pertence a outra inst\xE2ncia");
+        logger.warn({ key }, LOCK_LOGS.RENEW_EXPIRED);
       }
       return renewed;
     } catch (error) {
-      logger.error({ error, key }, "Falha ao tentar renovar Distributed Lock");
+      logger.error({ error, key }, LOCK_LOGS.RENEW_FAILED);
       return false;
     }
   }
@@ -490,10 +1010,10 @@ var DistributedLock = class {
     try {
       const result = await redisCache.eval(RELEASE_SCRIPT, 1, key, token);
       if (result === 0) {
-        logger.warn({ key }, "Distributed Lock j\xE1 havia expirado ou pertencia a outra inst\xE2ncia no momento do release");
+        logger.warn({ key }, LOCK_LOGS.RELEASE_EXPIRED);
       }
     } catch (error) {
-      logger.warn({ error, key }, "Falha ao liberar Distributed Lock (ele expirar\xE1 sozinho pelo TTL)");
+      logger.warn({ error, key }, LOCK_LOGS.RELEASE_FAILED);
     }
   }
 };
@@ -555,14 +1075,17 @@ function contactStaffSubjectTextTemplate() {
 }
 
 // src/templates/contact-staff/contact-staff-text.ts
-function contactStaffTextTemplate(name, email) {
+function contactStaffTextTemplate(name, email, ipAddress) {
+  const ipSection = ipAddress ? `
+IP de origem: ${ipAddress}` : "";
   return `
-            ${name} <${email}> enviou um formul\xE1rio.
+            ${name} <${email}> enviou um formul\xE1rio.${ipSection}
         `;
 }
 
 // src/templates/contact-staff/contact-staff-html.ts
-function contactStaffHtmlTemplate(name, lastName, email) {
+function contactStaffHtmlTemplate(name, lastName, email, ipAddress) {
+  const ipRow = ipAddress ? `<p><strong>IP de origem:</strong> ${ipAddress}</p>` : "";
   return `
             <div>
                 <table style="font-family: arial">
@@ -580,6 +1103,7 @@ function contactStaffHtmlTemplate(name, lastName, email) {
                         <td align="center" style="padding: 10px; font-size: 20px;">
                             <p><strong>Nome:</strong> ${name} ${lastName}</p>
                             <p><strong>Email:</strong> ${email}</p>
+                            ${ipRow}
                         </td>
                     </tr>
                 </table>
@@ -587,42 +1111,119 @@ function contactStaffHtmlTemplate(name, lastName, email) {
         `;
 }
 
+// src/core/shared/result.ts
+var ok = (value) => ({
+  success: true,
+  value
+});
+var err = (error) => ({
+  success: false,
+  error
+});
+function isErr(result) {
+  return !result.success;
+}
+
+// src/errors/app-error.ts
+var AppError = class extends Error {
+  type;
+  body;
+  /**
+   * Machine-readable routing hint used by resilient fallback chains and cache
+   * managers.  Subclasses that participate in fallback/caching declare their
+   * own failure mode once; callers never need `instanceof` to branch on it.
+   */
+  failureMode;
+  /**
+   * @param detail       – the error descriptor (code + message + optional extras)
+   * @param type         – the HTTP-level error type
+   * @param failureMode  – optional routing failure mode (RETRYABLE | NOT_FOUND)
+   */
+  constructor(detail, type, failureMode) {
+    super(detail.message);
+    this.name = this.constructor.name;
+    this.type = type;
+    this.failureMode = failureMode;
+    this.body = {
+      code: detail.code,
+      message: detail.message,
+      ...detail.issues && { issues: detail.issues }
+    };
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor);
+    }
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+};
+
+// src/errors/domain-error.ts
+var DomainError = class extends AppError {
+  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
+  constructor(detail, type, failureMode) {
+    super(detail, type, failureMode);
+  }
+};
+
+// src/messages/errors/forms.ts
+var INVALID_FORM_PAYLOAD_ERROR_FN = (fieldName) => ({
+  code: "INVALID_FORM_PAYLOAD",
+  message: fieldName ? `Payload do formul\xE1rio inv\xE1lido: campo '${fieldName}' possui valor inesperado.` : "Payload do formul\xE1rio inv\xE1lido: um ou mais campos possuem valores inesperados."
+});
+
+// src/use-cases/errors/forms/invalid-form-payload-error.ts
+var InvalidFormPayloadError = class extends DomainError {
+  constructor(fieldName) {
+    super(INVALID_FORM_PAYLOAD_ERROR_FN(fieldName), "BAD_REQUEST" /* BAD_REQUEST */);
+  }
+};
+
 // src/use-cases/forms/strategies/contact-email-strategy.ts
 var ContactEmailStrategy = class {
   buildUserEmail(form) {
-    const email = this.getStringField(form.email, "form.email");
-    const name = this.getStringField(form.name, "form.name");
-    return {
+    const emailResult = this.getStringField(form.email, "form.email");
+    if (isErr(emailResult)) return emailResult;
+    const nameResult = this.getStringField(form.name, "form.name");
+    if (isErr(nameResult)) return nameResult;
+    const email = emailResult.value;
+    const name = nameResult.value;
+    return ok({
       to: email,
       subject: contactUserSubjectTextTemplate(name),
       message: contactUserTextTemplate(name),
       html: contactUserHtmlTemplate(name),
       context: { type: "contact", recipient: "user" }
-    };
+    });
   }
   buildStaffEmail(form) {
-    const email = this.getStringField(form.email, "form.email");
-    const name = this.getStringField(form.name, "form.name");
-    const lastName = this.getOptionalStringField(form.lastName, "form.lastName");
-    return {
+    const emailResult = this.getStringField(form.email, "form.email");
+    if (isErr(emailResult)) return emailResult;
+    const nameResult = this.getStringField(form.name, "form.name");
+    if (isErr(nameResult)) return nameResult;
+    const lastNameResult = this.getOptionalStringField(form.lastName, "form.lastName");
+    if (isErr(lastNameResult)) return lastNameResult;
+    const email = emailResult.value;
+    const name = nameResult.value;
+    const lastName = lastNameResult.value;
+    const ipAddress = typeof form.ipAddress === "string" ? form.ipAddress : void 0;
+    return ok({
       to: env.ADMIN_EMAIL,
       subject: contactStaffSubjectTextTemplate(),
-      message: contactStaffTextTemplate(name, email),
-      html: contactStaffHtmlTemplate(name, lastName, email),
+      message: contactStaffTextTemplate(name, email, ipAddress),
+      html: contactStaffHtmlTemplate(name, lastName, email, ipAddress),
       context: { type: "contact", recipient: "internal" }
-    };
+    });
   }
   getStringField(value, fieldName) {
     if (typeof value === "string") {
-      return value;
+      return ok(value);
     }
-    throw new Error(`Invalid value for ${fieldName}: expected a string.`);
+    return err(new InvalidFormPayloadError(fieldName));
   }
   getOptionalStringField(value, fieldName) {
     if (value === void 0 || typeof value === "string") {
-      return value || "";
+      return ok(value || "");
     }
-    throw new Error(`Invalid value for ${fieldName}: expected a string or undefined.`);
+    return err(new InvalidFormPayloadError(fieldName));
   }
 };
 
@@ -664,14 +1265,20 @@ function decisionForChristStaffSubjectText() {
 }
 
 // src/templates/decision-for-christ-staff/decision-for-christ-staff-text.ts
-function decisionForChristStaffTextTemplate(name, email) {
+function decisionForChristStaffTextTemplate(name, email, ipAddress) {
+  const ipSection = ipAddress ? `
+IP de origem: ${ipAddress}` : "";
   return `
-            ${name} <${email}> aceitou a Cristo.
+            ${name} <${email}> aceitou a Cristo.${ipSection}
         `;
 }
 
 // src/templates/decision-for-christ-staff/decision-for-christ-staff-html.ts
-function decisionForChristStaffHtmlTemplate(name, lastName, email, location) {
+function decisionForChristStaffHtmlTemplate(name, lastName, email, location, ipAddress) {
+  const ipSection = ipAddress ? `
+                <li>
+                    IP de origem: ${ipAddress}
+                </li>` : "";
   return `
             <p>
                 Nova decis\xE3o por Cristo:
@@ -686,6 +1293,7 @@ function decisionForChristStaffHtmlTemplate(name, lastName, email, location) {
                 <li>
                     Local: ${location ?? "n\xE3o informado"}
                 </li>
+                ${ipSection}
             </ul>
         `;
 }
@@ -693,49 +1301,87 @@ function decisionForChristStaffHtmlTemplate(name, lastName, email, location) {
 // src/use-cases/forms/strategies/decision-for-christ-email-strategy.ts
 var DecisionForChristEmailStrategy = class {
   buildUserEmail(form) {
-    const email = this.getStringField(form.email, "form.email");
-    const name = this.getStringField(form.name, "form.name");
-    return {
+    const emailResult = this.getStringField(form.email, "form.email");
+    if (isErr(emailResult)) return emailResult;
+    const nameResult = this.getStringField(form.name, "form.name");
+    if (isErr(nameResult)) return nameResult;
+    const email = emailResult.value;
+    const name = nameResult.value;
+    return ok({
       to: email,
       subject: decisionForChristUserSubjectText(),
       message: decisionForChristUserTextTemplate(name),
       html: decisionForChristUserHtmlTemplate(name),
       context: { type: "decision-for-Christ", recipient: "user" }
-    };
+    });
   }
   buildStaffEmail(form) {
-    const email = this.getStringField(form.email, "form.email");
-    const name = this.getStringField(form.name, "form.name");
-    const lastName = this.getStringField(form.lastName, "form.lastName");
-    const location = this.getOptionalStringField(form.location, "form.location");
-    return {
+    const emailResult = this.getStringField(form.email, "form.email");
+    if (isErr(emailResult)) return emailResult;
+    const nameResult = this.getStringField(form.name, "form.name");
+    if (isErr(nameResult)) return nameResult;
+    const lastNameResult = this.getStringField(form.lastName, "form.lastName");
+    if (isErr(lastNameResult)) return lastNameResult;
+    const locationResult = this.getOptionalStringField(form.location, "form.location");
+    if (isErr(locationResult)) return locationResult;
+    const email = emailResult.value;
+    const name = nameResult.value;
+    const lastName = lastNameResult.value;
+    const location = locationResult.value;
+    const ipAddress = typeof form.ipAddress === "string" ? form.ipAddress : void 0;
+    return ok({
       to: env.ADMIN_EMAIL,
       subject: decisionForChristStaffSubjectText(),
-      message: decisionForChristStaffTextTemplate(name, email),
-      html: decisionForChristStaffHtmlTemplate(name, lastName, email, location),
+      message: decisionForChristStaffTextTemplate(name, email, ipAddress),
+      html: decisionForChristStaffHtmlTemplate(name, lastName, email, location, ipAddress),
       context: { type: "decision-for-Christ", recipient: "internal" }
-    };
+    });
   }
   getStringField(value, fieldName) {
     if (typeof value === "string") {
-      return value;
+      return ok(value);
     }
-    throw new Error(`Invalid value for ${fieldName}: expected a string.`);
+    return err(new InvalidFormPayloadError(fieldName));
   }
   getOptionalStringField(value, fieldName) {
     if (value === void 0 || typeof value === "string") {
-      return value || "";
+      return ok(value || "");
     }
-    throw new Error(`Invalid value for ${fieldName}: expected a string or undefined.`);
+    return err(new InvalidFormPayloadError(fieldName));
   }
 };
 
-// src/core/constants/outbox/outbox-thresholds.ts
-var OUTBOX_THRESHOLDS = {
-  /** Time in ms after which a SENDING event is considered stuck (e.g., after a crash) */
-  STUCK_SENDING_MS: 3e4,
-  /** Maximum number of pending events fetched per processing cycle */
-  PENDING_FETCH_LIMIT: 50
+// src/messages/constants/logs/outbox.ts
+var OUTBOX_LOGS = {
+  // outbox-signal
+  SIGNAL_PUBLISH_FAILED: "N\xE3o foi poss\xEDvel publicar sinal de envio da nova outbox. O cron job continuar\xE1 funcionando como fallback.",
+  SIGNAL_PROCESSING_ERROR: "Erro ao processar sinal de envio do Outbox",
+  UNEXPECTED_CHANNEL: "Mensagem recebida em canal inesperado. Ignorando.",
+  LISTENER_REMOVED: "Listener anterior de OutboxSignal removido com sucesso",
+  SUBSCRIBE_ERROR: "Erro ao se inscrever no canal de OutboxSignal",
+  PUBLISHER_CONNECTED: "Redis publisher conectado ao outbox-signal",
+  PUBLISHER_ERROR: "Erro no publicador Redis do outbox-signal",
+  PUBLISHER_CLOSED: "Conex\xE3o do publicador Redis fechada para outbox-signal",
+  SUBSCRIBER_CONNECTED: "Redis subscriber conectado para outbox-signal",
+  SUBSCRIBER_ERROR: "Erro no assinante Redis do outbox-signal",
+  SUBSCRIBER_CLOSED: "Conex\xE3o do assinante Redis fechada para outbox-signal",
+  // outbox-cron
+  CRON_START: "Cron de meia-noite: iniciando varredura de seguran\xE7a da Outbox...",
+  PHASE1_DONE: "Fase 1 (recupera\xE7\xE3o SENDING): conclu\xEDda.",
+  PHASE1_ERROR: "Fase 1 (recupera\xE7\xE3o SENDING): erro inesperado.",
+  PHASE2_DONE: "Fase 2 (eventos PENDING): conclu\xEDda.",
+  PHASE2_ERROR: "Fase 2 (eventos PENDING): erro inesperado.",
+  SCAN_DONE: "Varredura de seguran\xE7a da Outbox conclu\xEDda.",
+  SCHEDULER_CONFIGURED: "Agendador da Outbox configurado para 00:00 diariamente.",
+  // outbox-processor
+  SKIPPED_ANOTHER_RUNNING: "processEvents: Processamento ignorado. Outra inst\xE2ncia j\xE1 est\xE1 rodando.",
+  PENDING_FETCH_ERROR: "Erro de Infra ao buscar eventos pendentes.",
+  STUCK_FETCH_ERROR: "Erro de Infra ao buscar eventos travados na Outbox.",
+  STATUS_UPDATE_FAILED: "Falha ao atualizar status para SENDING. Evento permanece em PENDING.",
+  REVERT_FATAL: "FATAL: Falha ao reverter status para PENDING. Inconsist\xEAncia na DB.",
+  DISPATCH_REVERTED: "Falha no dispatch, revertido para PENDING",
+  CRITICAL_LOOP_ERROR: "Erro cr\xEDtico inesperado no loop principal de processEvents",
+  CRITICAL_RECOVERY_ERROR: "Erro cr\xEDtico inesperado no recoverStuckSendingEvents"
 };
 
 // src/lib/infra/jobs/outbox-processor.ts
@@ -743,19 +1389,19 @@ var OutboxProcessor = class {
   constructor(outboxRepository) {
     this.outboxRepository = outboxRepository;
   }
-  LOCK_KEY = LOCK_KEYS.OUTBOX_PROCESSOR;
-  LOCK_TTL_MS = LOCK_TTL_MS.DEFAULT;
+  LOCK_KEY = OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_PROCESSOR;
+  LOCK_TTL_MS = OUTBOX_CONSTANTS.LOCK_TTL_MS.DEFAULT;
   async processEvents() {
     let lockToken = null;
     try {
       lockToken = await DistributedLock.acquire(this.LOCK_KEY, this.LOCK_TTL_MS);
       if (!lockToken) {
-        logger.warn("processEvents: Processamento ignorado. Outra inst\xE2ncia j\xE1 est\xE1 rodando.");
+        logger.warn(OUTBOX_LOGS.SKIPPED_ANOTHER_RUNNING);
         return;
       }
-      const pendingEventsResult = await this.outboxRepository.findPending(OUTBOX_THRESHOLDS.PENDING_FETCH_LIMIT);
-      if (pendingEventsResult.success === false) {
-        logger.error({ error: pendingEventsResult.error }, "\u274C Erro de Infra ao buscar eventos pendentes.");
+      const pendingEventsResult = await this.outboxRepository.findPending(OUTBOX_CONSTANTS.THRESHOLDS.PENDING_FETCH_LIMIT);
+      if (isErr(pendingEventsResult)) {
+        logger.error({ error: pendingEventsResult.error }, OUTBOX_LOGS.PENDING_FETCH_ERROR);
         return;
       }
       const pendingEvents = pendingEventsResult.value;
@@ -766,7 +1412,7 @@ var OutboxProcessor = class {
         await this.processSingleEvent(event);
       }
     } catch (error) {
-      logger.error({ error }, "\u274C Erro cr\xEDtico inesperado no loop principal de processEvents");
+      logger.error({ error }, OUTBOX_LOGS.CRITICAL_LOOP_ERROR);
     } finally {
       if (lockToken) {
         await DistributedLock.release(this.LOCK_KEY, lockToken);
@@ -776,72 +1422,68 @@ var OutboxProcessor = class {
   async recoverStuckSendingEvents() {
     let lockToken = null;
     try {
-      lockToken = await DistributedLock.acquire(LOCK_KEYS.OUTBOX_RECOVERY, this.LOCK_TTL_MS);
+      lockToken = await DistributedLock.acquire(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, this.LOCK_TTL_MS);
       if (!lockToken) return;
-      const thresholdDate = new Date(Date.now() - OUTBOX_THRESHOLDS.STUCK_SENDING_MS);
+      const thresholdDate = new Date(Date.now() - OUTBOX_CONSTANTS.THRESHOLDS.STUCK_SENDING_MS);
       const stuckEventsResult = await this.outboxRepository.findStuck(thresholdDate);
-      if (stuckEventsResult.success === false) {
-        logger.error({ error: stuckEventsResult.error }, "\u274C Erro de Infra ao buscar eventos travados na Outbox.");
+      if (isErr(stuckEventsResult)) {
+        logger.error({ error: stuckEventsResult.error }, OUTBOX_LOGS.STUCK_FETCH_ERROR);
         return;
       }
       const stuckEvents = stuckEventsResult.value;
       if (stuckEvents.length > 0) {
-        logger.warn(`\u267B\uFE0F Encontrados ${stuckEvents.length} eventos travados em SENDING. Iniciando recupera\xE7\xE3o...`);
+        logger.warn(`Encontrados ${stuckEvents.length} eventos travados em SENDING. Iniciando recupera\xE7\xE3o...`);
         for (const event of stuckEvents) {
-          await DistributedLock.renew(LOCK_KEYS.OUTBOX_RECOVERY, lockToken, this.LOCK_TTL_MS);
+          await DistributedLock.renew(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, lockToken, this.LOCK_TTL_MS);
           await this.processSingleEvent(event);
         }
       }
     } catch (error) {
-      logger.error({ error }, "\u274C Erro cr\xEDtico inesperado no recoverStuckSendingEvents");
+      logger.error({ error }, OUTBOX_LOGS.CRITICAL_RECOVERY_ERROR);
     } finally {
       if (lockToken) {
-        await DistributedLock.release(LOCK_KEYS.OUTBOX_RECOVERY, lockToken);
+        await DistributedLock.release(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, lockToken);
       }
     }
   }
   async processSingleEvent(event) {
+    const updateResult = await this.outboxRepository.updateStatus(event.publicId, "SENDING" /* SENDING */);
+    if (isErr(updateResult)) {
+      logger.error({ publicId: event.publicId, error: updateResult.error }, OUTBOX_LOGS.STATUS_UPDATE_FAILED);
+      return;
+    }
     try {
-      const updateResult = await this.outboxRepository.updateStatus(event.publicId, "SENDING" /* SENDING */);
-      if (updateResult.success === false) throw updateResult.error;
       await this.dispatchToBullMQ(event);
     } catch (error) {
       const revertResult = await this.outboxRepository.updateStatus(event.publicId, "PENDING" /* PENDING */);
-      if (revertResult.success === false) {
-        logger.error(
-          { publicId: event.publicId, error: revertResult.error },
-          "\u{1F6A8} FATAL: Falha ao reverter status para PENDING. Inconsist\xEAncia na DB."
-        );
+      if (isErr(revertResult)) {
+        logger.error({ publicId: event.publicId, error: revertResult.error }, OUTBOX_LOGS.REVERT_FATAL);
       } else {
-        logger.error({ publicId: event.publicId, error }, "\u274C Falha no dispatch, revertido para PENDING");
+        logger.error({ publicId: event.publicId, error }, OUTBOX_LOGS.DISPATCH_REVERTED);
       }
     }
   }
   async dispatchToBullMQ(event) {
     const payload = event.payload;
     const strategy = payload.decisaoPorCristo ? new DecisionForChristEmailStrategy() : new ContactEmailStrategy();
-    const userJob = strategy.buildUserEmail(payload);
-    const staffJob = strategy.buildStaffEmail(payload);
-    await mailQueue.add(
-      JOB_NAMES.OUTBOX_DISPATCH,
+    const userJobResult = strategy.buildUserEmail(payload);
+    if (isErr(userJobResult)) {
+      throw userJobResult.error;
+    }
+    const staffJobResult = strategy.buildStaffEmail(payload);
+    if (isErr(staffJobResult)) {
+      throw staffJobResult.error;
+    }
+    await getMailQueue().add(
+      QUEUE.JOBS.OUTBOX_DISPATCH,
       {
         publicId: event.publicId,
-        emails: [userJob, staffJob]
+        emails: [userJobResult.value, staffJobResult.value]
       },
       { jobId: event.publicId }
     );
   }
 };
-
-// src/core/shared/result.ts
-var ok = (value) => ({
-  success: true,
-  value
-});
-var errOf = (error) => ({
-  success: false,
-  error
-});
 
 // src/repositories/prisma/prisma-outbox-event-repository.ts
 var PrismaOutboxRepository = class {
@@ -861,7 +1503,7 @@ var PrismaOutboxRepository = class {
       });
       return ok(this.toEntity(outboxEvent));
     } catch (error) {
-      return errOf(this.httpErrorMapper.mapToKnownError(error));
+      return err(this.httpErrorMapper.mapToKnownError(error));
     }
   }
   async findPending(limit) {
@@ -873,7 +1515,7 @@ var PrismaOutboxRepository = class {
       });
       return ok(events.map((e) => this.toEntity(e)));
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error));
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async findStuck(stuckBefore) {
@@ -887,7 +1529,7 @@ var PrismaOutboxRepository = class {
       });
       return ok(events.map((e) => this.toEntity(e)));
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error));
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async findByPublicId(publicId) {
@@ -897,7 +1539,7 @@ var PrismaOutboxRepository = class {
       });
       return ok(event ? this.toEntity(event) : null);
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error));
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async updateStatus(publicId, status) {
@@ -911,7 +1553,7 @@ var PrismaOutboxRepository = class {
       });
       return ok(void 0);
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error));
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async delete(publicId) {
@@ -921,7 +1563,7 @@ var PrismaOutboxRepository = class {
       });
       return ok(void 0);
     } catch (error) {
-      return errOf(this.infraErrorMapper.mapToKnownError(error));
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   // ─── Mapper ──────────────────────────────────────────────────────────────────
@@ -941,38 +1583,6 @@ var PrismaOutboxRepository = class {
 // src/lib/prisma/utils/prisma-error-mapper.ts
 var import_client = require("@prisma/client");
 
-// src/errors/app-error.ts
-var AppError = class extends Error {
-  type;
-  body;
-  /**
-   * Machine-readable routing hint used by resilient fallback chains and cache
-   * managers.  Subclasses that participate in fallback/caching declare their
-   * own failure mode once; callers never need `instanceof` to branch on it.
-   */
-  failureMode;
-  /**
-   * @param detail       – the error descriptor (code + message + optional extras)
-   * @param type         – the HTTP-level error type
-   * @param failureMode  – optional routing failure mode (RETRYABLE | NOT_FOUND)
-   */
-  constructor(detail, type, failureMode) {
-    super(detail.message);
-    this.name = this.constructor.name;
-    this.type = type;
-    this.failureMode = failureMode;
-    this.body = {
-      code: detail.code,
-      message: detail.message,
-      ...detail.issues && { issues: detail.issues }
-    };
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
-    Object.setPrototypeOf(this, new.target.prototype);
-  }
-};
-
 // src/errors/infrastructure-error.ts
 var InfrastructureError = class extends AppError {
   originalError;
@@ -980,21 +1590,35 @@ var InfrastructureError = class extends AppError {
     super(detail, type, failureMode);
     this.originalError = originalError;
     if (originalError) {
-      this.body.originalError = originalError instanceof Error ? originalError.stack || originalError.message : originalError;
+      this.cause = originalError;
     }
   }
 };
 
-// src/messages/errors/providers/providers-error-messages.ts
-var DATABASE_QUERY_FAILURE_ERROR = {
-  code: "DATABASE_QUERY_FAILURE",
-  message: "Falha de sistema ao processar consulta no banco de dados."
+// src/messages/errors/infrastructure.ts
+var INFRA_ERRORS = {
+  SERVICE_BUSY: {
+    code: "SERVICE_BUSY",
+    message: "Servi\xE7o temporariamente indispon\xEDvel devido ao limite de requisi\xE7\xF5es."
+  },
+  PROVIDER_FAILURE: {
+    code: "PROVIDER_FAILURE",
+    message: "Falha de sistema ao processar dados no provedor de servi\xE7os externos."
+  },
+  DATABASE_QUERY_FAILURE: {
+    code: "DATABASE_QUERY_FAILURE",
+    message: "Falha de sistema ao processar consulta no banco de dados."
+  },
+  SERVICE_OVERLOAD: {
+    code: "SERVICE_OVERLOAD",
+    message: "N\xFAmero de requisi\xE7\xF5es simult\xE2neas excedeu o limite de maxPendingFetches na mem\xF3ria cache do Redis."
+  }
 };
 
 // src/errors/infrastructure/database-query-error.ts
 var DatabaseQueryError = class extends InfrastructureError {
   constructor(originalError) {
-    super(DATABASE_QUERY_FAILURE_ERROR, originalError, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+    super(INFRA_ERRORS.DATABASE_QUERY_FAILURE, originalError, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
     this.name = "DatabaseQueryError";
   }
 };
@@ -1019,14 +1643,16 @@ var PrismaErrorMapper = class {
   }
 };
 
-// src/messages/errors/use-cases/outbox-events/outbox-error-messages.ts
-var OUTBOX_EVENT_NOT_FOUND_ERROR = {
-  code: "OUTBOX_EVENT_NOT_FOUND",
-  message: "O evento de outbox solicitado n\xE3o foi encontrado no banco de dados."
-};
-var OUTBOX_OPERATION_FAILED_ERROR = {
-  code: "OUTBOX_OPERATION_FAILED",
-  message: "Falha ao processar opera\xE7\xE3o da outbox no banco de dados."
+// src/messages/errors/outbox.ts
+var OUTBOX_ERRORS = {
+  EVENT_NOT_FOUND: {
+    code: "OUTBOX_EVENT_NOT_FOUND",
+    message: "O evento de outbox solicitado n\xE3o foi encontrado no banco de dados."
+  },
+  OPERATION_FAILED: {
+    code: "OUTBOX_OPERATION_FAILED",
+    message: "Falha ao processar opera\xE7\xE3o da outbox no banco de dados."
+  }
 };
 
 // src/errors/system-error.ts
@@ -1037,33 +1663,25 @@ var SystemError = class extends AppError {
   }
 };
 
-// src/errors/domain-error.ts
-var DomainError = class extends AppError {
-  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
-  constructor(detail, type, failureMode) {
-    super(detail, type, failureMode);
-  }
-};
-
 // src/use-cases/errors/outbox/outbox-errors.ts
 var OutboxEventNotFoundHttpError = class extends DomainError {
   constructor() {
-    super(OUTBOX_EVENT_NOT_FOUND_ERROR, "NOT_FOUND" /* NOT_FOUND */);
+    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
   }
 };
 var OutboxOperationFailedHttpError = class extends SystemError {
   constructor() {
-    super(OUTBOX_OPERATION_FAILED_ERROR, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+    super(OUTBOX_ERRORS.OPERATION_FAILED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
   }
 };
 var OutboxEventNotFoundInfraError = class extends InfrastructureError {
   constructor(originalError) {
-    super(OUTBOX_EVENT_NOT_FOUND_ERROR, originalError);
+    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, originalError);
   }
 };
 var OutboxOperationFailedInfraError = class extends InfrastructureError {
   constructor(originalError) {
-    super(OUTBOX_OPERATION_FAILED_ERROR, originalError);
+    super(OUTBOX_ERRORS.OPERATION_FAILED, originalError);
   }
 };
 
@@ -1077,20 +1695,18 @@ var outboxInfraPrismaErrorMapping = {
   P2003: (error) => new OutboxOperationFailedInfraError(error)
 };
 
-// src/lib/async-local-storage/index.ts
-var import_node_async_hooks2 = require("async_hooks");
-var asyncLocalStorage2 = new import_node_async_hooks2.AsyncLocalStorage();
-
-// src/messages/errors/system/async-local-storage.ts
-var ASYNC_LOCAL_STORAGE_NOT_INITIALIZED_ERROR = {
-  message: "Async Local Storage is not initialized.",
-  code: "ASYNC_LOCAL_STORAGE_NOT_INITIALIZED"
+// src/messages/errors/system.ts
+var SYSTEM_ERRORS = {
+  ASYNC_LOCAL_STORAGE_NOT_INITIALIZED: {
+    code: "ASYNC_LOCAL_STORAGE_NOT_INITIALIZED",
+    message: "Async Local Storage is not initialized."
+  }
 };
 
 // src/lib/errors/async-local-storage/async-local-storage-not-initialized-error.ts
 var AsyncLocalStorageNotInitializedError = class extends SystemError {
   constructor() {
-    super(ASYNC_LOCAL_STORAGE_NOT_INITIALIZED_ERROR, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+    super(SYSTEM_ERRORS.ASYNC_LOCAL_STORAGE_NOT_INITIALIZED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
   }
 };
 
@@ -1121,7 +1737,7 @@ var DatabaseContext = class {
     this.prisma = prisma2;
   }
   get client() {
-    const prismaTx = asyncLocalStorage2.getStore()?.prismaTransaction;
+    const prismaTx = asyncLocalStorage.getStore()?.prismaTransaction;
     return prismaTx ?? this.prisma;
   }
   /**
@@ -1150,7 +1766,7 @@ var DatabaseContext = class {
    * - The transaction will automatically rollback if the callback throws an error
    */
   async runInTransaction(callback, options) {
-    const store = asyncLocalStorage2.getStore();
+    const store = asyncLocalStorage.getStore();
     if (!store) {
       throw new AsyncLocalStorageNotInitializedError();
     }
@@ -1158,7 +1774,7 @@ var DatabaseContext = class {
       return await callback();
     }
     return await this.prisma.$transaction(async (tx) => {
-      return await asyncLocalStorage2.run(
+      return await asyncLocalStorage.run(
         {
           ...store,
           prismaTransaction: tx
@@ -1169,7 +1785,7 @@ var DatabaseContext = class {
   }
 };
 
-// src/core/constants/cron/cron.ts
+// src/messages/constants/cron/cron.ts
 var CRON_SCHEDULES = {
   /** Every day at midnight (00:00:00) */
   MIDNIGHT_DAILY: "0 0 0 * * *"
@@ -1178,23 +1794,23 @@ var CRON_SCHEDULES = {
 // src/lib/infra/jobs/outbox-cron.ts
 function startOutboxCron(existingProcessor) {
   import_node_cron.default.schedule(CRON_SCHEDULES.MIDNIGHT_DAILY, async () => {
-    logger.info("\u23F0 Cron de meia-noite: iniciando varredura de seguran\xE7a da Outbox...");
+    logger.info(OUTBOX_LOGS.CRON_START);
     const processor = existingProcessor ?? buildProcessor();
     try {
       await processor.recoverStuckSendingEvents();
-      logger.info("\u2705 Fase 1 (recupera\xE7\xE3o SENDING): conclu\xEDda.");
+      logger.info(OUTBOX_LOGS.PHASE1_DONE);
     } catch (error) {
-      logger.error({ error }, "\u274C Fase 1 (recupera\xE7\xE3o SENDING): erro inesperado.");
+      logger.error({ error }, OUTBOX_LOGS.PHASE1_ERROR);
     }
     try {
       await processor.processEvents();
-      logger.info("\u2705 Fase 2 (eventos PENDING): conclu\xEDda.");
+      logger.info(OUTBOX_LOGS.PHASE2_DONE);
     } catch (error) {
-      logger.error({ error }, "\u274C Fase 2 (eventos PENDING): erro inesperado.");
+      logger.error({ error }, OUTBOX_LOGS.PHASE2_ERROR);
     }
-    logger.info("\u2705 Varredura de seguran\xE7a da Outbox conclu\xEDda.");
+    logger.info(OUTBOX_LOGS.SCAN_DONE);
   });
-  logger.info("\u{1F5D3}\uFE0F Agendador da Outbox configurado para 00:00 diariamente.");
+  logger.info(OUTBOX_LOGS.SCHEDULER_CONFIGURED);
 }
 function buildProcessor() {
   const dbContext = new DatabaseContext();
@@ -1254,10 +1870,40 @@ async function sendEmail({
   return info;
 }
 
+// src/messages/errors/queue.ts
+var QUEUE_ERRORS = {
+  JOB_ALREADY_PROCESSING: {
+    code: "JOB_ALREADY_PROCESSING",
+    message: "Bloqueio de Idempot\xEAncia: Job em processamento simult\xE2neo por outra thread."
+  },
+  SMTP_DISPATCH_FAILED: {
+    code: "SMTP_DISPATCH_FAILED",
+    message: "Falha cr\xEDtica ao despachar os e-mails via servidor SMTP."
+  }
+};
+
+// src/lib/errors/queue/smtp-dispatch-error.ts
+var SmtpDispatchError = class extends InfrastructureError {
+  constructor(originalError) {
+    super(QUEUE_ERRORS.SMTP_DISPATCH_FAILED, originalError);
+  }
+};
+
 // src/use-cases/email/send-email.ts
 var SendEmailUseCase = class {
-  async execute({ to, subject, message, html, attachments }) {
-    return await sendEmail({ to, subject, message, html, attachments });
+  async execute({
+    to,
+    subject,
+    message,
+    html,
+    attachments
+  }) {
+    try {
+      const info = await sendEmail({ to, subject, message, html, attachments });
+      return ok(info);
+    } catch (error) {
+      return err(new SmtpDispatchError(error));
+    }
   }
 };
 
@@ -1266,45 +1912,40 @@ function makeSendEmailUseCase() {
   return new SendEmailUseCase();
 }
 
-// src/messages/errors/system/queue.ts
-var JOB_ALREADY_PROCESSING_ERROR = {
-  message: "Bloqueio de Idempot\xEAncia: Job em processamento simult\xE2neo por outra thread.",
-  code: "JOB_ALREADY_PROCESSING"
-};
-var SMTP_DISPATCH_ERROR = {
-  message: "Falha cr\xEDtica ao despachar os e-mails via servidor SMTP.",
-  code: "SMTP_DISPATCH_FAILED"
-};
-
 // src/lib/errors/queue/job-already-processing-error.ts
 var JobAlreadyProcessingError = class extends InfrastructureError {
   constructor() {
-    super(JOB_ALREADY_PROCESSING_ERROR);
+    super(QUEUE_ERRORS.JOB_ALREADY_PROCESSING);
   }
 };
 
-// src/lib/errors/queue/smtp-dispatch-error.ts
-var SmtpDispatchError = class extends InfrastructureError {
-  constructor(originalError) {
-    super(SMTP_DISPATCH_ERROR, originalError);
+// src/messages/constants/redis/redis.ts
+var REDIS_CONSTANTS = {
+  CHANNELS: {
+    OUTBOX_SIGNAL: "outbox-signal"
+  },
+  KEYS: {
+    IDEMPOTENCY_EMAIL_PREFIX: "idempotency:email:",
+    RATE_LIMIT_PREFIX: "ratelimit:v1:"
   }
 };
 
-// src/core/constants/redis/redis-keys.ts
-var REDIS_KEYS = {
-  IDEMPOTENCY_EMAIL_PREFIX: "idempotency:email:",
-  RATE_LIMIT_PREFIX: "ratelimit:v1:"
-};
-
-// src/core/constants/workers/workers.ts
-var MAIL_WORKER_CONFIG = {
-  CONCURRENCY_LIMIT: 5,
-  LOCK_DURATION_MS: 3e5,
-  STALLED_INTERVAL_MS: 3e5
-};
-var IDEMPOTENCY_TTL = {
-  PROCESSING_SECONDS: 300,
-  COMPLETED_SECONDS: 86400
+// src/messages/constants/workers/workers.ts
+var WORKER_CONSTANTS = {
+  MAIL: {
+    CONCURRENCY_LIMIT: 5,
+    LOCK_DURATION_MS: 3e5,
+    STALLED_INTERVAL_MS: 3e5
+  },
+  QUEUE: {
+    JOB_ATTEMPTS: 3,
+    BACKOFF_TYPE: "exponential",
+    BACKOFF_DELAY_MS: 1e4
+  },
+  IDEMPOTENCY_TTL: {
+    PROCESSING_SECONDS: 300,
+    COMPLETED_SECONDS: 86400
+  }
 };
 
 // src/lib/workers/mail-worker.ts
@@ -1312,25 +1953,25 @@ async function startMailWorker(outboxRepository) {
   const workerConnection = createWorkerConnection();
   attachRedisLogger(workerConnection, "MailWorker");
   const worker2 = new import_bullmq2.Worker(
-    QUEUE_NAMES.MAIL,
+    QUEUE.NAMES.MAIL,
     async (job) => {
       const { publicId, emails } = job.data;
       const childLogger = logger.child({ jobId: job.id, publicId });
       const redisCache = getRedisCache();
-      const idempotencyKey = `${REDIS_KEYS.IDEMPOTENCY_EMAIL_PREFIX}${publicId}`;
+      const idempotencyKey = `${REDIS_CONSTANTS.KEYS.IDEMPOTENCY_EMAIL_PREFIX}${publicId}`;
       const acquired = await redisCache.set(
         idempotencyKey,
         "processing",
         "EX",
-        IDEMPOTENCY_TTL.PROCESSING_SECONDS,
+        WORKER_CONSTANTS.IDEMPOTENCY_TTL.PROCESSING_SECONDS,
         "NX"
       );
       if (!acquired) {
         const status = await redisCache.get(idempotencyKey);
         if (status === "completed") {
-          childLogger.warn("\u26A0\uFE0F Lote j\xE1 enviado anteriormente. Limpando DB e abortando duplicata.");
+          childLogger.warn(WORKER_LOGS.BATCH_ALREADY_SENT);
           const deleteResult = await outboxRepository.delete(publicId);
-          if (deleteResult.success === false) {
+          if (isErr(deleteResult)) {
             throw deleteResult.error;
           }
           return;
@@ -1338,58 +1979,57 @@ async function startMailWorker(outboxRepository) {
         throw new JobAlreadyProcessingError();
       }
       try {
-        childLogger.info(`\u{1F4E8} Processando lote de ${emails.length} e-mails...`);
+        childLogger.info(`Processando lote de ${emails.length} e-mails...`);
         const sendEmailUseCase = makeSendEmailUseCase();
-        await Promise.all(emails.map((email) => sendEmailUseCase.execute(email)));
-        childLogger.info("\u2705 Lote de e-mails processado com sucesso.");
-        await redisCache.set(idempotencyKey, "completed", "EX", IDEMPOTENCY_TTL.COMPLETED_SECONDS);
+        const results = await Promise.all(emails.map((email) => sendEmailUseCase.execute(email)));
+        const failedResult = results.find((r) => isErr(r));
+        if (failedResult && isErr(failedResult)) {
+          throw failedResult.error;
+        }
+        childLogger.info("Lote de e-mails processado com sucesso.");
+        await redisCache.set(idempotencyKey, "completed", "EX", WORKER_CONSTANTS.IDEMPOTENCY_TTL.COMPLETED_SECONDS);
         const deleteResult = await outboxRepository.delete(publicId);
-        if (deleteResult.success === false) {
+        if (isErr(deleteResult)) {
           throw deleteResult.error;
         }
-        childLogger.info("\u{1F5D1}\uFE0F OutboxEvent deletado com sucesso do banco de dados");
-      } catch (err) {
+        childLogger.info("OutboxEvent deletado com sucesso do banco de dados");
+      } catch (err2) {
         await redisCache.del(idempotencyKey);
-        if (err instanceof InfrastructureError) {
-          throw err;
+        if (err2 instanceof InfrastructureError) {
+          throw err2;
         }
-        throw new SmtpDispatchError(err);
+        throw new SmtpDispatchError(err2);
       }
     },
     {
       connection: workerConnection,
-      concurrency: MAIL_WORKER_CONFIG.CONCURRENCY_LIMIT,
-      lockDuration: MAIL_WORKER_CONFIG.LOCK_DURATION_MS,
-      stalledInterval: MAIL_WORKER_CONFIG.STALLED_INTERVAL_MS
+      concurrency: WORKER_CONSTANTS.MAIL.CONCURRENCY_LIMIT,
+      lockDuration: WORKER_CONSTANTS.MAIL.LOCK_DURATION_MS,
+      stalledInterval: WORKER_CONSTANTS.MAIL.STALLED_INTERVAL_MS
     }
   );
-  worker2.on("failed", (job, err) => {
-    if (err.message.includes("Missing lock") || err.message.includes("job stalled")) {
-      logger.warn({ jobId: job?.id }, "\u26A0\uFE0F Falha de rede interna do BullMQ ap\xF3s processamento. Ignorando.");
+  worker2.on("failed", (job, err2) => {
+    if (err2.message.includes("Missing lock") || err2.message.includes("job stalled")) {
+      logger.warn({ jobId: job?.id }, WORKER_LOGS.BULLMQ_NETWORK_GLITCH);
       return;
     }
-    const isInfrastructureError = "body" in err && "statusCode" in err;
+    const isInfrastructureError = "body" in err2 && "statusCode" in err2;
     if (isInfrastructureError) {
-      const infraError = err;
+      const infraError = err2;
       logger.error(
         {
           jobId: job?.id,
           code: infraError.body.code,
-          originalError: infraError.body.originalError
+          cause: infraError.cause
         },
-        `\u274C Falha de Infraestrutura: ${infraError.message}`
+        `Falha de Infraestrutura: ${infraError.message}`
       );
       return;
     }
-    logger.error({ jobId: job?.id, err: err.message }, "\u274C Falha gen\xE9rica n\xE3o mapeada no worker");
+    logger.error({ jobId: job?.id, err: err2.message }, WORKER_LOGS.GENERIC_WORKER_FAILURE);
   });
   return worker2;
 }
-
-// src/core/constants/redis/redis-channells.ts
-var REDIS_CHANNELS = {
-  OUTBOX_SIGNAL: "outbox-signal"
-};
 
 // src/lib/infra/events/outbox-signal.ts
 var import_ioredis4 = __toESM(require("ioredis"));
@@ -1408,9 +2048,9 @@ function getPublisher() {
       enableOfflineQueue: true,
       commandTimeout: 2e3
     });
-    publisher.on("connect", () => logger.info("\u2705 Redis publisher conectado ao outbox-signal"));
-    publisher.on("error", (err) => logger.error({ err }, "\u274C Redis publisher error no outbox-signal"));
-    publisher.on("close", () => logger.warn("\u26A0\uFE0F Redis publisher connection fechada para outbox-signal"));
+    publisher.on("connect", () => logger.info(OUTBOX_LOGS.PUBLISHER_CONNECTED));
+    publisher.on("error", (err2) => logger.error({ err: err2 }, OUTBOX_LOGS.PUBLISHER_ERROR));
+    publisher.on("close", () => logger.warn(OUTBOX_LOGS.PUBLISHER_CLOSED));
   }
   return publisher;
 }
@@ -1429,9 +2069,9 @@ function getSubscriber() {
         return delay;
       }
     });
-    subscriber.on("connect", () => logger.info("\u2705 Redis subscriber conectado para outbox-signal"));
-    subscriber.on("error", (err) => logger.error({ err }, "\u274C Redis subscriber error no outbox-signal"));
-    subscriber.on("close", () => logger.warn("\u26A0\uFE0F Redis subscriber connection fechada para outbox-signal"));
+    subscriber.on("connect", () => logger.info(OUTBOX_LOGS.SUBSCRIBER_CONNECTED));
+    subscriber.on("error", (err2) => logger.error({ err: err2 }, OUTBOX_LOGS.SUBSCRIBER_ERROR));
+    subscriber.on("close", () => logger.warn(OUTBOX_LOGS.SUBSCRIBER_CLOSED));
   }
   return subscriber;
 }
@@ -1454,12 +2094,9 @@ var OutboxSignal = {
     try {
       const client = getPublisher();
       await ensureConnected(client, "OutboxPublisher");
-      await client.publish(REDIS_CHANNELS.OUTBOX_SIGNAL, JSON.stringify({ publicId, event }));
-    } catch (err) {
-      logger.warn(
-        { err },
-        "N\xE3o foi poss\xEDvel publicar sinal de nova outbox. O cron job continuar\xE1 funcionando como fallback."
-      );
+      await client.publish(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL, JSON.stringify({ publicId, event }));
+    } catch (err2) {
+      logger.warn({ err: err2 }, OUTBOX_LOGS.SIGNAL_PUBLISH_FAILED);
     }
   },
   /**
@@ -1481,24 +2118,24 @@ var OutboxSignal = {
       await ensureConnected(client, "OutboxSubscriber");
       if (activeMessageListener !== null) {
         client.off("message", activeMessageListener);
-        logger.info("Listener anterior de OutboxSignal removido com sucesso");
+        logger.info(OUTBOX_LOGS.LISTENER_REMOVED);
       }
       activeMessageListener = async (channel, message) => {
-        if (channel !== REDIS_CHANNELS.OUTBOX_SIGNAL) {
-          logger.warn({ channel }, "Mensagem recebida em canal inesperado. Ignorando.");
+        if (channel !== REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL) {
+          logger.warn({ channel }, OUTBOX_LOGS.UNEXPECTED_CHANNEL);
           return;
         }
         try {
           const parsed = JSON.parse(message);
           await onSignal(parsed.publicId, parsed.event);
-        } catch (err) {
-          logger.error({ err, publicId: message }, "Erro ao processar sinal de Outbox");
+        } catch (err2) {
+          logger.error({ err: err2, publicId: message }, OUTBOX_LOGS.SIGNAL_PROCESSING_ERROR);
         }
       };
       client.on("message", activeMessageListener);
-      await client.subscribe(REDIS_CHANNELS.OUTBOX_SIGNAL);
-    } catch (err) {
-      logger.error({ err }, "\u274C Erro ao subscrever ao canal de OutboxSignal");
+      await client.subscribe(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL);
+    } catch (err2) {
+      logger.error({ err: err2 }, OUTBOX_LOGS.SUBSCRIBE_ERROR);
     }
   },
   async disconnect() {
@@ -1515,60 +2152,177 @@ var OutboxSignal = {
   }
 };
 
+// src/lib/shutdown/crash-shutdown.ts
+var Sentry2 = __toESM(require("@sentry/node"));
+var isShuttingDown = false;
+async function crashShutdown(error, cleanup2) {
+  if (isShuttingDown) {
+    process.exit(1);
+    return void 0;
+  }
+  isShuttingDown = true;
+  logger.fatal({ err: error }, "Travamento n\xE3o tratado detectado, iniciando sequ\xEAncia de encerramento por falha...");
+  const hardTimeout = setTimeout(() => {
+    logger.fatal("O tempo limite de limpeza para encerramento expirou ap\xF3s 15s. For\xE7ando a sa\xEDda.");
+    process.exit(1);
+  }, 15e3);
+  hardTimeout.unref();
+  try {
+    await cleanup2();
+    logger.info("Limpeza de encerramento por travamento conclu\xEDda com sucesso.");
+  } catch (cleanupError) {
+    logger.error({ err: cleanupError }, "Ocorreu um erro durante a limpeza de encerramento por travamento");
+  }
+  try {
+    if (error instanceof Error) {
+      Sentry2.captureException(error);
+    } else {
+      Sentry2.captureException(new Error(String(error)));
+    }
+    await Sentry2.flush(2e3);
+    logger.info("Logs do Sentry enviados com sucesso.");
+  } catch (sentryError) {
+    logger.error({ err: sentryError }, "Erro ao enviar os logs do Sentry durante o encerramento por travamento");
+  } finally {
+    clearTimeout(hardTimeout);
+    process.exit(1);
+  }
+}
+
+// src/metrics-server.ts
+var import_fastify = __toESM(require("fastify"));
+var import_prom_client3 = require("prom-client");
+
+// src/lib/metrics/index.ts
+var import_prom_client = require("prom-client");
+var import_prom_client2 = require("prom-client");
+var registry = null;
+var initialized = false;
+function getRegistry() {
+  if (!env.METRICS_ENABLED) return null;
+  if (!initialized) {
+    registry = new import_prom_client.Registry();
+    (0, import_prom_client.collectDefaultMetrics)({ register: registry });
+    initialized = true;
+  }
+  return registry;
+}
+
+// src/metrics-server.ts
+var metricsServer = null;
+var registry2 = getRegistry();
+var metricsCollectionErrors = registry2 ? new import_prom_client3.Counter({
+  name: "metrics_collection_errors_total",
+  help: "Errors during metrics collection",
+  labelNames: ["source"],
+  registers: [registry2]
+}) : null;
+function withTimeout(promise, ms2, source) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => {
+        metricsCollectionErrors?.inc({ source });
+        reject(new Error(`${source} timeout`));
+      }, ms2);
+    })
+  ]);
+}
+async function startMetricsServer(options) {
+  if (!env.METRICS_ENABLED) {
+    logger.info("Metrics server disabled");
+    return;
+  }
+  metricsServer = (0, import_fastify.default)({ logger: false });
+  metricsServer.get("/metrics", async (_request, reply) => {
+    const currentRegistry = getRegistry();
+    if (!currentRegistry) {
+      return reply.status(503).send("Metrics disabled");
+    }
+    const results = await Promise.allSettled([withTimeout(currentRegistry.metrics(), 2e3, "prom-client")]);
+    const output = results.filter((r) => r.status === "fulfilled").map((r) => r.value).join("\n\n");
+    reply.header("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+    return output;
+  });
+  metricsServer.get("/health", async () => ({ status: "ok" }));
+  await metricsServer.listen({ host: "0.0.0.0", port: options.port });
+  logger.info({ port: options.port }, "Metrics server started");
+}
+async function stopMetricsServer() {
+  if (metricsServer) {
+    await metricsServer.close();
+    metricsServer = null;
+    logger.info("Metrics server stopped");
+  }
+}
+
 // src/worker.ts
+initSentry();
 var worker = null;
 var shuttingDown = false;
 async function bootstrap() {
   try {
-    logger.info("\u{1F527} Inicializando servi\xE7os de background...");
+    logger.info("Inicializando servi\xE7os de background...");
     const dbContext = new DatabaseContext();
     const outboxHttpMapper = new PrismaErrorMapper(outboxHttpPrismaErrorMapping);
     const outboxInfraMapper = new PrismaErrorMapper(outboxInfraPrismaErrorMapping);
     const outboxRepository = new PrismaOutboxRepository(dbContext, outboxHttpMapper, outboxInfraMapper);
     worker = await startMailWorker(outboxRepository);
-    logger.info("\u2705 Mail worker iniciado");
+    logger.info("Mail worker iniciado");
     const outboxProcessor = new OutboxProcessor(outboxRepository);
     await OutboxSignal.subscribe(async (publicId, event) => {
       await outboxProcessor.processSingleEvent(event);
     });
     startOutboxCron(outboxProcessor);
+    try {
+      await startMetricsServer({ port: env.METRICS_WORKER_PORT });
+    } catch (metricsErr) {
+      logger.error(
+        { err: metricsErr },
+        "Falha ao iniciar o servidor de m\xE9tricas do worker; o worker continuar\xE1 sem m\xE9tricas"
+      );
+    }
   } catch (error) {
-    logger.fatal({ error }, "\u{1F525} Erro fatal ao iniciar os workers");
-    process.exit(1);
+    await crashShutdown(error, cleanup);
   }
 }
-async function shutdown(signal, exitCode = 0) {
-  if (shuttingDown) {
-    return;
-  }
-  shuttingDown = true;
-  logger.info(`Recebido sinal ${signal}. Iniciando shutdown do worker...`);
+async function cleanup() {
   try {
     await OutboxSignal.disconnect();
     logger.info("OutboxSignal desconectado com sucesso");
-  } catch (err) {
-    logger.error(err, "Erro ao desconectar o OutboxSignal");
-    exitCode = 1;
+  } catch (err2) {
+    logger.error(err2, "Erro ao desconectar o OutboxSignal");
   }
   if (worker) {
     try {
       await worker.close();
       logger.info("Worker finalizado com sucesso");
-    } catch (err) {
-      logger.error(err, "Erro ao finalizar o worker");
-      exitCode = 1;
+    } catch (err2) {
+      logger.error(err2, "Erro ao finalizar o worker");
     }
   }
-  process.exit(exitCode);
+  try {
+    await stopMetricsServer();
+  } catch (err2) {
+    logger.error(err2, "Erro ao finalizar o servidor de m\xE9tricas do worker");
+  }
 }
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGUSR2", () => shutdown("SIGUSR2"));
-process.on("unhandledRejection", (reason, promise) => {
-  logger.error({ reason, promise }, "Unhandled Promise Rejection");
+async function gracefulShutdown(signal) {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+  logger.info(`Recebido sinal ${signal}. Iniciando graceful shutdown do worker...`);
+  await cleanup();
+  process.exit(0);
+}
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGUSR2", () => gracefulShutdown("SIGUSR2"));
+process.on("unhandledRejection", (reason) => {
+  crashShutdown(reason, cleanup);
 });
-process.on("uncaughtException", async (error) => {
-  logger.fatal({ error }, "Uncaught Exception thrown");
-  await shutdown("UNCAUGHT_EXCEPTION", 1);
+process.on("uncaughtException", (error) => {
+  crashShutdown(error, cleanup);
 });
 bootstrap();
