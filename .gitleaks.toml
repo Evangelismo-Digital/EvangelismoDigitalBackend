@@ -1,0 +1,19 @@
+# Gitleaks configuration — Evangelismo Digital Backend
+# Extends the bundled default ruleset and allowlists the committed *test* env
+# fixtures so the secret-scan gate can stay blocking without tripping on the
+# known placeholder tokens in .env.test / .env.example.
+#
+# NOTE: real production secrets must NEVER live in these files. If a genuine
+# credential is ever committed here, remove the allowlist entry and rotate it.
+
+title = "Evangelismo Digital gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Committed test/example env fixtures (placeholder, non-production values)."
+paths = [
+  '''\.env\.example$''',
+  '''\.env\.test$''',
+]

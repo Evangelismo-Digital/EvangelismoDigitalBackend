@@ -1,0 +1,345 @@
+name: CI
+
+# Fast-feedback, fail-fast pipeline for the Fastify + TypeScript + Prisma backend.
+# Only free / OSS tooling that runs entirely inside GitHub Actions (no paid tier,
+# no SaaS account). Third-party actions are pinned to commit SHAs; a version
+# comment records the human-readable tag they resolve to.
+
+on:
+  pull_request:
+    branches:
+      - '**'
+  push:
+    branches:
+      - main
+      - dev
+
+# Cancel superseded runs on the same ref to save runner minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege by default; individual jobs elevate only what they need.
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Stage 1 — fast static checks (no services). Gates the heavy jobs below.
+  # ---------------------------------------------------------------------------
+  static:
+    name: Static checks (types / lint / format / dead-code / prisma)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Prisma schema validate
+        run: npx prisma validate
+
+      - name: Dead code / unused exports (Knip)
+        # Non-blocking until the first cleanup pass — see knip.json.
+        run: npm run knip
+        continue-on-error: true
+
+  # ---------------------------------------------------------------------------
+  # Stage 2 — security & supply chain. Independent jobs, run in parallel.
+  # ---------------------------------------------------------------------------
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout (full history)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        # Report-only: 9 secrets already exist in git history (pre-existing debt).
+        # Flip to blocking once history is triaged/rotated and fingerprinted in
+        # .gitleaks.toml. New leaks still surface in the log + uploaded SARIF.
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/repo" -w /repo \
+            ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            detect --source=/repo --config=/repo/.gitleaks.toml \
+            --redact --verbose \
+            --report-format=sarif --report-path=/repo/gitleaks.sarif
+        continue-on-error: true
+
+      - name: Upload gitleaks report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gitleaks-report
+          path: gitleaks.sarif
+          if-no-files-found: ignore
+
+  sast:
+    name: SAST (Semgrep OSS)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run Semgrep
+        # Community rulesets, telemetry off, no account required. Blocking gate:
+        # the current tree is clean, so `--error` fails only on NEW findings.
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/src" -w /src \
+            semgrep/semgrep:1.170.0 \
+            semgrep scan --metrics=off --error \
+            --config p/typescript --config p/nodejs --config p/javascript \
+            --sarif --output semgrep.sarif
+
+      - name: Upload Semgrep report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: semgrep-report
+          path: semgrep.sarif
+          if-no-files-found: ignore
+
+  deps:
+    name: Dependency vulnerabilities (OSV-Scanner)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run OSV-Scanner
+        # Report-only: ~60 advisories in the current tree (mostly dev tooling —
+        # vitest/vite/rollup — plus a few direct prod deps). Flip to blocking as
+        # the dependency versions are bumped and the tree is triaged.
+        uses: google/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+        continue-on-error: true
+        with:
+          scan-args: |-
+            --lockfile=package-lock.json
+
+  license:
+    name: License compliance (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Scan licenses
+        # Non-blocking initially; forbidden licenses (GPL/AGPL family) surface as
+        # HIGH/CRITICAL. Flip exit-code to gate once the dependency tree is clean.
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: fs
+          scanners: license
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+          scan-ref: .
+
+  # ---------------------------------------------------------------------------
+  # Stage 3 — correctness & artifacts (gated behind Stage 1).
+  # ---------------------------------------------------------------------------
+  test:
+    name: Tests + coverage (unit + e2e)
+    runs-on: ubuntu-latest
+    needs: static
+    permissions:
+      contents: read
+      pull-requests: write # coverage comment
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: evangelismodigital
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d evangelismodigital"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Matches the committed .env.test so `prisma` CLI + the app agree.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/evangelismodigital?schema=public
+      REDIS_HOST: localhost
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ZP8xM6H4R5A0dJQ7L2WcN3E9yFVkBG
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Start Redis (password-protected, mirrors docker-compose)
+        run: |
+          docker run -d --name redis -p 6379:6379 redis:7-alpine \
+            redis-server --requirepass "$REDIS_PASSWORD" --save "" --appendonly no
+          for _ in $(seq 1 20); do
+            if docker exec redis redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q PONG; then
+              echo "Redis is up"; break
+            fi
+            echo "Waiting for Redis..."; sleep 1
+          done
+
+      - name: Prisma migration drift check (informational)
+        # PostGIS raw-SQL migrations (triggers/geography) can produce cosmetic
+        # diffs, so this is non-blocking; it still surfaces real drift in logs.
+        run: |
+          npx prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --shadow-database-url "postgresql://postgres:postgres@localhost:5432/prisma_shadow?schema=public" \
+            --exit-code
+        continue-on-error: true
+
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      - name: Run tests with coverage
+        # Excludes the real-external-API e2e project (flaky) and the redundant
+        # e2e-users subset (superset `e2e` already covers those controllers).
+        run: |
+          npx vitest run --coverage \
+            --project='!e2e-api-providers-fallback-strategy' \
+            --project='!e2e-users' \
+            --coverage.reporter=json-summary \
+            --coverage.reporter=json \
+            --coverage.reporter=text \
+            --coverage.reportOnFailure=true
+
+      - name: Coverage report comment
+        if: github.event_name == 'pull_request'
+        uses: davelosert/vitest-coverage-report-action@8ab049ff5a2c6e78f78af446329379b318544a1a # v2.8.3
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage
+          path: coverage
+          if-no-files-found: ignore
+
+  build:
+    name: Build verification (tsup)
+    runs-on: ubuntu-latest
+    needs: static
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+
+  docker:
+    name: Docker build validation
+    runs-on: ubuntu-latest
+    needs: static
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: evangelismo-digital-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

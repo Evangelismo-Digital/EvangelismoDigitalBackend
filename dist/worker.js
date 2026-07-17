@@ -474,7 +474,7 @@ var envSchema = import_zod.z.object({
   REDIS_PASSWORD: import_zod.z.string().optional(),
   REDIS_LOG_OUTAGE_INTERVAL_MS: import_zod.z.coerce.number().int().positive().default((0, import_ms.default)("30s")),
   // Metrics
-  METRICS_ENABLED: import_zod.z.enum(["true", "false"]).transform((v) => v === "true").default("true"),
+  METRICS_ENABLED: import_zod.z.enum(["true", "false"]).transform((v) => v === "true").default(true),
   METRICS_API_PORT: import_zod.z.coerce.number().default(9091),
   METRICS_WORKER_PORT: import_zod.z.coerce.number().default(9092),
   // Grafana (used in docker-compose.monitoring.yml)
