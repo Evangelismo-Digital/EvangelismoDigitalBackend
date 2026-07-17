@@ -18,6 +18,8 @@ import {
 import { Worker } from 'bullmq'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 import { crashShutdown } from '@lib/shutdown/crash-shutdown'
+import { env } from '@env/index'
+import { startMetricsServer, stopMetricsServer } from './metrics-server'
 
 let worker: Worker | null = null
 let shuttingDown = false
@@ -54,6 +56,16 @@ async function bootstrap() {
     // como "Líder" e executa a varredura, enquanto os outros ficam em standby.
     // ============================================================================
     startOutboxCron(outboxProcessor)
+
+    // Metrics server is auxiliary: a bind failure must not take down the worker.
+    try {
+      await startMetricsServer({ port: env.METRICS_WORKER_PORT })
+    } catch (metricsErr) {
+      logger.error(
+        { err: metricsErr },
+        'Falha ao iniciar o servidor de métricas do worker; o worker continuará sem métricas',
+      )
+    }
   } catch (error) {
     await crashShutdown(error, cleanup)
   }
@@ -75,6 +87,13 @@ async function cleanup() {
     } catch (err) {
       logger.error(err, 'Erro ao finalizar o worker')
     }
+  }
+
+  // Metrics server closes LAST so telemetry stays scrapeable through shutdown.
+  try {
+    await stopMetricsServer()
+  } catch (err) {
+    logger.error(err, 'Erro ao finalizar o servidor de métricas do worker')
   }
 }
 
