@@ -28,7 +28,6 @@
       "@services/*": ["./src/services/*"],
       "@http/*": ["./src/http/*"],
       "@tps/*": ["./src/@types/*"],
-      "@utils/*": ["./src/utils/*"],
       "@templates/*": ["./src/templates/*"],
       "@schemas/*": ["./src/http/schemas/*"]
     },

@@ -16,7 +16,7 @@ describe('Reset Password Use Case', () => {
   it('should return InvalidTokenError when user is not found by token', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const sendEmailUseCase = new SendEmailUseCase()
+    const sendEmailUseCase = new SendEmailUseCase({ send: vi.fn() })
     const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
     const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
@@ -53,7 +53,7 @@ describe('Reset Password Use Case', () => {
   it('should return InvalidTokenError when tokenExpiresAt does not exist', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const sendEmailUseCase = new SendEmailUseCase()
+    const sendEmailUseCase = new SendEmailUseCase({ send: vi.fn() })
     const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
     const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
@@ -95,7 +95,7 @@ describe('Reset Password Use Case', () => {
   it('should return InvalidTokenError when tokenExpiresAt is in the past', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const sendEmailUseCase = new SendEmailUseCase()
+    const sendEmailUseCase = new SendEmailUseCase({ send: vi.fn() })
     const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
     const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
@@ -137,7 +137,7 @@ describe('Reset Password Use Case', () => {
   it('should reset user password', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const sendEmailUseCase = new SendEmailUseCase()
+    const sendEmailUseCase = new SendEmailUseCase({ send: vi.fn() })
     const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
     const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
@@ -199,7 +199,7 @@ describe('Reset Password Use Case', () => {
   it('should return error when user password is not updated', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const sendEmailUseCase = new SendEmailUseCase()
+    const sendEmailUseCase = new SendEmailUseCase({ send: vi.fn() })
     const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
     const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 

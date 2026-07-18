@@ -71,7 +71,7 @@ Keep `scripts/ci-local.sh` and `ci.yml` in lockstep when changing either (the vi
 
 ## Path aliases
 
-Imports use `tsconfig.json` path aliases (also resolved in tests via `vite-tsconfig-paths`). All aliases have explicit `paths` mappings: prefixed ones (`@env/*`, `@lib/*`, `@http/*`, `@controllers/*`, `@middlewares/*`, `@use-cases/*`, `@repositories/*`, `@schemas/*`, `@services/*`, `@constants/*`, `@templates/*`, `@utils/*`, `@tps/*` → `src/@types/*`) and unprefixed ones (`app`, `core/*`, `errors/*`, `messages/*`, `providers/*`).
+Imports use `tsconfig.json` path aliases (also resolved in tests via `vite-tsconfig-paths`). All aliases have explicit `paths` mappings: prefixed ones (`@env/*`, `@lib/*`, `@http/*`, `@controllers/*`, `@middlewares/*`, `@use-cases/*`, `@repositories/*`, `@schemas/*`, `@services/*`, `@constants/*`, `@templates/*`, `@tps/*` → `src/@types/*`) and unprefixed ones (`app`, `core/*`, `errors/*`, `messages/*`, `providers/*`).
 
 ## Architecture
 

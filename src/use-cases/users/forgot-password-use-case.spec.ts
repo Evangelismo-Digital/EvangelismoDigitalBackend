@@ -13,7 +13,7 @@ describe('Forgot Password Use Case', () => {
   it('should return UserNotFoundForPasswordResetError when user is not found by email', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const sendEmailUseCase = new SendEmailUseCase()
+    const sendEmailUseCase = new SendEmailUseCase({ send: vi.fn() })
     const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
 
     vi.spyOn(sendEmailUseCase, 'execute').mockResolvedValue(ok({} as any))
@@ -47,7 +47,7 @@ describe('Forgot Password Use Case', () => {
   it('should generate a password reset token and expiration time for the same token', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const sendEmailUseCase = new SendEmailUseCase()
+    const sendEmailUseCase = new SendEmailUseCase({ send: vi.fn() })
     const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
 
     vi.spyOn(sendEmailUseCase, 'execute').mockResolvedValue(ok({} as any))
@@ -94,7 +94,7 @@ describe('Forgot Password Use Case', () => {
   it('should return UserNotFoundForPasswordResetError when user is not updated', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const sendEmailUseCase = new SendEmailUseCase()
+    const sendEmailUseCase = new SendEmailUseCase({ send: vi.fn() })
     const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
 
     vi.spyOn(sendEmailUseCase, 'execute').mockResolvedValue(ok({} as any))
@@ -128,7 +128,7 @@ describe('Forgot Password Use Case', () => {
   it('should invalidate token and return FailedToSendEmailError if email sending fails', async () => {
     const usersRepository = new InMemoryUsersRepository()
     const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const sendEmailUseCase = new SendEmailUseCase()
+    const sendEmailUseCase = new SendEmailUseCase({ send: vi.fn() })
     const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
 
     const spySend = vi.spyOn(sendEmailUseCase, 'execute').mockResolvedValue(err(new Error('SMTP failure') as any))
