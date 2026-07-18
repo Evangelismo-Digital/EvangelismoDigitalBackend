@@ -9,13 +9,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# Source the committed .env.test as the single source of truth (also used
-# below for the Docker smoke test's --env-file) instead of duplicating
-# secrets/config here — duplicating them trips gitleaks on this file with no
-# baseline coverage, since --pre-commit/--staged scans the diff, not history.
-set -a
-source .env.test
-set +a
+# .env.test is docker --env-file format: unquoted, values may contain spaces
+# (APP_NAME), so it must NOT be `source`d. Extract just the keys this script
+# needs, keeping .env.test the single source of truth (no secret literals here
+# — gitleaks scans the staged diff, where history baselines don't apply).
+env_test() { grep -m1 "^$1=" .env.test | cut -d= -f2-; }
+export DATABASE_URL="$(env_test DATABASE_URL)"
+export REDIS_HOST="$(env_test REDIS_HOST)"
+export REDIS_PORT="$(env_test REDIS_PORT)"
+export REDIS_PASSWORD="$(env_test REDIS_PASSWORD)"
 # Not in .env.test (only needed by the CLI/CI, not by the running app);
 # mirrors the `test` job env block in ci.yml.
 export SHADOW_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/prisma_shadow?schema=public'
