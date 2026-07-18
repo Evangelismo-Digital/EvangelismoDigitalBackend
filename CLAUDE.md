@@ -54,6 +54,8 @@ npx vitest run --project unit-users src/use-cases/users/reset-password-use-case.
 
 E2E projects use a custom Vitest environment (`prisma/vitest-environment-prisma/prisma-docker-environment.ts`) and require the Docker Postgres/Redis stack to be running (`docker-compose up`). When running the API on the host (`npm run dev`), Redis must be reachable at `localhost:6379` — the `redis` hostname only resolves inside the Docker network.
 
+The CI coverage step uses an explicit project **allowlist** that omits `e2e-api-providers-fallback-strategy` and `e2e-users`, so those two projects do not run in CI. `e2e-api-providers-fallback-strategy` calls **live** geocoding APIs (LocationIQ, Nominatim, ViaCEP, BrasilAPI); LocationIQ's free tier limits to ~2 req/s, so running its scenarios back-to-back can return HTTP 429 and make the resilient chain fall through to Nominatim — Scenarios 4 and 7 (`expect(spyNominatim).not.toHaveBeenCalled()`) may fail locally on quota rather than logic. Run it in isolation and space executions out if you need it green locally.
+
 ## CI (`.github/workflows/ci.yml`)
 
 Node is pinned via `.nvmrc`. Jobs: static checks (typecheck, lint, format check, `prisma validate`, Knip), secret scan (gitleaks), SAST (Semgrep OSS), dependency vulnerabilities (OSV-Scanner — accepted/deferred advisories are baselined in `osv-scanner.toml` with reasons; revisit rather than treat as permanent), license compliance (Trivy), tests + coverage (unit + e2e), build verification (tsup), and Docker build validation with a container smoke test. Before pushing, `npm run typecheck && npm run lint && npm run format:check && npm run knip` covers the static job locally.

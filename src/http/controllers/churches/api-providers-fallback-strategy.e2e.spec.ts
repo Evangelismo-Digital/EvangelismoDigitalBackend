@@ -13,6 +13,14 @@ import { ok } from 'core/shared/result'
 
 const redisConnection = createRedisCacheConnection()
 
+// ATENÇÃO: esta suíte faz chamadas REAIS às APIs de geocodificação/endereço
+// (LocationIQ, Nominatim, ViaCEP, BrasilAPI). O plano gratuito do LocationIQ
+// limita a ~2 req/s e retorna HTTP 429 quando os cenários rodam em sequência.
+// Um 429 é RETRYABLE, então a cadeia resiliente cai para o Nominatim — o que faz
+// o Cenário 4 e o Cenário 7 (`expect(spyNominatim).not.toHaveBeenCalled()`)
+// falharem localmente por cota, e não por lógica. Este projeto é intencionalmente
+// excluído do CI (allowlist em .github/workflows/ci.yml); para rodá-lo verde
+// localmente, execute-o isolado e espace as execuções para respeitar o limite.
 describe('Real Geocoding Fallback Scenarios (e2e)', () => {
   beforeAll(async () => {
     await app.ready()
