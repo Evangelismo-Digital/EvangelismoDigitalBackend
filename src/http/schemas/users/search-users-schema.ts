@@ -4,5 +4,3 @@ export const searchUsersSchema = z.object({
   query: z.string().optional().default(''),
   page: z.coerce.number().int().positive().default(1),
 })
-
-export type SearchUsersSchemaType = z.infer<typeof searchUsersSchema>

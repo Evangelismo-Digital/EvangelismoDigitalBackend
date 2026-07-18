@@ -96,14 +96,20 @@ const errorHandlerPlugin: FastifyPluginAsync = async (app) => {
     }
 
     // 5. Fastify internal errors (JWT, rate limit) → safe
-    if (error.statusCode) {
+    if (error instanceof Error && 'statusCode' in error && typeof error.statusCode === 'number') {
       return reply.status(error.statusCode).send({ message: error.message })
     }
 
-    // 6. Unknown / unhandled errors → log full error, capture in Sentry, sanitize response
-    logger.error(error, 'Ocorreu um erro não tratado')
-
-    captureWithRequestContext(error, request)
+    // 6. Unknown / unhandled errors → log, capture in Sentry, sanitize response
+    if (error instanceof Error) {
+      logger.error(error, 'Ocorreu um erro não tratado')
+      captureWithRequestContext(error, request)
+    } else {
+      // Non-Error values thrown aren't logged verbatim (unbounded/could repeat in a
+      // hot loop); Sentry still gets a generic captured exception.
+      logger.error('Ocorreu um erro não tratado: valor lançado não é uma instância de Error')
+      captureWithRequestContext(new Error('Non-Error value thrown in request handler'), request)
+    }
 
     reply.status(500).send({
       message: HTTP_ERRORS.INTERNAL_SERVER.message,

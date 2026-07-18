@@ -18,7 +18,7 @@ const BASE_URL = 'http://localhost:3333'
 
 const credentials = {
   login: 'admin@example.com',
-  password: 'ybp_whf3wxn2xdr6MTE',
+  password: __ENV.SEED_ADMIN_PASSWORD || 'ChangeMe123!SeedAdmin',
 }
 
 export function setup() {

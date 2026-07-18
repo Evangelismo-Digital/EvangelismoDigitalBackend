@@ -11,6 +11,9 @@ const envSchema = z.object({
   // Database
   DATABASE_URL: z.url(),
   DATABASE_URL_LOCAL: z.url().optional(),
+  // Only used by `prisma migrate diff`/`migrate dev` (prisma.config.ts); Prisma 7
+  // dropped the --shadow-database-url CLI flag, so this must come from config.
+  SHADOW_DATABASE_URL: z.url().optional(),
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
   DB_POOL_MIN: z.coerce.number().int().positive().default(2),
   DB_CONNECTION_TIMEOUT: z.coerce.number().int().positive().default(ms('10s')),
@@ -84,6 +87,9 @@ const envSchema = z.object({
 
   // ADMIN EMAIL
   ADMIN_EMAIL: z.email(),
+
+  // Seed data (dev/local only — override for anything beyond a throwaway local DB)
+  SEED_ADMIN_PASSWORD: z.string().min(8).default('ChangeMe123!SeedAdmin'),
 
   // Address Providers
   AWESOME_API_URL: z.string(), //Also geocoding provider

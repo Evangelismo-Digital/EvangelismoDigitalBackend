@@ -16,7 +16,7 @@ export const options = {
 
 const credentials = {
   login: 'admin@example.com',
-  password: 'ybp_whf3wxn2xdr6MTE',
+  password: __ENV.SEED_ADMIN_PASSWORD || 'ChangeMe123!SeedAdmin',
 }
 
 export default () => {

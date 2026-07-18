@@ -11,5 +11,3 @@ export const passwordSchema = z
   .regex(/[0-9]/, { message: VALIDATION_CONSTANTS.PASSWORD.DIGIT })
   .regex(/[\W_]/, { message: VALIDATION_CONSTANTS.PASSWORD.SPECIAL })
   .refine((val) => !val.includes(' '), { message: VALIDATION_CONSTANTS.PASSWORD.NO_SPACES })
-
-export type PasswordSchemaType = z.infer<typeof passwordSchema>

@@ -1,4 +1,6 @@
+import { hash } from 'bcryptjs'
 import { prisma } from '../src/lib/prisma'
+import { env } from '../src/env'
 
 export async function seed() {
   // ---------------------------------------------------------------------------
@@ -13,8 +15,7 @@ export async function seed() {
       username: 'Admin',
       email: 'admin@example.com',
       cpf: '111.111.111-11',
-      // password: 'ybp_whf3wxn2xdr6MTE'
-      passwordHash: '$2a$12$y7AWvv8D1P9AVn2G8XkNZOXyrMZ658QFJyR.2kxM.oP/wmgB/.7.2',
+      passwordHash: await hash(env.SEED_ADMIN_PASSWORD, env.HASH_SALT_ROUNDS),
       role: 'ADMIN',
     },
   })

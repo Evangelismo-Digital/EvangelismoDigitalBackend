@@ -13,7 +13,7 @@ import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches
    Input Types
 ======================= */
 
-export interface User {
+interface User {
   userLat: number
   userLon: number
 }

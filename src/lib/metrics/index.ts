@@ -19,5 +19,3 @@ export function getRegistry(): Registry | null {
 export function isMetricsEnabled(): boolean {
   return env.METRICS_ENABLED
 }
-
-export { Counter, Gauge, Histogram, Summary } from 'prom-client'

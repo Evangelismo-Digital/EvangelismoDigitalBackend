@@ -36,7 +36,7 @@ const prodStreams: StreamEntry[] = [
   { level: 'error', stream: process.stderr },
 ]
 
-export const loggerConfig: LoggerOptions = isDev
+const loggerConfig: LoggerOptions = isDev
   ? {
       ...baseConfig,
       transport: {

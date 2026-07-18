@@ -5,5 +5,3 @@ import { VALIDATION_CONSTANTS } from 'messages/constants/validation/validation'
 export const cepSchema = z.string().regex(/^\d{5}-?\d{3}$/, {
   message: VALIDATION_CONSTANTS.CEP.INVALID_FORMAT,
 })
-
-export type CepSchemaType = z.infer<typeof cepSchema>

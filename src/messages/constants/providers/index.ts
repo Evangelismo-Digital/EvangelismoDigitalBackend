@@ -1,7 +1,0 @@
-export { SHARED_PROVIDER_DEFAULTS } from './shared'
-export { LOCATION_IQ_CONFIG } from './location-iq'
-export { NOMINATIM_CONFIG } from './nominatim'
-export { AWESOME_API_CONFIG } from './awesome-api'
-export { BRASIL_API_CONFIG } from './brasil-api'
-export { VIACEP_CONFIG } from './viacep'
-export { STADIA_CONFIG } from './stadia'

@@ -23,11 +23,6 @@ export interface IGeoSearchOptions {
   country: string
 }
 
-export enum EnumGeoCacheScope {
-  SEARCH = 'search',
-  SEARCH_STRUCTURED = 'searchStructured',
-}
-
 export interface IGeocodingProvider {
   search(query: string, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>>
   searchStructured(options: IGeoSearchOptions, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>>
