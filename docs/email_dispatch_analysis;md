@@ -1,0 +1,812 @@
+# Email Dispatch System — Architecture Analysis & Resilience Audit
+
+> **Scope**: Full analysis of all email-sending paths in the EvangelismoDigital monolith.  
+> **Date**: July 2026  
+> **Codebase**: `EvangelismoDigitalBackend` (Fastify + Node.js 20 + BullMQ + Nodemailer)
+
+---
+
+## Table of Contents
+
+1. [Executive Summary](#1-executive-summary)
+2. [Architecture Overview](#2-architecture-overview)
+3. [Path-by-Path Analysis](#3-path-by-path-analysis)
+   - 3.1 [Forms Submission Pipeline (Outbox + Worker)](#31-forms-submission-pipeline-outbox--worker)
+   - 3.2 [Forgot-Password Pipeline (Synchronous)](#32-forgot-password-pipeline-synchronous)
+4. [Risk Severity Matrix](#4-risk-severity-matrix)
+5. [Detailed Findings](#5-detailed-findings)
+6. [Refactoring Proposals](#6-refactoring-proposals)
+7. [Implementation Priority Order](#7-implementation-priority-order)
+8. [Appendix — Architectural Diagrams](#8-appendix--architectural-diagrams)
+
+---
+
+## 1. Executive Summary
+
+The monolith employs **two fundamentally different architectures** for dispatching emails:
+
+| Flow | Architecture | Async? | Event-Loop Safe? | SMTP Failure Resilient? |
+|------|-------------|--------|-------------------|------------------------|
+| **Forms Submission** | Outbox Pattern → Redis Pub/Sub → BullMQ Worker (separate process) | ✅ **Yes** | ✅ **Yes** | ✅ **Yes** (retry + idempotency) |
+| **Forgot Password** | Direct `SendEmailUseCase.execute()` inside HTTP handler | ❌ **No** | ⚠️ **Partially** | ❌ **No** (single attempt, no timeout) |
+
+> [!IMPORTANT]
+> **The forms submission pipeline is architecturally sound.** The real vulnerability is the **forgot-password flow**, which calls `nodemailer.sendMail()` synchronously within the Fastify request lifecycle. An SMTP server that hangs (TCP timeout defaults to 120s+ on most OS) will **block the HTTP response for 2+ minutes**, consuming a Fastify connection slot and degrading the event loop for all concurrent requests — including church routing.
+
+---
+
+## 2. Architecture Overview
+
+The application is deployed as **two separate Node.js processes** from the same codebase:
+
+| Process | Entrypoint | Responsibility |
+|---------|-----------|----------------|
+| **API Server** | [server.ts](file:///home/amaro/EvangelismoDigitalBackend/src/server.ts) | HTTP requests (Fastify), form submissions, auth, church routing |
+| **Background Worker** | [worker.ts](file:///home/amaro/EvangelismoDigitalBackend/src/worker.ts) | BullMQ job processing, outbox cron, SMTP dispatch |
+
+Both processes share the same Docker image ([Dockerfile](file:///home/amaro/EvangelismoDigitalBackend/Dockerfile) L75-76: `CMD ["node", "dist/server.js"]`, overridden with `node dist/worker.js` for the worker).
+
+```mermaid
+graph TB
+    subgraph "API Server Process (server.ts)"
+        A[Fastify HTTP Server] --> B[Form Controller]
+        A --> C[Forgot Password Controller]
+        A --> D[Church Routing Controller]
+        A --> E[Other Controllers]
+        
+        B --> F["FormsSubmissionUseCase<br/>(Transactional Decorator)"]
+        F --> G["OutboxEventUseCase<br/>(writes to outbox_events table)"]
+        F -.->|"fire-and-forget .catch()"| H["OutboxSignal.publishNewItem()"]
+        
+        C --> I["ForgotPasswordUseCase"]
+        I --> J["SendEmailUseCase"]
+        J --> K["NodemailerMailSender.send()"]
+        K -->|"⚠️ BLOCKS EVENT LOOP"| L["SMTP Server"]
+    end
+    
+    subgraph "Worker Process (worker.ts)"
+        M["OutboxSignal.subscribe()"] --> N[OutboxProcessor]
+        O["Outbox Cron (midnight)"] --> N
+        N --> P[BullMQ Queue]
+        P --> Q["Mail Worker (BullMQ)"]
+        Q --> R["SendEmailUseCase"]
+        R --> S["NodemailerMailSender.send()"]
+        S --> L
+    end
+    
+    H -.->|"Redis Pub/Sub"| M
+    
+    style K fill:#ff6b6b,stroke:#c0392b,color:#fff
+    style L fill:#ff6b6b,stroke:#c0392b,color:#fff
+    style J fill:#ff6b6b,stroke:#c0392b,color:#fff
+```
+
+---
+
+## 3. Path-by-Path Analysis
+
+### 3.1 Forms Submission Pipeline (Outbox + Worker)
+
+**Verdict: ✅ Well-architected, async, and resilient.**
+
+#### Data Flow
+
+1. **HTTP Request** → [form.controller.ts](file:///home/amaro/EvangelismoDigitalBackend/src/http/controllers/forms/form.controller.ts)
+2. **Transactional Use Case** → [make-form-submission-use-case.ts](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/forms/factories/make-form-submission-use-case.ts) wraps in [TransactionalUseCaseDecorator](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/decorators/transactional-use-case.decorator.ts)
+3. **Within the DB transaction**:
+   - [FormsSubmissionUseCase](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/forms/forms-submission.ts) persists the form record
+   - [OutboxEventUseCase](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/outbox-event/outbox-event-use-case.ts) writes a `PENDING` event to the `outbox_events` table **in the same transaction**
+4. **After commit** (controller L30-35): [OutboxSignal.publishNewItem()](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/events/outbox-signal.ts#L78-L86) fires a Redis Pub/Sub signal with **fire-and-forget semantics** (`.catch()` swallows errors)
+5. **Worker process** receives signal → [OutboxProcessor.processSingleEvent()](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/jobs/outbox-processor.ts#L94-L115) transitions to `SENDING` → dispatches to BullMQ
+6. **BullMQ Worker** → [mail-worker.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/workers/mail-worker.ts) picks up the job, sends via Nodemailer, deletes the outbox event
+
+#### Strengths
+
+| Feature | Implementation | File |
+|---------|---------------|------|
+| **Transactional Outbox** | Form + outbox event in same DB transaction | [transactional-use-case.decorator.ts](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/decorators/transactional-use-case.decorator.ts) |
+| **Process Isolation** | Worker runs as a separate `node dist/worker.js` process | [worker.ts](file:///home/amaro/EvangelismoDigitalBackend/src/worker.ts), [Dockerfile](file:///home/amaro/EvangelismoDigitalBackend/Dockerfile#L76) |
+| **Fire-and-forget signal** | Redis Pub/Sub failure doesn't block the HTTP response | [form.controller.ts](file:///home/amaro/EvangelismoDigitalBackend/src/http/controllers/forms/form.controller.ts#L30-L35) |
+| **Durable fallback** | Midnight cron sweeps `PENDING` events if signal was missed | [outbox-cron.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/jobs/outbox-cron.ts) |
+| **Retry with backoff** | BullMQ: 3 attempts, exponential backoff starting at 10s | [mail-queue.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/queue/mail-queue.ts#L19-L24) |
+| **Idempotency** | Redis NX key prevents duplicate processing | [mail-worker.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/workers/mail-worker.ts#L28-L53) |
+| **Stuck event recovery** | Recovers events stuck in `SENDING` for > 30s | [outbox-processor.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/jobs/outbox-processor.ts#L60-L92) |
+| **Distributed locking** | Lua-based Redis locks prevent concurrent processing | [distributed-lock.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/distributed-lock/distributed-lock.ts) |
+| **Graceful shutdown** | Worker closes BullMQ, disconnects Pub/Sub, flushes Sentry | [worker.ts](file:///home/amaro/EvangelismoDigitalBackend/src/worker.ts#L74-L98) |
+
+#### Concerns (Minor)
+
+| Issue | Severity | Detail |
+|-------|----------|--------|
+| **No SMTP connection timeout** | Medium | `NodemailerMailSender` doesn't set `connectionTimeout` or `greetingTimeout` — a hanging SMTP server can stall the BullMQ worker thread for the OS TCP timeout (~120s), but this only blocks the worker, **not the API server** | 
+| **`Promise.all` for batch emails** | Low | [mail-worker.ts L59](file:///home/amaro/EvangelismoDigitalBackend/src/lib/workers/mail-worker.ts#L59): All emails in a batch are sent concurrently. If one fails, `Promise.all` still waits for all to settle but only the first error is thrown. Partial-send state is possible (user email sent but staff email failed) |
+| **Transporter caching across verify failures** | Low | [nodemailer-mail-sender.ts L24-29](file:///home/amaro/EvangelismoDigitalBackend/src/lib/mail/nodemailer-mail-sender.ts#L24-L29): If `verify()` fails, the transporter is **not** cached (correct), but a flapping SMTP server will trigger `createTransport()` on every retry, creating connection overhead |
+| **Cron only runs at midnight** | Low | If the worker restarts at 00:01, stale `PENDING` events won't be processed until the next midnight. The real-time Pub/Sub signal mitigates this in happy-path scenarios |
+
+---
+
+### 3.2 Forgot-Password Pipeline (Synchronous)
+
+**Verdict: ❌ Synchronous, blocks event loop, no retry, no timeout.**
+
+#### Data Flow
+
+1. **HTTP Request** → [forgot-password.controller.ts](file:///home/amaro/EvangelismoDigitalBackend/src/http/controllers/users/forgot-password.controller.ts)
+2. **Use Case** → [ForgotPasswordUseCase](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/users/forgot-password.ts)
+3. **Within the same request**: Generates token → updates DB → **directly calls** `sendEmailUseCase.execute()` (L68-73)
+4. `SendEmailUseCase` → `NodemailerMailSender.send()` → **blocks on `transporter.sendMail()` until SMTP responds**
+5. If email fails: token is invalidated in the DB (L77-80) and the user gets a `FailedToSendEmailError`
+
+#### Critical Problems
+
+##### 🔴 Problem 1: No SMTP Timeout Configuration
+
+[nodemailer-mail-sender.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/mail/nodemailer-mail-sender.ts#L14-L22) creates the transporter with **no timeout settings**:
+
+```typescript
+const transporter = nodemailer.createTransport({
+  host: env.SMTP_HOST,
+  port: env.SMTP_PORT,
+  secure: env.SMTP_SECURE,
+  auth: {
+    user: env.SMTP_EMAIL,
+    pass: env.SMTP_PASSWORD,
+  },
+})
+```
+
+Nodemailer defaults:
+- `connectionTimeout`: **120,000ms (2 minutes)**
+- `greetingTimeout`: **30,000ms**
+- `socketTimeout`: **600,000ms (10 minutes!)**
+
+If the SMTP server is unreachable (firewall, DNS failure), the HTTP request **hangs for up to 2+ minutes** before `sendMail()` rejects. During this time, the Fastify event loop is degraded for **all concurrent requests** (church routing, form submissions, auth).
+
+##### 🔴 Problem 2: Event-Loop Contention
+
+While Node.js I/O is non-blocking, a **pending** SMTP connection keeps the request handler's async context alive, consuming:
+- A Fastify connection slot
+- Memory for the request/response lifecycle
+- Potential cascading delays if multiple forgot-password requests arrive during an SMTP outage
+
+With no `connectionTimeout`, multiple concurrent forgot-password requests during an SMTP outage could accumulate and exhaust Fastify's connection pool.
+
+##### 🔴 Problem 3: No Retry Mechanism
+
+Unlike the forms pipeline (BullMQ: 3 attempts, exponential backoff), the forgot-password flow has **zero retry logic**:
+- [forgot-password.ts L68-82](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/users/forgot-password.ts#L68-L82): If `sendMail()` fails, the token is immediately invalidated and the user must re-request
+- Transient SMTP errors (network blip, rate limit) become permanent failures for the user
+
+##### 🟡 Problem 4: Shared Transporter Instance Across Processes
+
+[make-send-email-use-case.ts](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/factories/make-send-email-use-case.ts#L7) creates a **module-level singleton**:
+
+```typescript
+const mailSender = new NodemailerMailSender()
+```
+
+This module is imported by both:
+- The **worker process** (via `mail-worker.ts`)  
+- The **API server process** (via `make-forgot-password-use-case.ts`)
+
+Since these are separate Node.js processes, each gets its own instance — no runtime sharing. However, the same `NodemailerMailSender` class is used in both contexts, meaning the transporter caching behavior (the `this.transporter` field) applies identically. A failed `verify()` in the API server's transporter would correctly leave it un-cached, triggering re-creation on the next forgot-password request. **This is architecturally correct but conceptually confusing** — the singleton comment implies reuse across jobs, but it's actually reuse across requests within the same process.
+
+##### 🟡 Problem 5: Token Invalidation Race Condition
+
+[forgot-password.ts L77-80](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/users/forgot-password.ts#L77-L80): If the email fails, the token is invalidated:
+
+```typescript
+await this.usersRepository.updatePassword(user.publicId, {
+  token: null,
+  tokenExpiresAt: null,
+})
+```
+
+However, if this secondary DB call **also** fails (network error), the token remains valid in the database but the user was told the operation failed. There's no error handling on this cleanup call — it's a fire-and-forget `await` with no `try/catch`.
+
+---
+
+## 4. Risk Severity Matrix
+
+| # | Finding | Severity | Impact | Likelihood | Affected Path |
+|---|---------|----------|--------|------------|---------------|
+| F-1 | **No SMTP timeout in NodemailerMailSender** | 🔴 **Critical** | SMTP hang blocks event loop for 2+ min, degrading all API endpoints including church routing | Medium (depends on SMTP reliability) | Forgot-Password (direct), Worker (indirect) |
+| F-2 | **Forgot-password sends email synchronously in HTTP request** | 🔴 **Critical** | Slow SMTP directly increases p99 latency for forgot-password; cascading connection exhaustion under SMTP outage | Medium | Forgot-Password |
+| F-3 | **No retry mechanism for forgot-password emails** | 🟠 **High** | Transient SMTP failures permanently fail the user's password reset attempt | High (transient errors are common) | Forgot-Password |
+| F-4 | **Token invalidation has no error handling** | 🟡 **Medium** | DB failure during cleanup leaves orphaned tokens; minor security concern (tokens expire in 15 min) | Low | Forgot-Password |
+| F-5 | **`Promise.all` partial-send in worker batch** | 🟡 **Medium** | User might receive email but staff doesn't (or vice versa); idempotency key set to 'completed' regardless | Low | Forms Pipeline (Worker) |
+| F-6 | **Worker SMTP hang blocks BullMQ concurrency slot** | 🟡 **Medium** | Without SMTP timeout, a worker concurrency slot (of 5) can be blocked for 2+ min | Medium | Forms Pipeline (Worker) |
+| F-7 | **Transporter re-creation overhead during SMTP flapping** | 🟢 **Low** | Repeated `createTransport()` + `verify()` calls during SMTP instability; minimal resource impact | Low | Both |
+| F-8 | **Outbox cron only at midnight** | 🟢 **Low** | Events missed by Pub/Sub wait up to 24h; mitigated by real-time signal in happy path | Very Low | Forms Pipeline |
+| F-9 | **Horizontal scaling cron contention** (already documented) | 🟢 **Low** | Multiple workers compete for the cron lock; documented in [worker.ts L46-57](file:///home/amaro/EvangelismoDigitalBackend/src/worker.ts#L46-L57) with leader election suggestion | Low (current single-worker setup) | Forms Pipeline |
+
+---
+
+## 5. Detailed Findings
+
+### Finding F-1: Missing SMTP Timeouts (Critical)
+
+**File**: [nodemailer-mail-sender.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/mail/nodemailer-mail-sender.ts#L14-L22)
+
+The Nodemailer transport is created without any timeout configuration:
+
+```diff
+ const transporter = nodemailer.createTransport({
+   host: env.SMTP_HOST,
+   port: env.SMTP_PORT,
+   secure: env.SMTP_SECURE,
+   auth: {
+     user: env.SMTP_EMAIL,
+     pass: env.SMTP_PASSWORD,
+   },
++  connectionTimeout: 5_000,    // 5s to establish TCP connection
++  greetingTimeout: 5_000,      // 5s for SMTP greeting
++  socketTimeout: 10_000,       // 10s for socket inactivity
+ })
+```
+
+**Why it matters**: Without these, Nodemailer falls back to OS-level TCP timeouts:
+- **Linux `tcp_syn_retries`**: Defaults to 6 retries with exponential backoff ≈ **~127 seconds**
+- **Nodemailer `socketTimeout`** default: **600,000ms (10 minutes)**
+
+This means a single `sendMail()` call to an unresponsive SMTP server can hang for **2-10 minutes**.
+
+**Impact on the API server**: The forgot-password handler `await`s this call directly. During the hang, Fastify's event loop continues to process other microtasks, but:
+- The HTTP connection slot remains occupied
+- Under concurrent forgot-password requests, connection slots accumulate
+- Fastify's default `connectionTimeout` is 72 seconds, but the request is already being processed — the socket won't be freed
+
+### Finding F-2: Synchronous Email in HTTP Request Lifecycle (Critical)
+
+**Files**: 
+- [forgot-password.controller.ts](file:///home/amaro/EvangelismoDigitalBackend/src/http/controllers/users/forgot-password.controller.ts#L17) — `await forgotPasswordUseCase.execute()`
+- [forgot-password.ts](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/users/forgot-password.ts#L68-L73) — `await this.sendEmailUseCase.execute()`
+
+The full call chain within a single HTTP request:
+
+```
+HTTP POST /forgot-password
+  → forgotPasswordUseCase.execute()
+    → usersRepository.findBy()          // DB query (~5ms)
+    → usersRepository.updatePassword()   // DB write (~10ms)
+    → sendEmailUseCase.execute()         // ⚠️ SMTP call (50ms–600,000ms)
+      → NodemailerMailSender.send()
+        → transporter.verify()           // Only on first call
+        → transporter.sendMail()         // BLOCKS until SMTP responds
+```
+
+**Contrast with forms pipeline**: The form controller at [form.controller.ts L30](file:///home/amaro/EvangelismoDigitalBackend/src/http/controllers/forms/form.controller.ts#L30) uses fire-and-forget:
+
+```typescript
+OutboxSignal.publishNewItem(outboxEvent.publicId, outboxEvent).catch(() => {
+  logger.error(...)
+})
+```
+
+The HTTP response is returned **immediately** after the DB transaction commits. Email dispatch happens in a completely separate process.
+
+### Finding F-3: No Retry for Forgot-Password (High)
+
+**File**: [forgot-password.ts L68-82](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/users/forgot-password.ts#L68-L82)
+
+```typescript
+const emailResult = await this.sendEmailUseCase.execute({...})
+
+if (isErr(emailResult)) {
+  // Immediately invalidate token — no retry
+  await this.usersRepository.updatePassword(user.publicId, {
+    token: null,
+    tokenExpiresAt: null,
+  })
+  return err(new FailedToSendEmailError())
+}
+```
+
+**Comparison**: The BullMQ mail queue has:
+- **3 retry attempts** ([mail-queue.ts L20](file:///home/amaro/EvangelismoDigitalBackend/src/lib/queue/mail-queue.ts#L20))
+- **Exponential backoff** starting at 10s ([mail-queue.ts L21-23](file:///home/amaro/EvangelismoDigitalBackend/src/lib/queue/mail-queue.ts#L21-L23))
+- **Idempotency protection** ([mail-worker.ts L28-53](file:///home/amaro/EvangelismoDigitalBackend/src/lib/workers/mail-worker.ts#L28-L53))
+
+The forgot-password flow has **none of these protections**.
+
+### Finding F-5: `Promise.all` Partial-Send (Medium)
+
+**File**: [mail-worker.ts L59](file:///home/amaro/EvangelismoDigitalBackend/src/lib/workers/mail-worker.ts#L59)
+
+```typescript
+const results = await Promise.all(emails.map((email) => sendEmailUseCase.execute(email)))
+```
+
+If a batch contains 2 emails (user + staff) and the user email succeeds but the staff email fails:
+1. `Promise.all` resolves all promises (since `execute()` returns `Result`, not throwing)
+2. The `failedResult` check (L61-64) finds the failed one and throws
+3. The idempotency key is deleted (L79), allowing retry
+4. On retry, **the user email is sent again** (duplicate)
+
+This isn't critical because:
+- BullMQ only retries 3 times
+- Duplicate notification emails are a nuisance, not a data integrity issue
+- The idempotency key deletion on failure is the correct behavior for retry
+
+But it could be improved with `Promise.allSettled` and per-email tracking.
+
+---
+
+## 6. Refactoring Proposals
+
+### Proposal 1: Add SMTP Timeouts (Immediate Fix — Addresses F-1, F-6)
+
+> [!IMPORTANT]
+> This is the **highest-impact, lowest-effort** fix. It should be deployed immediately.
+
+**File to modify**: [nodemailer-mail-sender.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/mail/nodemailer-mail-sender.ts)
+
+```diff
+ const transporter = nodemailer.createTransport({
+   host: env.SMTP_HOST,
+   port: env.SMTP_PORT,
+   secure: env.SMTP_SECURE,
+   auth: {
+     user: env.SMTP_EMAIL,
+     pass: env.SMTP_PASSWORD,
+   },
++  // Defensive timeouts: prevent SMTP hangs from blocking the caller
++  connectionTimeout: 5_000,    // 5s to establish TCP connection
++  greetingTimeout: 5_000,      // 5s for SMTP server greeting (220 response)
++  socketTimeout: 10_000,       // 10s max inactivity per socket operation
+ })
+```
+
+**Also add to `verify()`**: The `verify()` call at L25 uses the same transporter, so timeouts apply automatically. No additional changes needed.
+
+**Effort**: ~5 minutes. Zero risk of side effects.
+
+**Optionally, make configurable via env**:
+
+```typescript
+// In env/index.ts
+SMTP_CONNECTION_TIMEOUT: z.coerce.number().default(5_000),
+SMTP_GREETING_TIMEOUT: z.coerce.number().default(5_000),
+SMTP_SOCKET_TIMEOUT: z.coerce.number().default(10_000),
+```
+
+---
+
+### Proposal 2: Route Forgot-Password Through the Outbox Pattern (Addresses F-2, F-3)
+
+> [!IMPORTANT]
+> This is the most architecturally impactful change. It eliminates the synchronous email path entirely.
+
+#### Design
+
+Reuse the existing **Outbox Pattern + BullMQ** infrastructure to handle forgot-password emails:
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Controller as Forgot Password Controller
+    participant UseCase as ForgotPasswordUseCase
+    participant DB as PostgreSQL
+    participant Outbox as Outbox Table
+    participant Signal as OutboxSignal (Redis Pub/Sub)
+    participant Worker as Worker Process
+    participant SMTP as SMTP Server
+
+    Client->>Controller: POST /forgot-password
+    Controller->>UseCase: execute({ email })
+    UseCase->>DB: findBy({ email })
+    UseCase->>DB: updatePassword(token, expiry)
+    UseCase->>Outbox: INSERT outbox_event (type: 'PasswordResetRequested')
+    Note over UseCase,Outbox: Same DB transaction
+    UseCase-->>Controller: ok({ user, token })
+    Controller->>Signal: publishNewItem() .catch()
+    Controller-->>Client: 200 OK (immediate response)
+    
+    Note over Signal,Worker: Async, separate process
+    Signal->>Worker: Redis Pub/Sub notification
+    Worker->>SMTP: sendMail() with retries
+    Note over Worker,SMTP: BullMQ: 3 attempts, exponential backoff
+```
+
+#### Changes Required
+
+##### 1. Extend the Outbox Event Types
+
+**File**: `core/contracts/repository/outbox-repository.interface.ts`
+
+Add a new event type:
+
+```typescript
+export type OutboxEventType = 'FormSubmissionCreated' | 'PasswordResetRequested'
+```
+
+##### 2. Create a Password-Reset Email Strategy
+
+**New file**: `src/use-cases/users/strategies/password-reset-email-strategy.ts`
+
+Following the same pattern as [DecisionForChristEmailStrategy](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/forms/strategies/decision-for-christ-email-strategy.ts):
+
+```typescript
+export class PasswordResetEmailStrategy implements IFormEmailStrategy {
+  buildUserEmail(payload: PasswordResetPayload): Result<IMailJobData, AppError> {
+    return ok({
+      to: payload.email,
+      subject: EMAIL_CONSTANTS.PASSWORD_RECOVERY_SUBJECT,
+      message: forgotPasswordTextTemplate(payload.name, payload.token),
+      html: forgotPasswordHtmlTemplate(payload.name, payload.token),
+      context: { type: 'password-reset', recipient: 'user' },
+    })
+  }
+
+  // No staff email needed for password reset
+  buildStaffEmail(): Result<IMailJobData, AppError> {
+    return ok(null) // Or a no-op
+  }
+}
+```
+
+##### 3. Refactor ForgotPasswordUseCase
+
+**File**: [forgot-password.ts](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/users/forgot-password.ts)
+
+Remove the direct `sendEmailUseCase.execute()` call. Instead, write an outbox event:
+
+```typescript
+export class ForgotPasswordUseCase {
+  constructor(
+    private usersRepository: UsersRepository,
+    private eventRegistration: IOutboxEventRegistration, // Replace SendEmailUseCase
+  ) {}
+
+  async execute({ email }: ForgotPasswordUseCaseRequest) {
+    // ... existing user lookup and token generation ...
+    
+    // Instead of sending email directly:
+    const outboxEvent = await this.eventRegistration.register({
+      type: 'PasswordResetRequested',
+      email: user.email,
+      name: user.name,
+      token: passwordToken,
+    })
+    
+    if (isErr(outboxEvent)) {
+      return outboxEvent
+    }
+
+    return ok({ user, token: passwordToken })
+  }
+}
+```
+
+##### 4. Update the OutboxProcessor dispatcher
+
+**File**: [outbox-processor.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/jobs/outbox-processor.ts#L117-L140)
+
+Add routing for the new event type in `dispatchToBullMQ`:
+
+```typescript
+private async dispatchToBullMQ(event: IOutboxEvent): Promise<void> {
+  const strategy = this.resolveStrategy(event)
+  // ... existing dispatch logic ...
+}
+
+private resolveStrategy(event: IOutboxEvent): IFormEmailStrategy {
+  if (event.type === 'PasswordResetRequested') {
+    return new PasswordResetEmailStrategy()
+  }
+  
+  const payload = event.payload as FormPayload
+  return payload.decisaoPorCristo 
+    ? new DecisionForChristEmailStrategy() 
+    : new ContactEmailStrategy()
+}
+```
+
+##### 5. Wrap ForgotPasswordUseCase in TransactionalDecorator
+
+**File**: [make-forgot-password-use-case.ts](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/factories/make-forgot-password-use-case.ts)
+
+Follow the same pattern as [make-form-submission-use-case.ts](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/forms/factories/make-form-submission-use-case.ts):
+
+```typescript
+export function makeForgotPasswordUseCase() {
+  const dbContext = new DatabaseContext()
+  // ... repositories and error mappers ...
+  const outboxRepository = new PrismaOutboxRepository(dbContext, httpMapper, infraMapper)
+  const eventRegistration = new OutboxEventUseCase(outboxRepository)
+  
+  const useCase = new ForgotPasswordUseCase(usersRepository, eventRegistration)
+  return new TransactionalUseCaseDecorator(useCase, dbContext)
+}
+```
+
+##### 6. Update the Controller
+
+**File**: [forgot-password.controller.ts](file:///home/amaro/EvangelismoDigitalBackend/src/http/controllers/users/forgot-password.controller.ts)
+
+Add fire-and-forget Pub/Sub signal after the transaction (same pattern as form controller):
+
+```typescript
+const { outboxEvent } = result.value
+
+OutboxSignal.publishNewItem(outboxEvent.publicId, outboxEvent).catch(() => {
+  logger.error({ publicId: outboxEvent.publicId }, 'Failed to publish password reset signal')
+})
+
+return reply.code(200).send({ message: EMAIL_CONSTANTS.PASSWORD_RESET_GENERIC_MESSAGE })
+```
+
+#### Impact of Proposal 2
+
+| Aspect | Before | After |
+|--------|--------|-------|
+| HTTP response time | 50ms–600,000ms (SMTP-dependent) | ~15ms (DB only) |
+| SMTP failure impact on API | Blocks event loop | Zero impact (worker handles it) |
+| Retry capability | None | 3 attempts, exponential backoff |
+| Idempotency | None | Redis NX key |
+| Email delivery guarantee | Best-effort single attempt | At-least-once with dedup |
+
+> [!WARNING]  
+> **Token-in-Outbox Security Consideration**: The password reset token will now be stored in the `outbox_events` table payload alongside the existing `outbox_events` in PostgreSQL. Since this is the same database, and the token is already stored in the users table, this doesn't introduce a new attack surface. The outbox event is deleted after successful email dispatch. However, ensure the outbox table has equivalent access controls to the users table.
+
+---
+
+### Proposal 3: Improve `Promise.all` Batch Handling (Addresses F-5)
+
+**File**: [mail-worker.ts L59](file:///home/amaro/EvangelismoDigitalBackend/src/lib/workers/mail-worker.ts#L59)
+
+Replace `Promise.all` with `Promise.allSettled` and individual result tracking:
+
+```typescript
+const results = await Promise.allSettled(
+  emails.map((email) => sendEmailUseCase.execute(email))
+)
+
+const failures = results
+  .map((result, index) => ({ result, index }))
+  .filter(({ result }) => 
+    result.status === 'rejected' || 
+    (result.status === 'fulfilled' && isErr(result.value))
+  )
+
+if (failures.length > 0) {
+  const successCount = emails.length - failures.length
+  childLogger.warn(
+    { successCount, failureCount: failures.length },
+    'Partial batch failure — some emails were sent'
+  )
+  
+  // Throw to trigger BullMQ retry for the entire batch
+  const firstFailure = failures[0]
+  throw firstFailure.result.status === 'rejected' 
+    ? firstFailure.result.reason 
+    : (firstFailure.result as PromiseFulfilledResult<any>).value.error
+}
+```
+
+> [!NOTE]
+> A more sophisticated approach would track per-email success/failure in the outbox event payload, allowing selective retry of only failed emails. However, this adds significant complexity for a minor benefit given the current batch size of 2 (user + staff).
+
+---
+
+### Proposal 4: Add Token Invalidation Error Handling (Addresses F-4)
+
+**File**: [forgot-password.ts L77-80](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/users/forgot-password.ts#L77-L80)
+
+> [!NOTE]
+> This proposal becomes unnecessary if Proposal 2 is implemented, since the outbox pattern eliminates the synchronous email call entirely. Include this only if Proposal 2 is deferred.
+
+```diff
+ if (isErr(emailResult)) {
+-  await this.usersRepository.updatePassword(user.publicId, {
+-    token: null,
+-    tokenExpiresAt: null,
+-  })
++  // Best-effort token cleanup — token expires in 15 min regardless
++  try {
++    await this.usersRepository.updatePassword(user.publicId, {
++      token: null,
++      tokenExpiresAt: null,
++    })
++  } catch (cleanupError) {
++    logger.error(
++      { publicId: user.publicId, err: cleanupError },
++      'Failed to invalidate password reset token after email failure; token will expire naturally'
++    )
++  }
+   return err(new FailedToSendEmailError())
+ }
+```
+
+---
+
+### Proposal 5: Increase Outbox Cron Frequency (Addresses F-8)
+
+**File**: [outbox-cron.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/jobs/outbox-cron.ts)
+
+Currently runs once at midnight. Consider adding a more frequent sweep (e.g., every 5 minutes) for `PENDING` events only:
+
+```typescript
+// Quick sweep every 5 minutes — processes PENDING events only
+cron.schedule('*/5 * * * *', async () => {
+  const processor = existingProcessor ?? buildProcessor()
+  try {
+    await processor.processEvents()
+  } catch (error) {
+    logger.error({ error }, 'Quick outbox sweep failed')
+  }
+})
+
+// Full sweep at midnight — recovers STUCK events + processes PENDING
+cron.schedule(CRON_SCHEDULES.MIDNIGHT_DAILY, async () => {
+  // ... existing midnight logic ...
+})
+```
+
+> [!NOTE]
+> The distributed lock in `processEvents()` already prevents concurrent execution, so increasing frequency is safe. The overhead is minimal (one `SELECT` query per cycle when no events are pending).
+
+---
+
+### Proposal 6: Add Transporter Health Recovery (Addresses F-7)
+
+**File**: [nodemailer-mail-sender.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/mail/nodemailer-mail-sender.ts)
+
+Add a mechanism to invalidate a cached transporter after consecutive `sendMail()` failures:
+
+```typescript
+export class NodemailerMailSender implements MailSender {
+  private transporter: Transporter | null = null
+  private consecutiveFailures = 0
+  private static readonly MAX_FAILURES_BEFORE_RESET = 3
+
+  async send(request: SendMailRequest): Promise<SentMessageInfo> {
+    const transporter = await this.getTransporter()
+
+    try {
+      const info = await transporter.sendMail({...})
+      this.consecutiveFailures = 0 // Reset on success
+      return info
+    } catch (error) {
+      this.consecutiveFailures++
+      
+      if (this.consecutiveFailures >= NodemailerMailSender.MAX_FAILURES_BEFORE_RESET) {
+        logger.warn('Resetting SMTP transporter after consecutive failures')
+        this.transporter = null
+        this.consecutiveFailures = 0
+      }
+      
+      throw error
+    }
+  }
+}
+```
+
+---
+
+## 7. Implementation Priority Order
+
+| Priority | Proposal | Effort | Impact | Dependencies |
+|----------|----------|--------|--------|-------------|
+| **P0** | **Proposal 1**: Add SMTP timeouts | ⚡ 5 min | 🔴 Critical — prevents 2-min+ hangs | None |
+| **P1** | **Proposal 2**: Route forgot-password through outbox | 🔨 2-4 hours | 🔴 Critical — eliminates synchronous email from API | Proposal 1 (recommended but not required) |
+| **P2** | **Proposal 4**: Token invalidation error handling | ⚡ 10 min | 🟡 Medium — prevents silent failures | None (skip if doing P1) |
+| **P3** | **Proposal 3**: `Promise.allSettled` batch handling | 🔨 30 min | 🟡 Medium — prevents duplicate emails on partial failure | None |
+| **P4** | **Proposal 5**: Increase outbox cron frequency | ⚡ 15 min | 🟢 Low — reduces worst-case delivery delay | None |
+| **P5** | **Proposal 6**: Transporter health recovery | 🔨 30 min | 🟢 Low — handles SMTP flapping | None |
+
+> [!TIP]
+> **Recommended immediate action**: Deploy **P0 (SMTP timeouts)** today. This is a one-line change that eliminates the most dangerous failure mode. Then plan **P1 (outbox integration)** as a sprint task.
+
+---
+
+## 8. Appendix — Architectural Diagrams
+
+### Current Architecture: Two Divergent Email Paths
+
+```mermaid
+graph LR
+    subgraph "API Server Process"
+        A["POST /forms"] --> B["Outbox Pattern ✅"]
+        C["POST /forgot-password"] --> D["Direct SMTP ❌"]
+    end
+    
+    subgraph "Worker Process"
+        B -.->|"Redis Pub/Sub"| E["BullMQ Worker"]
+        E --> F["Nodemailer"]
+    end
+    
+    D --> F
+    F --> G["SMTP Server"]
+    
+    style D fill:#ff6b6b,stroke:#c0392b,color:#fff
+    style B fill:#2ecc71,stroke:#27ae60,color:#fff
+    style E fill:#2ecc71,stroke:#27ae60,color:#fff
+```
+
+### Target Architecture: Unified Outbox Pattern
+
+```mermaid
+graph LR
+    subgraph "API Server Process"
+        A["POST /forms"] --> B["Outbox Pattern ✅"]
+        C["POST /forgot-password"] --> D["Outbox Pattern ✅"]
+        E["Future: POST /welcome-email"] --> F["Outbox Pattern ✅"]
+    end
+    
+    subgraph "Worker Process"
+        B -.->|"Redis Pub/Sub"| G["BullMQ Worker"]
+        D -.->|"Redis Pub/Sub"| G
+        F -.->|"Redis Pub/Sub"| G
+        G --> H["Strategy Router"]
+        H --> I["FormEmailStrategy"]
+        H --> J["PasswordResetStrategy"]
+        H --> K["WelcomeEmailStrategy"]
+        I --> L["Nodemailer"]
+        J --> L
+        K --> L
+    end
+    
+    L --> M["SMTP Server"]
+    
+    style B fill:#2ecc71,stroke:#27ae60,color:#fff
+    style D fill:#2ecc71,stroke:#27ae60,color:#fff
+    style F fill:#2ecc71,stroke:#27ae60,color:#fff
+    style G fill:#2ecc71,stroke:#27ae60,color:#fff
+```
+
+### Event Flow: From HTTP Request to Email Delivery
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant API as API Server
+    participant DB as PostgreSQL
+    participant Redis as Redis
+    participant W as Worker Process
+    participant BQ as BullMQ
+    participant SMTP as SMTP Server
+
+    C->>API: HTTP Request
+    
+    rect rgb(39, 174, 96)
+        Note over API,DB: DB Transaction (atomic)
+        API->>DB: Business Logic Write
+        API->>DB: INSERT outbox_event (PENDING)
+    end
+    
+    API-->>C: HTTP Response (immediate)
+    
+    API--)Redis: publishNewItem() [fire-and-forget]
+    
+    rect rgb(41, 128, 185)
+        Note over Redis,SMTP: Async Processing (separate process)
+        Redis->>W: Pub/Sub Signal
+        W->>DB: UPDATE status → SENDING
+        W->>BQ: Add Job
+        BQ->>W: Process Job
+        W->>SMTP: sendMail()
+        SMTP-->>W: OK
+        W->>DB: DELETE outbox_event
+    end
+    
+    rect rgb(231, 76, 60)
+        Note over BQ,SMTP: On Failure
+        SMTP--xW: Error
+        W->>DB: REVERT status → PENDING
+        BQ->>BQ: Retry (exponential backoff)
+    end
+```
+
+---
+
+## Conclusion
+
+The **forms submission pipeline** is a textbook implementation of the Transactional Outbox Pattern with excellent resilience characteristics. The architecture correctly isolates SMTP concerns from the API server's event loop through process-level separation.
+
+The **forgot-password pipeline** is the single critical vulnerability — it bypasses all the resilience infrastructure and makes a synchronous SMTP call inside the HTTP request lifecycle. This is the component most likely to cause the monolith to "feel frozen" during SMTP outages.
+
+The recommended path forward is:
+1. **Immediately** add SMTP timeouts (Proposal 1) to cap worst-case hangs at ~10 seconds
+2. **Soon** route forgot-password through the existing outbox infrastructure (Proposal 2) to achieve full async email dispatch across the entire monolith
+3. **Incrementally** apply the remaining proposals to harden the worker process itself
