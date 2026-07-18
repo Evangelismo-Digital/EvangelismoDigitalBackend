@@ -17,6 +17,31 @@ RUN npm ci
 
 # Copy sources (respects .dockerignore) and produce the client + bundles.
 COPY . .
+
+# `prisma.config.ts` imports src/env/index.ts, which eagerly validates the FULL
+# app env schema on load (not just DB-related vars) — so any Prisma CLI command
+# (generate, migrate) needs every required var satisfiable at build time. These
+# are throwaway, non-secret build-time-only placeholders (never used at
+# runtime — the runner stage below is a separate image with its own env,
+# supplied via --env-file/orchestrator secrets); they exist purely so Zod
+# validation passes during `prisma generate` / `npm run build`.
+ENV DATABASE_URL=postgresql://placeholder:placeholder@localhost:5432/placeholder \
+  GRAFANA_ADMIN_PASSWORD=build-time-placeholder \
+  JWT_SECRET=build-time-placeholder-jwt-secret-not-used-at-runtime-0000000000000 \
+  SMTP_EMAIL=build@example.com \
+  SMTP_PASSWORD=build-time-placeholder \
+  SMTP_PORT=587 \
+  SMTP_HOST=smtp.example.com \
+  SMTP_SECURE=false \
+  ADMIN_EMAIL=build@example.com \
+  AWESOME_API_URL=https://example.com \
+  AWESOME_API_TOKEN=build-time-placeholder \
+  VIACEP_API_URL=https://example.com \
+  BRASIL_API_URL=https://example.com \
+  NOMINATIM_API_URL=https://example.com \
+  LOCATION_IQ_API_TOKEN=build-time-placeholder \
+  STADIA_API_TOKEN=build-time-placeholder
+
 RUN npx prisma generate
 RUN npm run build
 
