@@ -33,7 +33,7 @@ npm run db:seed
 npm run db:deploy           # migrate deploy + generate + seed (prod)
 ```
 
-Prisma 7: datasource URL, migrations path, and seed command live in `prisma.config.ts` (not in `schema.prisma`/`package.json`). It resolves the DB URL as `DATABASE_URL_LOCAL ?? DATABASE_URL` and uses `SHADOW_DATABASE_URL` for migrate drift detection.
+Prisma 7: datasource URL, migrations path, and seed command live in `prisma.config.ts` (not in `schema.prisma`/`package.json`). It resolves the DB URL as `DATABASE_URL_LOCAL ?? DATABASE_URL` and uses `SHADOW_DATABASE_URL` for migrate drift detection. The config deliberately does **not** import `src/env` (full Zod validation would crash env-less CLI runs, e.g. CI's static job); it loads `dotenv/config` and reads `process.env` directly, falling back to an unroutable `.invalid`-host placeholder URL so non-connecting commands (`generate`, `validate`) work without env while connecting commands fail fast with a clear error.
 
 ### Tests (Vitest, project-based)
 

@@ -1,7 +1,11 @@
 import { defineConfig } from 'prisma/config'
 import 'dotenv/config'
 
-const fallbackDatabaseUrl = '******localhost:5432/postgres?schema=public'
+// Fallback só para comandos da CLI que não conectam (generate/validate) em
+// ambientes sem env (job static do CI). O TLD .invalid nunca resolve (RFC 6761):
+// qualquer comando que tente conectar falha imediatamente com erro claro, em vez
+// de atingir silenciosamente um banco real em localhost.
+const fallbackDatabaseUrl = 'postgresql://placeholder:placeholder@prisma-cli-placeholder.invalid:5432/placeholder'
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',
