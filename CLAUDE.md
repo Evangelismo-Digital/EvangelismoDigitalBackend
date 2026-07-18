@@ -58,7 +58,16 @@ The CI coverage step uses an explicit project **allowlist** that omits `e2e-api-
 
 ## CI (`.github/workflows/ci.yml`)
 
-Node is pinned via `.nvmrc`. Jobs: static checks (typecheck, lint, format check, `prisma validate`, Knip), secret scan (gitleaks), SAST (Semgrep OSS), dependency vulnerabilities (OSV-Scanner — accepted/deferred advisories are baselined in `osv-scanner.toml` with reasons; revisit rather than treat as permanent), license compliance (Trivy), tests + coverage (unit + e2e), build verification (tsup), and Docker build validation with a container smoke test. Before pushing, `npm run typecheck && npm run lint && npm run format:check && npm run knip` covers the static job locally.
+Node is pinned via `.nvmrc`. Jobs: static checks (typecheck, lint, format check, `prisma validate`, Knip), secret scan (gitleaks), SAST (Semgrep OSS), dependency vulnerabilities (OSV-Scanner — accepted/deferred advisories are baselined in `osv-scanner.toml` with reasons; revisit rather than treat as permanent), license compliance (Trivy), tests + coverage (unit + e2e), build verification (tsup), and Docker build validation with a container smoke test.
+
+### Local CI gate (git hooks)
+
+Husky hooks (installed automatically by `npm install` via the `prepare` script) enforce a tiered local gate:
+
+- **pre-commit** (~1–2 min): `lint-staged` (ESLint + Prettier autofix on staged files), gitleaks scan of the staged diff, whole-project typecheck, and all unit-test projects (`npm run test:unit:all` — no Docker needed).
+- **pre-push** (~8–15 min): `npm run ci:local` (`scripts/ci-local.sh`) — a 1:1 mirror of every CI job, including the security scanners (Docker images pinned to the same versions as ci.yml), the drift check + unit/e2e suite with coverage, the tsup build (into gitignored `.ci-local/dist`, since `dist/` is tracked), and the Docker image build + `/health/` smoke test. Requires Docker; starts the compose stack itself; refuses the smoke test if something else is on port 3333.
+
+Keep `scripts/ci-local.sh` and `ci.yml` in lockstep when changing either (the vitest project allowlist especially). Escape hatch for emergencies: `--no-verify` — but the branch will still fail on GitHub, so prefer fixing locally.
 
 ## Path aliases
 

@@ -1,0 +1,21 @@
+# Fast local gate — mirrors the cheap CI checks on every commit.
+# The full CI mirror (security scans, e2e, build, Docker smoke test) runs on
+# pre-push via `npm run ci:local`. Escape hatch: git commit --no-verify.
+
+# 1. Lint + format only the staged files (autofix, re-staged automatically).
+npx lint-staged
+
+# 2. Secret scan of the staged diff (same pinned image as CI's secret-scan job).
+#    GIT_CONFIG_* marks the bind-mounted repo as safe inside the container.
+docker run --rm -v "$(pwd):/repo" -w /repo \
+  -e GIT_CONFIG_COUNT=1 \
+  -e GIT_CONFIG_KEY_0=safe.directory \
+  -e GIT_CONFIG_VALUE_0=/repo \
+  ghcr.io/gitleaks/gitleaks:v8.30.1 \
+  git --pre-commit --staged --redact --verbose --config=/repo/.gitleaks.toml
+
+# 3. Whole-project type check (staged-only linting can't see cross-file breaks).
+npm run typecheck
+
+# 4. All unit-test projects (fast, in-memory repositories — no Docker services).
+npm run test:unit:all

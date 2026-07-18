@@ -130,9 +130,7 @@ describe('errorHandlerPlugin', () => {
 
       expect(reply.code).not.toHaveBeenCalled()
       expect(reply.send).not.toHaveBeenCalled()
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        'Handler de erro chamado após resposta já enviada — ignorando',
-      )
+      expect(mockLogger.warn).toHaveBeenCalledWith('Handler de erro chamado após resposta já enviada — ignorando')
     })
   })
 
@@ -350,10 +348,7 @@ describe('errorHandlerPlugin', () => {
       await handler(new Error('trigger unknown branch'), request, reply)
 
       // Should have used console.error as fallback
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'O handler de erro lançou uma exceção:',
-        expect.any(Error),
-      )
+      expect(consoleSpy).toHaveBeenCalledWith('O handler de erro lançou uma exceção:', expect.any(Error))
 
       // Should still send a clean 500
       expect(reply.code).toHaveBeenCalledWith(500)
