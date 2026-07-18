@@ -18,7 +18,7 @@ export async function deleteUser(request: FastifyRequest, reply: FastifyReply) {
 
   logger.info('Usuário deletado com sucesso!')
 
-  return reply.status(204).send()
+  return reply.code(204).send()
 }
 
 export async function deleteUserByPublicId(request: FastifyRequest, reply: FastifyReply) {
@@ -36,5 +36,5 @@ export async function deleteUserByPublicId(request: FastifyRequest, reply: Fasti
 
   logger.info({ targetId: publicId }, 'Usuário deletado com sucesso!')
 
-  return reply.status(204).send()
+  return reply.code(204).send()
 }

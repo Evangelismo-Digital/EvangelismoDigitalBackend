@@ -39,5 +39,5 @@ export async function authenticateUser(request: FastifyRequest, reply: FastifyRe
 
   const token = await reply.jwtSign({ sub: user.publicId, role: user.role }, { expiresIn: '1d' })
 
-  return reply.status(200).send({ token, user: UserPresenter.toHTTP(user) })
+  return reply.code(200).send({ token, user: UserPresenter.toHTTP(user) })
 }

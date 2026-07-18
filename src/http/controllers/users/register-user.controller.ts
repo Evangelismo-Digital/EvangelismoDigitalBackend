@@ -29,7 +29,7 @@ export async function register(request: FastifyRequest, reply: FastifyReply) {
 
   logger.info({ userId: user.publicId }, 'Usuário comum registrado com sucesso!')
 
-  return reply.status(201).send({ user: UserPresenter.toHTTP(user) })
+  return reply.code(201).send({ user: UserPresenter.toHTTP(user) })
 }
 
 export async function registerAdmin(request: FastifyRequest, reply: FastifyReply) {
@@ -54,5 +54,5 @@ export async function registerAdmin(request: FastifyRequest, reply: FastifyReply
 
   logger.info({ userId: user.publicId }, 'Usuário administrador registrado com sucesso!')
 
-  return reply.status(201).send({ user: UserPresenter.toHTTP(user) })
+  return reply.code(201).send({ user: UserPresenter.toHTTP(user) })
 }

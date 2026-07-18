@@ -1,6 +1,6 @@
 import { logger } from './index'
 
-export function logError(error: unknown, context: Record<string, unknown> = {}, msg = 'Unexpected error') {
+export function logError(error: unknown, context: Record<string, unknown> = {}, msg = 'Erro inesperado') {
   if (error instanceof Error) {
     logger.error(
       {
@@ -13,7 +13,7 @@ export function logError(error: unknown, context: Record<string, unknown> = {}, 
   } else {
     logger.error(
       {
-        message: 'Unknown error',
+        message: 'Erro desconhecido',
         ...context,
       },
       msg,

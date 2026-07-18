@@ -7,11 +7,11 @@ export function verifyUserRole(allowedRoles: UserRole[]) {
     const { role } = request.user
 
     if (!role) {
-      return reply.status(401).send({ message: AUTH_ERRORS.UNAUTHORIZED.message })
+      return reply.code(401).send({ message: AUTH_ERRORS.UNAUTHORIZED.message })
     }
 
     if (!allowedRoles.includes(role)) {
-      return reply.status(403).send({ message: AUTH_ERRORS.FORBIDDEN.message })
+      return reply.code(403).send({ message: AUTH_ERRORS.FORBIDDEN.message })
     }
   }
 }

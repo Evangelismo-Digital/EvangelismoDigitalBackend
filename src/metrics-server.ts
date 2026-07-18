@@ -35,7 +35,7 @@ function withTimeout(promise: Promise<string>, ms: number, source: string): Prom
 
 export async function startMetricsServer(options: StartOptions): Promise<void> {
   if (!env.METRICS_ENABLED) {
-    logger.info('Metrics server disabled')
+    logger.info('Servidor de métricas desabilitado')
     return
   }
 
@@ -44,7 +44,7 @@ export async function startMetricsServer(options: StartOptions): Promise<void> {
   metricsServer.get('/metrics', async (_request, reply) => {
     const currentRegistry = getRegistry()
     if (!currentRegistry) {
-      return reply.status(503).send('Metrics disabled')
+      return reply.code(503).send('Metrics disabled')
     }
 
     const results = await Promise.allSettled([withTimeout(currentRegistry.metrics(), 2000, 'prom-client')])
@@ -61,13 +61,13 @@ export async function startMetricsServer(options: StartOptions): Promise<void> {
   metricsServer.get('/health', async () => ({ status: 'ok' }))
 
   await metricsServer.listen({ host: '0.0.0.0', port: options.port })
-  logger.info({ port: options.port }, 'Metrics server started')
+  logger.info({ port: options.port }, 'Servidor de métricas iniciado')
 }
 
 export async function stopMetricsServer(): Promise<void> {
   if (metricsServer) {
     await metricsServer.close()
     metricsServer = null
-    logger.info('Metrics server stopped')
+    logger.info('Servidor de métricas parado')
   }
 }

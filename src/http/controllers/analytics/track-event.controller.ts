@@ -33,5 +33,5 @@ export async function trackEvent(request: FastifyRequest, reply: FastifyReply) {
     return HttpErrorMapper.map(result.error, reply)
   }
 
-  return reply.status(201).send()
+  return reply.code(201).send()
 }

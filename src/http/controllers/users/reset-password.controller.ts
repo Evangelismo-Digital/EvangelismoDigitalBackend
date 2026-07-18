@@ -21,5 +21,5 @@ export async function resetPassword(request: FastifyRequest, reply: FastifyReply
 
   logger.info({ userId: user.publicId }, AUTH_CONSTANTS.PASSWORD_CHANGED_SUCCESS)
 
-  return reply.status(200).send({ message: AUTH_CONSTANTS.PASSWORD_CHANGED_SUCCESS })
+  return reply.code(200).send({ message: AUTH_CONSTANTS.PASSWORD_CHANGED_SUCCESS })
 }

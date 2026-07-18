@@ -16,7 +16,7 @@ export async function updateUser(request: FastifyRequest, reply: FastifyReply) {
   const publicId = authUser?.publicId ?? authUser?.sub
 
   if (!publicId) {
-    return reply.status(401).send({ message: AUTH_ERRORS.UNAUTHORIZED.message })
+    return reply.code(401).send({ message: AUTH_ERRORS.UNAUTHORIZED.message })
   }
 
   const { publicId: validatedPublicId } = publicIdSchema.parse({ publicId })
@@ -38,5 +38,5 @@ export async function updateUser(request: FastifyRequest, reply: FastifyReply) {
 
   logger.info('Usuário atualizado com sucesso!')
 
-  return reply.status(200).send(UserPresenter.toHTTP(user))
+  return reply.code(200).send(UserPresenter.toHTTP(user))
 }

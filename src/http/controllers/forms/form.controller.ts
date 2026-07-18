@@ -36,7 +36,7 @@ export async function formSubmission(request: FastifyRequest, reply: FastifyRepl
 
   logger.info({ sanitizedFormSubmission }, 'Formulário recebido com sucesso')
 
-  return reply.status(201).send({
+  return reply.code(201).send({
     sanitizedFormSubmission,
   })
 }

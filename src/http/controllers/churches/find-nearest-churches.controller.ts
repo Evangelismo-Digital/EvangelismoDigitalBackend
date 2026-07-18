@@ -31,5 +31,5 @@ export async function findNearestChurches(
     nearestChurchesInfo: response.nearestChurchesInfo,
   })
 
-  return reply.status(200).send(response)
+  return reply.code(200).send(response)
 }

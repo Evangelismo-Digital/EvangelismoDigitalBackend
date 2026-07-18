@@ -23,5 +23,5 @@ export async function searchUsersController(request: FastifyRequest, reply: Fast
 
   logger.info(`Encontrados ${users.length} usuários para a consulta: "${query}" na página ${page}.`)
 
-  return reply.status(200).send({ users })
+  return reply.code(200).send({ users })
 }

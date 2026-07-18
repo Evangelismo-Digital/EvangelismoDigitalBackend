@@ -17,10 +17,13 @@ npm run start:worker        # Background worker (src/worker.ts)
 npm run build               # tsup -> dist/server.js + dist/worker.js
 npm run start:prod          # node dist/server.js
 
-# Lint / format
+# Static checks
+npm run typecheck           # tsc --noEmit
 npm run lint                # eslint src/
 npm run lint:fix
-npm run format              # prettier
+npm run format              # prettier --write
+npm run format:check
+npm run knip                # dead code / unused exports
 
 # Database (Prisma)
 npm run db:generate         # prisma generate
@@ -29,6 +32,8 @@ npm run db:reset            # generate + migrate reset --force + seed
 npm run db:seed
 npm run db:deploy           # migrate deploy + generate + seed (prod)
 ```
+
+Prisma 7: datasource URL, migrations path, and seed command live in `prisma.config.ts` (not in `schema.prisma`/`package.json`). It resolves the DB URL as `DATABASE_URL_LOCAL ?? DATABASE_URL` and uses `SHADOW_DATABASE_URL` for migrate drift detection.
 
 ### Tests (Vitest, project-based)
 
@@ -49,9 +54,13 @@ npx vitest run --project unit-users src/use-cases/users/reset-password-use-case.
 
 E2E projects use a custom Vitest environment (`prisma/vitest-environment-prisma/prisma-docker-environment.ts`) and require the Docker Postgres/Redis stack to be running (`docker-compose up`). When running the API on the host (`npm run dev`), Redis must be reachable at `localhost:6379` — the `redis` hostname only resolves inside the Docker network.
 
+## CI (`.github/workflows/ci.yml`)
+
+Node is pinned via `.nvmrc`. Jobs: static checks (typecheck, lint, format check, `prisma validate`, Knip), secret scan (gitleaks), SAST (Semgrep OSS), dependency vulnerabilities (OSV-Scanner — accepted/deferred advisories are baselined in `osv-scanner.toml` with reasons; revisit rather than treat as permanent), license compliance (Trivy), tests + coverage (unit + e2e), build verification (tsup), and Docker build validation with a container smoke test. Before pushing, `npm run typecheck && npm run lint && npm run format:check && npm run knip` covers the static job locally.
+
 ## Path aliases
 
-Imports use `tsconfig.json` path aliases (also resolved in tests via `vite-tsconfig-paths`): `@env/*`, `@lib/*`, `@http/*`, `@controllers/*`, `@use-cases/*`, `@repositories/*`, `@schemas/*`, `@templates/*`, `@utils/*`, `@tps/*`. Note that `core/*` and `errors/*` are imported by their `baseUrl`-relative paths (`src/`), not aliases.
+Imports use `tsconfig.json` path aliases (also resolved in tests via `vite-tsconfig-paths`). All aliases have explicit `paths` mappings: prefixed ones (`@env/*`, `@lib/*`, `@http/*`, `@controllers/*`, `@middlewares/*`, `@use-cases/*`, `@repositories/*`, `@schemas/*`, `@services/*`, `@constants/*`, `@templates/*`, `@utils/*`, `@tps/*` → `src/@types/*`) and unprefixed ones (`app`, `core/*`, `errors/*`, `messages/*`, `providers/*`).
 
 ## Architecture
 
@@ -111,4 +120,6 @@ Each aggregate has a repository interface in `src/core/contracts/repository/`, a
 - Zod is configured for Portuguese locale (`z.config(z.locales.pt())` in `app.ts`).
 - Sentry is initialized first thing in both `server.ts` and `worker.ts` (no-ops without `SENTRY_DSN`).
 - PostGIS is required (used for nearest-church geospatial queries); the DB image is `postgis/postgis`.
+- Metrics: both `server.ts` and `worker.ts` start a dedicated Prometheus endpoint via `src/metrics-server.ts`, toggled by `METRICS_ENABLED` (ports `METRICS_API_PORT`/`METRICS_WORKER_PORT`, default 9091/9092). On shutdown the metrics server is stopped **last** so telemetry stays available while the app drains; `stopMetricsServer` is a safe no-op if it never started.
 - Observability stack (Prometheus/Grafana/Alertmanager, `fastify-metrics`/`prom-client`) — see `docs/prometheus_grafana.md`.
+- Deployment: `Dockerfile` (multi-stage; prod image only copies `@prisma/client`/`.prisma` from node_modules), `deploy.sh`, and PM2 `ecosystem.config.js` for the VPS target.

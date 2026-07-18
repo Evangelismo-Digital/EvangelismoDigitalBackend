@@ -30,5 +30,5 @@ export async function deleteChurch(request: FastifyRequest, reply: FastifyReply)
     church: sanitizedChurch,
   })
 
-  return reply.status(200).send({ church: sanitizedChurch })
+  return reply.code(200).send({ church: sanitizedChurch })
 }

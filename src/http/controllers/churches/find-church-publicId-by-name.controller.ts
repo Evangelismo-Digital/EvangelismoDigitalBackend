@@ -15,5 +15,5 @@ export async function findChurchPublicIdByName(request: FastifyRequest, reply: F
     return HttpErrorMapper.map(result.error, reply)
   }
 
-  return reply.status(200).send({ publicId: result.value.publicId })
+  return reply.code(200).send({ publicId: result.value.publicId })
 }

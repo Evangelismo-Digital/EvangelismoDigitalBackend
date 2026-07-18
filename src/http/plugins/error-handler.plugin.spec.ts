@@ -66,10 +66,12 @@ import { DatabaseQueryError } from '../../errors/infrastructure/database-query-e
 import { ServiceBusyError } from '../../errors/infrastructure/service-busy-error'
 
 // ----- Test helpers -----
-function createMockReply() {
+function createMockReply(overrides: Record<string, unknown> = {}) {
   const reply = {
-    status: vi.fn().mockReturnThis(),
+    code: vi.fn().mockReturnThis(),
     send: vi.fn().mockReturnThis(),
+    sent: false,
+    ...overrides,
   }
   return reply
 }
@@ -120,8 +122,22 @@ describe('errorHandlerPlugin', () => {
     request = createMockRequest()
   })
 
+  describe('reply.sent guard', () => {
+    it('bails out without sending a response when reply is already sent', async () => {
+      reply = createMockReply({ sent: true })
+
+      await handler(new Error('should be ignored'), request, reply)
+
+      expect(reply.code).not.toHaveBeenCalled()
+      expect(reply.send).not.toHaveBeenCalled()
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Handler de erro chamado após resposta já enviada — ignorando',
+      )
+    })
+  })
+
   describe('ZodError handling', () => {
-    it('responds with 400 and validation details without capturing in Sentry', () => {
+    it('responds with 400 and validation details without capturing in Sentry', async () => {
       const schema = z.object({ name: z.string() })
       let zodError: ZodError
 
@@ -131,9 +147,9 @@ describe('errorHandlerPlugin', () => {
         zodError = e as ZodError
       }
 
-      handler(zodError!, request, reply)
+      await handler(zodError!, request, reply)
 
-      expect(reply.status).toHaveBeenCalledWith(400)
+      expect(reply.code).toHaveBeenCalledWith(400)
       expect(reply.send).toHaveBeenCalledWith(
         expect.objectContaining({
           code: expect.any(String),
@@ -146,12 +162,12 @@ describe('errorHandlerPlugin', () => {
   })
 
   describe('SyntaxError handling', () => {
-    it('responds with 400 and INVALID_JSON code without capturing in Sentry', () => {
+    it('responds with 400 and INVALID_JSON code without capturing in Sentry', async () => {
       const syntaxError = new SyntaxError('Unexpected token')
 
-      handler(syntaxError, request, reply)
+      await handler(syntaxError, request, reply)
 
-      expect(reply.status).toHaveBeenCalledWith(400)
+      expect(reply.code).toHaveBeenCalledWith(400)
       expect(reply.send).toHaveBeenCalledWith(
         expect.objectContaining({
           code: 'INVALID_JSON',
@@ -163,12 +179,12 @@ describe('errorHandlerPlugin', () => {
   })
 
   describe('DomainError handling', () => {
-    it('responds with the correct HTTP status and user-facing message without Sentry', () => {
+    it('responds with the correct HTTP status and user-facing message without Sentry', async () => {
       const domainError = new UserNotFoundError()
 
-      handler(domainError, request, reply)
+      await handler(domainError, request, reply)
 
-      expect(reply.status).toHaveBeenCalledWith(404)
+      expect(reply.code).toHaveBeenCalledWith(404)
       expect(reply.send).toHaveBeenCalledWith(
         expect.objectContaining({
           message: domainError.body.message,
@@ -181,10 +197,10 @@ describe('errorHandlerPlugin', () => {
   })
 
   describe('InfrastructureError / AppError handling', () => {
-    it('logs the error, captures in Sentry with request context, and sanitizes the response', () => {
+    it('logs the error, captures in Sentry with request context, and sanitizes the response', async () => {
       const infraError = new DatabaseQueryError(new Error('Connection refused'))
 
-      handler(infraError, request, reply)
+      await handler(infraError, request, reply)
 
       // Logged with full error details
       expect(mockLogger.error).toHaveBeenCalledOnce()
@@ -207,7 +223,7 @@ describe('errorHandlerPlugin', () => {
       expect(mockSetTag).toHaveBeenCalledWith('errorType', 'DatabaseQueryError')
 
       // Sanitized response — no internal details
-      expect(reply.status).toHaveBeenCalledWith(500)
+      expect(reply.code).toHaveBeenCalledWith(500)
       expect(reply.send).toHaveBeenCalledWith(
         expect.objectContaining({
           code: 'INTERNAL_SERVER_ERROR',
@@ -215,12 +231,12 @@ describe('errorHandlerPlugin', () => {
       )
     })
 
-    it('returns SERVICE_UNAVAILABLE for TOO_MANY_REQUESTS errors', () => {
+    it('returns SERVICE_UNAVAILABLE for TOO_MANY_REQUESTS errors', async () => {
       const busyError = new ServiceBusyError('ViaCEP')
 
-      handler(busyError, request, reply)
+      await handler(busyError, request, reply)
 
-      expect(reply.status).toHaveBeenCalledWith(429)
+      expect(reply.code).toHaveBeenCalledWith(429)
       expect(reply.send).toHaveBeenCalledWith(
         expect.objectContaining({
           code: 'SERVICE_UNAVAILABLE',
@@ -228,51 +244,70 @@ describe('errorHandlerPlugin', () => {
       )
     })
 
-    it('attaches userId to Sentry scope when user is authenticated', () => {
+    it('attaches userId to Sentry scope when user is authenticated', async () => {
       mockGetUserId.mockReturnValue('user-123')
 
       const infraError = new DatabaseQueryError()
 
-      handler(infraError, request, reply)
+      await handler(infraError, request, reply)
 
       expect(mockSetUser).toHaveBeenCalledWith({ id: 'user-123' })
     })
 
-    it('does not set Sentry user when request is unauthenticated', () => {
+    it('does not set Sentry user when request is unauthenticated', async () => {
       mockGetUserId.mockReturnValue(undefined)
 
       const infraError = new DatabaseQueryError()
 
-      handler(infraError, request, reply)
+      await handler(infraError, request, reply)
 
       expect(mockSetUser).not.toHaveBeenCalled()
     })
   })
 
   describe('Fastify internal errors', () => {
-    it('forwards errors with statusCode as-is without Sentry capture', () => {
+    it('forwards errors with numeric statusCode as-is without Sentry capture', async () => {
       const fastifyError = Object.assign(new Error('Unauthorized'), { statusCode: 401 })
 
-      handler(fastifyError, request, reply)
+      await handler(fastifyError, request, reply)
 
-      expect(reply.status).toHaveBeenCalledWith(401)
+      expect(reply.code).toHaveBeenCalledWith(401)
       expect(reply.send).toHaveBeenCalledWith({ message: 'Unauthorized' })
       expect(mockCaptureException).not.toHaveBeenCalled()
+    })
+
+    it('does NOT forward errors with non-number statusCode (falls through to unknown)', async () => {
+      const badError = Object.assign(new Error('Bad statusCode'), {
+        statusCode: 'not-a-number' as unknown as number,
+      })
+
+      await handler(badError, request, reply)
+
+      // Should fall through to the unknown/unhandled branch (500), not forward the string
+      expect(reply.code).toHaveBeenCalledWith(500)
+      expect(reply.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'INTERNAL_SERVER_ERROR',
+        }),
+      )
+      // Should be captured in Sentry since it's an unhandled error
+      expect(mockWithScope).toHaveBeenCalledOnce()
+      expect(mockCaptureException).toHaveBeenCalledWith(badError)
     })
   })
 
   describe('Unknown / unhandled errors', () => {
-    it('logs, captures in Sentry with request context, and returns sanitized 500', () => {
+    it('logs, captures in Sentry with request context, and returns sanitized 500', async () => {
       const unknownError = new Error('Something completely unexpected')
 
-      handler(unknownError, request, reply)
+      await handler(unknownError, request, reply)
 
       expect(mockLogger.error).toHaveBeenCalledOnce()
       expect(mockWithScope).toHaveBeenCalledOnce()
       expect(mockCaptureException).toHaveBeenCalledWith(unknownError)
       expect(mockSetTag).toHaveBeenCalledWith('errorType', 'Error')
 
-      expect(reply.status).toHaveBeenCalledWith(500)
+      expect(reply.code).toHaveBeenCalledWith(500)
       expect(reply.send).toHaveBeenCalledWith(
         expect.objectContaining({
           code: 'INTERNAL_SERVER_ERROR',
@@ -280,26 +315,76 @@ describe('errorHandlerPlugin', () => {
       )
     })
 
-    it('attaches route pattern from routeOptions when available', () => {
+    it('attaches route pattern from routeOptions when available', async () => {
       const requestWithRoute = createMockRequest({
         url: '/users/abc-123',
         routeOptions: { url: '/users/:publicId' },
       })
 
-      handler(new Error('test'), requestWithRoute, reply)
+      await handler(new Error('test'), requestWithRoute, reply)
 
       expect(mockSetTag).toHaveBeenCalledWith('route', '/users/:publicId')
     })
 
-    it('falls back to request.url when routeOptions is undefined', () => {
+    it('falls back to request.url when routeOptions is undefined', async () => {
       const requestNoRoute = createMockRequest({
         url: '/unknown-path',
         routeOptions: undefined,
       })
 
-      handler(new Error('test'), requestNoRoute, reply)
+      await handler(new Error('test'), requestNoRoute, reply)
 
       expect(mockSetTag).toHaveBeenCalledWith('route', '/unknown-path')
+    })
+  })
+
+  describe('outer try/catch safety net', () => {
+    it('still returns 500 when the logger throws inside the error handler', async () => {
+      // Make logger.error throw to simulate a logger failure
+      mockLogger.error.mockImplementationOnce(() => {
+        throw new Error('Logger exploded')
+      })
+
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await handler(new Error('trigger unknown branch'), request, reply)
+
+      // Should have used console.error as fallback
+      expect(consoleSpy).toHaveBeenCalledWith(
+        'O handler de erro lançou uma exceção:',
+        expect.any(Error),
+      )
+
+      // Should still send a clean 500
+      expect(reply.code).toHaveBeenCalledWith(500)
+      expect(reply.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'INTERNAL_SERVER_ERROR',
+        }),
+      )
+
+      consoleSpy.mockRestore()
+    })
+
+    it('does not attempt to send when reply is already sent inside catch block', async () => {
+      // Make logger.error throw, AND mark reply as already sent
+      mockLogger.error.mockImplementationOnce(() => {
+        // Simulate reply being sent before the catch block runs
+        reply.sent = true
+        throw new Error('Logger exploded')
+      })
+
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await handler(new Error('trigger unknown branch'), request, reply)
+
+      // console.error should fire
+      expect(consoleSpy).toHaveBeenCalled()
+
+      // reply.code should NOT have been called (reply.sent was true in catch)
+      expect(reply.code).not.toHaveBeenCalled()
+
+      consoleSpy.mockRestore()
     })
   })
 })
@@ -342,10 +427,10 @@ describe('errorHandlerPlugin (no Sentry DSN)', () => {
     mockCaptureException.mockClear()
 
     const reply = createMockReply()
-    handler!(new Error('test'), createMockRequest(), reply)
+    await handler!(new Error('test'), createMockRequest(), reply)
 
     expect(mockWithScope).not.toHaveBeenCalled()
     expect(mockCaptureException).not.toHaveBeenCalled()
-    expect(reply.status).toHaveBeenCalledWith(500)
+    expect(reply.code).toHaveBeenCalledWith(500)
   })
 })
