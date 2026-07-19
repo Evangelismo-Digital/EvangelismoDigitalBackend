@@ -277,12 +277,12 @@ describe('OutboxProcessor', () => {
     })
   })
 
-  describe('processEvents', () => {
+  describe('processPendingEvents', () => {
     it('lock não adquirido: retorna sem consultar eventos', async () => {
       const findPendingSpy = vi.spyOn(repository, 'findPending')
       mockAcquire.mockResolvedValueOnce(null)
 
-      await processor.processEvents()
+      await processor.processPendingEvents()
 
       expect(findPendingSpy).not.toHaveBeenCalled()
       expect(logger.warn).toHaveBeenCalledWith(OUTBOX_LOGS.SKIPPED_ANOTHER_RUNNING)
@@ -292,7 +292,7 @@ describe('OutboxProcessor', () => {
     it('falha ao buscar pendentes: loga, captura no Sentry e libera o lock', async () => {
       repository.shouldFailOn.findPending = true
 
-      await processor.processEvents()
+      await processor.processPendingEvents()
 
       expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.PENDING_FETCH_ERROR)
       expect(mockCaptureError).toHaveBeenCalledWith(expect.anything())
@@ -300,7 +300,7 @@ describe('OutboxProcessor', () => {
     })
 
     it('lista vazia: retorna cedo sem enfileirar e libera o lock', async () => {
-      await processor.processEvents()
+      await processor.processPendingEvents()
 
       expect(mockQueueAdd).not.toHaveBeenCalled()
       expect(mockRelease).toHaveBeenCalledOnce()
@@ -311,7 +311,7 @@ describe('OutboxProcessor', () => {
       await createEvent(repository)
       await createEvent(repository)
 
-      await processor.processEvents()
+      await processor.processPendingEvents()
 
       expect(mockQueueAdd).toHaveBeenCalledTimes(3)
       expect(mockRenew).toHaveBeenCalledTimes(3)
@@ -324,7 +324,7 @@ describe('OutboxProcessor', () => {
       await createEvent(repository)
       mockQueueAdd.mockRejectedValueOnce(new Error('falha pontual'))
 
-      await processor.processEvents()
+      await processor.processPendingEvents()
 
       expect(mockQueueAdd).toHaveBeenCalledTimes(2)
       expect(repository.items[0].status).toBe(IOutboxEventType.PENDING)
@@ -335,7 +335,7 @@ describe('OutboxProcessor', () => {
       await createEvent(repository)
       mockRenew.mockRejectedValueOnce(new Error('conexão perdida'))
 
-      await processor.processEvents()
+      await processor.processPendingEvents()
 
       expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.CRITICAL_LOOP_ERROR)
       expect(mockCaptureError).toHaveBeenCalledWith(expect.anything())
@@ -343,7 +343,7 @@ describe('OutboxProcessor', () => {
     })
   })
 
-  describe('recoverStuckSendingEvents', () => {
+  describe('processStuckSendingEvents', () => {
     async function createStuckEvent(overrides?: { attempts?: number }): Promise<IOutboxEvent> {
       const event = await createEvent(repository)
       await repository.updateStatus(event.publicId, IOutboxEventType.SENDING)
@@ -359,7 +359,7 @@ describe('OutboxProcessor', () => {
       const findStuckSpy = vi.spyOn(repository, 'findStuck')
       mockAcquire.mockResolvedValueOnce(null)
 
-      await processor.recoverStuckSendingEvents()
+      await processor.processStuckSendingEvents()
 
       expect(findStuckSpy).not.toHaveBeenCalled()
     })
@@ -368,7 +368,7 @@ describe('OutboxProcessor', () => {
       const findStuckSpy = vi.spyOn(repository, 'findStuck')
       const before = Date.now()
 
-      await processor.recoverStuckSendingEvents()
+      await processor.processStuckSendingEvents()
 
       expect(findStuckSpy).toHaveBeenCalledOnce()
       const [threshold, limit] = findStuckSpy.mock.calls[0]
@@ -380,7 +380,7 @@ describe('OutboxProcessor', () => {
     it('falha ao buscar travados: loga, captura no Sentry e libera o lock', async () => {
       repository.shouldFailOn.findStuck = true
 
-      await processor.recoverStuckSendingEvents()
+      await processor.processStuckSendingEvents()
 
       expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.STUCK_FETCH_ERROR)
       expect(mockCaptureError).toHaveBeenCalledWith(expect.anything())
@@ -393,7 +393,7 @@ describe('OutboxProcessor', () => {
       repository.items[0].sendingAt = new Date(Date.now() - 2 * OUTBOX_CONSTANTS.THRESHOLDS.STUCK_SENDING_MS)
       mockRenew.mockRejectedValueOnce(new Error('conexão perdida'))
 
-      await processor.recoverStuckSendingEvents()
+      await processor.processStuckSendingEvents()
 
       expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.CRITICAL_RECOVERY_ERROR)
       expect(mockCaptureError).toHaveBeenCalledWith(expect.anything())
@@ -401,7 +401,7 @@ describe('OutboxProcessor', () => {
     })
 
     it('nenhum evento travado: não processa nada', async () => {
-      await processor.recoverStuckSendingEvents()
+      await processor.processStuckSendingEvents()
 
       expect(mockQueueAdd).not.toHaveBeenCalled()
       expect(mockRelease).toHaveBeenCalledOnce()
@@ -411,7 +411,7 @@ describe('OutboxProcessor', () => {
       const stuck = await createStuckEvent()
       const attemptsBefore = stuck.attempts
 
-      await processor.recoverStuckSendingEvents()
+      await processor.processStuckSendingEvents()
 
       expect(mockQueueAdd).toHaveBeenCalledOnce()
       expect(repository.items[0].attempts).toBe(attemptsBefore + 1)
@@ -421,7 +421,7 @@ describe('OutboxProcessor', () => {
     it('evento travado que atingiu o limite vira FAILED em vez de ser re-despachado (regressão poison loop)', async () => {
       await createStuckEvent({ attempts: OUTBOX_CONSTANTS.THRESHOLDS.MAX_DISPATCH_ATTEMPTS })
 
-      await processor.recoverStuckSendingEvents()
+      await processor.processStuckSendingEvents()
 
       expect(mockQueueAdd).not.toHaveBeenCalled()
       expect(repository.items[0].status).toBe(IOutboxEventType.FAILED)
@@ -431,7 +431,7 @@ describe('OutboxProcessor', () => {
       await createStuckEvent()
       mockQueueAdd.mockRejectedValueOnce(new Error('falha pontual'))
 
-      await processor.recoverStuckSendingEvents()
+      await processor.processStuckSendingEvents()
 
       expect(mockRelease).toHaveBeenCalledOnce()
     })

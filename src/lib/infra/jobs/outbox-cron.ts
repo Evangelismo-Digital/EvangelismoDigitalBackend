@@ -18,12 +18,12 @@ export function startOutboxCron(existingProcessor?: OutboxProcessor) {
    *
    * Executa duas tarefas em sequência, cada uma com seu próprio lock:
    *
-   * 1. recoverStuckSendingEvents — recupera eventos que travaram em SENDING
+   * 1. processStuckSendingEvents — recupera eventos que travaram em SENDING
    *    após um crash entre o dispatch ao BullMQ e o delete do banco.
-   *    Deve rodar ANTES de processEvents para limpar o estado inconsistente
+   *    Deve rodar ANTES de processPendingEvents para limpar o estado inconsistente
    *    antes de processar eventos novos.
    *
-   * 2. processEvents — processa eventos PENDING que não foram disparados
+   * 2. processPendingEvents — processa eventos PENDING que não foram disparados
    *    via OutboxSignal (ex: worker estava fora do ar no momento da escrita).
    */
   cron.schedule(CRON_SCHEDULES.MIDNIGHT_DAILY, async () => {
@@ -33,7 +33,7 @@ export function startOutboxCron(existingProcessor?: OutboxProcessor) {
 
     // Fase 1: recupera eventos travados em SENDING
     try {
-      await processor.recoverStuckSendingEvents()
+      await processor.processStuckSendingEvents()
       logger.info(OUTBOX_LOGS.PHASE1_DONE)
     } catch (error) {
       logger.error({ error }, OUTBOX_LOGS.PHASE1_ERROR)
@@ -42,7 +42,7 @@ export function startOutboxCron(existingProcessor?: OutboxProcessor) {
 
     // Fase 2: processa eventos PENDING não despachados
     try {
-      await processor.processEvents()
+      await processor.processPendingEvents()
       logger.info(OUTBOX_LOGS.PHASE2_DONE)
     } catch (error) {
       logger.error({ error }, OUTBOX_LOGS.PHASE2_ERROR)

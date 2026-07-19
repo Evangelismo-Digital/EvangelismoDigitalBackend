@@ -21,7 +21,7 @@ export class OutboxProcessor {
 
   constructor(private outboxRepository: IOutboxRepository) {}
 
-  async processEvents(): Promise<void> {
+  async processPendingEvents(): Promise<void> {
     let lockToken: LockToken | null = null
 
     try {
@@ -60,7 +60,7 @@ export class OutboxProcessor {
     }
   }
 
-  async recoverStuckSendingEvents(): Promise<void> {
+  async processStuckSendingEvents(): Promise<void> {
     let lockToken: LockToken | null = null
 
     try {

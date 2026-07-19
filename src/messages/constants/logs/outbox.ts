@@ -21,14 +21,14 @@ export const OUTBOX_LOGS = {
   SCAN_DONE: 'Varredura de segurança da Outbox concluída.',
   SCHEDULER_CONFIGURED: 'Agendador da Outbox configurado para 00:00 diariamente.',
   // outbox-processor
-  SKIPPED_ANOTHER_RUNNING: 'processEvents: Processamento ignorado. Outra instância já está rodando.',
+  SKIPPED_ANOTHER_RUNNING: 'processPendingEvents: Processamento ignorado. Outra instância já está rodando.',
   PENDING_FETCH_ERROR: 'Erro de Infra ao buscar eventos pendentes.',
   STUCK_FETCH_ERROR: 'Erro de Infra ao buscar eventos travados na Outbox.',
   STATUS_UPDATE_FAILED: 'Falha ao atualizar status para SENDING. Evento permanece em PENDING.',
   REVERT_FATAL: 'FATAL: Falha ao reverter status para PENDING. Inconsistência na DB.',
   DISPATCH_REVERTED: 'Falha no dispatch, revertido para PENDING',
-  CRITICAL_LOOP_ERROR: 'Erro crítico inesperado no loop principal de processEvents',
-  CRITICAL_RECOVERY_ERROR: 'Erro crítico inesperado no recoverStuckSendingEvents',
+  CRITICAL_LOOP_ERROR: 'Erro crítico inesperado no loop principal de processPendingEvents',
+  CRITICAL_RECOVERY_ERROR: 'Erro crítico inesperado no processStuckSendingEvents',
   MARKED_FAILED: 'Evento excedeu o número máximo de tentativas de despacho e foi marcado como FAILED.',
   FAILED_MARK_ERROR: 'Falha ao marcar evento como FAILED no banco de dados.',
 } as const

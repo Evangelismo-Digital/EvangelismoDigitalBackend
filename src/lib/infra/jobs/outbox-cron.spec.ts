@@ -32,8 +32,8 @@ import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 
 function makeProcessor() {
   return {
-    recoverStuckSendingEvents: vi.fn().mockResolvedValue(undefined),
-    processEvents: vi.fn().mockResolvedValue(undefined),
+    processStuckSendingEvents: vi.fn().mockResolvedValue(undefined),
+    processPendingEvents: vi.fn().mockResolvedValue(undefined),
   } as unknown as OutboxProcessor
 }
 
@@ -55,8 +55,8 @@ describe('startOutboxCron', () => {
   it('caminho feliz: executa as duas fases em sequência, sem erros nem captura no Sentry', async () => {
     await scheduledTask!()
 
-    expect(processor.recoverStuckSendingEvents).toHaveBeenCalledOnce()
-    expect(processor.processEvents).toHaveBeenCalledOnce()
+    expect(processor.processStuckSendingEvents).toHaveBeenCalledOnce()
+    expect(processor.processPendingEvents).toHaveBeenCalledOnce()
     expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.PHASE1_DONE)
     expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.PHASE2_DONE)
     expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.SCAN_DONE)
@@ -65,19 +65,19 @@ describe('startOutboxCron', () => {
 
   it('fase 1 falha: loga PHASE1_ERROR, captura no Sentry e ainda executa a fase 2', async () => {
     const phase1Error = new Error('falha na recuperação')
-    processor.recoverStuckSendingEvents = vi.fn().mockRejectedValue(phase1Error)
+    processor.processStuckSendingEvents = vi.fn().mockRejectedValue(phase1Error)
 
     await scheduledTask!()
 
     expect(logger.error).toHaveBeenCalledWith({ error: phase1Error }, OUTBOX_LOGS.PHASE1_ERROR)
     expect(mockCaptureError).toHaveBeenCalledWith(phase1Error, { phase: 1 })
-    expect(processor.processEvents).toHaveBeenCalledOnce()
+    expect(processor.processPendingEvents).toHaveBeenCalledOnce()
     expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.SCAN_DONE)
   })
 
   it('fase 2 falha: loga PHASE2_ERROR e captura no Sentry, sem impedir o término da varredura', async () => {
     const phase2Error = new Error('falha ao processar pendentes')
-    processor.processEvents = vi.fn().mockRejectedValue(phase2Error)
+    processor.processPendingEvents = vi.fn().mockRejectedValue(phase2Error)
 
     await scheduledTask!()
 
@@ -89,8 +89,8 @@ describe('startOutboxCron', () => {
   it('ambas as fases falham: captura no Sentry duas vezes, uma por fase', async () => {
     const phase1Error = new Error('falha 1')
     const phase2Error = new Error('falha 2')
-    processor.recoverStuckSendingEvents = vi.fn().mockRejectedValue(phase1Error)
-    processor.processEvents = vi.fn().mockRejectedValue(phase2Error)
+    processor.processStuckSendingEvents = vi.fn().mockRejectedValue(phase1Error)
+    processor.processPendingEvents = vi.fn().mockRejectedValue(phase2Error)
 
     await scheduledTask!()
 
