@@ -119,6 +119,14 @@ export default defineConfig(({ mode }) => {
         {
           extends: true,
           test: {
+            name: 'unit-repositories',
+            dir: 'src/repositories',
+            include: ['**/*.spec.ts'],
+          },
+        },
+        {
+          extends: true,
+          test: {
             name: 'e2e',
             dir: 'src/http/controllers',
             exclude: ['**/api-providers-fallback-strategy.e2e.spec.ts'],

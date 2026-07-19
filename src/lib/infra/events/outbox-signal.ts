@@ -4,6 +4,7 @@ import { env } from '@env/index'
 import { logger } from '@lib/logger'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 import Redis from 'ioredis'
+import { captureError } from '@lib/sentry/capture'
 
 const baseConfig = {
   host: env.REDIS_HOST,
@@ -119,6 +120,7 @@ export const OutboxSignal = {
           await onSignal(parsed.publicId, parsed.event)
         } catch (err) {
           logger.error({ err, publicId: message }, OUTBOX_LOGS.SIGNAL_PROCESSING_ERROR)
+          captureError(err, { publicId: message })
         }
       }
 
@@ -127,6 +129,7 @@ export const OutboxSignal = {
       await client.subscribe(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL)
     } catch (err) {
       logger.error({ err }, OUTBOX_LOGS.SUBSCRIBE_ERROR)
+      captureError(err)
     }
   },
 

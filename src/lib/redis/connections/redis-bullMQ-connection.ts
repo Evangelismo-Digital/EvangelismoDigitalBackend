@@ -45,9 +45,7 @@ export function createRedisBullMQConnection() {
         subsystem: 'bullmq',
         redisHost: env.REDIS_HOST,
         redisPort: env.REDIS_PORT,
-        message: error?.message,
-        stack: error?.stack,
-        name: error?.name,
+        err: error,
       },
       REDIS_LOGS.BULLMQ_UNEXPECTED_ERROR,
     )

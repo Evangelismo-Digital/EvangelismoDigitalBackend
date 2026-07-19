@@ -29,4 +29,6 @@ export const OUTBOX_LOGS = {
   DISPATCH_REVERTED: 'Falha no dispatch, revertido para PENDING',
   CRITICAL_LOOP_ERROR: 'Erro crítico inesperado no loop principal de processEvents',
   CRITICAL_RECOVERY_ERROR: 'Erro crítico inesperado no recoverStuckSendingEvents',
+  MARKED_FAILED: 'Evento excedeu o número máximo de tentativas de despacho e foi marcado como FAILED.',
+  FAILED_MARK_ERROR: 'Falha ao marcar evento como FAILED no banco de dados.',
 } as const

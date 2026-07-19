@@ -52,9 +52,7 @@ export function createRedisRateLimiterConnection() {
         subsystem: 'rate-limiter',
         redisHost: env.REDIS_HOST,
         redisPort: env.REDIS_PORT,
-        errorCode: (error as Error & { code?: string })?.code,
-        errorMessage: error?.message,
-        stack: error?.stack,
+        err: error,
       },
       REDIS_LOGS.RATE_LIMITER_UNEXPECTED_ERROR,
     )

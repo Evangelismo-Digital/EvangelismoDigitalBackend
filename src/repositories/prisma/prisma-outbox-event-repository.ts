@@ -47,7 +47,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
     }
   }
 
-  async findStuck(stuckBefore: Date): Promise<Result<IOutboxEvent[], AppError>> {
+  async findStuck(stuckBefore: Date, limit: number): Promise<Result<IOutboxEvent[], AppError>> {
     try {
       const events = await this.dbContext.client.outboxEvent.findMany({
         where: {
@@ -55,6 +55,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
           sendingAt: { lte: stuckBefore },
         },
         orderBy: { sendingAt: 'asc' },
+        take: limit,
       })
 
       return ok(events.map((e) => this.toEntity(e)))
@@ -81,7 +82,10 @@ export class PrismaOutboxRepository implements IOutboxRepository {
         where: { publicId },
         data: {
           status,
-          ...(status === IOutboxEventType.SENDING && { sendingAt: new Date() }),
+          // SENDING marca o início do ciclo de despacho; demais status limpam o marcador
+          ...(status === IOutboxEventType.SENDING
+            ? { sendingAt: new Date(), attempts: { increment: 1 } }
+            : { sendingAt: null }),
         },
       })
       return ok(undefined)
@@ -97,6 +101,10 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       })
       return ok(undefined)
     } catch (error) {
+      // Idempotente: linha já removida (P2025) conta como sucesso
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        return ok(undefined)
+      }
       return err(this.infraErrorMapper.mapToKnownError(error))
     }
   }
@@ -109,6 +117,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
     type: string
     status: string
     payload: unknown
+    attempts: number
     occurredAt: Date
     sendingAt: Date | null
   }): IOutboxEvent {
@@ -118,6 +127,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       type: raw.type,
       status: raw.status as IOutboxEventType,
       payload: raw.payload,
+      attempts: raw.attempts,
       occurredAt: raw.occurredAt,
       sendingAt: raw.sendingAt || undefined,
     }

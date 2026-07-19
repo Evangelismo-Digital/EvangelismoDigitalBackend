@@ -29,9 +29,12 @@ enum UserRole {
   DEFAULT
 }
 
+// NOTE: este enum modela o *status* do evento da outbox (nome mantido por compatibilidade de migração).
+// FAILED é terminal: eventos que excederam MAX_DISPATCH_ATTEMPTS não são mais re-despachados.
 enum OutboxEventType {
   PENDING
   SENDING
+  FAILED
 }
 
 model AuthenticationAudit {
@@ -97,6 +100,7 @@ model OutboxEvent {
   type       String
   status     OutboxEventType @default(PENDING) @map("status")
   payload    Json
+  attempts   Int             @default(0)
   occurredAt DateTime        @default(now()) @map("ocurred_at")
   sendingAt  DateTime?       @map("sending_at")
 

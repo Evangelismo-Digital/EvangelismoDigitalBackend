@@ -13,6 +13,7 @@ import {
 } from 'core/contracts/repository/outbox-repository.interface'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
+import { captureError } from '@lib/sentry/capture'
 
 export class OutboxProcessor {
   private readonly LOCK_KEY = OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_PROCESSOR
@@ -35,6 +36,7 @@ export class OutboxProcessor {
       // Verificação do Result
       if (isErr(pendingEventsResult)) {
         logger.error({ error: pendingEventsResult.error }, OUTBOX_LOGS.PENDING_FETCH_ERROR)
+        captureError(pendingEventsResult.error)
         return
       }
 
@@ -50,6 +52,7 @@ export class OutboxProcessor {
       }
     } catch (error) {
       logger.error({ error }, OUTBOX_LOGS.CRITICAL_LOOP_ERROR)
+      captureError(error)
     } finally {
       if (lockToken) {
         await DistributedLock.release(this.LOCK_KEY, lockToken)
@@ -65,11 +68,15 @@ export class OutboxProcessor {
       if (!lockToken) return
 
       const thresholdDate = new Date(Date.now() - OUTBOX_CFG.THRESHOLDS.STUCK_SENDING_MS)
-      const stuckEventsResult = await this.outboxRepository.findStuck(thresholdDate)
+      const stuckEventsResult = await this.outboxRepository.findStuck(
+        thresholdDate,
+        OUTBOX_CFG.THRESHOLDS.STUCK_FETCH_LIMIT,
+      )
 
       // Verificação do Result
       if (isErr(stuckEventsResult)) {
         logger.error({ error: stuckEventsResult.error }, OUTBOX_LOGS.STUCK_FETCH_ERROR)
+        captureError(stuckEventsResult.error)
         return
       }
 
@@ -84,6 +91,7 @@ export class OutboxProcessor {
       }
     } catch (error) {
       logger.error({ error }, OUTBOX_LOGS.CRITICAL_RECOVERY_ERROR)
+      captureError(error)
     } finally {
       if (lockToken) {
         await DistributedLock.release(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, lockToken)
@@ -92,6 +100,22 @@ export class OutboxProcessor {
   }
 
   async processSingleEvent(event: IOutboxEvent): Promise<void> {
+    // Phase 0: eventos que excederam o limite de ciclos de despacho são terminais (poison message)
+    if (event.attempts >= OUTBOX_CFG.THRESHOLDS.MAX_DISPATCH_ATTEMPTS) {
+      const failResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.FAILED)
+
+      if (isErr(failResult)) {
+        logger.error({ publicId: event.publicId, error: failResult.error }, OUTBOX_LOGS.FAILED_MARK_ERROR)
+        captureError(failResult.error, { publicId: event.publicId })
+      } else {
+        logger.warn({ publicId: event.publicId, attempts: event.attempts }, OUTBOX_LOGS.MARKED_FAILED)
+        // Evento terminal (poison message): sem exceção real para capturar, então
+        // sintetizamos uma Error para dar visibilidade no Sentry (política "terminal/critical only").
+        captureError(new Error(OUTBOX_LOGS.MARKED_FAILED), { publicId: event.publicId, attempts: event.attempts })
+      }
+      return
+    }
+
     // Phase 1: Transition to SENDING
     const updateResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.SENDING)
 
@@ -108,6 +132,7 @@ export class OutboxProcessor {
 
       if (isErr(revertResult)) {
         logger.error({ publicId: event.publicId, error: revertResult.error }, OUTBOX_LOGS.REVERT_FATAL)
+        captureError(revertResult.error, { publicId: event.publicId })
       } else {
         logger.error({ publicId: event.publicId, error }, OUTBOX_LOGS.DISPATCH_REVERTED)
       }

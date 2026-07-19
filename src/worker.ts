@@ -54,6 +54,11 @@ async function bootstrap() {
     // Antes de rodar a rotina do cron, os workers disputam uma chave no Redis
     // (ex: usando SETNX com TTL de 1 minuto). O worker que conseguir o lock atua
     // como "Líder" e executa a varredura, enquanto os outros ficam em standby.
+    //
+    // O mesmo alerta vale para o handler de Pub/Sub acima (OutboxSignal.subscribe):
+    // o Redis entrega o sinal a TODOS os assinantes, então N pods processariam o
+    // mesmo evento concorrentemente. Hoje a segurança vem do jobId determinístico
+    // no BullMQ (dedup) e do updateStatus idempotente — não de um lock.
     // ============================================================================
     startOutboxCron(outboxProcessor)
 

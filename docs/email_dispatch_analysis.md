@@ -2,7 +2,8 @@
 
 > **Scope**: Full analysis of all email-sending paths in the EvangelismoDigital monolith.  
 > **Date**: July 2026  
-> **Codebase**: `EvangelismoDigitalBackend` (Fastify + Node.js 20 + BullMQ + Nodemailer)
+> **Codebase**: `EvangelismoDigitalBackend` (Fastify + Node.js 20 + BullMQ + Nodemailer)  
+> **Rev 2 (2026-07-19)**: Deep audit of the outbox PENDING/SENDING state machine. Adds findings **F-10–F-13** (duplicate-send on delete failure, rows orphaned in `SENDING`, poison-message loop, state-machine hygiene) — **all four fixed in code** (see §5). Amends Proposal 2 with an **expiration-aware** password-reset design, and adds **Proposal 7** (2-week outbox retention) and **Proposal 8** (stricter password-reset cleanup).
 
 ---
 
@@ -31,7 +32,7 @@ The monolith employs **two fundamentally different architectures** for dispatchi
 | **Forgot Password** | Direct `SendEmailUseCase.execute()` inside HTTP handler | ❌ **No** | ⚠️ **Partially** | ❌ **No** (single attempt, no timeout) |
 
 > [!IMPORTANT]
-> **The forms submission pipeline is architecturally sound.** The real vulnerability is the **forgot-password flow**, which calls `nodemailer.sendMail()` synchronously within the Fastify request lifecycle. An SMTP server that hangs (TCP timeout defaults to 120s+ on most OS) will **block the HTTP response for 2+ minutes**, consuming a Fastify connection slot and degrading the event loop for all concurrent requests — including church routing.
+> **The forms submission pipeline is architecturally sound** — but the Rev 2 state-machine audit found four implementation defects inside it (F-10–F-13, §5): a duplicate-email path, rows silently orphaned in `SENDING` for up to 24 h, no terminal state for poison messages, and a stuck-recovery threshold shorter than a job's real lifetime. **All four are fixed in code as of Rev 2.** The remaining architectural vulnerability is the **forgot-password flow**, which calls `nodemailer.sendMail()` synchronously within the Fastify request lifecycle. An SMTP server that hangs (TCP timeout defaults to 120s+ on most OS) will **block the HTTP response for 2+ minutes**, consuming a Fastify connection slot and degrading the event loop for all concurrent requests — including church routing.
 
 ---
 
@@ -87,7 +88,7 @@ graph TB
 
 ### 3.1 Forms Submission Pipeline (Outbox + Worker)
 
-**Verdict: ✅ Well-architected, async, and resilient.**
+**Verdict: ✅ Well-architected, async, and resilient** *(Rev 2: four implementation defects — F-10–F-13 — were found in the state machine and fixed; see §5).*
 
 #### Data Flow
 
@@ -110,7 +111,9 @@ graph TB
 | **Durable fallback** | Midnight cron sweeps `PENDING` events if signal was missed | [outbox-cron.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/jobs/outbox-cron.ts) |
 | **Retry with backoff** | BullMQ: 3 attempts, exponential backoff starting at 10s | [mail-queue.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/queue/mail-queue.ts#L19-L24) |
 | **Idempotency** | Redis NX key prevents duplicate processing | [mail-worker.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/workers/mail-worker.ts#L28-L53) |
-| **Stuck event recovery** | Recovers events stuck in `SENDING` for > 30s | [outbox-processor.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/jobs/outbox-processor.ts#L60-L92) |
+| **Stuck event recovery** | Recovers events stuck in `SENDING` for > 15 min (raised from 30s in Rev 2 — see F-13) | [outbox-processor.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/jobs/outbox-processor.ts#L60-L92) |
+| **Terminal FAILED state** *(Rev 2)* | Events exceeding `MAX_DISPATCH_ATTEMPTS` (5 dispatch cycles) become `FAILED` instead of looping forever | [outbox-processor.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/jobs/outbox-processor.ts), [outbox.ts](file:///home/amaro/EvangelismoDigitalBackend/src/messages/constants/outbox/outbox.ts) |
+| **Final-failure revert** *(Rev 2)* | When BullMQ exhausts all attempts, the `failed` handler reverts the row to `PENDING` for the next cycle | [mail-worker.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/workers/mail-worker.ts) |
 | **Distributed locking** | Lua-based Redis locks prevent concurrent processing | [distributed-lock.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/distributed-lock/distributed-lock.ts) |
 | **Graceful shutdown** | Worker closes BullMQ, disconnects Pub/Sub, flushes Sentry | [worker.ts](file:///home/amaro/EvangelismoDigitalBackend/src/worker.ts#L74-L98) |
 
@@ -122,6 +125,9 @@ graph TB
 | **`Promise.all` for batch emails** | Low | [mail-worker.ts L59](file:///home/amaro/EvangelismoDigitalBackend/src/lib/workers/mail-worker.ts#L59): All emails in a batch are sent concurrently. If one fails, `Promise.all` still waits for all to settle but only the first error is thrown. Partial-send state is possible (user email sent but staff email failed) |
 | **Transporter caching across verify failures** | Low | [nodemailer-mail-sender.ts L24-29](file:///home/amaro/EvangelismoDigitalBackend/src/lib/mail/nodemailer-mail-sender.ts#L24-L29): If `verify()` fails, the transporter is **not** cached (correct), but a flapping SMTP server will trigger `createTransport()` on every retry, creating connection overhead |
 | **Cron only runs at midnight** | Low | If the worker restarts at 00:01, stale `PENDING` events won't be processed until the next midnight. The real-time Pub/Sub signal mitigates this in happy-path scenarios |
+
+> [!NOTE]
+> **Rev 2**: the state-machine audit promoted several of these concerns into concrete findings **F-10–F-13** (see §4/§5), all of which have been fixed in code. The table above is kept for historical context.
 
 ---
 
@@ -218,7 +224,11 @@ However, if this secondary DB call **also** fails (network error), the token rem
 | F-6 | **Worker SMTP hang blocks BullMQ concurrency slot** | 🟡 **Medium** | Without SMTP timeout, a worker concurrency slot (of 5) can be blocked for 2+ min | Medium | Forms Pipeline (Worker) |
 | F-7 | **Transporter re-creation overhead during SMTP flapping** | 🟢 **Low** | Repeated `createTransport()` + `verify()` calls during SMTP instability; minimal resource impact | Low | Both |
 | F-8 | **Outbox cron only at midnight** | 🟢 **Low** | Events missed by Pub/Sub wait up to 24h; mitigated by real-time signal in happy path | Very Low | Forms Pipeline |
-| F-9 | **Horizontal scaling cron contention** (already documented) | 🟢 **Low** | Multiple workers compete for the cron lock; documented in [worker.ts L46-57](file:///home/amaro/EvangelismoDigitalBackend/src/worker.ts#L46-L57) with leader election suggestion | Low (current single-worker setup) | Forms Pipeline |
+| F-9 | **Horizontal scaling cron contention** (already documented) | 🟢 **Low** | Multiple workers compete for the cron lock; documented in [worker.ts L46-57](file:///home/amaro/EvangelismoDigitalBackend/src/worker.ts#L46-L57) with leader election suggestion. The Pub/Sub handler shares the same caveat: Redis delivers the signal to **all** subscribers, so N pods would process the same event concurrently, protected only by the deterministic BullMQ `jobId` and the idempotent `updateStatus` | Low (current single-worker setup) | Forms Pipeline |
+| F-10 | **Idempotency `completed` marker deleted on outbox-delete failure → duplicate emails** — ✅ *fixed (Rev 2)* | 🔴 **Critical** | After a successful send, a failing outbox `delete` wiped the `completed` key, so the BullMQ retry re-sent the same emails (up to 3×) | Low frequency, high impact (needs a DB blip exactly between send and delete) | Forms Pipeline (Worker) |
+| F-11 | **Rows orphaned in `SENDING` after final BullMQ failure** — ✅ *fixed (Rev 2)* | 🟠 **High** | The `failed` handler only logged; with `removeOnFail: true` the outbox row stayed `SENDING`, invisible for up to 24 h until the midnight sweep | High (any email failing 3 straight times) | Forms Pipeline (Worker) |
+| F-12 | **No terminal state / attempt counter → poison-message loop** — ✅ *fixed (Rev 2)* | 🟠 **High** | A permanently failing event (e.g. malformed payload) was re-dispatched by every midnight sweep forever, and the row never left the table | Medium | Forms Pipeline |
+| F-13 | **State-machine hygiene**: 30 s stuck threshold < real job lifetime; unbounded `findStuck`; P2025 delete burned retries; stale `sendingAt` on revert — ✅ *fixed (Rev 2)* | 🟡 **Medium** | Latent duplicate-dispatch if the sweep ever ran more often than daily; noisy no-op retries; unreliable `sendingAt` field | Medium | Forms Pipeline |
 
 ---
 
@@ -329,6 +339,67 @@ This isn't critical because:
 - The idempotency key deletion on failure is the correct behavior for retry
 
 But it could be improved with `Promise.allSettled` and per-email tracking.
+
+### Finding F-10: Idempotency Marker Destroyed on Delete Failure → Duplicate Emails (Critical) — ✅ Fixed
+
+**File**: [mail-worker.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/workers/mail-worker.ts)
+
+The original job processor used a single `try/catch` around **both** the email-send phase and the outbox-row cleanup. The failure sequence was:
+
+1. All emails sent successfully.
+2. Idempotency key set to `'completed'` (24 h TTL).
+3. `outboxRepository.delete(publicId)` fails (transient DB error).
+4. The `catch` ran `redisCache.del(idempotencyKey)` — **wiping the `'completed'` marker**.
+5. BullMQ retried the job; `SET NX` succeeded (key gone) → **the same emails were sent again**, up to 3× if the delete kept failing, after which the row was also stranded in `SENDING` (F-11).
+
+The idempotency guard was destroyed on exactly the path it existed to protect.
+
+**Fix (Rev 2)**: the processor is now split into two phases. The `catch` that deletes the idempotency key covers **only** the send phase (where the key still holds `'processing'`). If the outbox delete fails after `'completed'` was written, the error is rethrown **without touching the key** — the BullMQ retry then lands in the `status === 'completed'` dedup branch and only re-attempts the row deletion. Regression-tested end-to-end in [mail-worker.spec.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/workers/mail-worker.spec.ts) ("regressão do envio duplicado").
+
+### Finding F-11: Rows Orphaned in `SENDING` After Final BullMQ Failure (High) — ✅ Fixed
+
+**File**: [mail-worker.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/workers/mail-worker.ts)
+
+When a job exhausted its 3 BullMQ attempts, the `worker.on('failed')` handler **only logged**. With `removeOnFail: true` the job vanished from Redis, and the outbox row stayed in `SENDING` — invisible to `findPending` — until the **midnight-only** recovery sweep. A form email failing at 00:05 would not be retried for ~24 hours, with no observable signal.
+
+**Fix (Rev 2)**: a new `createJobFailureHandler` detects finality (`job.attemptsMade >= job.opts.attempts`, and treats `"job stalled more than allowable limit"` as final) and reverts the row to `PENDING` (clearing `sendingAt`), making it immediately eligible for the next processing cycle. The revert deliberately goes to `PENDING`, not `FAILED` — the terminal transition is owned solely by the processor's attempts-cap guard (F-12). The handler swallows and logs its own errors so a rejection can never bubble into `unhandledRejection` → `crashShutdown`.
+
+### Finding F-12: No Terminal State — Poison-Message Loop (High) — ✅ Fixed
+
+**Files**: [schema.prisma](file:///home/amaro/EvangelismoDigitalBackend/prisma/schema.prisma), [outbox-processor.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/jobs/outbox-processor.ts)
+
+The status enum had only `PENDING` and `SENDING`, and there was no attempt counter. A permanently failing event (malformed payload, invalid recipient) was re-driven by every midnight sweep **forever**, and its row never left the table.
+
+**Fix (Rev 2)** — migration `add_outbox_failed_status_and_attempts`:
+
+- `outbox_events.attempts INTEGER NOT NULL DEFAULT 0` — incremented on every `PENDING → SENDING` transition (i.e., per **dispatch cycle**, not per BullMQ attempt; BullMQ already retries 3× internally within one cycle).
+- New enum value `FAILED` (terminal). `processSingleEvent` short-circuits any event with `attempts >= MAX_DISPATCH_ATTEMPTS` (5) into `FAILED` before dispatching.
+
+The resulting state machine:
+
+```
+PENDING --(dispatch: attempts+1, sendingAt=now)--> SENDING
+SENDING --(mail worker: send confirmed)----------> row deleted ("sent")
+SENDING --(queue.add / strategy error)-----------> PENDING (sendingAt cleared)
+SENDING --(final BullMQ job failure)-------------> PENDING (sendingAt cleared)
+SENDING --(crash; sendingAt > 15 min)------------> re-driven by recovery sweep
+any     --(attempts >= 5 at dispatch time)-------> FAILED (terminal)
+```
+
+Worst case for a poison message: 5 dispatch cycles × 3 BullMQ attempts = 15 sends attempted, then permanent `FAILED`. `FAILED` rows stay in the table for inspection and are the primary target of the retention cleanup (Proposal 7).
+
+### Finding F-13: State-Machine Hygiene (Medium) — ✅ Fixed
+
+Grouped smaller defects, all fixed in Rev 2:
+
+| Defect | Problem | Fix |
+|--------|---------|-----|
+| `STUCK_SENDING_MS = 30s` | A healthy job legitimately stays `SENDING` for its whole BullMQ lifetime (3 attempts × up to 300 s lock + backoff). A 30 s threshold classified live jobs as "stuck" — a latent duplicate-dispatch bug the moment the sweep runs more often than daily | Raised to **15 min** ([outbox.ts](file:///home/amaro/EvangelismoDigitalBackend/src/messages/constants/outbox/outbox.ts)), above worst-case job lifetime. Recovery is now purely a crash-leftover net (the F-11 handler reverts prompt failures) |
+| Unbounded `findStuck` | After an outage stranding many rows, the sweep loaded them all at once | `findStuck(stuckBefore, limit)` with `STUCK_FETCH_LIMIT = 50`, mirroring `findPending` |
+| P2025 delete burned retries | Deleting an already-deleted row threw → InfraError → BullMQ retried the no-op delete 3× with error logs | Repository `delete` treats P2025 as success (idempotent delete) ([prisma-outbox-event-repository.ts](file:///home/amaro/EvangelismoDigitalBackend/src/repositories/prisma/prisma-outbox-event-repository.ts)) |
+| Stale `sendingAt` on revert | Reverting `SENDING → PENDING` left the old `sendingAt` populated, making the field unreliable | `updateStatus` now clears `sendingAt` on any transition away from `SENDING` |
+
+**Test coverage (Rev 2)**: the state machine is now covered by ~70 unit tests across [outbox-processor.spec.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/jobs/outbox-processor.spec.ts), [mail-worker.spec.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/workers/mail-worker.spec.ts), [in-memory-outbox-repository.spec.ts](file:///home/amaro/EvangelismoDigitalBackend/src/repositories/in-memory/in-memory-outbox-repository.spec.ts) and [prisma-outbox-event-repository.spec.ts](file:///home/amaro/EvangelismoDigitalBackend/src/repositories/prisma/prisma-outbox-event-repository.spec.ts) (new `unit-repositories` vitest project), including regressions for every F-10–F-13 scenario.
 
 ---
 
@@ -549,6 +620,82 @@ return reply.code(200).send({ message: EMAIL_CONSTANTS.PASSWORD_RESET_GENERIC_ME
 > [!WARNING]  
 > **Token-in-Outbox Security Consideration**: The password reset token will now be stored in the `outbox_events` table payload alongside the existing `outbox_events` in PostgreSQL. Since this is the same database, and the token is already stored in the users table, this doesn't introduce a new attack surface. The outbox event is deleted after successful email dispatch. However, ensure the outbox table has equivalent access controls to the users table.
 
+#### Proposal 2 — Amendment (Rev 2): Expiration-Aware Dispatch
+
+The base design above ignores a hard constraint: **the reset token expires 15 minutes after creation** (`EXPIRES_IN_MINUTES = 15`, currently hardcoded in [forgot-password.ts L23](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/users/forgot-password.ts#L23)). An async pipeline with retries and daily sweeps can otherwise deliver an email **after** the token is dead — the user clicks a fresh-looking link and gets "Token inválido ou expirado", which is worse UX than no email at all. The amended design guarantees a dead link is **never sent**:
+
+##### 1. Schema: `expiresAt` on outbox events
+
+One migration adds a nullable column plus a partial index (raw SQL edit in the generated migration):
+
+```prisma
+model OutboxEvent {
+  // ...existing fields...
+  expiresAt DateTime? @map("expires_at")
+}
+```
+
+```sql
+CREATE INDEX "outbox_events_expires_at_idx" ON "outbox_events" ("expires_at") WHERE "expires_at" IS NOT NULL;
+```
+
+A real column (instead of deriving from the JSON payload) makes the expiry sweeps of Proposal 8 a trivial indexed range scan. Form events leave it `NULL` (they never expire).
+
+##### 2. Typed event inputs (discriminated union)
+
+`OutboxEventUseCase.register` currently hardcodes `type: 'FormSubmissionCreated'` and a form-shaped payload. Replace its input with a discriminated union so the compiler enforces per-type payloads:
+
+```typescript
+// core/types/outbox/outbox-event-input.ts
+export type OutboxEventInput =
+  | { type: 'FormSubmissionCreated'; payload: FormPayload; expiresAt?: undefined }
+  | {
+      type: 'PasswordResetRequested'
+      payload: { userPublicId: string; name: string; email: string; token: string; tokenExpiresAt: string }
+      expiresAt: Date // = tokenExpiresAt
+    }
+```
+
+##### 3. Type-based strategy routing
+
+`OutboxProcessor.dispatchToBullMQ` currently never reads `event.type` — it sniffs `payload.decisaoPorCristo`. The amendment makes `event.type` the outer switch (finally using the column):
+
+```typescript
+private resolveDispatch(event: IOutboxEvent): { emails: IMailJobData[]; jobOpts: JobsOptions } {
+  if (event.type === 'PasswordResetRequested') {
+    const strategy = new PasswordResetEmailStrategy() // single user email, no staff email
+    // Retry budget must fit inside the 15-min token window:
+    // 3 attempts x fixed 30s backoff ≈ ~1 min worst case ≪ 15 min
+    return { emails: [/* user */], jobOpts: { jobId: event.publicId, attempts: 3, backoff: { type: 'fixed', delay: 30_000 } } }
+  }
+  // default: FormSubmissionCreated — existing decisaoPorCristo branch, queue-default job opts
+}
+```
+
+`IOutboxDispatchData.emails` is already an array, so a single-element batch needs no interface change (the worker spec already covers `emails.length === 1`). Add optional `expiresAt?: string` to `IOutboxDispatchData` for the worker-side check below.
+
+##### 4. Two expiry gates — a dead link is never emailed
+
+1. **Processor gate** ([outbox-processor.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/infra/jobs/outbox-processor.ts), before Phase 1): `if (event.expiresAt && event.expiresAt <= new Date())` → `outboxRepository.delete(publicId)`, log, return. Catches events resurrected by the midnight sweep or the F-11 revert path.
+2. **Worker gate** ([mail-worker.ts](file:///home/amaro/EvangelismoDigitalBackend/src/lib/workers/mail-worker.ts), before the send phase): same check on `job.data.expiresAt` → delete the outbox row and return **successfully** (no retry, no email). Catches jobs whose backoff delay crossed the expiry boundary while queued.
+
+##### 5. `ForgotPasswordUseCase` refactor — atomicity replaces compensation
+
+- Drop the `SendEmailUseCase` dependency entirely.
+- Inside one transaction (`TransactionalUseCaseDecorator`, exactly like [make-form-submission-use-case.ts](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/forms/factories/make-form-submission-use-case.ts)): write `token`/`tokenExpiresAt` on the user **and** register the `PasswordResetRequested` outbox event with `expiresAt = tokenExpiresAt`.
+- The current compensating block (invalidate token when the inline send fails, [forgot-password.ts L75-82](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/users/forgot-password.ts#L75-L82)) **disappears** — if the transaction commits, delivery is guaranteed-or-expired; if it rolls back, no token exists. This also retires findings F-4 (unhandled cleanup failure) entirely.
+- Controller fires `OutboxSignal.publishNewItem` fire-and-forget after commit (same as the form controller) and always returns the generic 200.
+
+##### 6. Template & constants
+
+- Move `EXPIRES_IN_MINUTES` to a shared constant (e.g. `EMAIL_CONSTANTS` or an auth constants module) — it is currently duplicated between the use case and its spec assertions.
+- Both templates ([forgot-password-text.ts](file:///home/amaro/EvangelismoDigitalBackend/src/templates/forgot-password/forgot-password-text.ts), [forgot-password-html.ts](file:///home/amaro/EvangelismoDigitalBackend/src/templates/forgot-password/forgot-password-html.ts)) must state the validity window, parametrized from that constant: *"Este link é válido por 15 minutos."* Today they say nothing, so users have no idea the link is short-lived.
+
+##### 7. Security notes
+
+- **Plaintext token**: `users.token` stores the raw 64-hex token (with a unique index), and the amended design also carries it through `outbox_events.payload` (transient — deleted on send or expiry). Recommended follow-up: persist only `sha256(token)` in `users.token` and look up by hash in reset-password; keep the raw token exclusively in the transient outbox payload and the email itself.
+- **User enumeration**: [forgot-password.controller.ts](file:///home/amaro/EvangelismoDigitalBackend/src/http/controllers/users/forgot-password.controller.ts) advertises a generic success message but routes `UserNotFoundForPasswordResetError` through `HttpErrorMapper` → **404**, leaking account existence. The controller must treat "user not found" as success (generic 200); only infrastructure errors may surface as 500. Rate limiting (5/hour) already exists but does not remove the oracle.
+
 ---
 
 ### Proposal 3: Improve `Promise.all` Batch Handling (Addresses F-5)
@@ -684,23 +831,101 @@ export class NodemailerMailSender implements MailSender {
 
 ---
 
-## 7. Implementation Priority Order
+### Proposal 7 (Rev 2): 2-Week Retention Cleanup of `outbox_events`
 
-| Priority | Proposal | Effort | Impact | Dependencies |
-|----------|----------|--------|--------|-------------|
+**Problem**: nothing ever purges the table. Rows only leave via per-event delete on successful send, so `FAILED` rows (Rev 2) and crash debris accumulate indefinitely.
+
+**Policy**: delete **every event older than 14 days, regardless of status**. Rationale per status:
+- `FAILED` — terminal by definition; kept 14 days for inspection, then noise.
+- `PENDING` ≥ 14 days — survived ≥ 14 daily sweep cycles without being dispatched; with the F-12 attempts cap it would have become `FAILED` long before, so such a row is unreachable debris.
+- `SENDING` ≥ 14 days — crash leftovers far beyond the 15-min stuck threshold; the recovery sweep either already re-drove them into the attempts cap or the row is orphaned.
+
+Log a `groupBy status` breakdown at `warn` level whenever `PENDING`/`SENDING` rows are being erased, for observability.
+
+**Repository addition** (Result-wrapped, like every other method):
+
+```typescript
+/** Remove eventos mais antigos que a data de corte. Retorna a quantidade removida. */
+deleteOlderThan(cutoff: Date, batchSize: number): Promise<Result<number, AppError>>
+```
+
+Prisma implementation must be **batched** (Prisma's `deleteMany` has no `take`): loop `findMany({ where: { occurredAt: { lt: cutoff } }, select: { id: true }, take: batchSize })` → `deleteMany({ where: { id: { in: ids } } })` until fewer than `batchSize` rows return, accumulating the count. Batching keeps lock time and WAL churn bounded on a grown table.
+
+**Scheduling**: a second cron in the worker (sibling of `startOutboxCron`), `'0 0 3 * * *'` (03:00, off the midnight sweep), guarded by a new `DistributedLock` key `lock:outbox-retention`, TTL renewed per batch. Constants: `RETENTION_DAYS: 14`, `RETENTION_BATCH_SIZE: 1000`.
+
+**Index note**: the existing `@@index([status, occurredAt])` does not serve a status-less `occurredAt < cutoff` scan; add `@@index([occurredAt])` in the same migration as the Proposal 2 amendment's `expiresAt`. At current volumes a sequential scan is acceptable, so this is a "when implemented" note, not urgent.
+
+---
+
+### Proposal 8 (Rev 2): Stricter Cleanup for Password-Reset Events
+
+Password-reset events are **security-sensitive** (they carry a live credential-equivalent token) and **short-lived** (15-min window). The general 14-day retention is far too lax for them. Three layers, cheapest first:
+
+**Layer 1 — dispatch-time skip-and-delete** (specified in Proposal 2 Amendment §4): both the processor and the mail worker delete any event past `expiresAt` instead of sending. This is the *correctness* guarantee — a dead link is never emailed — independent of any sweep timing.
+
+**Layer 2 — frequent expiry sweep**:
+
+```typescript
+/** Remove eventos cujo expiresAt já passou (qualquer status). Retorna a quantidade removida. */
+deleteExpired(now: Date): Promise<Result<number, AppError>>
+// Prisma: deleteMany({ where: { expiresAt: { lte: now } } }) — served by the partial index on expires_at
+```
+
+Cron `'0 */5 * * * *'` (every 5 min) in the worker, lock key `lock:outbox-expiry-sweep`. With a 15-minute token lifetime, an expired row (and the plaintext token inside its payload) lingers **at most ~5 extra minutes** instead of up to 14 days under the general retention rule. This sweep can share the scheduling change suggested in Proposal 5.
+
+**Layer 3 — `users.token` hygiene**: expired `token`/`tokenExpiresAt` values currently persist on the user row until the next reset request overwrites them, leaving a stale plaintext secret in the DB and keeping the `@unique` token index polluted. Two options (recommend lazy-first):
+
+- **(a) Lazy (recommended)**: `ResetPasswordUseCase` already detects expiry ([reset-password.ts L33](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/users/reset-password.ts#L33)); on an expired-token attempt, additionally null the columns before returning `InvalidTokenError`. Zero new infrastructure.
+- **(b) Optional cron**: hourly `updateMany({ where: { tokenExpiresAt: { lt: now } }, data: { token: null, tokenExpiresAt: null } })` in the worker, for tokens whose owner never clicks the link.
+
+**UX rationale**: deterministic cleanup means "Token inválido ou expirado!" is always accurate, the 15-minute promise printed in the email (Proposal 2 Amendment §6) is enforced end-to-end, and a user who requests a new reset always invalidates the previous window cleanly.
+
+---
+
+## 7. Implementation Priority Order (Rev 2)
+
+| Priority | Item | Effort | Impact | Status / Dependencies |
+|----------|------|--------|--------|----------------------|
+| — | **State-machine fixes F-10–F-13** (idempotency split, final-failure revert, `FAILED` + `attempts`, hygiene) | 🔨 done | 🔴 Critical — duplicate emails, 24 h orphans, poison loops | ✅ **Implemented in Rev 2** (migration `add_outbox_failed_status_and_attempts`, ~70 new unit tests) |
 | **P0** | **Proposal 1**: Add SMTP timeouts | ⚡ 5 min | 🔴 Critical — prevents 2-min+ hangs | None |
-| **P1** | **Proposal 2**: Route forgot-password through outbox | 🔨 2-4 hours | 🔴 Critical — eliminates synchronous email from API | Proposal 1 (recommended but not required) |
-| **P2** | **Proposal 4**: Token invalidation error handling | ⚡ 10 min | 🟡 Medium — prevents silent failures | None (skip if doing P1) |
-| **P3** | **Proposal 3**: `Promise.allSettled` batch handling | 🔨 30 min | 🟡 Medium — prevents duplicate emails on partial failure | None |
-| **P4** | **Proposal 5**: Increase outbox cron frequency | ⚡ 15 min | 🟢 Low — reduces worst-case delivery delay | None |
-| **P5** | **Proposal 6**: Transporter health recovery | 🔨 30 min | 🟢 Low — handles SMTP flapping | None |
+| **P1** | **Proposal 2 (as amended)**: Route forgot-password through outbox, expiration-aware | 🔨 4-6 hours | 🔴 Critical — eliminates synchronous email from API; never sends dead links | Proposal 1 recommended; includes the `expiresAt` migration |
+| **P2** | **Proposal 8**: Stricter password-reset cleanup (expiry gates + 5-min sweep + token hygiene) | 🔨 1-2 hours | 🟠 High — security (plaintext token lifetime) + UX (15-min promise enforced) | Proposal 2 amendment (`expiresAt` column) |
+| **P3** | **Proposal 7**: 2-week outbox retention cron | 🔨 1 hour | 🟡 Medium — bounds table growth, purges `FAILED` debris | None (index note shares P1's migration) |
+| **P4** | **Proposal 3**: `Promise.allSettled` batch handling | 🔨 30 min | 🟡 Medium — prevents duplicate emails on partial failure | None |
+| **P5** | **Proposal 5**: Increase outbox cron frequency | ⚡ 15 min | 🟢 Low — reduces worst-case delivery delay (can merge with P2's 5-min sweep) | None |
+| **P6** | **Proposal 6**: Transporter health recovery | 🔨 30 min | 🟢 Low — handles SMTP flapping | None |
+| — | **Proposal 4**: Token invalidation error handling | ⚡ 10 min | 🟡 Medium | **Retired by P1** — the transactional design removes the compensating call entirely; only apply if P1 is deferred long-term |
 
 > [!TIP]
-> **Recommended immediate action**: Deploy **P0 (SMTP timeouts)** today. This is a one-line change that eliminates the most dangerous failure mode. Then plan **P1 (outbox integration)** as a sprint task.
+> **Recommended next action**: Deploy **P0 (SMTP timeouts)** today — a one-line change that eliminates the most dangerous remaining failure mode. Then plan **P1 (amended outbox integration)** as a sprint task, landing **P2** in the same sprint since it depends on P1's migration.
 
 ---
 
 ## 8. Appendix — Architectural Diagrams
+
+### Outbox State Machine (Rev 2, as implemented)
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING : create (same DB tx as business write)
+    PENDING --> SENDING : dispatch — attempts+1, sendingAt=now
+    PENDING --> FAILED : attempts ≥ 5 at dispatch time (poison message)
+    SENDING --> [*] : mail worker — send confirmed, row deleted
+    SENDING --> PENDING : queue.add / strategy error (sendingAt cleared)
+    SENDING --> PENDING : final BullMQ failure — failed handler revert (sendingAt cleared)
+    SENDING --> FAILED : attempts ≥ 5 when re-driven by recovery
+    SENDING --> SENDING : crash leftover — recovery sweep re-drives after 15 min
+    FAILED --> [*] : retention cleanup (Proposal 7, ≥ 14 days)
+```
+
+Key invariants:
+- `attempts` counts **dispatch cycles** (PENDING→SENDING transitions), not BullMQ attempts — BullMQ retries 3× internally within one cycle.
+- The idempotency key (`processing` 5 min / `completed` 24 h) survives outbox-delete failures, so a retry after a confirmed send only re-deletes the row (F-10 fix).
+- The terminal `FAILED` transition is owned exclusively by the processor's attempts-cap guard; the worker's failed-handler always reverts to `PENDING` (F-11/F-12 fixes).
+
+### Scale-Out Caveat (Pub/Sub + Cron)
+
+Redis Pub/Sub delivers each `OutboxSignal` to **every** subscribed worker pod, and the signal handler runs `processSingleEvent` **without** a distributed lock ([worker.ts](file:///home/amaro/EvangelismoDigitalBackend/src/worker.ts)). With N pods, N concurrent processors race on the same event; today correctness is preserved only by the deterministic BullMQ `jobId = publicId` (dedup) and the idempotent `updateStatus` — plus the deployment reality of a single worker. Before scaling out, implement the leader-election design documented in the `@TODO` in `worker.ts` (which now also covers the Pub/Sub path), or add a per-event lock in the signal handler.
 
 ### Current Architecture: Two Divergent Email Paths
 
@@ -738,13 +963,15 @@ graph LR
         B -.->|"Redis Pub/Sub"| G["BullMQ Worker"]
         D -.->|"Redis Pub/Sub"| G
         F -.->|"Redis Pub/Sub"| G
-        G --> H["Strategy Router"]
+        G --> H["Strategy Router (by event.type)"]
         H --> I["FormEmailStrategy"]
         H --> J["PasswordResetStrategy"]
         H --> K["WelcomeEmailStrategy"]
         I --> L["Nodemailer"]
         J --> L
         K --> L
+        N["Expiry Sweep (5 min cron)<br/>deletes events past expiresAt"] -.-> D
+        O["Retention Cron (daily 03:00)<br/>deletes events > 14 days"] -.-> B
     end
     
     L --> M["SMTP Server"]
@@ -753,6 +980,8 @@ graph LR
     style D fill:#2ecc71,stroke:#27ae60,color:#fff
     style F fill:#2ecc71,stroke:#27ae60,color:#fff
     style G fill:#2ecc71,stroke:#27ae60,color:#fff
+    style N fill:#f39c12,stroke:#d68910,color:#fff
+    style O fill:#f39c12,stroke:#d68910,color:#fff
 ```
 
 ### Event Flow: From HTTP Request to Email Delivery
@@ -802,11 +1031,12 @@ sequenceDiagram
 
 ## Conclusion
 
-The **forms submission pipeline** is a textbook implementation of the Transactional Outbox Pattern with excellent resilience characteristics. The architecture correctly isolates SMTP concerns from the API server's event loop through process-level separation.
+The **forms submission pipeline** is architecturally a textbook Transactional Outbox implementation, and — as of Rev 2 — its state machine is also **implementation-correct**: the duplicate-send path (F-10), the 24-hour `SENDING` orphans (F-11), the poison-message loop (F-12) and the hygiene defects (F-13) are fixed, migration-backed, and covered by ~70 regression tests.
 
-The **forgot-password pipeline** is the single critical vulnerability — it bypasses all the resilience infrastructure and makes a synchronous SMTP call inside the HTTP request lifecycle. This is the component most likely to cause the monolith to "feel frozen" during SMTP outages.
+The **forgot-password pipeline** remains the critical architectural vulnerability — it bypasses all the resilience infrastructure and makes a synchronous SMTP call inside the HTTP request lifecycle. Its redesign must additionally respect the **15-minute token window**: an async pipeline that can deliver an email after its token died trades one failure mode for a worse one. The amended Proposal 2 (expiration-aware events, dual expiry gates, retry budget sized to the window) plus Proposal 8's strict cleanup close that gap.
 
 The recommended path forward is:
 1. **Immediately** add SMTP timeouts (Proposal 1) to cap worst-case hangs at ~10 seconds
-2. **Soon** route forgot-password through the existing outbox infrastructure (Proposal 2) to achieve full async email dispatch across the entire monolith
-3. **Incrementally** apply the remaining proposals to harden the worker process itself
+2. **Soon** route forgot-password through the outbox using the **amended** expiration-aware design (Proposal 2 + Amendment), with Proposal 8's cleanup landing alongside it
+3. **Then** bound table growth with the 2-week retention cron (Proposal 7)
+4. **Incrementally** apply the remaining proposals (3, 5, 6) to harden the worker process itself

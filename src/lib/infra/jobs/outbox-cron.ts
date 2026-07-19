@@ -10,6 +10,7 @@ import {
 import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { CRON_SCHEDULES } from 'messages/constants/cron/cron'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
+import { captureError } from '@lib/sentry/capture'
 
 export function startOutboxCron(existingProcessor?: OutboxProcessor) {
   /**
@@ -36,6 +37,7 @@ export function startOutboxCron(existingProcessor?: OutboxProcessor) {
       logger.info(OUTBOX_LOGS.PHASE1_DONE)
     } catch (error) {
       logger.error({ error }, OUTBOX_LOGS.PHASE1_ERROR)
+      captureError(error, { phase: 1 })
     }
 
     // Fase 2: processa eventos PENDING não despachados
@@ -44,6 +46,7 @@ export function startOutboxCron(existingProcessor?: OutboxProcessor) {
       logger.info(OUTBOX_LOGS.PHASE2_DONE)
     } catch (error) {
       logger.error({ error }, OUTBOX_LOGS.PHASE2_ERROR)
+      captureError(error, { phase: 2 })
     }
 
     logger.info(OUTBOX_LOGS.SCAN_DONE)

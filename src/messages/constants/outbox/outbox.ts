@@ -7,9 +7,20 @@ export const OUTBOX_CONSTANTS = {
     DEFAULT: 10_000,
   },
   THRESHOLDS: {
-    /** Time in ms after which a SENDING event is considered stuck (e.g., after a crash) */
-    STUCK_SENDING_MS: 30_000,
+    /**
+     * Time in ms after which a SENDING event is considered stuck (e.g., after a crash).
+     * Must exceed the worst-case BullMQ job lifetime (3 attempts x lockDuration + exponential
+     * backoff), otherwise recovery could re-dispatch a job that is still being retried.
+     */
+    STUCK_SENDING_MS: 900_000,
     /** Maximum number of pending events fetched per processing cycle */
     PENDING_FETCH_LIMIT: 50,
+    /** Maximum number of stuck SENDING events fetched per recovery cycle */
+    STUCK_FETCH_LIMIT: 50,
+    /**
+     * Maximum dispatch cycles (PENDING -> SENDING transitions) before an event is
+     * marked FAILED (terminal). Prevents poison messages from looping forever.
+     */
+    MAX_DISPATCH_ATTEMPTS: 5,
   },
 } as const
