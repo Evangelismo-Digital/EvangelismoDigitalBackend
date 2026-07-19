@@ -201,9 +201,7 @@ export class RedisRateLimiter {
           provider,
           mode: 'fail-open',
           redisOutage: true,
-          message: typeof obj.message === 'string' ? obj.message : undefined,
-          code: typeof obj.code === 'string' ? obj.code : undefined,
-          name: typeof obj.name === 'string' ? obj.name : undefined,
+          err: obj,
         },
         RATE_LIMITER_LOGS.INFRA_DEGRADED,
       )
@@ -219,9 +217,7 @@ export class RedisRateLimiter {
           redisOutage: true,
           outageDurationMs: now - this.infraOutageStartedAt,
           suppressedLogs: this.infraSuppressedLogs,
-          message: typeof obj.message === 'string' ? obj.message : undefined,
-          code: typeof obj.code === 'string' ? obj.code : undefined,
-          name: typeof obj.name === 'string' ? obj.name : undefined,
+          err: obj,
         },
         RATE_LIMITER_LOGS.INFRA_STILL_DEGRADED,
       )

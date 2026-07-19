@@ -70,14 +70,14 @@ export class ResilientAddressProvider implements IAddressProvider {
         lastRetryableError = error
         lastProviderName = providerName
         logger.warn(
-          { provider: providerName, error: error.message, attempt: index + 1 },
+          { provider: providerName, error, attempt: index + 1 },
           'Provedor de endereço retornou erro recuperável. Alternando para o próximo provedor...',
         )
         continue
       }
 
       // Unknown / fatal error — bail immediately without trying other providers
-      logger.error({ provider: providerName, error: error.message }, 'Provedor retornou erro fatal. Abortando cadeia.')
+      logger.error({ provider: providerName, error }, 'Provedor retornou erro fatal. Abortando cadeia.')
       return err(error)
     }
 
@@ -93,7 +93,7 @@ export class ResilientAddressProvider implements IAddressProvider {
 
     if (lastRetryableError) {
       logger.error(
-        { cep: cleanCep, provider: lastProviderName, notFoundCount },
+        { cep: cleanCep, provider: lastProviderName, notFoundCount, error: lastRetryableError },
         'Provedores de endereço falharam com erros de sistema',
       )
       return err(lastRetryableError)

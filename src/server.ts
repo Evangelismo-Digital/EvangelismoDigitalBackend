@@ -6,6 +6,7 @@ initSentry()
 import { app } from 'app'
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
+import { captureError } from '@lib/sentry/capture'
 import closeWithGrace from 'close-with-grace'
 import { crashShutdown } from '@lib/shutdown/crash-shutdown'
 import { startMetricsServer, stopMetricsServer } from './metrics-server'
@@ -50,6 +51,7 @@ async function start() {
       await startMetricsServer({ port: env.METRICS_API_PORT })
     } catch (metricsErr) {
       logger.error({ err: metricsErr }, 'Falha ao iniciar o servidor de métricas; a API continuará sem métricas')
+      captureError(metricsErr)
     }
   } catch (err) {
     await crashShutdown(err, shutdown)

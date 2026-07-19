@@ -29,6 +29,12 @@ vi.mock('@lib/logger', () => ({
   },
 }))
 
+const mockCaptureError = vi.fn()
+
+vi.mock('@lib/sentry/capture', () => ({
+  captureError: (...args: any[]) => mockCaptureError(...args),
+}))
+
 vi.mock('ioredis', () => {
   return {
     Redis: vi.fn(),
@@ -363,5 +369,17 @@ describe('CepToLatLon Use Case', () => {
     if (isErr(result)) {
       expect(result.error).toBeInstanceOf(CepToLatLonError)
     }
+  })
+
+  it('PARANOID GUARD: should return CepToLatLonError (a SystemError) without capturing here — the global HTTP error handler captures it once it propagates', async () => {
+    addressProviderMock.fetchAddress.mockResolvedValue(ok({}))
+
+    const result = await useCase.execute({ cep: '00000000' })
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(CepToLatLonError)
+    }
+    expect(mockCaptureError).not.toHaveBeenCalled()
   })
 })

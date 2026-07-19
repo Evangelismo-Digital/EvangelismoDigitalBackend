@@ -49,7 +49,7 @@ export class ResilientAddressProviderDecorator implements IAddressProvider {
             {
               cep: cleanCep,
               attempt,
-              error: appError.message,
+              error: appError,
             },
             `Falha ao buscar endereço ${this.rawProvider.providerName} após tentativas`,
           )

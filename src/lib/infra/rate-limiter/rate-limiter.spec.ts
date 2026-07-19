@@ -114,7 +114,7 @@ describe('RedisRateLimiter Unit Tests', () => {
 
       expect(logger.warn).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: 'Connection Lost',
+          err: infraError,
           mode: 'fail-open',
           provider: EnumProviderConfig.VIACEP_ADDRESS,
         }),

@@ -54,7 +54,6 @@ export class RedisOutageLogger {
 
   onOutage(event: 'error' | 'close', error?: unknown) {
     const now = Date.now()
-    const err = (error ?? {}) as ErrorLike
 
     if (this.outageStartedAt === null) {
       this.outageStartedAt = now
@@ -67,9 +66,7 @@ export class RedisOutageLogger {
           redisHost: this.config.host,
           redisPort: this.config.port,
           event,
-          errorCode: err.code,
-          errorName: err.name,
-          errorMessage: err.message,
+          err: error,
         },
         REDIS_LOGS.CONNECTION_DEGRADED,
       )
@@ -84,9 +81,7 @@ export class RedisOutageLogger {
           redisHost: this.config.host,
           redisPort: this.config.port,
           event,
-          errorCode: err.code,
-          errorName: err.name,
-          errorMessage: err.message,
+          err: error,
           outageDurationMs: now - this.outageStartedAt,
           suppressedEvents: this.suppressedEvents,
         },

@@ -1,4 +1,5 @@
 import { logger } from '@lib/logger'
+import { captureError } from '@lib/sentry/capture'
 import {
   AuthenticationAuditInput,
   AuthenticationAuditRepository,
@@ -13,7 +14,8 @@ export class AuthenticationAuditUseCase {
     const result = await this.authenticationAuditRepository.create(data)
 
     if (isErr(result)) {
-      logger.error({ error: result.error.message }, 'Falha ao criar registro de auditoria de autenticação')
+      logger.error({ error: result.error }, 'Falha ao criar registro de auditoria de autenticação')
+      captureError(result.error, { status: data.status })
       return result
     }
 

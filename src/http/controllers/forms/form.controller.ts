@@ -27,12 +27,8 @@ export async function formSubmission(request: FastifyRequest, reply: FastifyRepl
   // 5. Sucesso
   const { sanitizedFormSubmission, outboxEvent } = result.value
 
-  OutboxSignal.publishNewItem(outboxEvent.publicId, outboxEvent).catch(() => {
-    logger.error(
-      { publicId: outboxEvent.publicId },
-      'Prosseguindo com a resposta, mas falha acorreu ao publicar o evento na fila',
-    )
-  })
+  // Fire-and-forget: publishNewItem catches and logs its own failures internally.
+  void OutboxSignal.publishNewItem(outboxEvent.publicId, outboxEvent)
 
   logger.info({ sanitizedFormSubmission }, 'Formulário recebido com sucesso')
 

@@ -66,7 +66,7 @@ export class ResilientGeocodingProviderDecorator implements IGeocodingProvider {
             {
               ...logContext,
               attempt,
-              error: appError.message,
+              error: appError,
             },
             `Falha ao buscar coordenadas geográficas ${this.rawProvider.providerName} após tentativas`,
           )

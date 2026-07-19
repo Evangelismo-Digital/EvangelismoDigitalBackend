@@ -1,8 +1,8 @@
 import { ErrorType } from 'core/types/error-type/error-type'
-import { DomainError } from 'errors/domain-error'
+import { SystemError } from 'errors/system-error'
 import { CHURCH_ERRORS } from 'messages/errors/churches'
 
-export class CepToLatLonError extends DomainError {
+export class CepToLatLonError extends SystemError {
   constructor(cep: string) {
     super(
       {

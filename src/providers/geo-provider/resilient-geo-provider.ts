@@ -89,14 +89,14 @@ export class ResilientGeoProvider implements IGeocodingProvider {
         lastRetryableError = error
         lastProviderName = providerName
         logger.warn(
-          { provider: providerName, attempt: index + 1, error: error.message },
+          { provider: providerName, attempt: index + 1, error },
           'Provedor de geocodificação retornou erro recuperável. Alternando para o próximo provedor...',
         )
         continue
       }
 
       // Unknown / fatal error — bail immediately without trying other providers
-      logger.error({ provider: providerName, error: error.message }, 'Provedor retornou erro fatal. Abortando cadeia.')
+      logger.error({ provider: providerName, error }, 'Provedor retornou erro fatal. Abortando cadeia.')
       return err(error)
     }
 
@@ -110,7 +110,10 @@ export class ResilientGeoProvider implements IGeocodingProvider {
     }
 
     if (lastRetryableError) {
-      logger.error({ provider: lastProviderName }, 'Geocodificação falhou com erros de sistema')
+      logger.error(
+        { provider: lastProviderName, error: lastRetryableError },
+        'Geocodificação falhou com erros de sistema',
+      )
       return err(lastRetryableError)
     }
 

@@ -33,13 +33,14 @@ describe('RedisOutageLogger', () => {
       port: 6379,
     })
 
-    outageLogger.onOutage('error', { message: 'connect ECONNREFUSED 127.0.0.1:6379', code: 'ECONNREFUSED' })
+    const error = { message: 'connect ECONNREFUSED 127.0.0.1:6379', code: 'ECONNREFUSED' }
+    outageLogger.onOutage('error', error)
 
     expect(logger.warn).toHaveBeenCalledTimes(1)
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         subsystem: 'cache',
-        errorCode: 'ECONNREFUSED',
+        err: error,
       }),
       REDIS_LOGS.CONNECTION_DEGRADED,
     )

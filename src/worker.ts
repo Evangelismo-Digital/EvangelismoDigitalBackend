@@ -6,6 +6,7 @@ initSentry()
 import { startOutboxCron } from '@lib/infra/jobs/outbox-cron'
 import { OutboxProcessor } from '@lib/infra/jobs/outbox-processor'
 import { logger } from '@lib/logger'
+import { captureError } from '@lib/sentry/capture'
 import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { startMailWorker } from '@lib/workers/mail-worker'
 import { OutboxSignal } from '@lib/infra/events/outbox-signal'
@@ -70,6 +71,7 @@ async function bootstrap() {
         { err: metricsErr },
         'Falha ao iniciar o servidor de métricas do worker; o worker continuará sem métricas',
       )
+      captureError(metricsErr)
     }
   } catch (error) {
     await crashShutdown(error, cleanup)
