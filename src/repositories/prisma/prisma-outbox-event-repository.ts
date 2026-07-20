@@ -24,6 +24,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
           type: data.type,
           status: data.status,
           payload: data.payload as Prisma.InputJsonValue,
+          expiresAt: data.expiresAt ?? null,
         },
       })
 
@@ -109,6 +110,51 @@ export class PrismaOutboxRepository implements IOutboxRepository {
     }
   }
 
+  async deleteExpired(now: Date): Promise<Result<number, AppError>> {
+    try {
+      const result = await this.dbContext.client.outboxEvent.deleteMany({
+        where: { expiresAt: { lte: now } },
+      })
+      return ok(result.count)
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error))
+    }
+  }
+
+  async deleteOlderThan(
+    cutoff: Date,
+    batchSize: number,
+  ): Promise<Result<{ deleted: number; byStatus: Partial<Record<IOutboxEventType, number>> }, AppError>> {
+    try {
+      // deleteMany não aceita `take`: busca um lote de ids e deleta por id,
+      // mantendo o tempo de lock e o churn de WAL limitados em tabelas grandes.
+      const batch = await this.dbContext.client.outboxEvent.findMany({
+        where: { occurredAt: { lt: cutoff } },
+        select: { id: true, status: true },
+        orderBy: { occurredAt: 'asc' },
+        take: batchSize,
+      })
+
+      if (batch.length === 0) {
+        return ok({ deleted: 0, byStatus: {} })
+      }
+
+      const result = await this.dbContext.client.outboxEvent.deleteMany({
+        where: { id: { in: batch.map((e) => e.id) } },
+      })
+
+      const byStatus: Partial<Record<IOutboxEventType, number>> = {}
+      for (const event of batch) {
+        const status = event.status as IOutboxEventType
+        byStatus[status] = (byStatus[status] ?? 0) + 1
+      }
+
+      return ok({ deleted: result.count, byStatus })
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error))
+    }
+  }
+
   // ─── Mapper ──────────────────────────────────────────────────────────────────
 
   private toEntity(raw: {
@@ -120,6 +166,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
     attempts: number
     occurredAt: Date
     sendingAt: Date | null
+    expiresAt: Date | null
   }): IOutboxEvent {
     return {
       id: raw.id,
@@ -130,6 +177,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       attempts: raw.attempts,
       occurredAt: raw.occurredAt,
       sendingAt: raw.sendingAt || undefined,
+      expiresAt: raw.expiresAt || undefined,
     }
   }
 }

@@ -1,11 +1,11 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
-let scheduledTask: (() => Promise<void>) | null = null
+const scheduledTasks = new Map<string, () => Promise<void>>()
 
 vi.mock('node-cron', () => ({
   default: {
-    schedule: (_expr: string, task: () => Promise<void>) => {
-      scheduledTask = task
+    schedule: (expr: string, task: () => Promise<void>) => {
+      scheduledTasks.set(expr, task)
     },
   },
 }))
@@ -21,14 +21,16 @@ vi.mock('@lib/sentry/capture', () => ({
   captureError: (...args: unknown[]) => mockCaptureError(...args),
 }))
 
-// Evita instanciar o PrismaClient real: startOutboxCron só constrói um processor
-// próprio quando nenhum é passado, e os testes sempre passam um mock.
+// Evita instanciar o PrismaClient real: startOutboxCron só constrói processor e
+// maintenance próprios quando nenhum é passado, e os testes sempre passam mocks.
 vi.mock('@lib/prisma', () => ({ prisma: {} }))
 
 import { startOutboxCron } from './outbox-cron'
 import { OutboxProcessor } from './outbox-processor'
+import { OutboxMaintenance } from './outbox-maintenance'
 import { logger } from '@lib/logger'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
+import { CRON_SCHEDULES } from 'messages/constants/cron/cron'
 
 function makeProcessor() {
   return {
@@ -37,65 +39,136 @@ function makeProcessor() {
   } as unknown as OutboxProcessor
 }
 
+function makeMaintenance() {
+  return {
+    sweepExpiredEvents: vi.fn().mockResolvedValue(undefined),
+    purgeOldEvents: vi.fn().mockResolvedValue(undefined),
+  } as unknown as OutboxMaintenance
+}
+
 describe('startOutboxCron', () => {
   let processor: ReturnType<typeof makeProcessor>
+  let maintenance: ReturnType<typeof makeMaintenance>
 
   beforeEach(() => {
     vi.clearAllMocks()
-    scheduledTask = null
+    scheduledTasks.clear()
     processor = makeProcessor()
-    startOutboxCron(processor)
+    maintenance = makeMaintenance()
+    startOutboxCron(processor, maintenance)
   })
 
-  it('registra o agendador e loga a configuração', () => {
+  it('registra os três agendadores (5 min, meia-noite e retenção 03:00) e loga a configuração', () => {
     expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.SCHEDULER_CONFIGURED)
-    expect(scheduledTask).toBeTypeOf('function')
+    expect([...scheduledTasks.keys()].sort()).toEqual(
+      [CRON_SCHEDULES.EVERY_FIVE_MINUTES, CRON_SCHEDULES.MIDNIGHT_DAILY, CRON_SCHEDULES.DAILY_3AM].sort(),
+    )
   })
 
-  it('caminho feliz: executa as duas fases em sequência, sem erros nem captura no Sentry', async () => {
-    await scheduledTask!()
+  describe('varredura de 5 minutos', () => {
+    it('executa expiração ANTES dos pendentes (PENDING recém-expirado é deletado, não despachado)', async () => {
+      await scheduledTasks.get(CRON_SCHEDULES.EVERY_FIVE_MINUTES)!()
 
-    expect(processor.processStuckSendingEvents).toHaveBeenCalledOnce()
-    expect(processor.processPendingEvents).toHaveBeenCalledOnce()
-    expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.PHASE1_DONE)
-    expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.PHASE2_DONE)
-    expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.SCAN_DONE)
-    expect(mockCaptureError).not.toHaveBeenCalled()
+      expect(maintenance.sweepExpiredEvents).toHaveBeenCalledOnce()
+      expect(processor.processPendingEvents).toHaveBeenCalledOnce()
+
+      const sweepOrder = vi.mocked(maintenance.sweepExpiredEvents).mock.invocationCallOrder[0]
+      const pendingOrder = vi.mocked(processor.processPendingEvents).mock.invocationCallOrder[0]
+      expect(sweepOrder).toBeLessThan(pendingOrder)
+
+      // não roda recuperação de SENDING nem retenção
+      expect(processor.processStuckSendingEvents).not.toHaveBeenCalled()
+      expect(maintenance.purgeOldEvents).not.toHaveBeenCalled()
+    })
+
+    it('falha na expiração não impede o processamento dos pendentes', async () => {
+      const sweepError = new Error('falha na varredura')
+      maintenance.sweepExpiredEvents = vi.fn().mockRejectedValue(sweepError)
+
+      await scheduledTasks.get(CRON_SCHEDULES.EVERY_FIVE_MINUTES)!()
+
+      expect(logger.error).toHaveBeenCalledWith({ error: sweepError }, OUTBOX_LOGS.FIVE_MIN_SWEEP_EXPIRY_ERROR)
+      expect(mockCaptureError).toHaveBeenCalledWith(sweepError)
+      expect(processor.processPendingEvents).toHaveBeenCalledOnce()
+    })
+
+    it('falha nos pendentes é logada e capturada sem lançar', async () => {
+      const pendingError = new Error('falha nos pendentes')
+      processor.processPendingEvents = vi.fn().mockRejectedValue(pendingError)
+
+      await expect(scheduledTasks.get(CRON_SCHEDULES.EVERY_FIVE_MINUTES)!()).resolves.toBeUndefined()
+
+      expect(logger.error).toHaveBeenCalledWith({ error: pendingError }, OUTBOX_LOGS.FIVE_MIN_SWEEP_PENDING_ERROR)
+      expect(mockCaptureError).toHaveBeenCalledWith(pendingError)
+    })
   })
 
-  it('fase 1 falha: loga PHASE1_ERROR, captura no Sentry e ainda executa a fase 2', async () => {
-    const phase1Error = new Error('falha na recuperação')
-    processor.processStuckSendingEvents = vi.fn().mockRejectedValue(phase1Error)
+  describe('varredura de meia-noite', () => {
+    it('caminho feliz: executa as duas fases em sequência, sem erros nem captura no Sentry', async () => {
+      await scheduledTasks.get(CRON_SCHEDULES.MIDNIGHT_DAILY)!()
 
-    await scheduledTask!()
+      expect(processor.processStuckSendingEvents).toHaveBeenCalledOnce()
+      expect(processor.processPendingEvents).toHaveBeenCalledOnce()
+      expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.PHASE1_DONE)
+      expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.PHASE2_DONE)
+      expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.SCAN_DONE)
+      expect(mockCaptureError).not.toHaveBeenCalled()
+    })
 
-    expect(logger.error).toHaveBeenCalledWith({ error: phase1Error }, OUTBOX_LOGS.PHASE1_ERROR)
-    expect(mockCaptureError).toHaveBeenCalledWith(phase1Error, { phase: 1 })
-    expect(processor.processPendingEvents).toHaveBeenCalledOnce()
-    expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.SCAN_DONE)
+    it('fase 1 falha: loga PHASE1_ERROR, captura no Sentry e ainda executa a fase 2', async () => {
+      const phase1Error = new Error('falha na recuperação')
+      processor.processStuckSendingEvents = vi.fn().mockRejectedValue(phase1Error)
+
+      await scheduledTasks.get(CRON_SCHEDULES.MIDNIGHT_DAILY)!()
+
+      expect(logger.error).toHaveBeenCalledWith({ error: phase1Error }, OUTBOX_LOGS.PHASE1_ERROR)
+      expect(mockCaptureError).toHaveBeenCalledWith(phase1Error, { phase: 1 })
+      expect(processor.processPendingEvents).toHaveBeenCalledOnce()
+      expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.SCAN_DONE)
+    })
+
+    it('fase 2 falha: loga PHASE2_ERROR e captura no Sentry, sem impedir o término da varredura', async () => {
+      const phase2Error = new Error('falha ao processar pendentes')
+      processor.processPendingEvents = vi.fn().mockRejectedValue(phase2Error)
+
+      await scheduledTasks.get(CRON_SCHEDULES.MIDNIGHT_DAILY)!()
+
+      expect(logger.error).toHaveBeenCalledWith({ error: phase2Error }, OUTBOX_LOGS.PHASE2_ERROR)
+      expect(mockCaptureError).toHaveBeenCalledWith(phase2Error, { phase: 2 })
+      expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.SCAN_DONE)
+    })
+
+    it('ambas as fases falham: captura no Sentry duas vezes, uma por fase', async () => {
+      const phase1Error = new Error('falha 1')
+      const phase2Error = new Error('falha 2')
+      processor.processStuckSendingEvents = vi.fn().mockRejectedValue(phase1Error)
+      processor.processPendingEvents = vi.fn().mockRejectedValue(phase2Error)
+
+      await scheduledTasks.get(CRON_SCHEDULES.MIDNIGHT_DAILY)!()
+
+      expect(mockCaptureError).toHaveBeenCalledTimes(2)
+      expect(mockCaptureError).toHaveBeenNthCalledWith(1, phase1Error, { phase: 1 })
+      expect(mockCaptureError).toHaveBeenNthCalledWith(2, phase2Error, { phase: 2 })
+    })
   })
 
-  it('fase 2 falha: loga PHASE2_ERROR e captura no Sentry, sem impedir o término da varredura', async () => {
-    const phase2Error = new Error('falha ao processar pendentes')
-    processor.processPendingEvents = vi.fn().mockRejectedValue(phase2Error)
+  describe('retenção diária (03:00)', () => {
+    it('executa apenas a purga de eventos antigos', async () => {
+      await scheduledTasks.get(CRON_SCHEDULES.DAILY_3AM)!()
 
-    await scheduledTask!()
+      expect(maintenance.purgeOldEvents).toHaveBeenCalledOnce()
+      expect(maintenance.sweepExpiredEvents).not.toHaveBeenCalled()
+      expect(processor.processPendingEvents).not.toHaveBeenCalled()
+    })
 
-    expect(logger.error).toHaveBeenCalledWith({ error: phase2Error }, OUTBOX_LOGS.PHASE2_ERROR)
-    expect(mockCaptureError).toHaveBeenCalledWith(phase2Error, { phase: 2 })
-    expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.SCAN_DONE)
-  })
+    it('falha na purga é logada e capturada sem lançar', async () => {
+      const purgeError = new Error('falha na retenção')
+      maintenance.purgeOldEvents = vi.fn().mockRejectedValue(purgeError)
 
-  it('ambas as fases falham: captura no Sentry duas vezes, uma por fase', async () => {
-    const phase1Error = new Error('falha 1')
-    const phase2Error = new Error('falha 2')
-    processor.processStuckSendingEvents = vi.fn().mockRejectedValue(phase1Error)
-    processor.processPendingEvents = vi.fn().mockRejectedValue(phase2Error)
+      await expect(scheduledTasks.get(CRON_SCHEDULES.DAILY_3AM)!()).resolves.toBeUndefined()
 
-    await scheduledTask!()
-
-    expect(mockCaptureError).toHaveBeenCalledTimes(2)
-    expect(mockCaptureError).toHaveBeenNthCalledWith(1, phase1Error, { phase: 1 })
-    expect(mockCaptureError).toHaveBeenNthCalledWith(2, phase2Error, { phase: 2 })
+      expect(logger.error).toHaveBeenCalledWith({ error: purgeError }, OUTBOX_LOGS.RETENTION_CRON_ERROR)
+      expect(mockCaptureError).toHaveBeenCalledWith(purgeError)
+    })
   })
 })

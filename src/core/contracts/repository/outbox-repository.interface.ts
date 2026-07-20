@@ -1,5 +1,5 @@
 import { Result } from 'core/shared/result'
-import { FormPayload } from 'core/types/use-cases/forms/form-payload'
+import { OutboxEventInput } from 'core/types/outbox/outbox-event-input'
 import { AppError } from 'errors/app-error'
 
 /**
@@ -18,11 +18,7 @@ export enum IOutboxEventType {
   FAILED = 'FAILED',
 }
 
-export interface IOutBoxEventInputData {
-  status: IOutboxEventType
-  type: string
-  payload: FormPayload
-}
+export type IOutBoxEventInputData = { status: IOutboxEventType } & OutboxEventInput
 
 export interface IOutboxEvent {
   id: number
@@ -33,6 +29,8 @@ export interface IOutboxEvent {
   attempts: number
   occurredAt: Date
   sendingAt: Date | undefined
+  /** Eventos expiráveis (ex.: reset de senha) nunca são despachados após este instante. */
+  expiresAt: Date | undefined
 }
 
 export interface IOutboxRepository {
@@ -47,4 +45,15 @@ export interface IOutboxRepository {
   updateStatus(publicId: string, status: IOutboxEventType): Promise<Result<void, AppError>>
   /** Idempotente: deletar um evento inexistente é sucesso. */
   delete(publicId: string): Promise<Result<void, AppError>>
+  /** Remove eventos cujo expiresAt já passou (qualquer status). Retorna a quantidade removida. */
+  deleteExpired(now: Date): Promise<Result<number, AppError>>
+  /**
+   * Remove ATÉ batchSize eventos com occurredAt < cutoff (um lote por chamada,
+   * para o chamador renovar o lock distribuído entre lotes). Retorna o total
+   * removido e a contagem por status para observabilidade.
+   */
+  deleteOlderThan(
+    cutoff: Date,
+    batchSize: number,
+  ): Promise<Result<{ deleted: number; byStatus: Partial<Record<IOutboxEventType, number>> }, AppError>>
 }

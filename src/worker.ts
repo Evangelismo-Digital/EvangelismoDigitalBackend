@@ -5,6 +5,8 @@ initSentry()
 
 import { startOutboxCron } from '@lib/infra/jobs/outbox-cron'
 import { OutboxProcessor } from '@lib/infra/jobs/outbox-processor'
+import { OutboxMaintenance } from '@lib/infra/jobs/outbox-maintenance'
+import { makeOutboxDispatchStrategyRegistry } from '@lib/infra/jobs/make-outbox-dispatch-registry'
 import { logger } from '@lib/logger'
 import { captureError } from '@lib/sentry/capture'
 import { DatabaseContext } from '@lib/prisma/helpers/database-context'
@@ -37,7 +39,7 @@ async function bootstrap() {
     worker = await startMailWorker(outboxRepository)
     logger.info('Mail worker iniciado')
 
-    const outboxProcessor = new OutboxProcessor(outboxRepository)
+    const outboxProcessor = new OutboxProcessor(outboxRepository, makeOutboxDispatchStrategyRegistry())
 
     await OutboxSignal.subscribe(async (publicId: string, event: IOutboxEvent) => {
       await outboxProcessor.processSingleEvent(event)
@@ -61,7 +63,8 @@ async function bootstrap() {
     // mesmo evento concorrentemente. Hoje a segurança vem do jobId determinístico
     // no BullMQ (dedup) e do updateStatus idempotente — não de um lock.
     // ============================================================================
-    startOutboxCron(outboxProcessor)
+    const outboxMaintenance = new OutboxMaintenance(outboxRepository)
+    startOutboxCron(outboxProcessor, outboxMaintenance)
 
     // Metrics server is auxiliary: a bind failure must not take down the worker.
     try {

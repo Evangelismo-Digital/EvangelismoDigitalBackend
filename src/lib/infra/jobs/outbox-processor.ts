@@ -3,15 +3,13 @@ import { QUEUE } from 'messages/constants/queue/queue'
 import { logger } from '@lib/logger'
 import { getMailQueue } from '@lib/queue/mail-queue'
 import { DistributedLock, LockToken } from '@lib/infra/distributed-lock/distributed-lock'
-import { ContactEmailStrategy } from '@use-cases/forms/strategies/contact-email-strategy'
-import { DecisionForChristEmailStrategy } from '@use-cases/forms/strategies/decision-for-christ-email-strategy'
+import { OutboxDispatchStrategyRegistry } from './outbox-dispatch-strategy-registry'
 import { isErr } from 'core/shared/result'
 import {
   IOutboxRepository,
   IOutboxEvent,
   IOutboxEventType,
 } from 'core/contracts/repository/outbox-repository.interface'
-import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 import { captureError } from '@lib/sentry/capture'
 
@@ -19,7 +17,10 @@ export class OutboxProcessor {
   private readonly LOCK_KEY = OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_PROCESSOR
   private readonly LOCK_TTL_MS = OUTBOX_CONSTANTS.LOCK_TTL_MS.DEFAULT
 
-  constructor(private outboxRepository: IOutboxRepository) {}
+  constructor(
+    private outboxRepository: IOutboxRepository,
+    private dispatchRegistry: OutboxDispatchStrategyRegistry,
+  ) {}
 
   async processPendingEvents(): Promise<void> {
     let lockToken: LockToken | null = null
@@ -100,6 +101,22 @@ export class OutboxProcessor {
   }
 
   async processSingleEvent(event: IOutboxEvent): Promise<void> {
+    // Gate de expiração — ANTES de qualquer fase: um evento expirado sai da
+    // tabela em vez de virar FAILED (o payload carrega um segredo e a linha é
+    // lixo em qualquer status). Eventos vindos do Pub/Sub chegam com datas
+    // serializadas como string, por isso o new Date().
+    if (event.expiresAt && new Date(event.expiresAt).getTime() <= Date.now()) {
+      const deleteResult = await this.outboxRepository.delete(event.publicId)
+
+      if (isErr(deleteResult)) {
+        logger.error({ publicId: event.publicId, error: deleteResult.error }, OUTBOX_LOGS.EXPIRED_EVENT_DELETE_ERROR)
+        captureError(deleteResult.error, { publicId: event.publicId })
+      } else {
+        logger.info({ publicId: event.publicId, type: event.type }, OUTBOX_LOGS.EXPIRED_EVENT_DELETED)
+      }
+      return
+    }
+
     // Phase 0: eventos que excederam o limite de ciclos de despacho são terminais (poison message)
     if (event.attempts >= OUTBOX_CFG.THRESHOLDS.MAX_DISPATCH_ATTEMPTS) {
       const failResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.FAILED)
@@ -140,27 +157,27 @@ export class OutboxProcessor {
   }
 
   private async dispatchToBullMQ(event: IOutboxEvent): Promise<void> {
-    const payload = event.payload as FormPayload
-
-    const strategy = payload.decisaoPorCristo ? new DecisionForChristEmailStrategy() : new ContactEmailStrategy()
-
-    const userJobResult = strategy.buildUserEmail(payload)
-    if (isErr(userJobResult)) {
-      throw userJobResult.error
+    const strategyResult = this.dispatchRegistry.resolve(event.type)
+    if (isErr(strategyResult)) {
+      throw strategyResult.error
     }
 
-    const staffJobResult = strategy.buildStaffEmail(payload)
-    if (isErr(staffJobResult)) {
-      throw staffJobResult.error
+    const planResult = strategyResult.value.buildDispatch(event)
+    if (isErr(planResult)) {
+      throw planResult.error
     }
+
+    const { emails, jobOptions } = planResult.value
 
     await getMailQueue().add(
       QUEUE.JOBS.OUTBOX_DISPATCH,
       {
         publicId: event.publicId,
-        emails: [userJobResult.value, staffJobResult.value],
+        emails,
+        // Repassa a expiração para o gate do mail worker (job data é JSON)
+        ...(event.expiresAt ? { expiresAt: new Date(event.expiresAt).toISOString() } : {}),
       },
-      { jobId: event.publicId },
+      { jobId: event.publicId, ...jobOptions },
     )
   }
 }

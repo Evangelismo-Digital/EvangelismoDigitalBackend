@@ -44,6 +44,9 @@ describe('NodemailerMailSender', () => {
         user: env.SMTP_EMAIL,
         pass: env.SMTP_PASSWORD,
       },
+      connectionTimeout: env.SMTP_CONNECTION_TIMEOUT_MS,
+      greetingTimeout: env.SMTP_GREETING_TIMEOUT_MS,
+      socketTimeout: env.SMTP_SOCKET_TIMEOUT_MS,
     })
     expect(transporter.verify).toHaveBeenCalledOnce()
   })
@@ -126,5 +129,43 @@ describe('NodemailerMailSender', () => {
     await expect(sender.send(request)).resolves.toEqual({ messageId: 'mock-id' })
     expect(createTransport).toHaveBeenCalledOnce()
     expect(transporter.verify).toHaveBeenCalledOnce()
+  })
+
+  it('should reset the cached transporter after 3 consecutive sendMail failures', async () => {
+    const flapping = makeTransporterMock()
+    flapping.sendMail.mockRejectedValue(new Error('SMTP instável'))
+    const healthy = makeTransporterMock()
+    createTransport.mockReturnValueOnce(flapping).mockReturnValueOnce(healthy)
+
+    const sender = new NodemailerMailSender()
+    await expect(sender.send(request)).rejects.toThrow('SMTP instável')
+    await expect(sender.send(request)).rejects.toThrow('SMTP instável')
+    expect(createTransport).toHaveBeenCalledOnce() // ainda em cache após 2 falhas
+
+    await expect(sender.send(request)).rejects.toThrow('SMTP instável') // 3ª falha descarta o cache
+
+    await expect(sender.send(request)).resolves.toEqual({ messageId: 'mock-id' })
+    expect(createTransport).toHaveBeenCalledTimes(2)
+    expect(healthy.verify).toHaveBeenCalledOnce()
+    expect(healthy.sendMail).toHaveBeenCalledOnce()
+  })
+
+  it('should reset the failure counter on a successful send', async () => {
+    const transporter = makeTransporterMock()
+    transporter.sendMail
+      .mockRejectedValueOnce(new Error('falha 1'))
+      .mockRejectedValueOnce(new Error('falha 2'))
+      .mockResolvedValueOnce({ messageId: 'mock-id' })
+      .mockRejectedValueOnce(new Error('falha 3'))
+    createTransport.mockReturnValue(transporter)
+
+    const sender = new NodemailerMailSender()
+    await expect(sender.send(request)).rejects.toThrow('falha 1')
+    await expect(sender.send(request)).rejects.toThrow('falha 2')
+    await expect(sender.send(request)).resolves.toEqual({ messageId: 'mock-id' })
+
+    // O sucesso zerou o contador: esta falha volta a ser a 1ª, sem descartar o cache.
+    await expect(sender.send(request)).rejects.toThrow('falha 3')
+    expect(createTransport).toHaveBeenCalledOnce()
   })
 })

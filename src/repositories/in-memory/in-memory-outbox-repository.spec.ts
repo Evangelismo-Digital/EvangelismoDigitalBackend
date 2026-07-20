@@ -1,16 +1,32 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { InMemoryOutboxRepository } from './in-memory-outbox-repository'
-import { IOutboxEventType } from 'core/contracts/repository/outbox-repository.interface'
+import { IOutBoxEventInputData, IOutboxEventType } from 'core/contracts/repository/outbox-repository.interface'
 import { isErr, isOk } from 'core/shared/result'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
+import { OUTBOX_EVENT_TYPES } from 'core/types/outbox/outbox-event-input'
 
 const payload: FormPayload = { name: 'João', email: 'joao@test.com' }
 
-function makeInput(overrides?: Partial<{ type: string }>) {
+function makeInput(): IOutBoxEventInputData {
   return {
     status: IOutboxEventType.PENDING,
-    type: overrides?.type ?? 'FormSubmissionCreated',
+    type: OUTBOX_EVENT_TYPES.FORM_SUBMISSION_CREATED,
     payload,
+  }
+}
+
+function makeExpirableInput(expiresAt: Date): IOutBoxEventInputData {
+  return {
+    status: IOutboxEventType.PENDING,
+    type: OUTBOX_EVENT_TYPES.PASSWORD_RESET_REQUESTED,
+    payload: {
+      userPublicId: 'user-1',
+      name: 'João',
+      email: 'joao@test.com',
+      token: 'token-cru',
+      tokenExpiresAt: expiresAt.toISOString(),
+    },
+    expiresAt,
   }
 }
 
@@ -35,6 +51,19 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       expect(first.value.occurredAt).toBeInstanceOf(Date)
       expect(first.value.sendingAt).toBeUndefined()
       expect(first.value.publicId).not.toBe(second.value.publicId)
+    })
+
+    it('persiste expiresAt para eventos expiráveis e deixa undefined para eventos de formulário', async () => {
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000)
+      const expirable = await repository.create(makeExpirableInput(expiresAt))
+      const form = await repository.create(makeInput())
+
+      expect(isOk(expirable)).toBe(true)
+      expect(isOk(form)).toBe(true)
+      if (!isOk(expirable) || !isOk(form)) return
+
+      expect(expirable.value.expiresAt).toEqual(expiresAt)
+      expect(form.value.expiresAt).toBeUndefined()
     })
   })
 
@@ -174,6 +203,94 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       expect(isOk(result)).toBe(true)
       if (!isOk(result)) return
       expect(result.value).toHaveLength(0)
+    })
+  })
+
+  describe('deleteExpired', () => {
+    it('remove apenas eventos com expiresAt <= agora (limite inclusivo) e retorna a contagem', async () => {
+      const now = new Date()
+      const past = await repository.create(makeExpirableInput(new Date(now.getTime() - 1000)))
+      const boundary = await repository.create(makeExpirableInput(now))
+      const future = await repository.create(makeExpirableInput(new Date(now.getTime() + 60_000)))
+      const form = await repository.create(makeInput())
+      if (!isOk(past) || !isOk(boundary) || !isOk(future) || !isOk(form)) throw new Error('setup')
+
+      const result = await repository.deleteExpired(now)
+
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(2)
+      expect(repository.items.map((e) => e.publicId)).toEqual([future.value.publicId, form.value.publicId])
+    })
+
+    it('remove eventos expirados em qualquer status', async () => {
+      const expired = await repository.create(makeExpirableInput(new Date(Date.now() - 1000)))
+      if (!isOk(expired)) throw new Error('setup')
+      await repository.updateStatus(expired.value.publicId, IOutboxEventType.SENDING)
+
+      const result = await repository.deleteExpired(new Date())
+
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(1)
+      expect(repository.items).toHaveLength(0)
+    })
+
+    it('retorna err quando a falha é injetada', async () => {
+      repository.shouldFailOn.deleteExpired = true
+
+      const result = await repository.deleteExpired(new Date())
+
+      expect(isErr(result)).toBe(true)
+    })
+  })
+
+  describe('deleteOlderThan', () => {
+    it('remove no máximo batchSize eventos mais antigos que o corte, com contagem por status', async () => {
+      const a = await repository.create(makeInput())
+      const b = await repository.create(makeInput())
+      const c = await repository.create(makeInput())
+      const recent = await repository.create(makeInput())
+      if (!isOk(a) || !isOk(b) || !isOk(c) || !isOk(recent)) throw new Error('setup')
+
+      const old = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000)
+      repository.items[0].occurredAt = old
+      repository.items[1].occurredAt = new Date(old.getTime() + 1000)
+      repository.items[2].occurredAt = new Date(old.getTime() + 2000)
+      await repository.updateStatus(b.value.publicId, IOutboxEventType.SENDING)
+      await repository.updateStatus(c.value.publicId, IOutboxEventType.FAILED)
+
+      const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
+
+      const firstBatch = await repository.deleteOlderThan(cutoff, 2)
+      expect(isOk(firstBatch)).toBe(true)
+      if (!isOk(firstBatch)) return
+      // Um lote por chamada, ordenado por occurredAt asc
+      expect(firstBatch.value.deleted).toBe(2)
+      expect(firstBatch.value.byStatus).toEqual({
+        [IOutboxEventType.PENDING]: 1,
+        [IOutboxEventType.SENDING]: 1,
+      })
+
+      const secondBatch = await repository.deleteOlderThan(cutoff, 2)
+      if (!isOk(secondBatch)) throw new Error('setup')
+      expect(secondBatch.value.deleted).toBe(1)
+      expect(secondBatch.value.byStatus).toEqual({ [IOutboxEventType.FAILED]: 1 })
+
+      // O evento recente sobrevive
+      expect(repository.items.map((e) => e.publicId)).toEqual([recent.value.publicId])
+
+      const emptyBatch = await repository.deleteOlderThan(cutoff, 2)
+      if (!isOk(emptyBatch)) throw new Error('setup')
+      expect(emptyBatch.value).toEqual({ deleted: 0, byStatus: {} })
+    })
+
+    it('retorna err quando a falha é injetada', async () => {
+      repository.shouldFailOn.deleteOlderThan = true
+
+      const result = await repository.deleteOlderThan(new Date(), 10)
+
+      expect(isErr(result)).toBe(true)
     })
   })
 })

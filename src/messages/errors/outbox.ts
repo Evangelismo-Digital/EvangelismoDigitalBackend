@@ -10,3 +10,8 @@ export const OUTBOX_ERRORS = {
     message: 'Falha ao processar operação da outbox no banco de dados.',
   },
 } as const satisfies Record<string, IErrorDetail>
+
+export const UNKNOWN_OUTBOX_EVENT_TYPE_ERROR_FN = (eventType: string): IErrorDetail => ({
+  code: 'UNKNOWN_OUTBOX_EVENT_TYPE',
+  message: `Nenhuma estratégia de despacho registrada para o tipo de evento '${eventType}'.`,
+})

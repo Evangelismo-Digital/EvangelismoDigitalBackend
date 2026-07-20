@@ -1,56 +1,56 @@
-import { User } from '@prisma/client'
-import { randomBytes } from 'crypto'
-import { UserNotFoundForPasswordResetError } from '../errors/user-not-found-for-password-reset-error'
-import { FailedToSendEmailError } from '../errors/failed-to-send-email-error'
+import { randomBytes } from 'node:crypto'
 import { emailSchema } from '@http/schemas/utils/email'
 import { UsersRepository } from 'core/contracts/repository/users-repository.interface'
-import { SendEmailUseCase } from '../email/send-email'
-import { Result, ok, err, isErr } from 'core/shared/result'
+import { IOutboxEventRegistration } from 'core/contracts/use-cases/outbox-event/outbox-event.interface'
+import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
+import { OUTBOX_EVENT_TYPES } from 'core/types/outbox/outbox-event-input'
+import { Result, ok, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { EMAIL_CONSTANTS } from 'messages/constants/email/email'
-import { forgotPasswordTextTemplate } from '@templates/forgot-password/forgot-password-text'
-import { forgotPasswordHtmlTemplate } from '@templates/forgot-password/forgot-password-html'
+import { PASSWORD_RESET_CONSTANTS } from 'messages/constants/auth/password-reset'
+import { hashResetToken } from './helpers/token-hash'
 
 interface ForgotPasswordUseCaseRequest {
   email: string
 }
 
 type ForgotPasswordUseCaseResponse = {
-  user: User
-  token: string
+  /**
+   * null = e-mail desconhecido ou inválido. Sucesso no-op de propósito:
+   * o controller responde a mensagem genérica em ambos os casos, sem
+   * oráculo de enumeração de contas.
+   */
+  outboxEvent: IOutboxEvent | null
 }
-
-const EXPIRES_IN_MINUTES = 15
-const TOKEN_LENGTH = 32
 
 export class ForgotPasswordUseCase {
   constructor(
     private usersRepository: UsersRepository,
-    private sendEmailUseCase: SendEmailUseCase,
+    private eventRegistration: IOutboxEventRegistration,
   ) {}
 
   async execute({ email }: ForgotPasswordUseCaseRequest): Promise<Result<ForgotPasswordUseCaseResponse, AppError>> {
-    let userExists: User | null = null
-
-    if (emailSchema.safeParse(email).success) {
-      const userResult = await this.usersRepository.findBy({ email: email })
-
-      if (isErr(userResult)) {
-        return userResult
-      }
-
-      userExists = userResult.value
+    if (!emailSchema.safeParse(email).success) {
+      return ok({ outboxEvent: null })
     }
 
-    if (!userExists) {
-      return err(new UserNotFoundForPasswordResetError())
+    const userResult = await this.usersRepository.findBy({ email })
+
+    if (isErr(userResult)) {
+      return userResult
     }
 
-    const passwordToken = randomBytes(TOKEN_LENGTH).toString('hex')
-    const tokenExpiresAt = new Date(Date.now() + EXPIRES_IN_MINUTES * 60 * 1000)
+    const user = userResult.value
 
-    const updateResult = await this.usersRepository.updatePassword(userExists.publicId, {
-      token: passwordToken,
+    if (!user) {
+      return ok({ outboxEvent: null })
+    }
+
+    const rawToken = randomBytes(PASSWORD_RESET_CONSTANTS.TOKEN_LENGTH_BYTES).toString('hex')
+    const tokenExpiresAt = new Date(Date.now() + PASSWORD_RESET_CONSTANTS.TOKEN_EXPIRES_IN_MINUTES * 60 * 1000)
+
+    // Grava apenas o hash; o token cru segue só no payload transitório da outbox
+    const updateResult = await this.usersRepository.updatePassword(user.publicId, {
+      token: hashResetToken(rawToken),
       tokenExpiresAt,
     })
 
@@ -58,32 +58,24 @@ export class ForgotPasswordUseCase {
       return updateResult
     }
 
-    const user = updateResult.value
-
-    if (!user) {
-      return err(new UserNotFoundForPasswordResetError())
-    }
-
-    // Attempt to send email
-    const emailResult = await this.sendEmailUseCase.execute({
-      to: user.email,
-      subject: EMAIL_CONSTANTS.PASSWORD_RECOVERY_SUBJECT,
-      message: forgotPasswordTextTemplate(user.name, passwordToken),
-      html: forgotPasswordHtmlTemplate(user.name, passwordToken),
+    // Mesma transação da gravação do token (TransactionalUseCaseDecorator):
+    // ou o token e o evento existem juntos, ou nenhum dos dois — sem compensação.
+    const outboxEvent = await this.eventRegistration.register({
+      type: OUTBOX_EVENT_TYPES.PASSWORD_RESET_REQUESTED,
+      payload: {
+        userPublicId: user.publicId,
+        name: user.name,
+        email: user.email,
+        token: rawToken,
+        tokenExpiresAt: tokenExpiresAt.toISOString(),
+      },
+      expiresAt: tokenExpiresAt,
     })
 
-    if (isErr(emailResult)) {
-      // Invalidate/delete the token on failure
-      await this.usersRepository.updatePassword(user.publicId, {
-        token: null,
-        tokenExpiresAt: null,
-      })
-      return err(new FailedToSendEmailError())
+    if (isErr(outboxEvent)) {
+      return outboxEvent
     }
 
-    return ok({
-      user,
-      token: passwordToken,
-    })
+    return ok({ outboxEvent: outboxEvent.value })
   }
 }

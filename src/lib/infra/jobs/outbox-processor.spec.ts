@@ -59,10 +59,12 @@ vi.mock('@lib/sentry/capture', () => ({
 }))
 
 import { OutboxProcessor } from './outbox-processor'
+import { makeOutboxDispatchStrategyRegistry } from './make-outbox-dispatch-registry'
 import { InMemoryOutboxRepository } from '@repositories/in-memory/in-memory-outbox-repository'
 import { IOutboxEvent, IOutboxEventType } from 'core/contracts/repository/outbox-repository.interface'
 import { isOk, err } from 'core/shared/result'
 import { OUTBOX_CONSTANTS } from 'messages/constants/outbox/outbox'
+import { PASSWORD_RESET_CONSTANTS } from 'messages/constants/auth/password-reset'
 import { ContactEmailStrategy } from '@use-cases/forms/strategies/contact-email-strategy'
 import { DecisionForChristEmailStrategy } from '@use-cases/forms/strategies/decision-for-christ-email-strategy'
 import { InfrastructureError } from 'errors/infrastructure-error'
@@ -99,6 +101,24 @@ async function createEvent(
   return repository.items.find((e) => e.publicId === created.value.publicId)!
 }
 
+async function createPasswordResetEvent(repository: InMemoryOutboxRepository, expiresAt: Date): Promise<IOutboxEvent> {
+  const created = await repository.create({
+    status: IOutboxEventType.PENDING,
+    type: 'PasswordResetRequested',
+    payload: {
+      userPublicId: 'user-1',
+      name: 'João',
+      email: 'joao@test.com',
+      token: 'token-cru-abc123',
+      tokenExpiresAt: expiresAt.toISOString(),
+    },
+    expiresAt,
+  })
+  if (!isOk(created)) throw new Error('setup: falha ao criar evento de reset')
+
+  return repository.items.find((e) => e.publicId === created.value.publicId)!
+}
+
 describe('OutboxProcessor', () => {
   let repository: InMemoryOutboxRepository
   let processor: OutboxProcessor
@@ -106,7 +126,7 @@ describe('OutboxProcessor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     repository = new InMemoryOutboxRepository()
-    processor = new OutboxProcessor(repository)
+    processor = new OutboxProcessor(repository, makeOutboxDispatchStrategyRegistry())
 
     mockAcquire.mockResolvedValue('lock-token')
     mockRenew.mockResolvedValue(true)
@@ -127,6 +147,7 @@ describe('OutboxProcessor', () => {
       const [, dispatchData, opts] = mockQueueAdd.mock.calls[0]
       expect(dispatchData.publicId).toBe(event.publicId)
       expect(dispatchData.emails).toHaveLength(2)
+      expect('expiresAt' in dispatchData).toBe(false)
       expect(opts).toEqual({ jobId: event.publicId })
     })
 
@@ -211,6 +232,86 @@ describe('OutboxProcessor', () => {
       expect(repository.items[0].status).toBe(IOutboxEventType.SENDING)
       expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.REVERT_FATAL)
       expect(mockCaptureError).toHaveBeenCalledWith(revertError, { publicId: event.publicId })
+    })
+
+    describe('gate de expiração', () => {
+      it('evento expirado: deleta a linha sem transicionar status nem enfileirar', async () => {
+        const event = await createPasswordResetEvent(repository, new Date(Date.now() - 1000))
+        const updateStatusSpy = vi.spyOn(repository, 'updateStatus')
+
+        await processor.processSingleEvent(event)
+
+        expect(repository.items).toHaveLength(0)
+        expect(updateStatusSpy).not.toHaveBeenCalled()
+        expect(mockQueueAdd).not.toHaveBeenCalled()
+        expect(logger.info).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.EXPIRED_EVENT_DELETED)
+      })
+
+      it('evento expirado vindo do Pub/Sub (expiresAt serializado como string): mesmo comportamento', async () => {
+        const event = await createPasswordResetEvent(repository, new Date(Date.now() - 1000))
+        // Simula a serialização JSON do OutboxSignal: datas viram strings ISO
+        const serialized = JSON.parse(JSON.stringify(event)) as IOutboxEvent
+
+        await processor.processSingleEvent(serialized)
+
+        expect(repository.items).toHaveLength(0)
+        expect(mockQueueAdd).not.toHaveBeenCalled()
+      })
+
+      it('falha ao deletar evento expirado: loga, captura no Sentry e não despacha', async () => {
+        const event = await createPasswordResetEvent(repository, new Date(Date.now() - 1000))
+        repository.shouldFailOn.delete = true
+
+        await expect(processor.processSingleEvent(event)).resolves.toBeUndefined()
+
+        expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.EXPIRED_EVENT_DELETE_ERROR)
+        expect(mockCaptureError).toHaveBeenCalledWith(expect.anything(), { publicId: event.publicId })
+        expect(mockQueueAdd).not.toHaveBeenCalled()
+        expect(repository.items[0].status).toBe(IOutboxEventType.PENDING)
+      })
+
+      it('evento com expiresAt futuro: despacha normalmente com expiresAt ISO no job data', async () => {
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000)
+        const event = await createPasswordResetEvent(repository, expiresAt)
+
+        await processor.processSingleEvent(event)
+
+        expect(mockQueueAdd).toHaveBeenCalledOnce()
+        const [, dispatchData] = mockQueueAdd.mock.calls[0]
+        expect(dispatchData.expiresAt).toBe(expiresAt.toISOString())
+      })
+    })
+
+    describe('roteamento por tipo via registry', () => {
+      it('PasswordResetRequested: enfileira um único e-mail com jobOptions de backoff fixo', async () => {
+        const event = await createPasswordResetEvent(repository, new Date(Date.now() + 15 * 60 * 1000))
+
+        await processor.processSingleEvent(event)
+
+        expect(repository.items[0].status).toBe(IOutboxEventType.SENDING)
+        expect(mockQueueAdd).toHaveBeenCalledOnce()
+
+        const [, dispatchData, opts] = mockQueueAdd.mock.calls[0]
+        expect(dispatchData.emails).toHaveLength(1)
+        expect(dispatchData.emails[0].to).toBe('joao@test.com')
+        expect(opts).toEqual({
+          jobId: event.publicId,
+          attempts: PASSWORD_RESET_CONSTANTS.JOB_ATTEMPTS,
+          backoff: { type: 'fixed', delay: PASSWORD_RESET_CONSTANTS.JOB_BACKOFF_DELAY_MS },
+        })
+      })
+
+      it('tipo de evento desconhecido: reverte para PENDING sem enfileirar (caminho poison message)', async () => {
+        const event = await createEvent(repository)
+        repository.items[0].type = 'TipoInexistente'
+        event.type = 'TipoInexistente'
+
+        await processor.processSingleEvent(event)
+
+        expect(repository.items[0].status).toBe(IOutboxEventType.PENDING)
+        expect(mockQueueAdd).not.toHaveBeenCalled()
+        expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.DISPATCH_REVERTED)
+      })
     })
 
     describe('limite de tentativas de despacho (poison message)', () => {

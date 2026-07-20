@@ -21,6 +21,19 @@ export function createMailJobProcessor(outboxRepository: IOutboxRepository) {
     const childLogger = logger.child({ jobId: job.id, publicId })
     const redisCache = getRedisCache()
 
+    // Gate de expiração — ANTES da chave de idempotência: um link morto nunca é
+    // enviado (ex.: o backoff do retry cruzou a janela do token na fila).
+    // Sucesso sem envio; só a falha do delete dispara retry (que re-tenta só o delete).
+    if (job.data.expiresAt && new Date(job.data.expiresAt).getTime() <= Date.now()) {
+      childLogger.warn(WORKER_LOGS.EXPIRED_JOB_SKIPPED)
+
+      const deleteResult = await outboxRepository.delete(publicId)
+      if (isErr(deleteResult)) {
+        throw deleteResult.error
+      }
+      return
+    }
+
     const idempotencyKey = `${REDIS_CONSTANTS.KEYS.IDEMPOTENCY_EMAIL_PREFIX}${publicId}`
 
     const acquired = await redisCache.set(
@@ -54,11 +67,27 @@ export function createMailJobProcessor(outboxRepository: IOutboxRepository) {
       childLogger.info(`Processando lote de ${emails.length} e-mails...`)
 
       const sendEmailUseCase = makeSendEmailUseCase()
-      const results = await Promise.all(emails.map((email) => sendEmailUseCase.execute(email)))
+      const results = await Promise.allSettled(emails.map((email) => sendEmailUseCase.execute(email)))
 
-      const failedResult = results.find((r) => isErr(r))
-      if (failedResult && isErr(failedResult)) {
-        throw failedResult.error
+      const failures = results.filter((r) => r.status === 'rejected' || isErr(r.value))
+
+      if (failures.length > 0) {
+        // Falha parcial: parte do lote foi enviada; o retry reenviará o lote
+        // inteiro (duplicata tolerável — e-mail de notificação, não transação)
+        if (failures.length < results.length) {
+          childLogger.warn(
+            { successCount: results.length - failures.length, failureCount: failures.length },
+            WORKER_LOGS.PARTIAL_BATCH_FAILURE,
+          )
+        }
+
+        const firstFailure = failures[0]
+        if (firstFailure.status === 'rejected') {
+          throw firstFailure.reason
+        }
+        if (isErr(firstFailure.value)) {
+          throw firstFailure.value.error
+        }
       }
 
       childLogger.info('Lote de e-mails processado com sucesso.')

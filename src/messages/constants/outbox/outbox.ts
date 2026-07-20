@@ -2,6 +2,8 @@ export const OUTBOX_CONSTANTS = {
   LOCK_KEYS: {
     OUTBOX_PROCESSOR: 'lock:outbox-processor',
     OUTBOX_RECOVERY: 'lock:outbox-recovery',
+    OUTBOX_EXPIRY_SWEEP: 'lock:outbox-expiry-sweep',
+    OUTBOX_RETENTION: 'lock:outbox-retention',
   },
   LOCK_TTL_MS: {
     DEFAULT: 10_000,
@@ -22,5 +24,11 @@ export const OUTBOX_CONSTANTS = {
      * marked FAILED (terminal). Prevents poison messages from looping forever.
      */
     MAX_DISPATCH_ATTEMPTS: 5,
+  },
+  RETENTION: {
+    /** Eventos com mais de N dias são removidos pela retenção diária, qualquer status. */
+    DAYS: 14,
+    /** Um lote por chamada, para renovar o lock distribuído entre lotes. */
+    BATCH_SIZE: 1000,
   },
 } as const

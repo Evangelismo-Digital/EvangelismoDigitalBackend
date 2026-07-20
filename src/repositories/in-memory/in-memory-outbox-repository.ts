@@ -21,6 +21,8 @@ interface FailureInjection {
   findStuck?: boolean
   updateStatus?: boolean
   delete?: boolean
+  deleteExpired?: boolean
+  deleteOlderThan?: boolean
 }
 
 /**
@@ -50,6 +52,7 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
       attempts: 0,
       occurredAt: new Date(),
       sendingAt: undefined,
+      expiresAt: data.expiresAt ?? undefined,
     }
 
     this.items.push(event)
@@ -126,5 +129,41 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
     this.items = this.items.filter((e) => e.publicId !== publicId)
 
     return ok(undefined)
+  }
+
+  async deleteExpired(now: Date): Promise<Result<number, AppError>> {
+    if (this.shouldFailOn.deleteExpired) {
+      return err(new InMemoryOutboxError('Falha injetada em deleteExpired'))
+    }
+
+    const before = this.items.length
+    this.items = this.items.filter((e) => e.expiresAt === undefined || e.expiresAt.getTime() > now.getTime())
+
+    return ok(before - this.items.length)
+  }
+
+  async deleteOlderThan(
+    cutoff: Date,
+    batchSize: number,
+  ): Promise<Result<{ deleted: number; byStatus: Partial<Record<IOutboxEventType, number>> }, AppError>> {
+    if (this.shouldFailOn.deleteOlderThan) {
+      return err(new InMemoryOutboxError('Falha injetada em deleteOlderThan'))
+    }
+
+    // Um lote por chamada, como no PrismaOutboxRepository
+    const batch = this.items
+      .filter((e) => e.occurredAt.getTime() < cutoff.getTime())
+      .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
+      .slice(0, batchSize)
+
+    const byStatus: Partial<Record<IOutboxEventType, number>> = {}
+    for (const event of batch) {
+      byStatus[event.status] = (byStatus[event.status] ?? 0) + 1
+    }
+
+    const batchIds = new Set(batch.map((e) => e.id))
+    this.items = this.items.filter((e) => !batchIds.has(e.id))
+
+    return ok({ deleted: batch.length, byStatus })
   }
 }

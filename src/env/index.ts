@@ -84,6 +84,10 @@ const envSchema = z.object({
   SMTP_PORT: z.coerce.number(),
   SMTP_HOST: z.string().min(1),
   SMTP_SECURE: z.enum(['true', 'false']).transform((val) => val === 'true'),
+  // Timeouts defensivos: impedem que um servidor SMTP travado bloqueie o chamador (padrões do Nodemailer chegam a 10 min)
+  SMTP_CONNECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+  SMTP_GREETING_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+  SMTP_SOCKET_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
 
   // ADMIN EMAIL
   ADMIN_EMAIL: z.email(),

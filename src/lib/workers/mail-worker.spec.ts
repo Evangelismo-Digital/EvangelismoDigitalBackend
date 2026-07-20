@@ -62,10 +62,16 @@ const IDEMPOTENCY_KEY = `${REDIS_CONSTANTS.KEYS.IDEMPOTENCY_EMAIL_PREFIX}${PUBLI
 const emailUser = { to: 'user@test.com', subject: 'a', message: 'a', html: '<p>a</p>' }
 const emailStaff = { to: 'staff@test.com', subject: 'b', message: 'b', html: '<p>b</p>' }
 
-function makeJob(overrides?: Partial<{ emails: unknown[]; attemptsMade: number; attempts?: number }>) {
+function makeJob(
+  overrides?: Partial<{ emails: unknown[]; attemptsMade: number; attempts?: number; expiresAt: string }>,
+) {
   return {
     id: 'job-1',
-    data: { publicId: PUBLIC_ID, emails: overrides?.emails ?? [emailUser, emailStaff] },
+    data: {
+      publicId: PUBLIC_ID,
+      emails: overrides?.emails ?? [emailUser, emailStaff],
+      ...(overrides?.expiresAt ? { expiresAt: overrides.expiresAt } : {}),
+    },
     attemptsMade: overrides?.attemptsMade ?? 1,
     opts: { attempts: overrides && 'attempts' in overrides ? overrides.attempts : 3 },
   } as unknown as Job<IOutboxDispatchData>
@@ -91,6 +97,38 @@ describe('createMailJobProcessor', () => {
     mockRedisGet.mockResolvedValue(null)
     mockRedisDel.mockResolvedValue(1)
     mockSendEmailExecute.mockResolvedValue(ok({}))
+  })
+
+  describe('gate de expiração', () => {
+    it('job expirado: deleta a linha do outbox sem enviar e-mail e sem tocar na chave de idempotência', async () => {
+      const expiresAt = new Date(Date.now() - 1000).toISOString()
+
+      await expect(processor(makeJob({ expiresAt }))).resolves.toBeUndefined()
+
+      expect(mockSendEmailExecute).not.toHaveBeenCalled()
+      expect(mockRedisSet).not.toHaveBeenCalled()
+      expect(mockRedisDel).not.toHaveBeenCalled()
+      expect(repository.delete).toHaveBeenCalledWith(PUBLIC_ID)
+      expect(logger.warn).toHaveBeenCalledWith(WORKER_LOGS.EXPIRED_JOB_SKIPPED)
+    })
+
+    it('job expirado com delete falhando: lança para o BullMQ re-tentar apenas o delete', async () => {
+      const infraError = new InfraTestError()
+      repository.delete.mockResolvedValueOnce(err(infraError))
+
+      await expect(processor(makeJob({ expiresAt: new Date(Date.now() - 1000).toISOString() }))).rejects.toBe(
+        infraError,
+      )
+
+      expect(mockSendEmailExecute).not.toHaveBeenCalled()
+    })
+
+    it('job com expiresAt futuro: processa normalmente', async () => {
+      await processor(makeJob({ expiresAt: new Date(Date.now() + 60_000).toISOString() }))
+
+      expect(mockSendEmailExecute).toHaveBeenCalledTimes(2)
+      expect(repository.delete).toHaveBeenCalledWith(PUBLIC_ID)
+    })
   })
 
   describe('aquisição de idempotência', () => {
@@ -186,6 +224,34 @@ describe('createMailJobProcessor', () => {
       expect(repository.delete).not.toHaveBeenCalled()
       // 'completed' nunca foi gravado
       expect(mockRedisSet).toHaveBeenCalledTimes(1)
+    })
+
+    it('falha parcial: loga warn com contagem de sucessos/falhas (Promise.allSettled)', async () => {
+      const smtpError = new SmtpDispatchError(new Error('smtp caiu'))
+      mockSendEmailExecute.mockResolvedValueOnce(ok({})).mockResolvedValueOnce(err(smtpError))
+
+      await expect(processor(makeJob())).rejects.toBe(smtpError)
+
+      expect(logger.warn).toHaveBeenCalledWith({ successCount: 1, failureCount: 1 }, WORKER_LOGS.PARTIAL_BATCH_FAILURE)
+    })
+
+    it('falha total: não loga o warn de falha parcial', async () => {
+      mockSendEmailExecute.mockResolvedValue(err(new SmtpDispatchError(new Error('smtp caiu'))))
+
+      await expect(processor(makeJob())).rejects.toBeInstanceOf(SmtpDispatchError)
+
+      expect(logger.warn).not.toHaveBeenCalledWith(expect.anything(), WORKER_LOGS.PARTIAL_BATCH_FAILURE)
+    })
+
+    it('mistura de rejeição inesperada e Result err: todos os envios são aguardados antes de relançar', async () => {
+      mockSendEmailExecute
+        .mockRejectedValueOnce(new Error('estouro inesperado'))
+        .mockResolvedValueOnce(err(new SmtpDispatchError(new Error('smtp caiu'))))
+
+      await expect(processor(makeJob())).rejects.toBeInstanceOf(SmtpDispatchError)
+
+      expect(mockSendEmailExecute).toHaveBeenCalledTimes(2)
+      expect(mockRedisDel).toHaveBeenCalledWith(IDEMPOTENCY_KEY)
     })
 
     it('falha total: apaga a chave e relança sem deletar o outbox', async () => {

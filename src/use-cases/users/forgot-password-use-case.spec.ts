@@ -1,168 +1,159 @@
-import { InMemoryUsersRepository } from '@repositories/in-memory/in-memory-users-repository'
 import { describe, it, expect, vi } from 'vitest'
+import { InMemoryUsersRepository } from '@repositories/in-memory/in-memory-users-repository'
+import { InMemoryOutboxRepository } from '@repositories/in-memory/in-memory-outbox-repository'
+import { OutboxEventUseCase } from '@use-cases/outbox-event/outbox-event-use-case'
 import { RegisterUserUseCase } from './register-user'
-import { UserRole } from 'core/contracts/repository/users-repository.interface'
-import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { ForgotPasswordUseCase } from './forgot-password'
-import { SendEmailUseCase } from '../email/send-email'
-import { UserNotFoundForPasswordResetError } from '@use-cases/errors/user-not-found-for-password-reset-error'
-import { FailedToSendEmailError } from '@use-cases/errors/failed-to-send-email-error'
-import { isOk, isErr, ok, err } from 'core/shared/result'
+import { hashResetToken } from './helpers/token-hash'
+import { UserRole } from 'core/contracts/repository/users-repository.interface'
+import { PasswordResetRequestedPayload } from 'core/types/outbox/outbox-event-input'
+import { PASSWORD_RESET_CONSTANTS } from 'messages/constants/auth/password-reset'
+import { cpf as cpfValidator } from 'cpf-cnpj-validator'
+import { isOk, isErr, err } from 'core/shared/result'
+import { InfrastructureError } from 'errors/infrastructure-error'
+
+class InfraTestError extends InfrastructureError {
+  constructor() {
+    super({ code: 'INFRA_TEST_ERROR', message: 'falha de infra injetada' })
+  }
+}
+
+function makeSut() {
+  const usersRepository = new InMemoryUsersRepository()
+  const outboxRepository = new InMemoryOutboxRepository()
+  const eventRegistration = new OutboxEventUseCase(outboxRepository)
+  const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, eventRegistration)
+  const registerUseCase = new RegisterUserUseCase(usersRepository)
+
+  return { usersRepository, outboxRepository, forgotPasswordUseCase, registerUseCase }
+}
+
+async function registerUser(registerUseCase: RegisterUserUseCase, email: string) {
+  const registerResult = await registerUseCase.execute({
+    name: 'John Doe',
+    email,
+    cpf: cpfValidator.generate(),
+    password: 'Teste123x!',
+    username: 'johndoe',
+    role: UserRole.DEFAULT,
+  })
+  expect(isOk(registerResult)).toBe(true)
+}
 
 describe('Forgot Password Use Case', () => {
-  it('should return UserNotFoundForPasswordResetError when user is not found by email', async () => {
-    const usersRepository = new InMemoryUsersRepository()
-    const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const sendEmailUseCase = new SendEmailUseCase({ send: vi.fn() })
-    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
+  it('e-mail desconhecido: sucesso no-op (sem evento, sem token) — nenhum oráculo de enumeração', async () => {
+    const { outboxRepository, forgotPasswordUseCase } = makeSut()
 
-    vi.spyOn(sendEmailUseCase, 'execute').mockResolvedValue(ok({} as any))
+    const result = await forgotPasswordUseCase.execute({ email: 'naoexiste@gmail.com' })
 
-    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-    const uniqueCpf = cpfValidator.generate()
-    const password = 'Teste123x!'
-
-    const registerResult = await registerUseCase.execute({
-      name: 'John Doe',
-      email: uniqueEmail,
-      cpf: uniqueCpf,
-      password,
-      username: 'johndoe',
-      role: UserRole.DEFAULT,
-    })
-    expect(isOk(registerResult)).toBe(true)
-
-    const findSpy = vi.spyOn(usersRepository, 'findBy').mockResolvedValueOnce(ok(null))
-
-    const forgotResult = await forgotPasswordUseCase.execute({ email: uniqueEmail })
-
-    expect(isErr(forgotResult)).toBe(true)
-    if (isErr(forgotResult)) {
-      expect(forgotResult.error).toBeInstanceOf(UserNotFoundForPasswordResetError)
-    }
-
-    findSpy.mockRestore()
+    expect(isOk(result)).toBe(true)
+    if (!isOk(result)) return
+    expect(result.value.outboxEvent).toBeNull()
+    expect(outboxRepository.items).toHaveLength(0)
   })
 
-  it('should generate a password reset token and expiration time for the same token', async () => {
-    const usersRepository = new InMemoryUsersRepository()
-    const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const sendEmailUseCase = new SendEmailUseCase({ send: vi.fn() })
-    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
+  it('e-mail com formato inválido: sucesso no-op sem consultar o repositório', async () => {
+    const { usersRepository, outboxRepository, forgotPasswordUseCase } = makeSut()
+    const findSpy = vi.spyOn(usersRepository, 'findBy')
 
-    vi.spyOn(sendEmailUseCase, 'execute').mockResolvedValue(ok({} as any))
+    const result = await forgotPasswordUseCase.execute({ email: 'nao-e-um-email' })
 
-    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-    const uniqueCpf = cpfValidator.generate()
-    const password = 'Teste123x!'
+    expect(isOk(result)).toBe(true)
+    if (!isOk(result)) return
+    expect(result.value.outboxEvent).toBeNull()
+    expect(findSpy).not.toHaveBeenCalled()
+    expect(outboxRepository.items).toHaveLength(0)
+  })
 
-    const registerResult = await registerUseCase.execute({
-      name: 'John Doe',
-      email: uniqueEmail,
-      cpf: uniqueCpf,
-      password,
-      username: 'johndoe',
-      role: UserRole.DEFAULT,
-    })
-    expect(isOk(registerResult)).toBe(true)
+  it('usuário existente: grava o HASH do token no usuário e registra evento com o token cru no payload', async () => {
+    const { usersRepository, outboxRepository, forgotPasswordUseCase, registerUseCase } = makeSut()
+    const email = `johndoe${Date.now()}@gmail.com`
+    await registerUser(registerUseCase, email)
 
     const before = Date.now()
-    const forgotResult = await forgotPasswordUseCase.execute({
-      email: uniqueEmail,
-    })
+    const result = await forgotPasswordUseCase.execute({ email })
     const after = Date.now()
 
-    expect(isOk(forgotResult)).toBe(true)
-    if (isOk(forgotResult)) {
-      const { user, token } = forgotResult.value
-      expect(user.publicId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-      expect(token).toHaveLength(64)
-      expect(user.token).toBe(token)
+    expect(isOk(result)).toBe(true)
+    if (!isOk(result)) return
+    expect(result.value.outboxEvent).not.toBeNull()
 
-      if (user.tokenExpiresAt) {
-        const expiresAt = new Date(user.tokenExpiresAt).getTime()
-        const expectedMin = before + 15 * 60 * 1000
-        const expectedMax = after + 15 * 60 * 1000
-        expect(expiresAt).toBeGreaterThanOrEqual(expectedMin - 1000)
-        expect(expiresAt).toBeLessThanOrEqual(expectedMax + 1000)
-      } else {
-        throw new Error('tokenExpiresAt is not set')
-      }
-    }
+    // Evento registrado com o formato correto
+    expect(outboxRepository.items).toHaveLength(1)
+    const event = outboxRepository.items[0]
+    expect(event.type).toBe('PasswordResetRequested')
+
+    const payload = event.payload as PasswordResetRequestedPayload
+    expect(payload.email).toBe(email)
+    expect(payload.name).toBe('John Doe')
+    expect(payload.token).toMatch(/^[0-9a-f]{64}$/) // token cru: 32 bytes em hex
+
+    // O usuário guarda apenas o hash — nunca o token cru
+    const userResult = await usersRepository.findBy({ email })
+    if (!isOk(userResult) || !userResult.value) throw new Error('setup')
+    const user = userResult.value
+    expect(user.token).toBe(hashResetToken(payload.token))
+    expect(user.token).not.toBe(payload.token)
+    expect(payload.userPublicId).toBe(user.publicId)
+
+    // Janela de expiração de 15 min, espelhada no evento e no payload
+    const expectedExpiryMin = before + PASSWORD_RESET_CONSTANTS.TOKEN_EXPIRES_IN_MINUTES * 60 * 1000
+    const expectedExpiryMax = after + PASSWORD_RESET_CONSTANTS.TOKEN_EXPIRES_IN_MINUTES * 60 * 1000
+    const tokenExpiresAt = user.tokenExpiresAt!.getTime()
+    expect(tokenExpiresAt).toBeGreaterThanOrEqual(expectedExpiryMin)
+    expect(tokenExpiresAt).toBeLessThanOrEqual(expectedExpiryMax)
+    expect(event.expiresAt?.getTime()).toBe(tokenExpiresAt)
+    expect(payload.tokenExpiresAt).toBe(user.tokenExpiresAt!.toISOString())
   })
 
-  it('should return UserNotFoundForPasswordResetError when user is not updated', async () => {
-    const usersRepository = new InMemoryUsersRepository()
-    const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const sendEmailUseCase = new SendEmailUseCase({ send: vi.fn() })
-    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
+  it('tokens gerados em pedidos sucessivos são diferentes', async () => {
+    const { outboxRepository, forgotPasswordUseCase, registerUseCase } = makeSut()
+    const email = `johndoe${Date.now()}@gmail.com`
+    await registerUser(registerUseCase, email)
 
-    vi.spyOn(sendEmailUseCase, 'execute').mockResolvedValue(ok({} as any))
+    await forgotPasswordUseCase.execute({ email })
+    await forgotPasswordUseCase.execute({ email })
 
-    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-    const uniqueCpf = cpfValidator.generate()
-    const password = 'Teste123x!'
-
-    const registerResult = await registerUseCase.execute({
-      name: 'John Doe',
-      email: uniqueEmail,
-      cpf: uniqueCpf,
-      password,
-      username: 'johndoe',
-      role: UserRole.DEFAULT,
-    })
-    expect(isOk(registerResult)).toBe(true)
-
-    const updatePasswordSpy = vi.spyOn(usersRepository, 'updatePassword').mockResolvedValueOnce(ok(null as any))
-
-    const forgotResult = await forgotPasswordUseCase.execute({ email: uniqueEmail })
-
-    expect(isErr(forgotResult)).toBe(true)
-    if (isErr(forgotResult)) {
-      expect(forgotResult.error).toBeInstanceOf(UserNotFoundForPasswordResetError)
-    }
-
-    updatePasswordSpy.mockRestore()
+    const [first, second] = outboxRepository.items.map((e) => (e.payload as PasswordResetRequestedPayload).token)
+    expect(first).not.toBe(second)
   })
 
-  it('should invalidate token and return FailedToSendEmailError if email sending fails', async () => {
-    const usersRepository = new InMemoryUsersRepository()
-    const registerUseCase = new RegisterUserUseCase(usersRepository)
-    const sendEmailUseCase = new SendEmailUseCase({ send: vi.fn() })
-    const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, sendEmailUseCase)
+  it('falha de infra no findBy: propaga o err', async () => {
+    const { usersRepository, forgotPasswordUseCase } = makeSut()
+    const infraError = new InfraTestError()
+    vi.spyOn(usersRepository, 'findBy').mockResolvedValueOnce(err(infraError))
 
-    const spySend = vi.spyOn(sendEmailUseCase, 'execute').mockResolvedValue(err(new Error('SMTP failure') as any))
-    const spyUpdate = vi.spyOn(usersRepository, 'updatePassword')
+    const result = await forgotPasswordUseCase.execute({ email: 'johndoe@gmail.com' })
 
-    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-    const uniqueCpf = cpfValidator.generate()
-    const password = 'Teste123x!'
+    expect(isErr(result)).toBe(true)
+    if (!isErr(result)) return
+    expect(result.error).toBe(infraError)
+  })
 
-    const registerResult = await registerUseCase.execute({
-      name: 'John Doe',
-      email: uniqueEmail,
-      cpf: uniqueCpf,
-      password,
-      username: 'johndoe',
-      role: UserRole.DEFAULT,
-    })
-    expect(isOk(registerResult)).toBe(true)
-    const registeredUser = (registerResult as any).value.user
+  it('falha ao gravar o token: propaga o err sem registrar evento', async () => {
+    const { usersRepository, outboxRepository, forgotPasswordUseCase, registerUseCase } = makeSut()
+    const email = `johndoe${Date.now()}@gmail.com`
+    await registerUser(registerUseCase, email)
 
-    const forgotResult = await forgotPasswordUseCase.execute({ email: uniqueEmail })
+    const infraError = new InfraTestError()
+    vi.spyOn(usersRepository, 'updatePassword').mockResolvedValueOnce(err(infraError))
 
-    expect(isErr(forgotResult)).toBe(true)
-    if (isErr(forgotResult)) {
-      expect(forgotResult.error).toBeInstanceOf(FailedToSendEmailError)
-    }
+    const result = await forgotPasswordUseCase.execute({ email })
 
-    // Verify token was invalidated/deleted
-    expect(spyUpdate).toHaveBeenCalledWith(registeredUser.publicId, {
-      token: null,
-      tokenExpiresAt: null,
-    })
+    expect(isErr(result)).toBe(true)
+    expect(outboxRepository.items).toHaveLength(0)
+  })
 
-    spySend.mockRestore()
-    spyUpdate.mockRestore()
+  it('falha ao registrar o evento na outbox: propaga o err (a transação do decorator reverte o token)', async () => {
+    const { outboxRepository, forgotPasswordUseCase, registerUseCase } = makeSut()
+    const email = `johndoe${Date.now()}@gmail.com`
+    await registerUser(registerUseCase, email)
+
+    outboxRepository.shouldFailOn.create = true
+
+    const result = await forgotPasswordUseCase.execute({ email })
+
+    expect(isErr(result)).toBe(true)
+    expect(outboxRepository.items).toHaveLength(0)
   })
 })

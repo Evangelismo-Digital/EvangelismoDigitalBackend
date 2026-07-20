@@ -19,7 +19,8 @@ export const OUTBOX_LOGS = {
   PHASE2_DONE: 'Fase 2 (eventos PENDING): concluída.',
   PHASE2_ERROR: 'Fase 2 (eventos PENDING): erro inesperado.',
   SCAN_DONE: 'Varredura de segurança da Outbox concluída.',
-  SCHEDULER_CONFIGURED: 'Agendador da Outbox configurado para 00:00 diariamente.',
+  SCHEDULER_CONFIGURED:
+    'Agendadores da Outbox configurados: varredura a cada 5 min, segurança à meia-noite e retenção às 03:00.',
   // outbox-processor
   SKIPPED_ANOTHER_RUNNING: 'processPendingEvents: Processamento ignorado. Outra instância já está rodando.',
   PENDING_FETCH_ERROR: 'Erro de Infra ao buscar eventos pendentes.',
@@ -31,4 +32,16 @@ export const OUTBOX_LOGS = {
   CRITICAL_RECOVERY_ERROR: 'Erro crítico inesperado no processStuckSendingEvents',
   MARKED_FAILED: 'Evento excedeu o número máximo de tentativas de despacho e foi marcado como FAILED.',
   FAILED_MARK_ERROR: 'Falha ao marcar evento como FAILED no banco de dados.',
+  EXPIRED_EVENT_DELETED: 'Evento expirado removido da Outbox sem despacho (link morto nunca é enviado).',
+  EXPIRED_EVENT_DELETE_ERROR: 'Falha ao remover evento expirado da Outbox.',
+  // outbox-maintenance
+  EXPIRY_SWEEP_DELETED: 'Varredura de expiração: eventos expirados removidos da Outbox.',
+  EXPIRY_SWEEP_ERROR: 'Erro na varredura de expiração da Outbox.',
+  RETENTION_PURGED: 'Retenção: eventos antigos removidos da Outbox.',
+  RETENTION_PURGED_NON_TERMINAL:
+    'Retenção: eventos PENDING/SENDING antigos removidos da Outbox — investigar por que não foram processados.',
+  RETENTION_ERROR: 'Erro na retenção da Outbox.',
+  FIVE_MIN_SWEEP_PENDING_ERROR: 'Varredura de 5 min: erro inesperado ao processar eventos PENDING.',
+  FIVE_MIN_SWEEP_EXPIRY_ERROR: 'Varredura de 5 min: erro inesperado na varredura de expiração.',
+  RETENTION_CRON_ERROR: 'Cron de retenção: erro inesperado.',
 } as const

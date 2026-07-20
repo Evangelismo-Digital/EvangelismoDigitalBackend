@@ -26,14 +26,18 @@ function makePrismaError(code: string) {
 }
 
 describe('PrismaOutboxRepository', () => {
+  const createMock = vi.fn()
   const deleteMock = vi.fn()
+  const deleteManyMock = vi.fn()
   const updateMock = vi.fn()
   const findManyMock = vi.fn()
 
   const dbContext = {
     client: {
       outboxEvent: {
+        create: createMock,
         delete: deleteMock,
+        deleteMany: deleteManyMock,
         update: updateMock,
         findMany: findManyMock,
       },
@@ -171,6 +175,7 @@ describe('PrismaOutboxRepository', () => {
           attempts: 3,
           occurredAt: new Date(),
           sendingAt: null,
+          expiresAt: null,
         },
       ])
 
@@ -180,6 +185,150 @@ describe('PrismaOutboxRepository', () => {
       if (!isOk(result)) return
       expect(result.value[0].attempts).toBe(3)
       expect(result.value[0].sendingAt).toBeUndefined()
+      expect(result.value[0].expiresAt).toBeUndefined()
+    })
+  })
+
+  describe('create (expiresAt)', () => {
+    it('persiste expiresAt para eventos expiráveis', async () => {
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000)
+      const payload = {
+        userPublicId: 'user-1',
+        name: 'João',
+        email: 'joao@test.com',
+        token: 'token-cru',
+        tokenExpiresAt: expiresAt.toISOString(),
+      }
+      createMock.mockResolvedValueOnce({
+        id: 1,
+        publicId: 'public-id',
+        type: 'PasswordResetRequested',
+        status: 'PENDING',
+        payload,
+        attempts: 0,
+        occurredAt: new Date(),
+        sendingAt: null,
+        expiresAt,
+      })
+
+      const result = await repository.create({
+        status: IOutboxEventType.PENDING,
+        type: 'PasswordResetRequested',
+        payload,
+        expiresAt,
+      })
+
+      expect(createMock).toHaveBeenCalledWith({
+        data: {
+          type: 'PasswordResetRequested',
+          status: IOutboxEventType.PENDING,
+          payload,
+          expiresAt,
+        },
+      })
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value.expiresAt).toEqual(expiresAt)
+    })
+
+    it('persiste expiresAt null para eventos de formulário', async () => {
+      createMock.mockResolvedValueOnce({
+        id: 1,
+        publicId: 'public-id',
+        type: 'FormSubmissionCreated',
+        status: 'PENDING',
+        payload: {},
+        attempts: 0,
+        occurredAt: new Date(),
+        sendingAt: null,
+        expiresAt: null,
+      })
+
+      await repository.create({
+        status: IOutboxEventType.PENDING,
+        type: 'FormSubmissionCreated',
+        payload: {},
+      })
+
+      expect(createMock).toHaveBeenCalledWith({
+        data: {
+          type: 'FormSubmissionCreated',
+          status: IOutboxEventType.PENDING,
+          payload: {},
+          expiresAt: null,
+        },
+      })
+    })
+  })
+
+  describe('deleteExpired', () => {
+    it('deleta com expiresAt <= agora e retorna a contagem', async () => {
+      deleteManyMock.mockResolvedValueOnce({ count: 2 })
+      const now = new Date()
+
+      const result = await repository.deleteExpired(now)
+
+      expect(deleteManyMock).toHaveBeenCalledWith({ where: { expiresAt: { lte: now } } })
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(2)
+    })
+
+    it('erro do banco vira err via mapper', async () => {
+      deleteManyMock.mockRejectedValueOnce(makePrismaError('P2002'))
+
+      const result = await repository.deleteExpired(new Date())
+
+      expect(isErr(result)).toBe(true)
+      expect(mapToKnownError).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('deleteOlderThan', () => {
+    it('busca um lote de ids por occurredAt < corte e deleta por id, acumulando byStatus', async () => {
+      const cutoff = new Date()
+      findManyMock.mockResolvedValueOnce([
+        { id: 1, status: 'PENDING' },
+        { id: 2, status: 'FAILED' },
+        { id: 3, status: 'FAILED' },
+      ])
+      deleteManyMock.mockResolvedValueOnce({ count: 3 })
+
+      const result = await repository.deleteOlderThan(cutoff, 50)
+
+      expect(findManyMock).toHaveBeenCalledWith({
+        where: { occurredAt: { lt: cutoff } },
+        select: { id: true, status: true },
+        orderBy: { occurredAt: 'asc' },
+        take: 50,
+      })
+      expect(deleteManyMock).toHaveBeenCalledWith({ where: { id: { in: [1, 2, 3] } } })
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toEqual({
+        deleted: 3,
+        byStatus: { [IOutboxEventType.PENDING]: 1, [IOutboxEventType.FAILED]: 2 },
+      })
+    })
+
+    it('lote vazio retorna 0 sem chamar deleteMany', async () => {
+      findManyMock.mockResolvedValueOnce([])
+
+      const result = await repository.deleteOlderThan(new Date(), 50)
+
+      expect(deleteManyMock).not.toHaveBeenCalled()
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toEqual({ deleted: 0, byStatus: {} })
+    })
+
+    it('erro do banco vira err via mapper', async () => {
+      findManyMock.mockRejectedValueOnce(new Error('rede caiu'))
+
+      const result = await repository.deleteOlderThan(new Date(), 50)
+
+      expect(isErr(result)).toBe(true)
+      expect(mapToKnownError).toHaveBeenCalledOnce()
     })
   })
 })

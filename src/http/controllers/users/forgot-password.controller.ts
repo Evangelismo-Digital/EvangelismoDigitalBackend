@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { forgotPasswordSchema } from '@http/schemas/users/forgot-password-schema'
 import { makeForgotPasswordUseCase } from '@use-cases/factories/make-forgot-password-use-case'
+import { OutboxSignal } from '@lib/infra/events/outbox-signal'
 import { EMAIL_CONSTANTS } from 'messages/constants/email/email'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
@@ -16,8 +17,17 @@ export async function forgotPassword(request: FastifyRequest, reply: FastifyRepl
 
   const result = await forgotPasswordUseCase.execute({ email })
 
+  // Só erros de infraestrutura chegam aqui (500); usuário desconhecido é
+  // sucesso no-op — a resposta é sempre a mensagem genérica (sem enumeração).
   if (isErr(result)) {
     return HttpErrorMapper.map(result.error, reply)
+  }
+
+  const { outboxEvent } = result.value
+
+  if (outboxEvent) {
+    // Fire-and-forget pós-commit (mesmo padrão do form controller); o cron é o fallback durável
+    void OutboxSignal.publishNewItem(outboxEvent.publicId, outboxEvent)
   }
 
   return reply.code(200).send({ message: EMAIL_CONSTANTS.PASSWORD_RESET_GENERIC_MESSAGE })

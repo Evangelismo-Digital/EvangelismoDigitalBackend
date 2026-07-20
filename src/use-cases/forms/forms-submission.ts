@@ -5,6 +5,7 @@ import { FormsAlreadyExistsError } from '@use-cases/errors/forms/forms-already-e
 import { ok, err, isOk, isErr, Result } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
+import { OUTBOX_EVENT_TYPES } from 'core/types/outbox/outbox-event-input'
 
 type Response = Result<
   {
@@ -60,8 +61,18 @@ export class FormsSubmissionUseCase {
     }
 
     // 3. Side-Effect Seguro (Outbox Pattern)
-    // Salva o evento na tabela 'outbox_events' NA MESMA TRANSAÇÃO do formulário
-    const outboxEvent = await this.eventRegistration.register(sanitizedFormSubmission)
+    // Salva o evento na tabela 'outbox_events' NA MESMA TRANSAÇÃO do formulário.
+    // O ipAddress fica fora do payload persistido (dado sensível, desnecessário para o e-mail).
+    const outboxEvent = await this.eventRegistration.register({
+      type: OUTBOX_EVENT_TYPES.FORM_SUBMISSION_CREATED,
+      payload: {
+        name: sanitizedFormSubmission.name,
+        lastName: sanitizedFormSubmission.lastName,
+        email: sanitizedFormSubmission.email,
+        decisaoPorCristo: sanitizedFormSubmission.decisaoPorCristo,
+        location: sanitizedFormSubmission.location,
+      },
+    })
 
     if (isErr(outboxEvent)) {
       return outboxEvent
