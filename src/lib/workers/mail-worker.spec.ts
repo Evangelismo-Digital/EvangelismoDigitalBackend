@@ -39,7 +39,7 @@ vi.mock('@lib/sentry/capture', () => ({
 
 import { Job } from 'bullmq'
 import { createMailJobProcessor, createJobFailureHandler } from './mail-worker'
-import { IOutboxRepository, IOutboxEventType } from 'core/contracts/repository/outbox-repository.interface'
+import { IOutboxRepository, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { IOutboxDispatchData } from 'core/contracts/lib/infra/outbox-dispatch-data.interface'
 import { ok, err } from 'core/shared/result'
 import { SmtpDispatchError } from '@lib/errors/queue/smtp-dispatch-error'
@@ -350,7 +350,7 @@ describe('createJobFailureHandler', () => {
     const smtpError = new Error('smtp caiu')
     await handleJobFailure(makeJob({ attemptsMade: 3 }), smtpError)
 
-    expect(repository.updateStatus).toHaveBeenCalledWith(PUBLIC_ID, IOutboxEventType.PENDING)
+    expect(repository.updateStatus).toHaveBeenCalledWith(PUBLIC_ID, IOutboxEventStatus.PENDING)
     expect(logger.warn).toHaveBeenCalledWith(expect.anything(), WORKER_LOGS.OUTBOX_REVERTED_AFTER_FINAL_FAILURE)
     expect(mockCaptureError).toHaveBeenCalledWith(smtpError, { jobId: 'job-1', publicId: PUBLIC_ID })
   })
@@ -358,7 +358,7 @@ describe('createJobFailureHandler', () => {
   it('opts.attempts ausente: finalidade calculada contra o padrão 1 (reverte na primeira falha)', async () => {
     await handleJobFailure(makeJob({ attemptsMade: 1, attempts: undefined }), new Error('smtp caiu'))
 
-    expect(repository.updateStatus).toHaveBeenCalledWith(PUBLIC_ID, IOutboxEventType.PENDING)
+    expect(repository.updateStatus).toHaveBeenCalledWith(PUBLIC_ID, IOutboxEventStatus.PENDING)
   })
 
   it('job undefined (evento failed sem job): não lança e não reverte', async () => {
@@ -398,7 +398,7 @@ describe('createJobFailureHandler', () => {
   it('job stalled more than allowable limit: tratado como definitivo e reverte para PENDING', async () => {
     await handleJobFailure(makeJob({ attemptsMade: 1 }), new Error('job stalled more than allowable limit'))
 
-    expect(repository.updateStatus).toHaveBeenCalledWith(PUBLIC_ID, IOutboxEventType.PENDING)
+    expect(repository.updateStatus).toHaveBeenCalledWith(PUBLIC_ID, IOutboxEventStatus.PENDING)
   })
 
   it('reversão retorna err (linha possivelmente já deletada): loga em warn sem lançar e captura no Sentry', async () => {
@@ -433,7 +433,7 @@ describe('createJobFailureHandler', () => {
       expect.objectContaining({ code: 'INFRA_CODE' }),
       expect.stringContaining('Falha de Infraestrutura'),
     )
-    expect(repository.updateStatus).toHaveBeenCalledWith(PUBLIC_ID, IOutboxEventType.PENDING)
+    expect(repository.updateStatus).toHaveBeenCalledWith(PUBLIC_ID, IOutboxEventStatus.PENDING)
     expect(mockCaptureError).toHaveBeenCalledWith(infraShaped, { jobId: 'job-1', publicId: PUBLIC_ID })
   })
 })

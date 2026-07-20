@@ -61,7 +61,7 @@ vi.mock('@lib/sentry/capture', () => ({
 import { OutboxProcessor } from './outbox-processor'
 import { makeOutboxDispatchStrategyRegistry } from './make-outbox-dispatch-registry'
 import { InMemoryOutboxRepository } from '@repositories/in-memory/in-memory-outbox-repository'
-import { IOutboxEvent, IOutboxEventType } from 'core/contracts/repository/outbox-repository.interface'
+import { IOutboxEvent, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { isOk, err } from 'core/shared/result'
 import { OUTBOX_CONSTANTS } from 'messages/constants/outbox/outbox'
 import { PASSWORD_RESET_CONSTANTS } from 'messages/constants/auth/password-reset'
@@ -82,7 +82,7 @@ async function createEvent(
   overrides?: { decisaoPorCristo?: boolean; attempts?: number },
 ): Promise<IOutboxEvent> {
   const created = await repository.create({
-    status: IOutboxEventType.PENDING,
+    status: IOutboxEventStatus.PENDING,
     type: 'FormSubmissionCreated',
     payload: {
       name: 'João',
@@ -103,7 +103,7 @@ async function createEvent(
 
 async function createPasswordResetEvent(repository: InMemoryOutboxRepository, expiresAt: Date): Promise<IOutboxEvent> {
   const created = await repository.create({
-    status: IOutboxEventType.PENDING,
+    status: IOutboxEventStatus.PENDING,
     type: 'PasswordResetRequested',
     payload: {
       userPublicId: 'user-1',
@@ -140,7 +140,7 @@ describe('OutboxProcessor', () => {
 
       await processor.processSingleEvent(event)
 
-      expect(repository.items[0].status).toBe(IOutboxEventType.SENDING)
+      expect(repository.items[0].status).toBe(IOutboxEventStatus.SENDING)
       expect(repository.items[0].attempts).toBe(1)
       expect(mockQueueAdd).toHaveBeenCalledOnce()
 
@@ -175,7 +175,7 @@ describe('OutboxProcessor', () => {
 
       await processor.processSingleEvent(event)
 
-      expect(repository.items[0].status).toBe(IOutboxEventType.PENDING)
+      expect(repository.items[0].status).toBe(IOutboxEventStatus.PENDING)
       expect(mockQueueAdd).not.toHaveBeenCalled()
       expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.STATUS_UPDATE_FAILED)
       expect(mockCaptureError).not.toHaveBeenCalled()
@@ -187,7 +187,7 @@ describe('OutboxProcessor', () => {
 
       await processor.processSingleEvent(event)
 
-      expect(repository.items[0].status).toBe(IOutboxEventType.PENDING)
+      expect(repository.items[0].status).toBe(IOutboxEventStatus.PENDING)
       expect(repository.items[0].sendingAt).toBeUndefined()
       expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.DISPATCH_REVERTED)
       expect(mockCaptureError).not.toHaveBeenCalled()
@@ -199,7 +199,7 @@ describe('OutboxProcessor', () => {
 
       await processor.processSingleEvent(event)
 
-      expect(repository.items[0].status).toBe(IOutboxEventType.PENDING)
+      expect(repository.items[0].status).toBe(IOutboxEventStatus.PENDING)
       expect(mockQueueAdd).not.toHaveBeenCalled()
     })
 
@@ -209,7 +209,7 @@ describe('OutboxProcessor', () => {
 
       await processor.processSingleEvent(event)
 
-      expect(repository.items[0].status).toBe(IOutboxEventType.PENDING)
+      expect(repository.items[0].status).toBe(IOutboxEventStatus.PENDING)
       expect(mockQueueAdd).not.toHaveBeenCalled()
     })
 
@@ -221,7 +221,7 @@ describe('OutboxProcessor', () => {
       const originalUpdateStatus = repository.updateStatus.bind(repository)
       const updateStatusSpy = vi.spyOn(repository, 'updateStatus')
       updateStatusSpy.mockImplementation(async (publicId, status) => {
-        if (status === IOutboxEventType.PENDING) {
+        if (status === IOutboxEventStatus.PENDING) {
           return err(revertError)
         }
         return originalUpdateStatus(publicId, status)
@@ -229,7 +229,7 @@ describe('OutboxProcessor', () => {
 
       await expect(processor.processSingleEvent(event)).resolves.toBeUndefined()
 
-      expect(repository.items[0].status).toBe(IOutboxEventType.SENDING)
+      expect(repository.items[0].status).toBe(IOutboxEventStatus.SENDING)
       expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.REVERT_FATAL)
       expect(mockCaptureError).toHaveBeenCalledWith(revertError, { publicId: event.publicId })
     })
@@ -267,7 +267,7 @@ describe('OutboxProcessor', () => {
         expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.EXPIRED_EVENT_DELETE_ERROR)
         expect(mockCaptureError).toHaveBeenCalledWith(expect.anything(), { publicId: event.publicId })
         expect(mockQueueAdd).not.toHaveBeenCalled()
-        expect(repository.items[0].status).toBe(IOutboxEventType.PENDING)
+        expect(repository.items[0].status).toBe(IOutboxEventStatus.PENDING)
       })
 
       it('evento com expiresAt futuro: despacha normalmente com expiresAt ISO no job data', async () => {
@@ -288,7 +288,7 @@ describe('OutboxProcessor', () => {
 
         await processor.processSingleEvent(event)
 
-        expect(repository.items[0].status).toBe(IOutboxEventType.SENDING)
+        expect(repository.items[0].status).toBe(IOutboxEventStatus.SENDING)
         expect(mockQueueAdd).toHaveBeenCalledOnce()
 
         const [, dispatchData, opts] = mockQueueAdd.mock.calls[0]
@@ -308,7 +308,7 @@ describe('OutboxProcessor', () => {
 
         await processor.processSingleEvent(event)
 
-        expect(repository.items[0].status).toBe(IOutboxEventType.PENDING)
+        expect(repository.items[0].status).toBe(IOutboxEventStatus.PENDING)
         expect(mockQueueAdd).not.toHaveBeenCalled()
         expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.DISPATCH_REVERTED)
       })
@@ -322,7 +322,7 @@ describe('OutboxProcessor', () => {
 
         await processor.processSingleEvent(event)
 
-        expect(repository.items[0].status).toBe(IOutboxEventType.SENDING)
+        expect(repository.items[0].status).toBe(IOutboxEventStatus.SENDING)
         expect(mockQueueAdd).toHaveBeenCalledOnce()
       })
 
@@ -333,7 +333,7 @@ describe('OutboxProcessor', () => {
 
         await processor.processSingleEvent(event)
 
-        expect(repository.items[0].status).toBe(IOutboxEventType.FAILED)
+        expect(repository.items[0].status).toBe(IOutboxEventStatus.FAILED)
         expect(mockQueueAdd).not.toHaveBeenCalled()
         expect(logger.warn).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.MARKED_FAILED)
         expect(mockCaptureError).toHaveBeenCalledWith(expect.any(Error), {
@@ -349,7 +349,7 @@ describe('OutboxProcessor', () => {
 
         await processor.processSingleEvent(event)
 
-        expect(repository.items[0].status).toBe(IOutboxEventType.FAILED)
+        expect(repository.items[0].status).toBe(IOutboxEventStatus.FAILED)
         expect(mockQueueAdd).not.toHaveBeenCalled()
       })
 
@@ -417,7 +417,7 @@ describe('OutboxProcessor', () => {
       expect(mockQueueAdd).toHaveBeenCalledTimes(3)
       expect(mockRenew).toHaveBeenCalledTimes(3)
       expect(mockRelease).toHaveBeenCalledOnce()
-      expect(repository.items.every((e) => e.status === IOutboxEventType.SENDING)).toBe(true)
+      expect(repository.items.every((e) => e.status === IOutboxEventStatus.SENDING)).toBe(true)
     })
 
     it('falha de dispatch em um evento não impede o processamento dos demais', async () => {
@@ -428,8 +428,8 @@ describe('OutboxProcessor', () => {
       await processor.processPendingEvents()
 
       expect(mockQueueAdd).toHaveBeenCalledTimes(2)
-      expect(repository.items[0].status).toBe(IOutboxEventType.PENDING)
-      expect(repository.items[1].status).toBe(IOutboxEventType.SENDING)
+      expect(repository.items[0].status).toBe(IOutboxEventStatus.PENDING)
+      expect(repository.items[1].status).toBe(IOutboxEventStatus.SENDING)
     })
 
     it('erro inesperado no loop (renew rejeita): loga erro crítico, captura no Sentry e ainda libera o lock', async () => {
@@ -447,7 +447,7 @@ describe('OutboxProcessor', () => {
   describe('processStuckSendingEvents', () => {
     async function createStuckEvent(overrides?: { attempts?: number }): Promise<IOutboxEvent> {
       const event = await createEvent(repository)
-      await repository.updateStatus(event.publicId, IOutboxEventType.SENDING)
+      await repository.updateStatus(event.publicId, IOutboxEventStatus.SENDING)
       const item = repository.items.find((e) => e.publicId === event.publicId)!
       item.sendingAt = new Date(Date.now() - 2 * OUTBOX_CONSTANTS.THRESHOLDS.STUCK_SENDING_MS)
       if (overrides?.attempts !== undefined) {
@@ -490,7 +490,7 @@ describe('OutboxProcessor', () => {
 
     it('erro inesperado no loop de recuperação (renew rejeita): loga CRITICAL_RECOVERY_ERROR, captura no Sentry e ainda libera o lock', async () => {
       const stuck = await createEvent(repository)
-      await repository.updateStatus(stuck.publicId, IOutboxEventType.SENDING)
+      await repository.updateStatus(stuck.publicId, IOutboxEventStatus.SENDING)
       repository.items[0].sendingAt = new Date(Date.now() - 2 * OUTBOX_CONSTANTS.THRESHOLDS.STUCK_SENDING_MS)
       mockRenew.mockRejectedValueOnce(new Error('conexão perdida'))
 
@@ -516,7 +516,7 @@ describe('OutboxProcessor', () => {
 
       expect(mockQueueAdd).toHaveBeenCalledOnce()
       expect(repository.items[0].attempts).toBe(attemptsBefore + 1)
-      expect(repository.items[0].status).toBe(IOutboxEventType.SENDING)
+      expect(repository.items[0].status).toBe(IOutboxEventStatus.SENDING)
     })
 
     it('evento travado que atingiu o limite vira FAILED em vez de ser re-despachado (regressão poison loop)', async () => {
@@ -525,7 +525,7 @@ describe('OutboxProcessor', () => {
       await processor.processStuckSendingEvents()
 
       expect(mockQueueAdd).not.toHaveBeenCalled()
-      expect(repository.items[0].status).toBe(IOutboxEventType.FAILED)
+      expect(repository.items[0].status).toBe(IOutboxEventStatus.FAILED)
     })
 
     it('libera o lock mesmo quando o processamento de um evento travado falha', async () => {

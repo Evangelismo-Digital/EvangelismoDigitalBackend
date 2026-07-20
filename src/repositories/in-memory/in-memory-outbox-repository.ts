@@ -3,7 +3,7 @@ import {
   IOutboxRepository,
   IOutboxEvent,
   IOutBoxEventInputData,
-  IOutboxEventType,
+  IOutboxEventStatus,
 } from 'core/contracts/repository/outbox-repository.interface'
 import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
@@ -66,7 +66,7 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
     }
 
     const pending = this.items
-      .filter((e) => e.status === IOutboxEventType.PENDING)
+      .filter((e) => e.status === IOutboxEventStatus.PENDING)
       .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
       .slice(0, limit)
 
@@ -81,7 +81,7 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
     const stuck = this.items
       .filter(
         (e) =>
-          e.status === IOutboxEventType.SENDING &&
+          e.status === IOutboxEventStatus.SENDING &&
           e.sendingAt !== undefined &&
           e.sendingAt.getTime() <= stuckBefore.getTime(),
       )
@@ -97,7 +97,7 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
     return ok(event ?? null)
   }
 
-  async updateStatus(publicId: string, status: IOutboxEventType): Promise<Result<void, AppError>> {
+  async updateStatus(publicId: string, status: IOutboxEventStatus): Promise<Result<void, AppError>> {
     if (this.shouldFailOn.updateStatus) {
       return err(new InMemoryOutboxError('Falha injetada em updateStatus'))
     }
@@ -110,7 +110,7 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
 
     event.status = status
 
-    if (status === IOutboxEventType.SENDING) {
+    if (status === IOutboxEventStatus.SENDING) {
       event.sendingAt = new Date()
       event.attempts += 1
     } else {
@@ -151,7 +151,7 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
   async deleteOlderThan(
     cutoff: Date,
     batchSize: number,
-  ): Promise<Result<{ deleted: number; byStatus: Partial<Record<IOutboxEventType, number>> }, AppError>> {
+  ): Promise<Result<{ deleted: number; byStatus: Partial<Record<IOutboxEventStatus, number>> }, AppError>> {
     if (this.shouldFailOn.deleteOlderThan) {
       return err(new InMemoryOutboxError('Falha injetada em deleteOlderThan'))
     }
@@ -162,7 +162,7 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
       .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
       .slice(0, batchSize)
 
-    const byStatus: Partial<Record<IOutboxEventType, number>> = {}
+    const byStatus: Partial<Record<IOutboxEventStatus, number>> = {}
     for (const event of batch) {
       byStatus[event.status] = (byStatus[event.status] ?? 0) + 1
     }

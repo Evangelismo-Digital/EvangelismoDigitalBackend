@@ -17,8 +17,6 @@ export async function forgotPassword(request: FastifyRequest, reply: FastifyRepl
 
   const result = await forgotPasswordUseCase.execute({ email })
 
-  // Só erros de infraestrutura chegam aqui (500); usuário desconhecido é
-  // sucesso no-op — a resposta é sempre a mensagem genérica (sem enumeração).
   if (isErr(result)) {
     return HttpErrorMapper.map(result.error, reply)
   }
@@ -26,7 +24,6 @@ export async function forgotPassword(request: FastifyRequest, reply: FastifyRepl
   const { outboxEvent } = result.value
 
   if (outboxEvent) {
-    // Fire-and-forget pós-commit (mesmo padrão do form controller); o cron é o fallback durável
     void OutboxSignal.publishNewItem(outboxEvent.publicId, outboxEvent)
   }
 

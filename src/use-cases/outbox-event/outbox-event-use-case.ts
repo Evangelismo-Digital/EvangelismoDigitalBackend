@@ -2,7 +2,7 @@ import { IOutboxEventRegistration } from 'core/contracts/use-cases/outbox-event/
 import {
   IOutboxRepository,
   IOutboxEvent,
-  IOutboxEventType,
+  IOutboxEventStatus,
 } from 'core/contracts/repository/outbox-repository.interface'
 import { OutboxEventInput } from 'core/types/outbox/outbox-event-input'
 import { Result } from 'core/shared/result'
@@ -18,7 +18,7 @@ export class OutboxEventUseCase implements IOutboxEventRegistration {
 
   async register(input: OutboxEventInput): Promise<Result<IOutboxEvent, AppError>> {
     return this.outboxRepository.create({
-      status: IOutboxEventType.PENDING,
+      status: IOutboxEventStatus.PENDING,
       ...input,
     })
   }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { PasswordResetDispatchStrategy } from './password-reset-dispatch-strategy'
-import { IOutboxEvent, IOutboxEventType } from 'core/contracts/repository/outbox-repository.interface'
+import { IOutboxEvent, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { isOk, isErr } from 'core/shared/result'
 import { InvalidPasswordResetPayloadError } from '@use-cases/errors/invalid-password-reset-payload-error'
 import { EMAIL_CONSTANTS } from 'messages/constants/email/email'
@@ -13,7 +13,7 @@ function makeEvent(payload: Record<string, unknown>): IOutboxEvent {
     id: 1,
     publicId: 'evt-1',
     type: 'PasswordResetRequested',
-    status: IOutboxEventType.PENDING,
+    status: IOutboxEventStatus.PENDING,
     payload,
     attempts: 0,
     occurredAt: new Date(),

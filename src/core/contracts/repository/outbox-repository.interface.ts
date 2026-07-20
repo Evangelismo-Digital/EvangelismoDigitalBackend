@@ -3,8 +3,7 @@ import { OutboxEventInput } from 'core/types/outbox/outbox-event-input'
 import { AppError } from 'errors/app-error'
 
 /**
- * Status do evento na Outbox (o enum Prisma correspondente chama-se OutboxEventType
- * por compatibilidade de migração, mas modela o *status*).
+ * Status do evento na Outbox.
  *
  * Máquina de estados:
  * - PENDING  → SENDING  (despacho: seta sendingAt e incrementa attempts)
@@ -12,19 +11,19 @@ import { AppError } from 'errors/app-error'
  * - SENDING  → PENDING  (falha de despacho ou falha definitiva do job; sendingAt é limpo)
  * - qualquer → FAILED   (terminal: attempts excedeu o limite de ciclos de despacho)
  */
-export enum IOutboxEventType {
+export enum IOutboxEventStatus {
   PENDING = 'PENDING',
   SENDING = 'SENDING',
   FAILED = 'FAILED',
 }
 
-export type IOutBoxEventInputData = { status: IOutboxEventType } & OutboxEventInput
+export type IOutBoxEventInputData = { status: IOutboxEventStatus } & OutboxEventInput
 
 export interface IOutboxEvent {
   id: number
   publicId: string
   type: string
-  status: IOutboxEventType
+  status: IOutboxEventStatus
   payload: unknown
   attempts: number
   occurredAt: Date
@@ -42,7 +41,7 @@ export interface IOutboxRepository {
    * Transição de status. Para SENDING seta sendingAt=now e incrementa attempts;
    * para PENDING/FAILED limpa sendingAt.
    */
-  updateStatus(publicId: string, status: IOutboxEventType): Promise<Result<void, AppError>>
+  updateStatus(publicId: string, status: IOutboxEventStatus): Promise<Result<void, AppError>>
   /** Idempotente: deletar um evento inexistente é sucesso. */
   delete(publicId: string): Promise<Result<void, AppError>>
   /**
@@ -59,5 +58,5 @@ export interface IOutboxRepository {
   deleteOlderThan(
     cutoff: Date,
     batchSize: number,
-  ): Promise<Result<{ deleted: number; byStatus: Partial<Record<IOutboxEventType, number>> }, AppError>>
+  ): Promise<Result<{ deleted: number; byStatus: Partial<Record<IOutboxEventStatus, number>> }, AppError>>
 }

@@ -6,7 +6,7 @@ import {
   IOutboxRepository,
   IOutboxEvent,
   IOutBoxEventInputData,
-  IOutboxEventType,
+  IOutboxEventStatus,
 } from 'core/contracts/repository/outbox-repository.interface'
 import { AppError } from 'errors/app-error'
 
@@ -37,7 +37,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
   async findPending(limit: number): Promise<Result<IOutboxEvent[], AppError>> {
     try {
       const events = await this.dbContext.client.outboxEvent.findMany({
-        where: { status: IOutboxEventType.PENDING },
+        where: { status: IOutboxEventStatus.PENDING },
         orderBy: { occurredAt: 'asc' },
         take: limit,
       })
@@ -52,7 +52,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
     try {
       const events = await this.dbContext.client.outboxEvent.findMany({
         where: {
-          status: IOutboxEventType.SENDING,
+          status: IOutboxEventStatus.SENDING,
           sendingAt: { lte: stuckBefore },
         },
         orderBy: { sendingAt: 'asc' },
@@ -77,14 +77,14 @@ export class PrismaOutboxRepository implements IOutboxRepository {
     }
   }
 
-  async updateStatus(publicId: string, status: IOutboxEventType): Promise<Result<void, AppError>> {
+  async updateStatus(publicId: string, status: IOutboxEventStatus): Promise<Result<void, AppError>> {
     try {
       await this.dbContext.client.outboxEvent.update({
         where: { publicId },
         data: {
           status,
           // SENDING marca o início do ciclo de despacho; demais status limpam o marcador
-          ...(status === IOutboxEventType.SENDING
+          ...(status === IOutboxEventStatus.SENDING
             ? { sendingAt: new Date(), attempts: { increment: 1 } }
             : { sendingAt: null }),
         },
@@ -138,7 +138,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
   async deleteOlderThan(
     cutoff: Date,
     batchSize: number,
-  ): Promise<Result<{ deleted: number; byStatus: Partial<Record<IOutboxEventType, number>> }, AppError>> {
+  ): Promise<Result<{ deleted: number; byStatus: Partial<Record<IOutboxEventStatus, number>> }, AppError>> {
     try {
       // deleteMany não aceita `take`: busca um lote de ids e deleta por id,
       // mantendo o tempo de lock e o churn de WAL limitados em tabelas grandes.
@@ -157,9 +157,9 @@ export class PrismaOutboxRepository implements IOutboxRepository {
         where: { id: { in: batch.map((e) => e.id) } },
       })
 
-      const byStatus: Partial<Record<IOutboxEventType, number>> = {}
+      const byStatus: Partial<Record<IOutboxEventStatus, number>> = {}
       for (const event of batch) {
-        const status = event.status as IOutboxEventType
+        const status = event.status as IOutboxEventStatus
         byStatus[status] = (byStatus[status] ?? 0) + 1
       }
 
@@ -186,7 +186,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       id: raw.id,
       publicId: raw.publicId,
       type: raw.type,
-      status: raw.status as IOutboxEventType,
+      status: raw.status as IOutboxEventStatus,
       payload: raw.payload,
       attempts: raw.attempts,
       occurredAt: raw.occurredAt,

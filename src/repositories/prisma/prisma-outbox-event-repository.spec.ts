@@ -7,7 +7,7 @@ import { Prisma } from '@prisma/client'
 import { PrismaOutboxRepository } from './prisma-outbox-event-repository'
 import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
-import { IOutboxEventType } from 'core/contracts/repository/outbox-repository.interface'
+import { IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { isErr, isOk } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { InfrastructureError } from 'errors/infrastructure-error'
@@ -95,12 +95,12 @@ describe('PrismaOutboxRepository', () => {
     it('SENDING seta sendingAt e incrementa attempts', async () => {
       updateMock.mockResolvedValueOnce({})
 
-      await repository.updateStatus('public-id', IOutboxEventType.SENDING)
+      await repository.updateStatus('public-id', IOutboxEventStatus.SENDING)
 
       expect(updateMock).toHaveBeenCalledWith({
         where: { publicId: 'public-id' },
         data: {
-          status: IOutboxEventType.SENDING,
+          status: IOutboxEventStatus.SENDING,
           sendingAt: expect.any(Date),
           attempts: { increment: 1 },
         },
@@ -110,12 +110,12 @@ describe('PrismaOutboxRepository', () => {
     it('PENDING limpa sendingAt e não toca em attempts', async () => {
       updateMock.mockResolvedValueOnce({})
 
-      await repository.updateStatus('public-id', IOutboxEventType.PENDING)
+      await repository.updateStatus('public-id', IOutboxEventStatus.PENDING)
 
       expect(updateMock).toHaveBeenCalledWith({
         where: { publicId: 'public-id' },
         data: {
-          status: IOutboxEventType.PENDING,
+          status: IOutboxEventStatus.PENDING,
           sendingAt: null,
         },
       })
@@ -124,12 +124,12 @@ describe('PrismaOutboxRepository', () => {
     it('FAILED limpa sendingAt e não toca em attempts', async () => {
       updateMock.mockResolvedValueOnce({})
 
-      await repository.updateStatus('public-id', IOutboxEventType.FAILED)
+      await repository.updateStatus('public-id', IOutboxEventStatus.FAILED)
 
       expect(updateMock).toHaveBeenCalledWith({
         where: { publicId: 'public-id' },
         data: {
-          status: IOutboxEventType.FAILED,
+          status: IOutboxEventStatus.FAILED,
           sendingAt: null,
         },
       })
@@ -138,7 +138,7 @@ describe('PrismaOutboxRepository', () => {
     it('erro do banco vira err via mapper', async () => {
       updateMock.mockRejectedValueOnce(makePrismaError('P2025'))
 
-      const result = await repository.updateStatus('public-id', IOutboxEventType.PENDING)
+      const result = await repository.updateStatus('public-id', IOutboxEventStatus.PENDING)
 
       expect(isErr(result)).toBe(true)
       expect(mapToKnownError).toHaveBeenCalledOnce()
@@ -154,7 +154,7 @@ describe('PrismaOutboxRepository', () => {
 
       expect(findManyMock).toHaveBeenCalledWith({
         where: {
-          status: IOutboxEventType.SENDING,
+          status: IOutboxEventStatus.SENDING,
           sendingAt: { lte: cutoff },
         },
         orderBy: { sendingAt: 'asc' },
@@ -212,7 +212,7 @@ describe('PrismaOutboxRepository', () => {
       })
 
       const result = await repository.create({
-        status: IOutboxEventType.PENDING,
+        status: IOutboxEventStatus.PENDING,
         type: 'PasswordResetRequested',
         payload,
         expiresAt,
@@ -221,7 +221,7 @@ describe('PrismaOutboxRepository', () => {
       expect(createMock).toHaveBeenCalledWith({
         data: {
           type: 'PasswordResetRequested',
-          status: IOutboxEventType.PENDING,
+          status: IOutboxEventStatus.PENDING,
           payload,
           expiresAt,
         },
@@ -245,7 +245,7 @@ describe('PrismaOutboxRepository', () => {
       })
 
       await repository.create({
-        status: IOutboxEventType.PENDING,
+        status: IOutboxEventStatus.PENDING,
         type: 'FormSubmissionCreated',
         payload: {},
       })
@@ -253,7 +253,7 @@ describe('PrismaOutboxRepository', () => {
       expect(createMock).toHaveBeenCalledWith({
         data: {
           type: 'FormSubmissionCreated',
-          status: IOutboxEventType.PENDING,
+          status: IOutboxEventStatus.PENDING,
           payload: {},
           expiresAt: null,
         },
@@ -325,7 +325,7 @@ describe('PrismaOutboxRepository', () => {
       if (!isOk(result)) return
       expect(result.value).toEqual({
         deleted: 3,
-        byStatus: { [IOutboxEventType.PENDING]: 1, [IOutboxEventType.FAILED]: 2 },
+        byStatus: { [IOutboxEventStatus.PENDING]: 1, [IOutboxEventStatus.FAILED]: 2 },
       })
     })
 

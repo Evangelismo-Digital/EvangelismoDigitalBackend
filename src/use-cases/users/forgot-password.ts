@@ -14,11 +14,6 @@ interface ForgotPasswordUseCaseRequest {
 }
 
 type ForgotPasswordUseCaseResponse = {
-  /**
-   * null = e-mail desconhecido ou inválido. Sucesso no-op de propósito:
-   * o controller responde a mensagem genérica em ambos os casos, sem
-   * oráculo de enumeração de contas.
-   */
   outboxEvent: IOutboxEvent | null
 }
 

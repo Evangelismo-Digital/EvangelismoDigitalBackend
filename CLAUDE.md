@@ -118,7 +118,7 @@ When adding a provider, implement the raw interface, wrap it in the decorator, a
 
 ### Background jobs (outbox + mail worker)
 
-`src/worker.ts` is a separate process running: a BullMQ mail worker (`@lib/workers/mail-worker`), an `OutboxProcessor` driven both by a Redis pub/sub signal (`OutboxSignal`) for low latency and a `node-cron` sweep (`startOutboxCron`) as a safety net. The outbox pattern (`src/use-cases/outbox-event`, `OutboxEventType` in Prisma) guarantees at-least-once delivery of async side-effects (e.g. emails). `OutboxProcessor` uses a `DistributedLock` (Redis) to avoid duplicate processing. Note the documented horizontal-scaling caveat in `worker.ts`: multiple worker pods would each run the cron and contend on the lock — leader election is the suggested fix before scaling out.
+`src/worker.ts` is a separate process running: a BullMQ mail worker (`@lib/workers/mail-worker`), an `OutboxProcessor` driven both by a Redis pub/sub signal (`OutboxSignal`) for low latency and a `node-cron` sweep (`startOutboxCron`) as a safety net. The outbox pattern (`src/use-cases/outbox-event`, `OutboxEventStatus` in Prisma) guarantees at-least-once delivery of async side-effects (e.g. emails). `OutboxProcessor` uses a `DistributedLock` (Redis) to avoid duplicate processing. Note the documented horizontal-scaling caveat in `worker.ts`: multiple worker pods would each run the cron and contend on the lock — leader election is the suggested fix before scaling out.
 
 ### Repositories & testing doubles
 

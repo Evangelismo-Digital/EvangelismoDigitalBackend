@@ -3,7 +3,7 @@ import { makeSendEmailUseCase } from '@use-cases/factories/make-send-email-use-c
 import { attachRedisLogger } from '@lib/redis/connections/redis-bullMQ-connection'
 import { logger } from '@lib/logger'
 import { createWorkerConnection, getRedisCache } from '@lib/redis/clients/clients'
-import { IOutboxRepository, IOutboxEventType } from 'core/contracts/repository/outbox-repository.interface'
+import { IOutboxRepository, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { isErr } from 'core/shared/result'
 import { JobAlreadyProcessingError } from '@lib/errors/queue/job-already-processing-error'
 import { SmtpDispatchError } from '@lib/errors/queue/smtp-dispatch-error'
@@ -159,7 +159,7 @@ export function createJobFailureHandler(outboxRepository: IOutboxRepository) {
 
       // Falha definitiva: reverte para PENDING para que o próximo ciclo da Outbox
       // re-despache. O limite MAX_DISPATCH_ATTEMPTS (processor) impede loop infinito.
-      const revertResult = await outboxRepository.updateStatus(publicId, IOutboxEventType.PENDING)
+      const revertResult = await outboxRepository.updateStatus(publicId, IOutboxEventStatus.PENDING)
 
       if (isErr(revertResult)) {
         logger.warn(

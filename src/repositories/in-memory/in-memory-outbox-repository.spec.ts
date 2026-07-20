@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { InMemoryOutboxRepository } from './in-memory-outbox-repository'
-import { IOutBoxEventInputData, IOutboxEventType } from 'core/contracts/repository/outbox-repository.interface'
+import { IOutBoxEventInputData, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { isErr, isOk } from 'core/shared/result'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 import { OUTBOX_EVENT_TYPES } from 'core/types/outbox/outbox-event-input'
@@ -9,7 +9,7 @@ const payload: FormPayload = { name: 'João', email: 'joao@test.com' }
 
 function makeInput(): IOutBoxEventInputData {
   return {
-    status: IOutboxEventType.PENDING,
+    status: IOutboxEventStatus.PENDING,
     type: OUTBOX_EVENT_TYPES.FORM_SUBMISSION_CREATED,
     payload,
   }
@@ -17,7 +17,7 @@ function makeInput(): IOutBoxEventInputData {
 
 function makeExpirableInput(expiresAt: Date): IOutBoxEventInputData {
   return {
-    status: IOutboxEventType.PENDING,
+    status: IOutboxEventStatus.PENDING,
     type: OUTBOX_EVENT_TYPES.PASSWORD_RESET_REQUESTED,
     payload: {
       userPublicId: 'user-1',
@@ -46,7 +46,7 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       expect(isOk(second)).toBe(true)
       if (!isOk(first) || !isOk(second)) return
 
-      expect(first.value.status).toBe(IOutboxEventType.PENDING)
+      expect(first.value.status).toBe(IOutboxEventStatus.PENDING)
       expect(first.value.attempts).toBe(0)
       expect(first.value.occurredAt).toBeInstanceOf(Date)
       expect(first.value.sendingAt).toBeUndefined()
@@ -73,12 +73,12 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       if (!isOk(created)) throw new Error('setup')
       const { publicId } = created.value
 
-      await repository.updateStatus(publicId, IOutboxEventType.SENDING)
+      await repository.updateStatus(publicId, IOutboxEventStatus.SENDING)
       expect(repository.items[0].attempts).toBe(1)
       expect(repository.items[0].sendingAt).toBeInstanceOf(Date)
 
-      await repository.updateStatus(publicId, IOutboxEventType.PENDING)
-      await repository.updateStatus(publicId, IOutboxEventType.SENDING)
+      await repository.updateStatus(publicId, IOutboxEventStatus.PENDING)
+      await repository.updateStatus(publicId, IOutboxEventStatus.SENDING)
       expect(repository.items[0].attempts).toBe(2)
     })
 
@@ -87,10 +87,10 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       if (!isOk(created)) throw new Error('setup')
       const { publicId } = created.value
 
-      await repository.updateStatus(publicId, IOutboxEventType.SENDING)
-      await repository.updateStatus(publicId, IOutboxEventType.PENDING)
+      await repository.updateStatus(publicId, IOutboxEventStatus.SENDING)
+      await repository.updateStatus(publicId, IOutboxEventStatus.PENDING)
 
-      expect(repository.items[0].status).toBe(IOutboxEventType.PENDING)
+      expect(repository.items[0].status).toBe(IOutboxEventStatus.PENDING)
       expect(repository.items[0].sendingAt).toBeUndefined()
       expect(repository.items[0].attempts).toBe(1)
     })
@@ -100,17 +100,17 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       if (!isOk(created)) throw new Error('setup')
       const { publicId } = created.value
 
-      await repository.updateStatus(publicId, IOutboxEventType.SENDING)
-      const result = await repository.updateStatus(publicId, IOutboxEventType.FAILED)
+      await repository.updateStatus(publicId, IOutboxEventStatus.SENDING)
+      const result = await repository.updateStatus(publicId, IOutboxEventStatus.FAILED)
 
       expect(isOk(result)).toBe(true)
       expect(repository.items).toHaveLength(1)
-      expect(repository.items[0].status).toBe(IOutboxEventType.FAILED)
+      expect(repository.items[0].status).toBe(IOutboxEventStatus.FAILED)
       expect(repository.items[0].sendingAt).toBeUndefined()
     })
 
     it('retorna err para publicId desconhecido', async () => {
-      const result = await repository.updateStatus('nao-existe', IOutboxEventType.SENDING)
+      const result = await repository.updateStatus('nao-existe', IOutboxEventStatus.SENDING)
 
       expect(isErr(result)).toBe(true)
     })
@@ -144,8 +144,8 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       repository.items[1].occurredAt = new Date('2026-01-02')
       repository.items[2].occurredAt = new Date('2026-01-03')
       repository.items[3].occurredAt = new Date('2026-01-04')
-      await repository.updateStatus(b.value.publicId, IOutboxEventType.SENDING)
-      await repository.updateStatus(c.value.publicId, IOutboxEventType.FAILED)
+      await repository.updateStatus(b.value.publicId, IOutboxEventStatus.SENDING)
+      await repository.updateStatus(c.value.publicId, IOutboxEventStatus.FAILED)
 
       const result = await repository.findPending(1)
 
@@ -168,9 +168,9 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       const pending = await repository.create(makeInput())
       if (!isOk(fresh) || !isOk(oldA) || !isOk(oldB) || !isOk(pending)) throw new Error('setup')
 
-      await repository.updateStatus(fresh.value.publicId, IOutboxEventType.SENDING)
-      await repository.updateStatus(oldA.value.publicId, IOutboxEventType.SENDING)
-      await repository.updateStatus(oldB.value.publicId, IOutboxEventType.SENDING)
+      await repository.updateStatus(fresh.value.publicId, IOutboxEventStatus.SENDING)
+      await repository.updateStatus(oldA.value.publicId, IOutboxEventStatus.SENDING)
+      await repository.updateStatus(oldB.value.publicId, IOutboxEventStatus.SENDING)
 
       const past = new Date(Date.now() - 60 * 60 * 1000)
       repository.items.find((e) => e.publicId === oldA.value.publicId)!.sendingAt = past
@@ -194,9 +194,9 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       if (!isOk(created)) throw new Error('setup')
       const { publicId } = created.value
 
-      await repository.updateStatus(publicId, IOutboxEventType.SENDING)
+      await repository.updateStatus(publicId, IOutboxEventStatus.SENDING)
       repository.items[0].sendingAt = new Date(Date.now() - 60 * 60 * 1000)
-      await repository.updateStatus(publicId, IOutboxEventType.PENDING)
+      await repository.updateStatus(publicId, IOutboxEventStatus.PENDING)
 
       const result = await repository.findStuck(new Date(), 10)
 
@@ -226,7 +226,7 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
     it('remove eventos expirados em qualquer status', async () => {
       const expired = await repository.create(makeExpirableInput(new Date(Date.now() - 1000)))
       if (!isOk(expired)) throw new Error('setup')
-      await repository.updateStatus(expired.value.publicId, IOutboxEventType.SENDING)
+      await repository.updateStatus(expired.value.publicId, IOutboxEventStatus.SENDING)
 
       const result = await repository.deleteExpired(new Date(), 50)
 
@@ -280,8 +280,8 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       repository.items[0].occurredAt = old
       repository.items[1].occurredAt = new Date(old.getTime() + 1000)
       repository.items[2].occurredAt = new Date(old.getTime() + 2000)
-      await repository.updateStatus(b.value.publicId, IOutboxEventType.SENDING)
-      await repository.updateStatus(c.value.publicId, IOutboxEventType.FAILED)
+      await repository.updateStatus(b.value.publicId, IOutboxEventStatus.SENDING)
+      await repository.updateStatus(c.value.publicId, IOutboxEventStatus.FAILED)
 
       const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
 
@@ -291,14 +291,14 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       // Um lote por chamada, ordenado por occurredAt asc
       expect(firstBatch.value.deleted).toBe(2)
       expect(firstBatch.value.byStatus).toEqual({
-        [IOutboxEventType.PENDING]: 1,
-        [IOutboxEventType.SENDING]: 1,
+        [IOutboxEventStatus.PENDING]: 1,
+        [IOutboxEventStatus.SENDING]: 1,
       })
 
       const secondBatch = await repository.deleteOlderThan(cutoff, 2)
       if (!isOk(secondBatch)) throw new Error('setup')
       expect(secondBatch.value.deleted).toBe(1)
-      expect(secondBatch.value.byStatus).toEqual({ [IOutboxEventType.FAILED]: 1 })
+      expect(secondBatch.value.byStatus).toEqual({ [IOutboxEventStatus.FAILED]: 1 })
 
       // O evento recente sobrevive
       expect(repository.items.map((e) => e.publicId)).toEqual([recent.value.publicId])

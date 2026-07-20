@@ -8,7 +8,7 @@ import { isErr } from 'core/shared/result'
 import {
   IOutboxRepository,
   IOutboxEvent,
-  IOutboxEventType,
+  IOutboxEventStatus,
 } from 'core/contracts/repository/outbox-repository.interface'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 import { captureError } from '@lib/sentry/capture'
@@ -119,7 +119,7 @@ export class OutboxProcessor {
 
     // Phase 0: eventos que excederam o limite de ciclos de despacho são terminais (poison message)
     if (event.attempts >= OUTBOX_CFG.THRESHOLDS.MAX_DISPATCH_ATTEMPTS) {
-      const failResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.FAILED)
+      const failResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventStatus.FAILED)
 
       if (isErr(failResult)) {
         logger.error({ publicId: event.publicId, error: failResult.error }, OUTBOX_LOGS.FAILED_MARK_ERROR)
@@ -134,7 +134,7 @@ export class OutboxProcessor {
     }
 
     // Phase 1: Transition to SENDING
-    const updateResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.SENDING)
+    const updateResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventStatus.SENDING)
 
     if (isErr(updateResult)) {
       logger.error({ publicId: event.publicId, error: updateResult.error }, OUTBOX_LOGS.STATUS_UPDATE_FAILED)
@@ -145,7 +145,7 @@ export class OutboxProcessor {
     try {
       await this.dispatchToBullMQ(event)
     } catch (error) {
-      const revertResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.PENDING)
+      const revertResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventStatus.PENDING)
 
       if (isErr(revertResult)) {
         logger.error({ publicId: event.publicId, error: revertResult.error }, OUTBOX_LOGS.REVERT_FATAL)

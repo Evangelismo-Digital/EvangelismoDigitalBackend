@@ -2,7 +2,7 @@ import { OUTBOX_CONSTANTS } from 'messages/constants/outbox/outbox'
 import { logger } from '@lib/logger'
 import { DistributedLock, LockToken } from '@lib/infra/distributed-lock/distributed-lock'
 import { isErr } from 'core/shared/result'
-import { IOutboxRepository, IOutboxEventType } from 'core/contracts/repository/outbox-repository.interface'
+import { IOutboxRepository, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 import { captureError } from '@lib/sentry/capture'
 
@@ -73,7 +73,7 @@ export class OutboxMaintenance {
       const cutoff = new Date(Date.now() - OUTBOX_CONSTANTS.RETENTION.DAYS * 24 * 60 * 60 * 1000)
 
       let totalDeleted = 0
-      const totalByStatus: Partial<Record<IOutboxEventType, number>> = {}
+      const totalByStatus: Partial<Record<IOutboxEventStatus, number>> = {}
 
       // Um lote por iteração, renovando o lock entre lotes (tabelas grandes
       // após um incidente não podem estourar o TTL do lock)
@@ -90,7 +90,7 @@ export class OutboxMaintenance {
 
         const { deleted, byStatus } = batchResult.value
         totalDeleted += deleted
-        for (const [status, count] of Object.entries(byStatus) as [IOutboxEventType, number][]) {
+        for (const [status, count] of Object.entries(byStatus) as [IOutboxEventStatus, number][]) {
           totalByStatus[status] = (totalByStatus[status] ?? 0) + count
         }
 
@@ -99,7 +99,7 @@ export class OutboxMaintenance {
 
       if (totalDeleted > 0) {
         const nonTerminal =
-          (totalByStatus[IOutboxEventType.PENDING] ?? 0) + (totalByStatus[IOutboxEventType.SENDING] ?? 0)
+          (totalByStatus[IOutboxEventStatus.PENDING] ?? 0) + (totalByStatus[IOutboxEventStatus.SENDING] ?? 0)
 
         if (nonTerminal > 0) {
           // PENDING/SENDING com 14+ dias é lixo inalcançável (o cap de attempts

@@ -24,7 +24,7 @@ vi.mock('@lib/sentry/capture', () => ({
 }))
 
 import { OutboxMaintenance } from './outbox-maintenance'
-import { IOutboxRepository, IOutboxEventType } from 'core/contracts/repository/outbox-repository.interface'
+import { IOutboxRepository, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { ok, err } from 'core/shared/result'
 import { OUTBOX_CONSTANTS } from 'messages/constants/outbox/outbox'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
@@ -159,16 +159,16 @@ describe('OutboxMaintenance', () => {
 
     it('itera em lotes até um lote parcial, renovando o lock a cada lote', async () => {
       repository.deleteOlderThan
-        .mockResolvedValueOnce(ok({ deleted: BATCH, byStatus: { [IOutboxEventType.FAILED]: BATCH } }))
-        .mockResolvedValueOnce(ok({ deleted: BATCH, byStatus: { [IOutboxEventType.FAILED]: BATCH } }))
-        .mockResolvedValueOnce(ok({ deleted: 10, byStatus: { [IOutboxEventType.FAILED]: 10 } }))
+        .mockResolvedValueOnce(ok({ deleted: BATCH, byStatus: { [IOutboxEventStatus.FAILED]: BATCH } }))
+        .mockResolvedValueOnce(ok({ deleted: BATCH, byStatus: { [IOutboxEventStatus.FAILED]: BATCH } }))
+        .mockResolvedValueOnce(ok({ deleted: 10, byStatus: { [IOutboxEventStatus.FAILED]: 10 } }))
 
       await maintenance.purgeOldEvents()
 
       expect(repository.deleteOlderThan).toHaveBeenCalledTimes(3)
       expect(mockRenew).toHaveBeenCalledTimes(3)
       expect(logger.info).toHaveBeenCalledWith(
-        { deleted: 2 * BATCH + 10, byStatus: { [IOutboxEventType.FAILED]: 2 * BATCH + 10 } },
+        { deleted: 2 * BATCH + 10, byStatus: { [IOutboxEventStatus.FAILED]: 2 * BATCH + 10 } },
         OUTBOX_LOGS.RETENTION_PURGED,
       )
       expect(mockRelease).toHaveBeenCalledOnce()
@@ -179,9 +179,9 @@ describe('OutboxMaintenance', () => {
         ok({
           deleted: 5,
           byStatus: {
-            [IOutboxEventType.FAILED]: 2,
-            [IOutboxEventType.PENDING]: 2,
-            [IOutboxEventType.SENDING]: 1,
+            [IOutboxEventStatus.FAILED]: 2,
+            [IOutboxEventStatus.PENDING]: 2,
+            [IOutboxEventStatus.SENDING]: 1,
           },
         }),
       )
@@ -213,7 +213,7 @@ describe('OutboxMaintenance', () => {
     it('falha do repositório no meio dos lotes: para o loop, loga, captura e libera o lock', async () => {
       const infraError = new InfraTestError()
       repository.deleteOlderThan
-        .mockResolvedValueOnce(ok({ deleted: BATCH, byStatus: { [IOutboxEventType.FAILED]: BATCH } }))
+        .mockResolvedValueOnce(ok({ deleted: BATCH, byStatus: { [IOutboxEventStatus.FAILED]: BATCH } }))
         .mockResolvedValueOnce(err(infraError))
 
       await maintenance.purgeOldEvents()
@@ -223,7 +223,7 @@ describe('OutboxMaintenance', () => {
       expect(mockCaptureError).toHaveBeenCalledWith(infraError)
       // o que já foi purgado antes da falha ainda é reportado
       expect(logger.info).toHaveBeenCalledWith(
-        { deleted: BATCH, byStatus: { [IOutboxEventType.FAILED]: BATCH } },
+        { deleted: BATCH, byStatus: { [IOutboxEventStatus.FAILED]: BATCH } },
         OUTBOX_LOGS.RETENTION_PURGED,
       )
       expect(mockRelease).toHaveBeenCalledOnce()

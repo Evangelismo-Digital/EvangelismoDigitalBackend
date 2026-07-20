@@ -29,9 +29,8 @@ enum UserRole {
   DEFAULT
 }
 
-// NOTE: este enum modela o *status* do evento da outbox (nome mantido por compatibilidade de migração).
 // FAILED é terminal: eventos que excederam MAX_DISPATCH_ATTEMPTS não são mais re-despachados.
-enum OutboxEventType {
+enum OutboxEventStatus {
   PENDING
   SENDING
   FAILED
@@ -95,15 +94,15 @@ model FormSubmission {
 }
 
 model OutboxEvent {
-  id         Int             @id @default(autoincrement())
-  publicId   String          @unique @default(uuid(7)) @map("public_id")
+  id         Int               @id @default(autoincrement())
+  publicId   String            @unique @default(uuid(7)) @map("public_id")
   type       String
-  status     OutboxEventType @default(PENDING) @map("status")
+  status     OutboxEventStatus @default(PENDING) @map("status")
   payload    Json
-  attempts   Int             @default(0)
-  occurredAt DateTime        @default(now()) @map("ocurred_at")
-  sendingAt  DateTime?       @map("sending_at")
-  expiresAt  DateTime?       @map("expires_at")
+  attempts   Int               @default(0)
+  occurredAt DateTime          @default(now()) @map("ocurred_at")
+  sendingAt  DateTime?         @map("sending_at")
+  expiresAt  DateTime?         @map("expires_at")
 
   @@index([status, occurredAt])
   @@index([status, sendingAt])
@@ -127,32 +126,32 @@ model Church {
 }
 
 model AnalyticsSession {
-  id          String           @id @default(uuid(7))
-  visitorId   String           @map("visitor_id")
-  sessionId   String           @unique @map("session_id")
-  ipAddress   String?          @map("ip_address")
-  userAgent   String?          @map("user_agent")
-  utmSource   String?          @map("utm_source")
-  utmMedium   String?          @map("utm_medium")
-  utmCampaign String?          @map("utm_campaign")
-  utmTerm     String?          @map("utm_term")
-  utmContent  String?          @map("utm_content")
-  createdAt   DateTime         @default(now()) @map("created_at")
+  id          String   @id @default(uuid(7))
+  visitorId   String   @map("visitor_id")
+  sessionId   String   @unique @map("session_id")
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  utmSource   String?  @map("utm_source")
+  utmMedium   String?  @map("utm_medium")
+  utmCampaign String?  @map("utm_campaign")
+  utmTerm     String?  @map("utm_term")
+  utmContent  String?  @map("utm_content")
+  createdAt   DateTime @default(now()) @map("created_at")
 
-  events      AnalyticsEvent[]
+  events AnalyticsEvent[]
 
   @@index([visitorId])
   @@map("analytics_sessions")
 }
 
 model AnalyticsEvent {
-  id          String           @id @default(uuid(7))
-  sessionId   String           @map("session_id")
-  session     AnalyticsSession @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
-  eventType   String           @map("event_type")
-  path        String
-  payload     Json?
-  occurredAt  DateTime         @default(now()) @map("occurred_at")
+  id         String           @id @default(uuid(7))
+  sessionId  String           @map("session_id")
+  session    AnalyticsSession @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+  eventType  String           @map("event_type")
+  path       String
+  payload    Json?
+  occurredAt DateTime         @default(now()) @map("occurred_at")
 
   @@index([sessionId])
   @@index([eventType])

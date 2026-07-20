@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { FormSubmissionDispatchStrategy } from './form-submission-dispatch-strategy'
 import { ContactEmailStrategy } from './contact-email-strategy'
 import { DecisionForChristEmailStrategy } from './decision-for-christ-email-strategy'
-import { IOutboxEvent, IOutboxEventType } from 'core/contracts/repository/outbox-repository.interface'
+import { IOutboxEvent, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { isOk, isErr, err } from 'core/shared/result'
 import { InvalidFormPayloadError } from '@use-cases/errors/forms/invalid-form-payload-error'
 
@@ -11,7 +11,7 @@ function makeEvent(payload: Record<string, unknown>): IOutboxEvent {
     id: 1,
     publicId: 'evt-1',
     type: 'FormSubmissionCreated',
-    status: IOutboxEventType.PENDING,
+    status: IOutboxEventStatus.PENDING,
     payload,
     attempts: 0,
     occurredAt: new Date(),
