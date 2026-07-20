@@ -110,11 +110,25 @@ export class PrismaOutboxRepository implements IOutboxRepository {
     }
   }
 
-  async deleteExpired(now: Date): Promise<Result<number, AppError>> {
+  async deleteExpired(now: Date, batchSize: number): Promise<Result<number, AppError>> {
     try {
-      const result = await this.dbContext.client.outboxEvent.deleteMany({
+      // Mesmo padrão de deleteOlderThan: busca um lote de ids e deleta por id,
+      // limitando o tempo de lock caso a varredura de expiração fique muito tempo parada.
+      const batch = await this.dbContext.client.outboxEvent.findMany({
         where: { expiresAt: { lte: now } },
+        select: { id: true },
+        orderBy: { expiresAt: 'asc' },
+        take: batchSize,
       })
+
+      if (batch.length === 0) {
+        return ok(0)
+      }
+
+      const result = await this.dbContext.client.outboxEvent.deleteMany({
+        where: { id: { in: batch.map((e) => e.id) } },
+      })
+
       return ok(result.count)
     } catch (error) {
       return err(this.infraErrorMapper.mapToKnownError(error))

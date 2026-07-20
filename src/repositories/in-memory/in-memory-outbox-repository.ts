@@ -131,15 +131,21 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
     return ok(undefined)
   }
 
-  async deleteExpired(now: Date): Promise<Result<number, AppError>> {
+  async deleteExpired(now: Date, batchSize: number): Promise<Result<number, AppError>> {
     if (this.shouldFailOn.deleteExpired) {
       return err(new InMemoryOutboxError('Falha injetada em deleteExpired'))
     }
 
-    const before = this.items.length
-    this.items = this.items.filter((e) => e.expiresAt === undefined || e.expiresAt.getTime() > now.getTime())
+    // Um lote por chamada, como no PrismaOutboxRepository
+    const batch = this.items
+      .filter((e) => e.expiresAt !== undefined && e.expiresAt.getTime() <= now.getTime())
+      .sort((a, b) => (a.expiresAt?.getTime() ?? 0) - (b.expiresAt?.getTime() ?? 0))
+      .slice(0, batchSize)
 
-    return ok(before - this.items.length)
+    const batchIds = new Set(batch.map((e) => e.id))
+    this.items = this.items.filter((e) => !batchIds.has(e.id))
+
+    return ok(batch.length)
   }
 
   async deleteOlderThan(

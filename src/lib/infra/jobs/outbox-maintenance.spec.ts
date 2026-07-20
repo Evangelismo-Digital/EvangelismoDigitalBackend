@@ -59,6 +59,8 @@ describe('OutboxMaintenance', () => {
   })
 
   describe('sweepExpiredEvents', () => {
+    const BATCH = OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE
+
     it('adquire o lock de expiração, deleta expirados e libera o lock', async () => {
       repository.deleteExpired.mockResolvedValueOnce(ok(3))
 
@@ -68,7 +70,7 @@ describe('OutboxMaintenance', () => {
         OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_EXPIRY_SWEEP,
         OUTBOX_CONSTANTS.LOCK_TTL_MS.DEFAULT,
       )
-      expect(repository.deleteExpired).toHaveBeenCalledExactlyOnceWith(expect.any(Date))
+      expect(repository.deleteExpired).toHaveBeenCalledExactlyOnceWith(expect.any(Date), BATCH)
       expect(logger.info).toHaveBeenCalledWith({ deleted: 3 }, OUTBOX_LOGS.EXPIRY_SWEEP_DELETED)
       expect(mockRelease).toHaveBeenCalledOnce()
     })
@@ -77,6 +79,20 @@ describe('OutboxMaintenance', () => {
       await maintenance.sweepExpiredEvents()
 
       expect(logger.info).not.toHaveBeenCalled()
+    })
+
+    it('itera em lotes até um lote parcial, renovando o lock a cada lote', async () => {
+      repository.deleteExpired
+        .mockResolvedValueOnce(ok(BATCH))
+        .mockResolvedValueOnce(ok(BATCH))
+        .mockResolvedValueOnce(ok(10))
+
+      await maintenance.sweepExpiredEvents()
+
+      expect(repository.deleteExpired).toHaveBeenCalledTimes(3)
+      expect(mockRenew).toHaveBeenCalledTimes(3)
+      expect(logger.info).toHaveBeenCalledWith({ deleted: 2 * BATCH + 10 }, OUTBOX_LOGS.EXPIRY_SWEEP_DELETED)
+      expect(mockRelease).toHaveBeenCalledOnce()
     })
 
     it('lock não adquirido: retorna sem consultar o repositório', async () => {
@@ -96,6 +112,20 @@ describe('OutboxMaintenance', () => {
 
       expect(logger.error).toHaveBeenCalledWith({ error: infraError }, OUTBOX_LOGS.EXPIRY_SWEEP_ERROR)
       expect(mockCaptureError).toHaveBeenCalledWith(infraError)
+      expect(mockRelease).toHaveBeenCalledOnce()
+    })
+
+    it('falha do repositório no meio dos lotes: para o loop, loga, captura e libera o lock', async () => {
+      const infraError = new InfraTestError()
+      repository.deleteExpired.mockResolvedValueOnce(ok(BATCH)).mockResolvedValueOnce(err(infraError))
+
+      await maintenance.sweepExpiredEvents()
+
+      expect(repository.deleteExpired).toHaveBeenCalledTimes(2)
+      expect(logger.error).toHaveBeenCalledWith({ error: infraError }, OUTBOX_LOGS.EXPIRY_SWEEP_ERROR)
+      expect(mockCaptureError).toHaveBeenCalledWith(infraError)
+      // o que já foi varrido antes da falha ainda é reportado
+      expect(logger.info).toHaveBeenCalledWith({ deleted: BATCH }, OUTBOX_LOGS.EXPIRY_SWEEP_DELETED)
       expect(mockRelease).toHaveBeenCalledOnce()
     })
 

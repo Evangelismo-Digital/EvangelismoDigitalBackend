@@ -45,8 +45,12 @@ export interface IOutboxRepository {
   updateStatus(publicId: string, status: IOutboxEventType): Promise<Result<void, AppError>>
   /** Idempotente: deletar um evento inexistente é sucesso. */
   delete(publicId: string): Promise<Result<void, AppError>>
-  /** Remove eventos cujo expiresAt já passou (qualquer status). Retorna a quantidade removida. */
-  deleteExpired(now: Date): Promise<Result<number, AppError>>
+  /**
+   * Remove ATÉ batchSize eventos cujo expiresAt já passou (qualquer status), um lote
+   * por chamada — mesmo padrão de deleteOlderThan, para o chamador renovar o lock
+   * distribuído entre lotes. Retorna a quantidade removida no lote.
+   */
+  deleteExpired(now: Date, batchSize: number): Promise<Result<number, AppError>>
   /**
    * Remove ATÉ batchSize eventos com occurredAt < cutoff (um lote por chamada,
    * para o chamador renovar o lock distribuído entre lotes). Retorna o total

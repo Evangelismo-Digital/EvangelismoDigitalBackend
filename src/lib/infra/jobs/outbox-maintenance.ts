@@ -7,14 +7,14 @@ import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 import { captureError } from '@lib/sentry/capture'
 
 /**
- * Varreduras de limpeza da Outbox — preocupação separada da máquina de estados
+ * Varreduras de limpeza da Outbox — propósito diferente da máquina de estados
  * de despacho (OutboxProcessor): aqui só se DELETA, nunca se despacha.
  *
  * - sweepExpiredEvents (5 min): remove eventos com expiresAt vencido. Com a
  *   janela de 15 min do token de reset, um payload expirado (que carrega o
  *   token cru) vive no máximo ~5 min além da expiração.
  * - purgeOldEvents (diária): remove eventos com mais de RETENTION.DAYS dias,
- *   qualquer status — FAILED inspecionáveis por 14 dias, depois são ruído.
+ *   com qualquer status.
  */
 export class OutboxMaintenance {
   private readonly LOCK_TTL_MS = OUTBOX_CONSTANTS.LOCK_TTL_MS.DEFAULT
@@ -29,16 +29,28 @@ export class OutboxMaintenance {
       lockToken = await DistributedLock.acquire(lockKey, this.LOCK_TTL_MS)
       if (!lockToken) return
 
-      const result = await this.outboxRepository.deleteExpired(new Date())
+      const now = new Date()
+      let totalDeleted = 0
 
-      if (isErr(result)) {
-        logger.error({ error: result.error }, OUTBOX_LOGS.EXPIRY_SWEEP_ERROR)
-        captureError(result.error)
-        return
+      // Um lote por iteração, renovando o lock entre lotes — mesma defesa de
+      // deleteOlderThan caso a varredura de 5 min fique parada por muito tempo.
+      for (;;) {
+        await DistributedLock.renew(lockKey, lockToken, this.LOCK_TTL_MS)
+
+        const result = await this.outboxRepository.deleteExpired(now, OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE)
+
+        if (isErr(result)) {
+          logger.error({ error: result.error }, OUTBOX_LOGS.EXPIRY_SWEEP_ERROR)
+          captureError(result.error)
+          break
+        }
+
+        totalDeleted += result.value
+        if (result.value < OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE) break
       }
 
-      if (result.value > 0) {
-        logger.info({ deleted: result.value }, OUTBOX_LOGS.EXPIRY_SWEEP_DELETED)
+      if (totalDeleted > 0) {
+        logger.info({ deleted: totalDeleted }, OUTBOX_LOGS.EXPIRY_SWEEP_DELETED)
       }
     } catch (error) {
       logger.error({ error }, OUTBOX_LOGS.EXPIRY_SWEEP_ERROR)

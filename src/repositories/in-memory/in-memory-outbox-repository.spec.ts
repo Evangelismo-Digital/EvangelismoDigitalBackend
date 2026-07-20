@@ -215,7 +215,7 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       const form = await repository.create(makeInput())
       if (!isOk(past) || !isOk(boundary) || !isOk(future) || !isOk(form)) throw new Error('setup')
 
-      const result = await repository.deleteExpired(now)
+      const result = await repository.deleteExpired(now, 50)
 
       expect(isOk(result)).toBe(true)
       if (!isOk(result)) return
@@ -228,7 +228,7 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       if (!isOk(expired)) throw new Error('setup')
       await repository.updateStatus(expired.value.publicId, IOutboxEventType.SENDING)
 
-      const result = await repository.deleteExpired(new Date())
+      const result = await repository.deleteExpired(new Date(), 50)
 
       expect(isOk(result)).toBe(true)
       if (!isOk(result)) return
@@ -236,10 +236,33 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       expect(repository.items).toHaveLength(0)
     })
 
+    it('remove no máximo batchSize eventos, ordenados por expiresAt asc', async () => {
+      const now = new Date()
+      const a = await repository.create(makeExpirableInput(new Date(now.getTime() - 3000)))
+      const b = await repository.create(makeExpirableInput(new Date(now.getTime() - 2000)))
+      const c = await repository.create(makeExpirableInput(new Date(now.getTime() - 1000)))
+      if (!isOk(a) || !isOk(b) || !isOk(c)) throw new Error('setup')
+
+      const firstBatch = await repository.deleteExpired(now, 2)
+      expect(isOk(firstBatch)).toBe(true)
+      if (!isOk(firstBatch)) return
+      expect(firstBatch.value).toBe(2)
+      expect(repository.items.map((e) => e.publicId)).toEqual([c.value.publicId])
+
+      const secondBatch = await repository.deleteExpired(now, 2)
+      if (!isOk(secondBatch)) throw new Error('setup')
+      expect(secondBatch.value).toBe(1)
+      expect(repository.items).toHaveLength(0)
+
+      const emptyBatch = await repository.deleteExpired(now, 2)
+      if (!isOk(emptyBatch)) throw new Error('setup')
+      expect(emptyBatch.value).toBe(0)
+    })
+
     it('retorna err quando a falha é injetada', async () => {
       repository.shouldFailOn.deleteExpired = true
 
-      const result = await repository.deleteExpired(new Date())
+      const result = await repository.deleteExpired(new Date(), 50)
 
       expect(isErr(result)).toBe(true)
     })

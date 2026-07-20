@@ -262,22 +262,40 @@ describe('PrismaOutboxRepository', () => {
   })
 
   describe('deleteExpired', () => {
-    it('deleta com expiresAt <= agora e retorna a contagem', async () => {
-      deleteManyMock.mockResolvedValueOnce({ count: 2 })
+    it('busca um lote de ids por expiresAt <= agora e deleta por id, retornando a contagem', async () => {
       const now = new Date()
+      findManyMock.mockResolvedValueOnce([{ id: 1 }, { id: 2 }])
+      deleteManyMock.mockResolvedValueOnce({ count: 2 })
 
-      const result = await repository.deleteExpired(now)
+      const result = await repository.deleteExpired(now, 50)
 
-      expect(deleteManyMock).toHaveBeenCalledWith({ where: { expiresAt: { lte: now } } })
+      expect(findManyMock).toHaveBeenCalledWith({
+        where: { expiresAt: { lte: now } },
+        select: { id: true },
+        orderBy: { expiresAt: 'asc' },
+        take: 50,
+      })
+      expect(deleteManyMock).toHaveBeenCalledWith({ where: { id: { in: [1, 2] } } })
       expect(isOk(result)).toBe(true)
       if (!isOk(result)) return
       expect(result.value).toBe(2)
     })
 
-    it('erro do banco vira err via mapper', async () => {
-      deleteManyMock.mockRejectedValueOnce(makePrismaError('P2002'))
+    it('lote vazio retorna 0 sem chamar deleteMany', async () => {
+      findManyMock.mockResolvedValueOnce([])
 
-      const result = await repository.deleteExpired(new Date())
+      const result = await repository.deleteExpired(new Date(), 50)
+
+      expect(deleteManyMock).not.toHaveBeenCalled()
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(0)
+    })
+
+    it('erro do banco vira err via mapper', async () => {
+      findManyMock.mockRejectedValueOnce(makePrismaError('P2002'))
+
+      const result = await repository.deleteExpired(new Date(), 50)
 
       expect(isErr(result)).toBe(true)
       expect(mapToKnownError).toHaveBeenCalledOnce()
