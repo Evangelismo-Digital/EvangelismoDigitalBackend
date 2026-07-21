@@ -7,6 +7,14 @@ import { AppError } from 'errors/app-error'
 import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
+import {
+  cacheHits,
+  cacheMisses,
+  cacheErrors,
+  cachePendingFetches,
+  cacheFetchDuration,
+  cacheCircuitBreakerTrips,
+} from '@lib/metrics/cache-metrics'
 
 export interface ResilientCacheOptions<E = unknown> {
   prefix: string
@@ -65,8 +73,11 @@ export class ResilientCache<E = unknown> {
     fetcher: (signal: AbortSignal) => Promise<Result<T, E>>,
     parentSignal?: AbortSignal,
   ): Promise<Result<T, E | AppError>> {
+    const prefix = this.options.prefix
+
     // 1. Circuit Breaker FIRST (before any work)
     if (this.pendingFetches.size >= this.MAX_PENDING) {
+      cacheCircuitBreakerTrips?.inc({ prefix })
       return err(new InfraServiceOverloadError())
     }
 
@@ -77,24 +88,42 @@ export class ResilientCache<E = unknown> {
     }
 
     // 3. Fast Redis Read (Envelope Unwrapping)
+    let cached: string | null = null
     try {
-      const cached = await this.redis.get(key)
-      if (cached) {
-        const envelope = JSON.parse(cached) as CacheEnvelope<T>
+      cached = await this.redis.get(key)
+    } catch (err) {
+      // Swallow Redis connection errors and proceed to fetch
+      cacheErrors?.inc({ prefix, error_type: 'read' })
+      logger.warn({ err, key }, CACHE_LOGS.READ_ERROR)
+    }
 
+    if (cached) {
+      let envelope: CacheEnvelope<T> | null = null
+      try {
+        envelope = JSON.parse(cached) as CacheEnvelope<T>
+      } catch (err) {
+        // Corrupted payload — proceed to fetch
+        cacheErrors?.inc({ prefix, error_type: 'corrupted' })
+        logger.warn({ err, key }, CACHE_LOGS.READ_ERROR)
+      }
+
+      if (envelope) {
         // If success, return the value
         if (envelope.s) {
           if (!('v' in envelope)) {
+            cacheErrors?.inc({ prefix, error_type: 'corrupted' })
             logger.error({ key, envelope }, CACHE_LOGS.CORRUPTED_ENVELOPE)
             return err(
               new ProviderFailureError('Cache', ProviderLayer.Address, new Error('Corrupted Cache: Missing value')),
             )
           }
+          cacheHits?.inc({ prefix })
           return ok(envelope.v as T)
         }
 
         // If cached failure, reconstruct error
         if (!envelope.s && envelope.e) {
+          cacheHits?.inc({ prefix })
           const deserializer = this.options.deserializeError
           if (deserializer) {
             const deserialized = deserializer(envelope.e.type, envelope.e.message, envelope.e.data)
@@ -113,9 +142,6 @@ export class ResilientCache<E = unknown> {
           )
         }
       }
-    } catch (err) {
-      // Swallow Redis connection/parsing errors and proceed to fetch
-      logger.warn({ err, key }, CACHE_LOGS.READ_ERROR)
     }
 
     // 4. Double-check pattern: Check again after async Redis call
@@ -125,16 +151,19 @@ export class ResilientCache<E = unknown> {
     }
 
     // 5. Create and store promise atomically
+    cacheMisses?.inc({ prefix })
     const promise = this.executeFetchWithSignalLogic(key, fetcher, parentSignal)
 
     // Store immediately to catch any concurrent requests
     this.pendingFetches.set(key, promise)
+    cachePendingFetches?.set({ prefix }, this.pendingFetches.size)
 
     try {
       return await promise
     } finally {
       // Clean up immediately after resolution
       this.pendingFetches.delete(key)
+      cachePendingFetches?.set({ prefix }, this.pendingFetches.size)
     }
   }
 
@@ -171,6 +200,8 @@ export class ResilientCache<E = unknown> {
       }
       effectiveSignal.addEventListener('abort', abortListener, { once: true })
     })
+
+    const endTimer = cacheFetchDuration?.startTimer({ prefix: this.options.prefix })
 
     try {
       const fetchPromise = fetcher(effectiveSignal)
@@ -215,6 +246,8 @@ export class ResilientCache<E = unknown> {
 
       return err(new ProviderFailureError('Fetcher', ProviderLayer.Address, error))
     } finally {
+      // Observe fetcher latency for both success and failure outcomes
+      endTimer?.()
       // CRITICAL: Always clean up to prevent timer/listener leaks
       if (timeoutId) clearTimeout(timeoutId)
       if (abortListener) effectiveSignal.removeEventListener('abort', abortListener)
@@ -236,6 +269,7 @@ export class ResilientCache<E = unknown> {
 
       await this.redis.set(key, JSON.stringify(envelope), 'EX', finalTtl)
     } catch (err) {
+      cacheErrors?.inc({ prefix: this.options.prefix, error_type: 'write' })
       logger.warn({ err, key }, CACHE_LOGS.WRITE_ERROR)
     }
   }
