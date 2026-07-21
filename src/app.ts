@@ -13,7 +13,6 @@ import { closeAllRedisConnections } from '@lib/redis/clients/clients'
 import { httpRateLimit } from '@http/plugins/rate-limit.plugin'
 import { errorHandler } from '@http/plugins/error-handler.plugin'
 import { requestLifecycle } from '@http/plugins/request-lifecycle.plugin'
-import { memoryMonitor } from '@http/plugins/memory-monitor.plugin'
 import { analytics } from '@http/plugins/analytics.plugin'
 import metricsPlugin from 'fastify-metrics'
 import promClient from 'prom-client'
@@ -77,13 +76,10 @@ app.register(fastifyJwt, {
 // 5. Request lifecycle — JWT extraction, userId population, request/response logging
 app.register(requestLifecycle)
 
-// 6. Memory monitor — production heap monitoring with self-contained lifecycle
-app.register(memoryMonitor)
-
-// 7. Error handler — catches anything thrown by plugins and routes
+// 6. Error handler — catches anything thrown by plugins and routes
 app.register(errorHandler)
 
-// 8. Routes
+// 7. Routes
 app.register(appRoutes)
 
 // Graceful shutdown — application-level resource cleanup
