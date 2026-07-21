@@ -11,6 +11,7 @@ import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
+import { providerLatency, recordProviderRequest } from '@lib/metrics/provider-metrics'
 import Redis from 'ioredis'
 
 export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingProvider {
@@ -33,13 +34,18 @@ export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingPr
     const allowed = await rateLimiter.tryConsume(this.rawProvider.rateLimitConfig)
 
     if (!allowed) {
-      return err(new ServiceBusyError(this.rawProvider.providerName))
+      const busy = err(new ServiceBusyError(this.rawProvider.providerName))
+      recordProviderRequest('routing', this.providerName, busy)
+      return busy
     }
 
     if (params.signal?.aborted) {
-      return err(new TimeoutExceededError(params.signal.reason))
+      const timedOut = err(new TimeoutExceededError(params.signal.reason))
+      recordProviderRequest('routing', this.providerName, timedOut)
+      return timedOut
     }
 
+    const endTimer = providerLatency?.startTimer({ provider: this.providerName, layer: 'routing' })
     try {
       const costing = params.profile ?? this.rawProvider.defaultCosting ?? RoutingProfile.AUTO
       const results = await this.rawProvider.fetchRawDistances(
@@ -48,9 +54,15 @@ export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingPr
         costing,
         params.signal,
       )
-      return ok(results)
+      endTimer?.()
+      const success = ok(results)
+      recordProviderRequest('routing', this.providerName, success)
+      return success
     } catch (error) {
-      return err(FindNearestChurchesErrorMapper.map(error))
+      endTimer?.()
+      const failure = err(FindNearestChurchesErrorMapper.map(error))
+      recordProviderRequest('routing', this.providerName, failure)
+      return failure
     }
   }
 }

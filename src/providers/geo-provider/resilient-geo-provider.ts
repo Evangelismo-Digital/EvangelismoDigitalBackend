@@ -11,6 +11,12 @@ import {
 import { Result, ok, err, isOk } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
+import {
+  providerLatency,
+  providerFallback,
+  providerChainExhausted,
+  recordProviderRequest,
+} from '@lib/metrics/provider-metrics'
 
 /**
  * ResilientGeoProvider chains multiple `IGeocodingProvider` implementations
@@ -62,7 +68,11 @@ export class ResilientGeoProvider implements IGeocodingProvider {
         return err(new TimeoutExceededError(signal.reason))
       }
 
+      const endTimer = providerLatency?.startTimer({ provider: providerName, layer: 'geocoding' })
       const result = await action(provider, signal)
+      endTimer?.()
+
+      recordProviderRequest('geocoding', providerName, result)
 
       if (isOk(result)) {
         if (result.value !== null) {
@@ -88,6 +98,14 @@ export class ResilientGeoProvider implements IGeocodingProvider {
       if (error.failureMode === FailureMode.RETRYABLE) {
         lastRetryableError = error
         lastProviderName = providerName
+
+        const nextProvider = this.providers[index + 1]
+        if (nextProvider) {
+          const nextProviderName =
+            (nextProvider as { providerName?: string }).providerName ?? nextProvider.constructor.name
+          providerFallback?.inc({ layer: 'geocoding', from_provider: providerName, to_provider: nextProviderName })
+        }
+
         logger.warn(
           { provider: providerName, attempt: index + 1, error },
           'Provedor de geocodificação retornou erro recuperável. Alternando para o próximo provedor...',
@@ -110,6 +128,7 @@ export class ResilientGeoProvider implements IGeocodingProvider {
     }
 
     if (lastRetryableError) {
+      providerChainExhausted?.inc({ layer: 'geocoding' })
       logger.error(
         { provider: lastProviderName, error: lastRetryableError },
         'Geocodificação falhou com erros de sistema',
@@ -117,6 +136,7 @@ export class ResilientGeoProvider implements IGeocodingProvider {
       return err(lastRetryableError)
     }
 
+    providerChainExhausted?.inc({ layer: 'geocoding' })
     return err(
       new ProviderFailureError('ResilientGeoProvider', ProviderLayer.Geo, new Error('TODOS os provedores falharam')),
     )

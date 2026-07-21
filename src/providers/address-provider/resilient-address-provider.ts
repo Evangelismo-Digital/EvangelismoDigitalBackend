@@ -7,6 +7,12 @@ import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/provide
 import { Result, ok, err, isOk } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
+import {
+  providerLatency,
+  providerFallback,
+  providerChainExhausted,
+  recordProviderRequest,
+} from '@lib/metrics/provider-metrics'
 
 /**
  * ResilientAddressProvider chains multiple `IAddressProvider` implementations
@@ -40,7 +46,11 @@ export class ResilientAddressProvider implements IAddressProvider {
         return err(new TimeoutExceededError(effectiveSignal.reason))
       }
 
+      const endTimer = providerLatency?.startTimer({ provider: providerName, layer: 'address' })
       const result = await provider.fetchAddress(cleanCep, effectiveSignal)
+      endTimer?.()
+
+      recordProviderRequest('address', providerName, result)
 
       if (isOk(result)) {
         if (result.value) {
@@ -69,6 +79,14 @@ export class ResilientAddressProvider implements IAddressProvider {
       if (error.failureMode === FailureMode.RETRYABLE) {
         lastRetryableError = error
         lastProviderName = providerName
+
+        const nextProvider = this.providers[index + 1]
+        if (nextProvider) {
+          const nextProviderName =
+            (nextProvider as { providerName?: string }).providerName ?? nextProvider.constructor.name
+          providerFallback?.inc({ layer: 'address', from_provider: providerName, to_provider: nextProviderName })
+        }
+
         logger.warn(
           { provider: providerName, error, attempt: index + 1 },
           'Provedor de endereço retornou erro recuperável. Alternando para o próximo provedor...',
@@ -92,6 +110,7 @@ export class ResilientAddressProvider implements IAddressProvider {
     }
 
     if (lastRetryableError) {
+      providerChainExhausted?.inc({ layer: 'address' })
       logger.error(
         { cep: cleanCep, provider: lastProviderName, notFoundCount, error: lastRetryableError },
         'Provedores de endereço falharam com erros de sistema',
@@ -99,6 +118,7 @@ export class ResilientAddressProvider implements IAddressProvider {
       return err(lastRetryableError)
     }
 
+    providerChainExhausted?.inc({ layer: 'address' })
     return err(
       new ProviderFailureError(
         'ResilientAddressProvider',
