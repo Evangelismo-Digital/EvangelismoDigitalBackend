@@ -9,6 +9,10 @@ id = "GHSA-92pp-h63x-v22m"
 reason = "@hono/node-server, transitive via prisma's own @prisma/dev CLI dev-tooling (not @prisma/client). Never shipped in the production Docker image (Dockerfile only copies node_modules/.prisma and node_modules/@prisma/client). The only available fix path currently offered by npm is a downgrade to a prisma 6.20.0-dev/7.9.0-dev pre-release build, not a stable release."
 
 [[IgnoredVulns]]
+id = "GHSA-frvp-7c67-39w9"
+reason = "See GHSA-92pp-h63x-v22m — same @hono/node-server dev dependency, transitive via prisma's @prisma/dev CLI dev-tooling (not @prisma/client), never shipped in the production Docker image. The fix (2.0.5) is a major bump owned by prisma's pinned dependency, not reachable without prisma upgrading it upstream."
+
+[[IgnoredVulns]]
 id = "GHSA-c7w3-x93f-qmm8"
 reason = "nodemailer SMTP/CRLF injection advisories. Fixed versions require a v7 -> v9 major bump with no @types/nodemailer release yet matching v9, and no verified migration test pass in this session. Needs a dedicated, tested migration rather than a security-triage side effect."
 
