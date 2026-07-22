@@ -30,6 +30,11 @@ export interface IOutboxEvent {
   sendingAt: Date | undefined
   /** Eventos expiráveis (ex.: reset de senha) nunca são despachados após este instante. */
   expiresAt: Date | undefined
+  /**
+   * Retry seletivo de lote: vazio = despacha o lote completo; não-vazio = re-tenta
+   * apenas os destinatários (campo `to`) que falharam num envio parcial anterior.
+   */
+  pendingRecipients: string[]
 }
 
 export interface IOutboxRepository {
@@ -42,6 +47,12 @@ export interface IOutboxRepository {
    * para PENDING/FAILED limpa sendingAt.
    */
   updateStatus(publicId: string, status: IOutboxEventStatus): Promise<Result<void, AppError>>
+  /**
+   * Persiste o subconjunto de destinatários pendentes (retry seletivo de lote).
+   * Chamado pelo mail worker numa falha parcial para que o re-despacho do Outbox
+   * envie apenas os `to` que ainda não foram entregues.
+   */
+  updatePendingRecipients(publicId: string, pendingRecipients: string[]): Promise<Result<void, AppError>>
   /** Idempotente: deletar um evento inexistente é sucesso. */
   delete(publicId: string): Promise<Result<void, AppError>>
   /**

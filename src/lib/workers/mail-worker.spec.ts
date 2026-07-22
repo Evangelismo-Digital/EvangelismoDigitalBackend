@@ -74,6 +74,7 @@ function makeJob(
     },
     attemptsMade: overrides?.attemptsMade ?? 1,
     opts: { attempts: overrides && 'attempts' in overrides ? overrides.attempts : 3 },
+    updateData: vi.fn().mockResolvedValue(undefined),
   } as unknown as Job<IOutboxDispatchData>
 }
 
@@ -81,6 +82,7 @@ function makeRepository() {
   return {
     delete: vi.fn().mockResolvedValue(ok(undefined)),
     updateStatus: vi.fn().mockResolvedValue(ok(undefined)),
+    updatePendingRecipients: vi.fn().mockResolvedValue(ok(undefined)),
   }
 }
 
@@ -241,6 +243,52 @@ describe('createMailJobProcessor', () => {
       await expect(processor(makeJob())).rejects.toBeInstanceOf(SmtpDispatchError)
 
       expect(logger.warn).not.toHaveBeenCalledWith(expect.anything(), WORKER_LOGS.PARTIAL_BATCH_FAILURE)
+    })
+
+    it('falha parcial: persiste apenas os destinatários que falharam no banco e no payload do BullMQ', async () => {
+      const smtpError = new SmtpDispatchError(new Error('smtp caiu'))
+      // emailUser falha, emailStaff envia
+      mockSendEmailExecute.mockResolvedValueOnce(err(smtpError)).mockResolvedValueOnce(ok({}))
+      const job = makeJob()
+
+      await expect(processor(job)).rejects.toBe(smtpError)
+
+      expect(repository.updatePendingRecipients).toHaveBeenCalledWith(PUBLIC_ID, [emailUser.to])
+      expect(job.updateData).toHaveBeenCalledWith({ ...job.data, emails: [emailUser] })
+    })
+
+    it('falha total: não persiste destinatários pendentes (gate de falha parcial)', async () => {
+      mockSendEmailExecute.mockResolvedValue(err(new SmtpDispatchError(new Error('smtp caiu'))))
+      const job = makeJob()
+
+      await expect(processor(job)).rejects.toBeInstanceOf(SmtpDispatchError)
+
+      expect(repository.updatePendingRecipients).not.toHaveBeenCalled()
+      expect(job.updateData).not.toHaveBeenCalled()
+    })
+
+    it('falha parcial best-effort: se o banco falhar, loga, NÃO atualiza o BullMQ e ainda relança o erro SMTP', async () => {
+      const smtpError = new SmtpDispatchError(new Error('smtp caiu'))
+      mockSendEmailExecute.mockResolvedValueOnce(err(smtpError)).mockResolvedValueOnce(ok({}))
+      repository.updatePendingRecipients.mockResolvedValueOnce(err(new InfraTestError()))
+      const job = makeJob()
+
+      await expect(processor(job)).rejects.toBe(smtpError)
+
+      expect(logger.error).toHaveBeenCalledWith({ publicId: PUBLIC_ID }, WORKER_LOGS.PENDING_RECIPIENTS_UPDATE_FAILED)
+      expect(job.updateData).not.toHaveBeenCalled()
+    })
+
+    it('falha parcial best-effort: se job.updateData estourar, loga e ainda relança o erro SMTP', async () => {
+      const smtpError = new SmtpDispatchError(new Error('smtp caiu'))
+      mockSendEmailExecute.mockResolvedValueOnce(err(smtpError)).mockResolvedValueOnce(ok({}))
+      const job = makeJob()
+      ;(job.updateData as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('redis caiu'))
+
+      await expect(processor(job)).rejects.toBe(smtpError)
+
+      expect(repository.updatePendingRecipients).toHaveBeenCalledWith(PUBLIC_ID, [emailUser.to])
+      expect(logger.error).toHaveBeenCalledWith({ publicId: PUBLIC_ID }, WORKER_LOGS.JOB_DATA_UPDATE_FAILED)
     })
 
     it('mistura de rejeição inesperada e Result err: todos os envios são aguardados antes de relançar', async () => {

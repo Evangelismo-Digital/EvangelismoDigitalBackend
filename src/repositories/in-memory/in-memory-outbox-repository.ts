@@ -20,6 +20,7 @@ interface FailureInjection {
   findPending?: boolean
   findStuck?: boolean
   updateStatus?: boolean
+  updatePendingRecipients?: boolean
   delete?: boolean
   deleteExpired?: boolean
   deleteOlderThan?: boolean
@@ -53,6 +54,7 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
       occurredAt: new Date(),
       sendingAt: undefined,
       expiresAt: data.expiresAt ?? undefined,
+      pendingRecipients: [],
     }
 
     this.items.push(event)
@@ -116,6 +118,22 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
     } else {
       event.sendingAt = undefined
     }
+
+    return ok(undefined)
+  }
+
+  async updatePendingRecipients(publicId: string, pendingRecipients: string[]): Promise<Result<void, AppError>> {
+    if (this.shouldFailOn.updatePendingRecipients) {
+      return err(new InMemoryOutboxError('Falha injetada em updatePendingRecipients'))
+    }
+
+    const event = this.items.find((e) => e.publicId === publicId)
+
+    if (!event) {
+      return err(new InMemoryOutboxError('Evento não encontrado para atualização de destinatários pendentes'))
+    }
+
+    event.pendingRecipients = pendingRecipients
 
     return ok(undefined)
   }

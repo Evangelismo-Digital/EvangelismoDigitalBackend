@@ -72,13 +72,33 @@ export function createMailJobProcessor(outboxRepository: IOutboxRepository) {
       const failures = results.filter((r) => r.status === 'rejected' || isErr(r.value))
 
       if (failures.length > 0) {
-        // Falha parcial: parte do lote foi enviada; o retry reenviará o lote
-        // inteiro (duplicata tolerável — e-mail de notificação, não transação)
+        // Falha parcial: parte do lote foi enviada. Retry seletivo — persiste apenas
+        // os destinatários que falharam para que tanto as re-tentativas internas do
+        // BullMQ quanto o re-despacho do Outbox não reenviem quem já recebeu.
         if (failures.length < results.length) {
+          // `failures` perde o alinhamento com `emails`; recupera os e-mails que
+          // falharam re-filtrando por índice (Promise.allSettled preserva a ordem).
+          const failedEmails = emails.filter((_, i) => results[i].status === 'rejected' || isErr(results[i].value))
+          const failedAddresses = failedEmails.map((e) => e.to)
+
           childLogger.warn(
             { successCount: results.length - failures.length, failureCount: failures.length },
             WORKER_LOGS.PARTIAL_BATCH_FAILURE,
           )
+
+          // Best-effort: DB primeiro (fonte de verdade do re-despacho do Outbox).
+          // Se o DB falhar, mantém o BullMQ com o lote completo para não deixar as
+          // camadas inconsistentes — ambas re-tentam o lote inteiro nesse caso.
+          const dbResult = await outboxRepository.updatePendingRecipients(publicId, failedAddresses)
+          if (isErr(dbResult)) {
+            childLogger.error({ publicId }, WORKER_LOGS.PENDING_RECIPIENTS_UPDATE_FAILED)
+          } else {
+            try {
+              await job.updateData({ ...job.data, emails: failedEmails })
+            } catch {
+              childLogger.error({ publicId }, WORKER_LOGS.JOB_DATA_UPDATE_FAILED)
+            }
+          }
         }
 
         const firstFailure = failures[0]

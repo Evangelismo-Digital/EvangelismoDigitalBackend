@@ -103,6 +103,8 @@ model OutboxEvent {
   occurredAt DateTime          @default(now()) @map("ocurred_at")
   sendingAt  DateTime?         @map("sending_at")
   expiresAt  DateTime?         @map("expires_at")
+  // Vazio = despacha o lote completo; não-vazio = re-tenta apenas estes destinatários (retry seletivo)
+  pendingRecipients String[]   @default([]) @map("pending_recipients")
 
   @@index([status, occurredAt])
   @@index([status, sendingAt])

@@ -17,6 +17,7 @@ function makeEvent(payload: Record<string, unknown>): IOutboxEvent {
     occurredAt: new Date(),
     sendingAt: undefined,
     expiresAt: undefined,
+    pendingRecipients: [],
   }
 }
 

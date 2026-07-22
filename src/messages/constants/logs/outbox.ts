@@ -34,6 +34,8 @@ export const OUTBOX_LOGS = {
   FAILED_MARK_ERROR: 'Falha ao marcar evento como FAILED no banco de dados.',
   EXPIRED_EVENT_DELETED: 'Evento expirado removido da Outbox sem despacho (link morto nunca é enviado).',
   EXPIRED_EVENT_DELETE_ERROR: 'Falha ao remover evento expirado da Outbox.',
+  PENDING_RECIPIENTS_UNRESOLVED:
+    'Destinatários pendentes não corresponderam a nenhum e-mail reconstruído; despachando o lote completo (at-least-once).',
   // outbox-maintenance
   EXPIRY_SWEEP_DELETED: 'Varredura de expiração: eventos expirados removidos da Outbox.',
   EXPIRY_SWEEP_ERROR: 'Erro na varredura de expiração da Outbox.',

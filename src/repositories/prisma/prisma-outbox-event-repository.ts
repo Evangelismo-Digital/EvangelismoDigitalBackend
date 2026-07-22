@@ -95,6 +95,18 @@ export class PrismaOutboxRepository implements IOutboxRepository {
     }
   }
 
+  async updatePendingRecipients(publicId: string, pendingRecipients: string[]): Promise<Result<void, AppError>> {
+    try {
+      await this.dbContext.client.outboxEvent.update({
+        where: { publicId },
+        data: { pendingRecipients },
+      })
+      return ok(undefined)
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error))
+    }
+  }
+
   async delete(publicId: string): Promise<Result<void, AppError>> {
     try {
       await this.dbContext.client.outboxEvent.delete({
@@ -181,6 +193,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
     occurredAt: Date
     sendingAt: Date | null
     expiresAt: Date | null
+    pendingRecipients: string[]
   }): IOutboxEvent {
     return {
       id: raw.id,
@@ -192,6 +205,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       occurredAt: raw.occurredAt,
       sendingAt: raw.sendingAt || undefined,
       expiresAt: raw.expiresAt || undefined,
+      pendingRecipients: raw.pendingRecipients,
     }
   }
 }

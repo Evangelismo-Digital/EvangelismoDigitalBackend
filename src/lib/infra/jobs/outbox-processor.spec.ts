@@ -151,6 +151,39 @@ describe('OutboxProcessor', () => {
       expect(opts).toEqual({ jobId: event.publicId })
     })
 
+    it('sem pendingRecipients (lista vazia) despacha o lote completo', async () => {
+      const event = await createEvent(repository)
+
+      await processor.processSingleEvent(event)
+
+      const [, dispatchData] = mockQueueAdd.mock.calls[0]
+      expect(dispatchData.emails).toHaveLength(2)
+    })
+
+    it('com pendingRecipients filtra o lote para despachar apenas o subconjunto (retry seletivo)', async () => {
+      const event = await createEvent(repository)
+      // Apenas o e-mail do staff (ADMIN_EMAIL) ficou pendente de um envio parcial anterior
+      repository.items[0].pendingRecipients = ['admin@example.com']
+
+      await processor.processSingleEvent(event)
+
+      const [, dispatchData] = mockQueueAdd.mock.calls[0]
+      expect(dispatchData.emails).toHaveLength(1)
+      expect(dispatchData.emails[0].to).toBe('admin@example.com')
+      expect(logger.warn).not.toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.PENDING_RECIPIENTS_UNRESOLVED)
+    })
+
+    it('fallback defensivo: pendingRecipients sem correspondência despacha o lote completo e loga aviso', async () => {
+      const event = await createEvent(repository)
+      repository.items[0].pendingRecipients = ['ninguem@desconhecido.com']
+
+      await processor.processSingleEvent(event)
+
+      const [, dispatchData] = mockQueueAdd.mock.calls[0]
+      expect(dispatchData.emails).toHaveLength(2)
+      expect(logger.warn).toHaveBeenCalledWith({ publicId: event.publicId }, OUTBOX_LOGS.PENDING_RECIPIENTS_UNRESOLVED)
+    })
+
     it('roteia payload com decisaoPorCristo para DecisionForChristEmailStrategy', async () => {
       const decisionSpy = vi.spyOn(DecisionForChristEmailStrategy.prototype, 'buildUserEmail')
       const event = await createEvent(repository, { decisaoPorCristo: true })

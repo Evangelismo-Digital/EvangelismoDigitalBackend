@@ -145,6 +145,29 @@ describe('PrismaOutboxRepository', () => {
     })
   })
 
+  describe('updatePendingRecipients', () => {
+    it('atualiza a coluna pendingRecipients filtrada por publicId', async () => {
+      updateMock.mockResolvedValueOnce({})
+
+      const result = await repository.updatePendingRecipients('public-id', ['staff@test.com'])
+
+      expect(updateMock).toHaveBeenCalledWith({
+        where: { publicId: 'public-id' },
+        data: { pendingRecipients: ['staff@test.com'] },
+      })
+      expect(isOk(result)).toBe(true)
+    })
+
+    it('erro do banco vira err via mapper', async () => {
+      updateMock.mockRejectedValueOnce(makePrismaError('P2025'))
+
+      const result = await repository.updatePendingRecipients('public-id', ['a@test.com'])
+
+      expect(isErr(result)).toBe(true)
+      expect(mapToKnownError).toHaveBeenCalledOnce()
+    })
+  })
+
   describe('findStuck', () => {
     it('filtra SENDING com sendingAt <= corte e aplica o limite (take)', async () => {
       findManyMock.mockResolvedValueOnce([])
@@ -176,6 +199,7 @@ describe('PrismaOutboxRepository', () => {
           occurredAt: new Date(),
           sendingAt: null,
           expiresAt: null,
+          pendingRecipients: ['staff@test.com'],
         },
       ])
 
@@ -186,6 +210,7 @@ describe('PrismaOutboxRepository', () => {
       expect(result.value[0].attempts).toBe(3)
       expect(result.value[0].sendingAt).toBeUndefined()
       expect(result.value[0].expiresAt).toBeUndefined()
+      expect(result.value[0].pendingRecipients).toEqual(['staff@test.com'])
     })
   })
 

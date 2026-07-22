@@ -50,6 +50,7 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       expect(first.value.attempts).toBe(0)
       expect(first.value.occurredAt).toBeInstanceOf(Date)
       expect(first.value.sendingAt).toBeUndefined()
+      expect(first.value.pendingRecipients).toEqual([])
       expect(first.value.publicId).not.toBe(second.value.publicId)
     })
 
@@ -111,6 +112,35 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
 
     it('retorna err para publicId desconhecido', async () => {
       const result = await repository.updateStatus('nao-existe', IOutboxEventStatus.SENDING)
+
+      expect(isErr(result)).toBe(true)
+    })
+  })
+
+  describe('updatePendingRecipients', () => {
+    it('persiste o subconjunto de destinatários pendentes na linha', async () => {
+      const created = await repository.create(makeInput())
+      if (!isOk(created)) throw new Error('setup')
+      const { publicId } = created.value
+
+      const result = await repository.updatePendingRecipients(publicId, ['staff@test.com'])
+
+      expect(isOk(result)).toBe(true)
+      expect(repository.items[0].pendingRecipients).toEqual(['staff@test.com'])
+    })
+
+    it('retorna err para publicId desconhecido', async () => {
+      const result = await repository.updatePendingRecipients('nao-existe', ['a@test.com'])
+
+      expect(isErr(result)).toBe(true)
+    })
+
+    it('retorna err quando a falha é injetada', async () => {
+      const created = await repository.create(makeInput())
+      if (!isOk(created)) throw new Error('setup')
+      repository.shouldFailOn.updatePendingRecipients = true
+
+      const result = await repository.updatePendingRecipients(created.value.publicId, ['a@test.com'])
 
       expect(isErr(result)).toBe(true)
     })

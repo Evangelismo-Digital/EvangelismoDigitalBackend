@@ -183,11 +183,25 @@ export class OutboxProcessor {
 
     const { emails, jobOptions } = planResult.value
 
+    // Retry seletivo: se um envio parcial anterior registrou destinatários pendentes,
+    // despacha apenas esses; caso contrário (lista vazia), despacha o lote completo.
+    let finalEmails = emails
+    if (event.pendingRecipients.length > 0) {
+      const filtered = emails.filter((e) => event.pendingRecipients.includes(e.to))
+      if (filtered.length === 0) {
+        // Fallback defensivo: nenhum destinatário reconstruído bateu com o filtro
+        // (estratégia/payload mudou). Despacha o lote completo para preservar o at-least-once.
+        logger.warn({ publicId: event.publicId }, OUTBOX_LOGS.PENDING_RECIPIENTS_UNRESOLVED)
+      } else {
+        finalEmails = filtered
+      }
+    }
+
     await getMailQueue().add(
       QUEUE.JOBS.OUTBOX_DISPATCH,
       {
         publicId: event.publicId,
-        emails,
+        emails: finalEmails,
         // Repassa a expiração para o gate do mail worker (job data é JSON)
         ...(event.expiresAt ? { expiresAt: new Date(event.expiresAt).toISOString() } : {}),
       },
