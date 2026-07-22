@@ -14,6 +14,12 @@ import { REDIS_CONSTANTS } from 'messages/constants/redis/redis'
 import { WORKER_CONSTANTS } from 'messages/constants/workers/workers'
 import { WORKER_LOGS } from 'messages/constants/logs/worker'
 import { captureError } from '@lib/sentry/capture'
+import {
+  collectMetricsEmailsSent,
+  collectMetricsEmailsFailed,
+  collectMetricsEmailsSkipped,
+  collectMetricsEmailBatchDuration,
+} from '@lib/metrics/email-metrics'
 
 export function createMailJobProcessor(outboxRepository: IOutboxRepository) {
   return async (job: Job<IOutboxDispatchData>): Promise<void> => {
@@ -31,6 +37,9 @@ export function createMailJobProcessor(outboxRepository: IOutboxRepository) {
       if (isErr(deleteResult)) {
         throw deleteResult.error
       }
+      // Contabiliza só após o delete: se o delete falhar e o BullMQ re-tentar, o
+      // skip não é contado em duplicidade (o job continua expirado no retry).
+      collectMetricsEmailsSkipped?.inc({ reason: 'expired' })
       return
     }
 
@@ -55,9 +64,12 @@ export function createMailJobProcessor(outboxRepository: IOutboxRepository) {
           // Lançamos a falha do BD para o BullMQ tentar deletar no próximo ciclo
           throw deleteResult.error
         }
+        // Contabiliza só após o delete (mesma razão do gate de expiração).
+        collectMetricsEmailsSkipped?.inc({ reason: 'already_sent' })
         return
       }
 
+      collectMetricsEmailsSkipped?.inc({ reason: 'processing' })
       throw new JobAlreadyProcessingError()
     }
 
@@ -67,11 +79,29 @@ export function createMailJobProcessor(outboxRepository: IOutboxRepository) {
       childLogger.info(`Processando lote de ${emails.length} e-mails...`)
 
       const sendEmailUseCase = makeSendEmailUseCase()
+      const end = collectMetricsEmailBatchDuration?.startTimer()
       const results = await Promise.allSettled(emails.map((email) => sendEmailUseCase.execute(email)))
+      end?.()
 
       const failures = results.filter((r) => r.status === 'rejected' || isErr(r.value))
 
+      // Envios bem-sucedidos desta tentativa. O retry seletivo garante que quem já
+      // recebeu não é reenviado, então contabilizar por tentativa não duplica —
+      // exceto no caminho degradado (updatePendingRecipients falha → lote inteiro
+      // re-tentado), onde o reenvio é real e o re-incremento reflete a realidade.
+      const successCount = results.length - failures.length
+      if (successCount > 0) {
+        collectMetricsEmailsSent?.inc(successCount)
+      }
+
       if (failures.length > 0) {
+        // Cada destinatário que falhou é contado com seu próprio tipo (smtp/infra).
+        for (const failure of failures) {
+          const cause =
+            failure.status === 'rejected' ? failure.reason : isErr(failure.value) ? failure.value.error : undefined
+          collectMetricsEmailsFailed?.inc({ error_type: cause instanceof InfrastructureError ? 'infra' : 'smtp' })
+        }
+
         // Falha parcial: parte do lote foi enviada. Retry seletivo — persiste apenas
         // os destinatários que falharam para que tanto as re-tentativas internas do
         // BullMQ quanto o re-despacho do Outbox não reenviem quem já recebeu.
