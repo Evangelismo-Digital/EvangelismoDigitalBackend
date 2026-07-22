@@ -5,7 +5,10 @@ import { logger } from '@lib/logger'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 import Redis from 'ioredis'
 import { captureError } from '@lib/sentry/capture'
-import { outboxSignalPublished, outboxSignalPublishFailed } from '@lib/metrics/outbox-metrics'
+import {
+  collectMetricsOutboxSignalPublished,
+  collectMetricsOutboxSignalPublishFailed,
+} from '@lib/metrics/outbox-metrics'
 
 const baseConfig = {
   host: env.REDIS_HOST,
@@ -82,9 +85,9 @@ export const OutboxSignal = {
       const client = getPublisher()
       await ensureConnected(client, 'OutboxPublisher')
       await client.publish(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL, JSON.stringify({ publicId, event }))
-      outboxSignalPublished?.inc()
+      collectMetricsOutboxSignalPublished?.inc()
     } catch (err) {
-      outboxSignalPublishFailed?.inc()
+      collectMetricsOutboxSignalPublishFailed?.inc()
       logger.warn({ err }, OUTBOX_LOGS.SIGNAL_PUBLISH_FAILED)
     }
   },

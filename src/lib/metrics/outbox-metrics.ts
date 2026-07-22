@@ -3,7 +3,7 @@ import { getRegistry } from './index'
 
 const registry = getRegistry()
 
-export const outboxEventsDispatched = registry
+export const collectMetricsOutboxEventsDispatched = registry
   ? new Counter({
       name: 'outbox_events_dispatched_total',
       help: 'Events successfully enqueued to BullMQ',
@@ -11,7 +11,7 @@ export const outboxEventsDispatched = registry
     })
   : null
 
-export const outboxEventsReverted = registry
+export const collectMetricsOutboxEventsReverted = registry
   ? new Counter({
       name: 'outbox_events_reverted_total',
       help: 'Dispatch failed and the event was successfully reverted to PENDING',
@@ -19,7 +19,7 @@ export const outboxEventsReverted = registry
     })
   : null
 
-export const outboxEventsRevertFailed = registry
+export const collectMetricsOutboxEventsRevertFailed = registry
   ? new Counter({
       name: 'outbox_events_revert_failed_total',
       help: 'Dispatch failed and the revert-to-PENDING write also failed (stranded in SENDING)',
@@ -27,7 +27,7 @@ export const outboxEventsRevertFailed = registry
     })
   : null
 
-export const outboxEventsMarkedAsTerminalFail = registry
+export const collectMetricsOutboxEventsMarkedAsTerminalFail = registry
   ? new Counter({
       name: 'outbox_events_marked_as_terminal_fail_total',
       help: 'Events marked terminal FAILED after exceeding the dispatch attempts cap (poison message)',
@@ -35,7 +35,7 @@ export const outboxEventsMarkedAsTerminalFail = registry
     })
   : null
 
-export const outboxEventsExpired = registry
+export const collectMetricsOutboxEventsExpired = registry
   ? new Counter({
       name: 'outbox_events_expired_total',
       help: 'Events deleted at the expiration gate before dispatch',
@@ -43,7 +43,7 @@ export const outboxEventsExpired = registry
     })
   : null
 
-export const outboxEventsStuckSendingEventsRecovered = registry
+export const collectMetricsOutboxEventsStuckSendingEventsRecovered = registry
   ? new Counter({
       name: 'outbox_events_stuck_sending_events_recovered_total',
       help: 'Stuck SENDING events reprocessed by the recovery loop',
@@ -51,7 +51,7 @@ export const outboxEventsStuckSendingEventsRecovered = registry
     })
   : null
 
-export const outboxCronRuns = registry
+export const collectMetricsOutboxCronRuns = registry
   ? new Counter({
       name: 'outbox_cron_runs_total',
       help: 'Outbox cron executions by phase',
@@ -60,7 +60,7 @@ export const outboxCronRuns = registry
     })
   : null
 
-export const outboxMaintenanceDeleted = registry
+export const collectMetricsOutboxMaintenanceDeleted = registry
   ? new Counter({
       name: 'outbox_maintenance_deleted_total',
       help: 'Events deleted by maintenance sweeps, by operation',
@@ -69,7 +69,7 @@ export const outboxMaintenanceDeleted = registry
     })
   : null
 
-export const outboxSignalPublished = registry
+export const collectMetricsOutboxSignalPublished = registry
   ? new Counter({
       name: 'outbox_signal_published_total',
       help: 'Pub/Sub wakeup signals published after an outbox write',
@@ -77,7 +77,7 @@ export const outboxSignalPublished = registry
     })
   : null
 
-export const outboxSignalPublishFailed = registry
+export const collectMetricsOutboxSignalPublishFailed = registry
   ? new Counter({
       name: 'outbox_signal_publish_failed_total',
       help: 'Pub/Sub signal publish failures (Redis unavailable)',

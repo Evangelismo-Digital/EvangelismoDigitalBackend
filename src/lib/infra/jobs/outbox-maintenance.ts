@@ -5,7 +5,7 @@ import { isErr } from 'core/shared/result'
 import { IOutboxRepository, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 import { captureError } from '@lib/sentry/capture'
-import { outboxMaintenanceDeleted } from '@lib/metrics/outbox-metrics'
+import { collectMetricsOutboxMaintenanceDeleted } from '@lib/metrics/outbox-metrics'
 
 /**
  * Varreduras de limpeza da Outbox — propósito diferente da máquina de estados
@@ -51,7 +51,7 @@ export class OutboxMaintenance {
       }
 
       if (totalDeleted > 0) {
-        outboxMaintenanceDeleted?.inc({ operation: 'expiry_sweep' }, totalDeleted)
+        collectMetricsOutboxMaintenanceDeleted?.inc({ operation: 'expiry_sweep' }, totalDeleted)
         logger.info({ deleted: totalDeleted }, OUTBOX_LOGS.EXPIRY_SWEEP_DELETED)
       }
     } catch (error) {
@@ -100,7 +100,7 @@ export class OutboxMaintenance {
       }
 
       if (totalDeleted > 0) {
-        outboxMaintenanceDeleted?.inc({ operation: 'retention_purge' }, totalDeleted)
+        collectMetricsOutboxMaintenanceDeleted?.inc({ operation: 'retention_purge' }, totalDeleted)
 
         const nonTerminal =
           (totalByStatus[IOutboxEventStatus.PENDING] ?? 0) + (totalByStatus[IOutboxEventStatus.SENDING] ?? 0)

@@ -41,12 +41,12 @@ import { ok, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { getRegistry } from '@lib/metrics'
 import {
-  cacheHits,
-  cacheMisses,
-  cacheErrors,
-  cachePendingFetches,
-  cacheFetchDuration,
-  cacheCircuitBreakerTrips,
+  collectMetricsCacheHits,
+  collectMetricsCacheMisses,
+  collectMetricsCacheErrors,
+  collectMetricsCachePendingFetches,
+  collectMetricsCacheFetchDuration,
+  collectMetricsCacheCircuitBreakerTrips,
 } from '@lib/metrics/cache-metrics'
 
 const PREFIX = 'test-cache:'
@@ -97,8 +97,8 @@ describe('ResilientCache metrics instrumentation', () => {
 
     expect(result).toEqual(ok('cached-value'))
     expect(fetcher).not.toHaveBeenCalled()
-    expect(await metricValue(cacheHits, { prefix: PREFIX })).toBe(1)
-    expect(await metricValue(cacheMisses, { prefix: PREFIX })).toBe(0)
+    expect(await metricValue(collectMetricsCacheHits, { prefix: PREFIX })).toBe(1)
+    expect(await metricValue(collectMetricsCacheMisses, { prefix: PREFIX })).toBe(0)
   })
 
   it('counts a hit on a stored cached-failure envelope', async () => {
@@ -109,7 +109,7 @@ describe('ResilientCache metrics instrumentation', () => {
 
     expect(isErr(result)).toBe(true)
     expect(fetcher).not.toHaveBeenCalled()
-    expect(await metricValue(cacheHits, { prefix: PREFIX })).toBe(1)
+    expect(await metricValue(collectMetricsCacheHits, { prefix: PREFIX })).toBe(1)
   })
 
   it('counts a miss and observes fetcher duration when the fetcher runs', async () => {
@@ -120,9 +120,9 @@ describe('ResilientCache metrics instrumentation', () => {
 
     expect(result).toEqual(ok('fresh'))
     expect(fetcher).toHaveBeenCalledTimes(1)
-    expect(await metricValue(cacheMisses, { prefix: PREFIX })).toBe(1)
-    expect(await metricValue(cacheHits, { prefix: PREFIX })).toBe(0)
-    expect(await metricValue(cacheFetchDuration, { prefix: PREFIX }, '_count')).toBe(1)
+    expect(await metricValue(collectMetricsCacheMisses, { prefix: PREFIX })).toBe(1)
+    expect(await metricValue(collectMetricsCacheHits, { prefix: PREFIX })).toBe(0)
+    expect(await metricValue(collectMetricsCacheFetchDuration, { prefix: PREFIX }, '_count')).toBe(1)
   })
 
   it('tags a Redis read failure as error_type=read and falls through to fetch', async () => {
@@ -132,8 +132,8 @@ describe('ResilientCache metrics instrumentation', () => {
     const result = await cache.getOrFetch('k', fetcher)
 
     expect(result).toEqual(ok('fresh'))
-    expect(await metricValue(cacheErrors, { prefix: PREFIX, error_type: 'read' })).toBe(1)
-    expect(await metricValue(cacheMisses, { prefix: PREFIX })).toBe(1)
+    expect(await metricValue(collectMetricsCacheErrors, { prefix: PREFIX, error_type: 'read' })).toBe(1)
+    expect(await metricValue(collectMetricsCacheMisses, { prefix: PREFIX })).toBe(1)
   })
 
   it('tags an unparseable payload as error_type=corrupted and falls through to fetch', async () => {
@@ -143,8 +143,8 @@ describe('ResilientCache metrics instrumentation', () => {
     const result = await cache.getOrFetch('k', fetcher)
 
     expect(result).toEqual(ok('fresh'))
-    expect(await metricValue(cacheErrors, { prefix: PREFIX, error_type: 'corrupted' })).toBe(1)
-    expect(await metricValue(cacheMisses, { prefix: PREFIX })).toBe(1)
+    expect(await metricValue(collectMetricsCacheErrors, { prefix: PREFIX, error_type: 'corrupted' })).toBe(1)
+    expect(await metricValue(collectMetricsCacheMisses, { prefix: PREFIX })).toBe(1)
   })
 
   it('tags a success envelope missing its value as error_type=corrupted without fetching', async () => {
@@ -155,8 +155,8 @@ describe('ResilientCache metrics instrumentation', () => {
 
     expect(isErr(result)).toBe(true)
     expect(fetcher).not.toHaveBeenCalled()
-    expect(await metricValue(cacheErrors, { prefix: PREFIX, error_type: 'corrupted' })).toBe(1)
-    expect(await metricValue(cacheHits, { prefix: PREFIX })).toBe(0)
+    expect(await metricValue(collectMetricsCacheErrors, { prefix: PREFIX, error_type: 'corrupted' })).toBe(1)
+    expect(await metricValue(collectMetricsCacheHits, { prefix: PREFIX })).toBe(0)
   })
 
   it('tags a Redis write failure as error_type=write while still returning the value', async () => {
@@ -167,7 +167,7 @@ describe('ResilientCache metrics instrumentation', () => {
     const result = await cache.getOrFetch('k', fetcher)
 
     expect(result).toEqual(ok('fresh'))
-    expect(await metricValue(cacheErrors, { prefix: PREFIX, error_type: 'write' })).toBe(1)
+    expect(await metricValue(collectMetricsCacheErrors, { prefix: PREFIX, error_type: 'write' })).toBe(1)
   })
 
   it('raises the pending-fetches gauge during an in-flight fetch and clears it after settle', async () => {
@@ -178,12 +178,12 @@ describe('ResilientCache metrics instrumentation', () => {
     const pending = cache.getOrFetch('k', fetcher as never)
     await flush()
 
-    expect(await metricValue(cachePendingFetches, { prefix: PREFIX })).toBe(1)
+    expect(await metricValue(collectMetricsCachePendingFetches, { prefix: PREFIX })).toBe(1)
 
     resolveFetch(ok('fresh'))
     await pending
 
-    expect(await metricValue(cachePendingFetches, { prefix: PREFIX })).toBe(0)
+    expect(await metricValue(collectMetricsCachePendingFetches, { prefix: PREFIX })).toBe(0)
   })
 
   it('counts a circuit-breaker trip when pending fetches reach the cap', async () => {
@@ -199,7 +199,7 @@ describe('ResilientCache metrics instrumentation', () => {
     const tripped = await cappedCache.getOrFetch('k2', vi.fn().mockResolvedValue(ok('x')))
 
     expect(isErr(tripped)).toBe(true)
-    expect(await metricValue(cacheCircuitBreakerTrips, { prefix: PREFIX })).toBe(1)
+    expect(await metricValue(collectMetricsCacheCircuitBreakerTrips, { prefix: PREFIX })).toBe(1)
 
     resolveFetch(ok('fresh'))
     await first

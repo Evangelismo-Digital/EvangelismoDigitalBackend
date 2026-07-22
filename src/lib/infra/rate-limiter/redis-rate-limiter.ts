@@ -4,10 +4,10 @@ import { logger } from '@lib/logger'
 import { REDIS_CONSTANTS } from 'messages/constants/redis/redis'
 import { RATE_LIMITER_LOGS } from 'messages/constants/logs/rate-limiter'
 import {
-  rateLimiterConsumed,
-  rateLimiterRejected,
-  rateLimiterInfraDegraded,
-  rateLimiterInfraRecovered,
+  collectMetricsRateLimiterConsumed,
+  collectMetricsRateLimiterRejected,
+  collectMetricsRateLimiterInfraDegraded,
+  collectMetricsRateLimiterInfraRecovered,
 } from '@lib/metrics/rate-limiter-metrics'
 
 const RATE_LIMITER_OUTAGE_WARN_INTERVAL_MS = Number(process.env.REDIS_LOG_OUTAGE_INTERVAL_MS ?? 30000)
@@ -171,7 +171,7 @@ export class RedisRateLimiter {
 
       await limiter.consume(CONSUMER_KEY, 1)
 
-      rateLimiterConsumed?.inc({ provider })
+      collectMetricsRateLimiterConsumed?.inc({ provider })
 
       RedisRateLimiter.logInfraRecoveryIfNeeded(provider)
 
@@ -185,7 +185,7 @@ export class RedisRateLimiter {
         'remainingPoints' in err &&
         typeof (err as Record<string, unknown>).remainingPoints === 'number'
       ) {
-        rateLimiterRejected?.inc({ provider })
+        collectMetricsRateLimiterRejected?.inc({ provider })
 
         return false
       }
@@ -195,7 +195,7 @@ export class RedisRateLimiter {
       // Conta cada requisição liberada em fail-open (Redis indisponível).
       // A métrica NÃO é suprimida como o log de logInfraDegraded — cada
       // requisição permitida representa um evento de fail-open.
-      rateLimiterInfraDegraded?.inc({ provider })
+      collectMetricsRateLimiterInfraDegraded?.inc({ provider })
 
       RedisRateLimiter.logInfraDegraded(provider, obj)
 
@@ -251,7 +251,7 @@ export class RedisRateLimiter {
     }
 
     // Transição degraded -> saudável: dispara uma vez por episódio de outage.
-    rateLimiterInfraRecovered?.inc({ provider })
+    collectMetricsRateLimiterInfraRecovered?.inc({ provider })
 
     const now = Date.now()
 

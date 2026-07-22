@@ -34,12 +34,12 @@ import { logger } from '@lib/logger'
 import { LOCK_LOGS } from 'messages/constants/logs/distributed-lock'
 import { getRegistry } from '@lib/metrics'
 import {
-  lockAcquired,
-  lockContention,
-  lockReleased,
-  lockExpired,
-  lockErrors,
-  lockDuration,
+  collectMetricsLockAcquired,
+  collectMetricsLockContention,
+  collectMetricsLockReleased,
+  collectMetricsLockExpired,
+  collectMetricsLockErrors,
+  collectMetricsLockDuration,
 } from '@lib/metrics/lock-metrics'
 
 const KEY = 'lock:outbox-processor'
@@ -74,8 +74,8 @@ describe('DistributedLock metrics instrumentation', () => {
       const token = await DistributedLock.acquire(KEY, 10_000)
 
       expect(typeof token).toBe('string')
-      expect(await metricValue(lockAcquired, { key: KEY })).toBe(1)
-      expect(await metricValue(lockContention, { key: KEY })).toBe(0)
+      expect(await metricValue(collectMetricsLockAcquired, { key: KEY })).toBe(1)
+      expect(await metricValue(collectMetricsLockContention, { key: KEY })).toBe(0)
     })
 
     it('counts contention and returns null when the lock is held', async () => {
@@ -84,8 +84,8 @@ describe('DistributedLock metrics instrumentation', () => {
       const token = await DistributedLock.acquire(KEY, 10_000)
 
       expect(token).toBeNull()
-      expect(await metricValue(lockContention, { key: KEY })).toBe(1)
-      expect(await metricValue(lockAcquired, { key: KEY })).toBe(0)
+      expect(await metricValue(collectMetricsLockContention, { key: KEY })).toBe(1)
+      expect(await metricValue(collectMetricsLockAcquired, { key: KEY })).toBe(0)
     })
 
     it('counts a lock error (operation=acquire) and returns null on Redis failure', async () => {
@@ -94,8 +94,8 @@ describe('DistributedLock metrics instrumentation', () => {
       const token = await DistributedLock.acquire(KEY, 10_000)
 
       expect(token).toBeNull()
-      expect(await metricValue(lockErrors, { operation: 'acquire' })).toBe(1)
-      expect(await metricValue(lockContention, { key: KEY })).toBe(0)
+      expect(await metricValue(collectMetricsLockErrors, { operation: 'acquire' })).toBe(1)
+      expect(await metricValue(collectMetricsLockContention, { key: KEY })).toBe(0)
     })
   })
 
@@ -106,7 +106,7 @@ describe('DistributedLock metrics instrumentation', () => {
       const renewed = await DistributedLock.renew(KEY, 'token', 10_000)
 
       expect(renewed).toBe(true)
-      expect(await metricValue(lockExpired, { key: KEY })).toBe(0)
+      expect(await metricValue(collectMetricsLockExpired, { key: KEY })).toBe(0)
     })
 
     it('counts an expiry and returns false when the lock is no longer owned', async () => {
@@ -115,7 +115,7 @@ describe('DistributedLock metrics instrumentation', () => {
       const renewed = await DistributedLock.renew(KEY, 'token', 10_000)
 
       expect(renewed).toBe(false)
-      expect(await metricValue(lockExpired, { key: KEY })).toBe(1)
+      expect(await metricValue(collectMetricsLockExpired, { key: KEY })).toBe(1)
     })
 
     it('counts a lock error (operation=renew) and returns false on Redis failure', async () => {
@@ -124,8 +124,8 @@ describe('DistributedLock metrics instrumentation', () => {
       const renewed = await DistributedLock.renew(KEY, 'token', 10_000)
 
       expect(renewed).toBe(false)
-      expect(await metricValue(lockErrors, { operation: 'renew' })).toBe(1)
-      expect(await metricValue(lockExpired, { key: KEY })).toBe(0)
+      expect(await metricValue(collectMetricsLockErrors, { operation: 'renew' })).toBe(1)
+      expect(await metricValue(collectMetricsLockExpired, { key: KEY })).toBe(0)
     })
   })
 
@@ -135,8 +135,8 @@ describe('DistributedLock metrics instrumentation', () => {
 
       await DistributedLock.release(KEY, 'token')
 
-      expect(await metricValue(lockReleased, { key: KEY })).toBe(1)
-      expect(await metricValue(lockExpired, { key: KEY })).toBe(0)
+      expect(await metricValue(collectMetricsLockReleased, { key: KEY })).toBe(1)
+      expect(await metricValue(collectMetricsLockExpired, { key: KEY })).toBe(0)
     })
 
     it('counts an expiry when the lock had already expired', async () => {
@@ -144,8 +144,8 @@ describe('DistributedLock metrics instrumentation', () => {
 
       await DistributedLock.release(KEY, 'token')
 
-      expect(await metricValue(lockExpired, { key: KEY })).toBe(1)
-      expect(await metricValue(lockReleased, { key: KEY })).toBe(0)
+      expect(await metricValue(collectMetricsLockExpired, { key: KEY })).toBe(1)
+      expect(await metricValue(collectMetricsLockReleased, { key: KEY })).toBe(0)
     })
 
     it('counts a lock error (operation=release) on Redis failure', async () => {
@@ -153,7 +153,7 @@ describe('DistributedLock metrics instrumentation', () => {
 
       await DistributedLock.release(KEY, 'token')
 
-      expect(await metricValue(lockErrors, { operation: 'release' })).toBe(1)
+      expect(await metricValue(collectMetricsLockErrors, { operation: 'release' })).toBe(1)
     })
   })
 
@@ -165,7 +165,7 @@ describe('DistributedLock metrics instrumentation', () => {
       const token = await DistributedLock.acquire(KEY, 10_000)
       await DistributedLock.release(KEY, token as string)
 
-      expect(await metricValue(lockDuration, { key: KEY }, '_count')).toBe(1)
+      expect(await metricValue(collectMetricsLockDuration, { key: KEY }, '_count')).toBe(1)
     })
 
     it('does not observe duration when release has no matching acquire token', async () => {
@@ -173,7 +173,7 @@ describe('DistributedLock metrics instrumentation', () => {
 
       await DistributedLock.release(KEY, 'never-acquired')
 
-      expect(await metricValue(lockDuration, { key: KEY }, '_count')).toBe(0)
+      expect(await metricValue(collectMetricsLockDuration, { key: KEY }, '_count')).toBe(0)
     })
   })
 })
@@ -390,9 +390,9 @@ describe('DistributedLock without metrics (METRICS_ENABLED=false)', () => {
   it('exposes null metric handles when metrics are disabled', async () => {
     const lockMetrics = await import('../../metrics/lock-metrics.js')
 
-    expect(lockMetrics.lockAcquired).toBeNull()
-    expect(lockMetrics.lockDuration).toBeNull()
-    expect(lockMetrics.lockErrors).toBeNull()
+    expect(lockMetrics.collectMetricsLockAcquired).toBeNull()
+    expect(lockMetrics.collectMetricsLockDuration).toBeNull()
+    expect(lockMetrics.collectMetricsLockErrors).toBeNull()
   })
 
   it('acquires, renews, and releases correctly with metrics off (null-guards inert)', async () => {

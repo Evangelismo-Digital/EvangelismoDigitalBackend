@@ -22,6 +22,9 @@ import { Worker } from 'bullmq'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 import { crashShutdown } from '@lib/shutdown/crash-shutdown'
 import { env } from '@env/index'
+import { getMailQueue } from '@lib/queue/mail-queue'
+import { registerQueue, unregisterQueue } from '@lib/metrics/bullmq-metrics'
+import { QUEUE } from 'messages/constants/queue/queue'
 import { startMetricsServer, stopMetricsServer } from './metrics-server'
 
 let worker: Worker | null = null
@@ -38,6 +41,9 @@ async function bootstrap() {
 
     worker = await startMailWorker(outboxRepository)
     logger.info('Mail worker iniciado')
+
+    // Register the producer queue so /metrics can report its job counts on scrape.
+    registerQueue(QUEUE.NAMES.MAIL, getMailQueue())
 
     const outboxProcessor = new OutboxProcessor(outboxRepository, makeOutboxDispatchStrategyRegistry())
 
@@ -97,6 +103,15 @@ async function cleanup() {
     } catch (err) {
       logger.error(err, 'Erro ao finalizar o worker')
     }
+  }
+
+  // Stop reporting the mail queue and close its producer connection.
+  try {
+    unregisterQueue(QUEUE.NAMES.MAIL)
+    await getMailQueue().close()
+    logger.info('MailQueue finalizada com sucesso')
+  } catch (err) {
+    logger.error(err, 'Erro ao finalizar a MailQueue')
   }
 
   // Metrics server closes LAST so telemetry stays scrapeable through shutdown.

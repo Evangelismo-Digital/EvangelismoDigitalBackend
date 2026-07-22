@@ -11,7 +11,7 @@ import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
-import { providerLatency, recordProviderRequest } from '@lib/metrics/provider-metrics'
+import { collectMetricsProviderLatency, recordProviderRequest } from '@lib/metrics/provider-metrics'
 import Redis from 'ioredis'
 
 export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingProvider {
@@ -45,7 +45,7 @@ export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingPr
       return timedOut
     }
 
-    const endTimer = providerLatency?.startTimer({ provider: this.providerName, layer: 'routing' })
+    const endTimer = collectMetricsProviderLatency?.startTimer({ provider: this.providerName, layer: 'routing' })
     try {
       const costing = params.profile ?? this.rawProvider.defaultCosting ?? RoutingProfile.AUTO
       const results = await this.rawProvider.fetchRawDistances(

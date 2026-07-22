@@ -13,7 +13,7 @@ import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { CRON_SCHEDULES } from 'messages/constants/cron/cron'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 import { captureError } from '@lib/sentry/capture'
-import { outboxCronRuns } from '@lib/metrics/outbox-metrics'
+import { collectMetricsOutboxCronRuns } from '@lib/metrics/outbox-metrics'
 
 export function startOutboxCron(existingProcessor?: OutboxProcessor, existingMaintenance?: OutboxMaintenance) {
   const processor = existingProcessor ?? buildProcessor()
@@ -29,7 +29,7 @@ export function startOutboxCron(existingProcessor?: OutboxProcessor, existingMai
    *    esperam no máximo ~5 min em vez de até 24 h.
    */
   cron.schedule(CRON_SCHEDULES.EVERY_FIVE_MINUTES, async () => {
-    outboxCronRuns?.inc({ phase: 'five_min_sweep' })
+    collectMetricsOutboxCronRuns?.inc({ phase: 'five_min_sweep' })
     try {
       await maintenance.sweepExpiredEvents()
     } catch (error) {
@@ -37,7 +37,7 @@ export function startOutboxCron(existingProcessor?: OutboxProcessor, existingMai
       captureError(error)
     }
 
-    outboxCronRuns?.inc({ phase: 'five_min_pending' })
+    collectMetricsOutboxCronRuns?.inc({ phase: 'five_min_pending' })
     try {
       await processor.processPendingEvents()
     } catch (error) {
@@ -63,7 +63,7 @@ export function startOutboxCron(existingProcessor?: OutboxProcessor, existingMai
     logger.info(OUTBOX_LOGS.CRON_START)
 
     // Fase 1: recupera eventos travados em SENDING
-    outboxCronRuns?.inc({ phase: 'midnight_recovery' })
+    collectMetricsOutboxCronRuns?.inc({ phase: 'midnight_recovery' })
     try {
       await processor.processStuckSendingEvents()
       logger.info(OUTBOX_LOGS.PHASE1_DONE)
@@ -73,7 +73,7 @@ export function startOutboxCron(existingProcessor?: OutboxProcessor, existingMai
     }
 
     // Fase 2: processa eventos PENDING não despachados
-    outboxCronRuns?.inc({ phase: 'midnight_pending' })
+    collectMetricsOutboxCronRuns?.inc({ phase: 'midnight_pending' })
     try {
       await processor.processPendingEvents()
       logger.info(OUTBOX_LOGS.PHASE2_DONE)
@@ -90,7 +90,7 @@ export function startOutboxCron(existingProcessor?: OutboxProcessor, existingMai
    * mais de RETENTION.DAYS dias, qualquer status, em lotes com lock renovado.
    */
   cron.schedule(CRON_SCHEDULES.DAILY_3AM, async () => {
-    outboxCronRuns?.inc({ phase: 'retention_purge' })
+    collectMetricsOutboxCronRuns?.inc({ phase: 'retention_purge' })
     try {
       await maintenance.purgeOldEvents()
     } catch (error) {

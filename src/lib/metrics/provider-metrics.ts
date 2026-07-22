@@ -9,7 +9,7 @@ const registry = getRegistry()
 /** Bounded set of resilient-provider layers used as the `layer` label. */
 export type ProviderMetricLayer = 'address' | 'geocoding' | 'routing'
 
-export const providerRequest = registry
+export const collectMetricsProviderRequest = registry
   ? new Counter({
       name: 'provider_request_total',
       help: 'Per-provider request outcomes',
@@ -18,7 +18,7 @@ export const providerRequest = registry
     })
   : null
 
-export const providerFallback = registry
+export const collectMetricsProviderFallback = registry
   ? new Counter({
       name: 'provider_fallback_total',
       help: 'Fallback transitions between providers in a chain',
@@ -27,7 +27,7 @@ export const providerFallback = registry
     })
   : null
 
-export const providerChainExhausted = registry
+export const collectMetricsProviderChainExhausted = registry
   ? new Counter({
       name: 'provider_chain_exhausted_total',
       help: 'All providers in a chain failed with infrastructure errors',
@@ -36,7 +36,7 @@ export const providerChainExhausted = registry
     })
   : null
 
-export const providerLatency = registry
+export const collectMetricsProviderLatency = registry
   ? new Histogram({
       name: 'provider_latency_seconds',
       help: 'Individual provider response time',
@@ -68,5 +68,5 @@ export function recordProviderRequest(
     result = outcome.error.telemetryReason ?? TelemetryReason.UNKNOWN
   }
 
-  providerRequest?.inc({ provider, layer, result })
+  collectMetricsProviderRequest?.inc({ provider, layer, result })
 }

@@ -3,7 +3,7 @@ import { getRegistry } from './index'
 
 const registry = getRegistry()
 
-export const rateLimiterConsumed = registry
+export const collectMetricsRateLimiterConsumed = registry
   ? new Counter({
       name: 'rate_limiter_consumed_total',
       help: 'Successful consume (point granted)',
@@ -12,7 +12,7 @@ export const rateLimiterConsumed = registry
     })
   : null
 
-export const rateLimiterRejected = registry
+export const collectMetricsRateLimiterRejected = registry
   ? new Counter({
       name: 'rate_limiter_rejected_total',
       help: 'Rate limit exceeded (no points remaining)',
@@ -21,7 +21,7 @@ export const rateLimiterRejected = registry
     })
   : null
 
-export const rateLimiterInfraDegraded = registry
+export const collectMetricsRateLimiterInfraDegraded = registry
   ? new Counter({
       name: 'rate_limiter_infra_degraded_total',
       help: 'Fail-open events (Redis down, traffic allowed)',
@@ -30,7 +30,7 @@ export const rateLimiterInfraDegraded = registry
     })
   : null
 
-export const rateLimiterInfraRecovered = registry
+export const collectMetricsRateLimiterInfraRecovered = registry
   ? new Counter({
       name: 'rate_limiter_infra_recovered_total',
       help: 'Recovery from degraded state',

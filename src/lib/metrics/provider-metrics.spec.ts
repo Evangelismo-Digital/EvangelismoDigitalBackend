@@ -35,10 +35,10 @@ import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-err
 import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
 import { getRegistry } from '@lib/metrics'
 import {
-  providerRequest,
-  providerFallback,
-  providerChainExhausted,
-  providerLatency,
+  collectMetricsProviderRequest,
+  collectMetricsProviderFallback,
+  collectMetricsProviderChainExhausted,
+  collectMetricsProviderLatency,
 } from '@lib/metrics/provider-metrics'
 
 const ADDRESS = {} as IAddressData
@@ -83,15 +83,21 @@ describe('Provider metrics instrumentation', () => {
     it('records success for an ok value', async () => {
       const chain = new ResilientAddressProvider([fakeAddressProvider('AwesomeAPI', ok(ADDRESS))])
       await chain.fetchAddress('01001000')
-      expect(await metricValue(providerRequest, { provider: 'AwesomeAPI', layer: 'address', result: 'success' })).toBe(
-        1,
-      )
+      expect(
+        await metricValue(collectMetricsProviderRequest, {
+          provider: 'AwesomeAPI',
+          layer: 'address',
+          result: 'success',
+        }),
+      ).toBe(1)
     })
 
     it('records not_found for an ok(null)', async () => {
       const chain = new ResilientAddressProvider([fakeAddressProvider('ViaCEP', ok(null))])
       await chain.fetchAddress('01001000')
-      expect(await metricValue(providerRequest, { provider: 'ViaCEP', layer: 'address', result: 'not_found' })).toBe(1)
+      expect(
+        await metricValue(collectMetricsProviderRequest, { provider: 'ViaCEP', layer: 'address', result: 'not_found' }),
+      ).toBe(1)
     })
 
     it('records rate_limited for a ServiceBusyError', async () => {
@@ -100,14 +106,20 @@ describe('Provider metrics instrumentation', () => {
       ])
       await chain.fetchAddress('01001000')
       expect(
-        await metricValue(providerRequest, { provider: 'AwesomeAPI', layer: 'address', result: 'rate_limited' }),
+        await metricValue(collectMetricsProviderRequest, {
+          provider: 'AwesomeAPI',
+          layer: 'address',
+          result: 'rate_limited',
+        }),
       ).toBe(1)
     })
 
     it('records timeout for a TimeoutExceededError', async () => {
       const chain = new ResilientAddressProvider([fakeAddressProvider('ViaCEP', err(new TimeoutExceededError()))])
       await chain.fetchAddress('01001000')
-      expect(await metricValue(providerRequest, { provider: 'ViaCEP', layer: 'address', result: 'timeout' })).toBe(1)
+      expect(
+        await metricValue(collectMetricsProviderRequest, { provider: 'ViaCEP', layer: 'address', result: 'timeout' }),
+      ).toBe(1)
     })
 
     it('records provider_error for a ProviderFailureError', async () => {
@@ -116,7 +128,11 @@ describe('Provider metrics instrumentation', () => {
       ])
       await chain.fetchAddress('01001000')
       expect(
-        await metricValue(providerRequest, { provider: 'BrasilAPI', layer: 'address', result: 'provider_error' }),
+        await metricValue(collectMetricsProviderRequest, {
+          provider: 'BrasilAPI',
+          layer: 'address',
+          result: 'provider_error',
+        }),
       ).toBe(1)
     })
   })
@@ -129,7 +145,11 @@ describe('Provider metrics instrumentation', () => {
       ])
       await chain.fetchAddress('01001000')
       expect(
-        await metricValue(providerFallback, { layer: 'address', from_provider: 'AwesomeAPI', to_provider: 'ViaCEP' }),
+        await metricValue(collectMetricsProviderFallback, {
+          layer: 'address',
+          from_provider: 'AwesomeAPI',
+          to_provider: 'ViaCEP',
+        }),
       ).toBe(1)
     })
 
@@ -140,7 +160,11 @@ describe('Provider metrics instrumentation', () => {
       ])
       await chain.fetchAddress('01001000')
       expect(
-        await metricValue(providerFallback, { layer: 'address', from_provider: 'AwesomeAPI', to_provider: 'ViaCEP' }),
+        await metricValue(collectMetricsProviderFallback, {
+          layer: 'address',
+          from_provider: 'AwesomeAPI',
+          to_provider: 'ViaCEP',
+        }),
       ).toBe(0)
     })
 
@@ -150,7 +174,7 @@ describe('Provider metrics instrumentation', () => {
         fakeAddressProvider('ViaCEP', err(new ServiceBusyError('ViaCEP'))),
       ])
       await chain.fetchAddress('01001000')
-      expect(await metricValue(providerChainExhausted, { layer: 'address' })).toBe(1)
+      expect(await metricValue(collectMetricsProviderChainExhausted, { layer: 'address' })).toBe(1)
     })
 
     it('does NOT record chain-exhausted when all providers return not-found', async () => {
@@ -159,7 +183,7 @@ describe('Provider metrics instrumentation', () => {
         fakeAddressProvider('ViaCEP', ok(null)),
       ])
       await chain.fetchAddress('01001000')
-      expect(await metricValue(providerChainExhausted, { layer: 'address' })).toBe(0)
+      expect(await metricValue(collectMetricsProviderChainExhausted, { layer: 'address' })).toBe(0)
     })
 
     it('observes latency once per provider attempt', async () => {
@@ -168,8 +192,12 @@ describe('Provider metrics instrumentation', () => {
         fakeAddressProvider('ViaCEP', ok(ADDRESS)),
       ])
       await chain.fetchAddress('01001000')
-      expect(await metricValue(providerLatency, { provider: 'AwesomeAPI', layer: 'address' }, '_count')).toBe(1)
-      expect(await metricValue(providerLatency, { provider: 'ViaCEP', layer: 'address' }, '_count')).toBe(1)
+      expect(
+        await metricValue(collectMetricsProviderLatency, { provider: 'AwesomeAPI', layer: 'address' }, '_count'),
+      ).toBe(1)
+      expect(await metricValue(collectMetricsProviderLatency, { provider: 'ViaCEP', layer: 'address' }, '_count')).toBe(
+        1,
+      )
     })
   })
 
@@ -181,14 +209,18 @@ describe('Provider metrics instrumentation', () => {
       ])
       await chain.search('Rua X')
       expect(
-        await metricValue(providerFallback, {
+        await metricValue(collectMetricsProviderFallback, {
           layer: 'geocoding',
           from_provider: 'Nominatim',
           to_provider: 'LocationIQ',
         }),
       ).toBe(1)
       expect(
-        await metricValue(providerRequest, { provider: 'LocationIQ', layer: 'geocoding', result: 'success' }),
+        await metricValue(collectMetricsProviderRequest, {
+          provider: 'LocationIQ',
+          layer: 'geocoding',
+          result: 'success',
+        }),
       ).toBe(1)
     })
   })
@@ -212,10 +244,16 @@ describe('Provider metrics instrumentation', () => {
 
       await decorator.getDistances(params)
 
-      expect(await metricValue(providerRequest, { provider: 'Stadia Maps', layer: 'routing', result: 'success' })).toBe(
-        1,
-      )
-      expect(await metricValue(providerLatency, { provider: 'Stadia Maps', layer: 'routing' }, '_count')).toBe(1)
+      expect(
+        await metricValue(collectMetricsProviderRequest, {
+          provider: 'Stadia Maps',
+          layer: 'routing',
+          result: 'success',
+        }),
+      ).toBe(1)
+      expect(
+        await metricValue(collectMetricsProviderLatency, { provider: 'Stadia Maps', layer: 'routing' }, '_count'),
+      ).toBe(1)
     })
 
     it('records rate_limited when the limiter rejects', async () => {
@@ -225,7 +263,11 @@ describe('Provider metrics instrumentation', () => {
       await decorator.getDistances(params)
 
       expect(
-        await metricValue(providerRequest, { provider: 'Stadia Maps', layer: 'routing', result: 'rate_limited' }),
+        await metricValue(collectMetricsProviderRequest, {
+          provider: 'Stadia Maps',
+          layer: 'routing',
+          result: 'rate_limited',
+        }),
       ).toBe(1)
     })
   })

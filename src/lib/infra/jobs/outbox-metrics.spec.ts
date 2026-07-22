@@ -104,16 +104,16 @@ import { InfrastructureError } from 'errors/infrastructure-error'
 import { OUTBOX_CONSTANTS } from 'messages/constants/outbox/outbox'
 import { getRegistry } from '@lib/metrics'
 import {
-  outboxEventsDispatched,
-  outboxEventsReverted,
-  outboxEventsRevertFailed,
-  outboxEventsMarkedAsTerminalFail,
-  outboxEventsExpired,
-  outboxEventsStuckSendingEventsRecovered,
-  outboxCronRuns,
-  outboxMaintenanceDeleted,
-  outboxSignalPublished,
-  outboxSignalPublishFailed,
+  collectMetricsOutboxEventsDispatched,
+  collectMetricsOutboxEventsReverted,
+  collectMetricsOutboxEventsRevertFailed,
+  collectMetricsOutboxEventsMarkedAsTerminalFail,
+  collectMetricsOutboxEventsExpired,
+  collectMetricsOutboxEventsStuckSendingEventsRecovered,
+  collectMetricsOutboxCronRuns,
+  collectMetricsOutboxMaintenanceDeleted,
+  collectMetricsOutboxSignalPublished,
+  collectMetricsOutboxSignalPublishFailed,
 } from '@lib/metrics/outbox-metrics'
 
 class TestRevertError extends InfrastructureError {
@@ -180,8 +180,8 @@ describe('Outbox metrics instrumentation', () => {
 
       await processor.processSingleEvent(event)
 
-      expect(await metricValue(outboxEventsDispatched)).toBe(1)
-      expect(await metricValue(outboxEventsReverted)).toBe(0)
+      expect(await metricValue(collectMetricsOutboxEventsDispatched)).toBe(1)
+      expect(await metricValue(collectMetricsOutboxEventsReverted)).toBe(0)
     })
 
     it('counts a revert when dispatch fails and the PENDING write succeeds', async () => {
@@ -190,9 +190,9 @@ describe('Outbox metrics instrumentation', () => {
 
       await processor.processSingleEvent(event)
 
-      expect(await metricValue(outboxEventsReverted)).toBe(1)
-      expect(await metricValue(outboxEventsRevertFailed)).toBe(0)
-      expect(await metricValue(outboxEventsDispatched)).toBe(0)
+      expect(await metricValue(collectMetricsOutboxEventsReverted)).toBe(1)
+      expect(await metricValue(collectMetricsOutboxEventsRevertFailed)).toBe(0)
+      expect(await metricValue(collectMetricsOutboxEventsDispatched)).toBe(0)
     })
 
     it('counts a revert-failed when dispatch fails and the PENDING write also fails', async () => {
@@ -208,8 +208,8 @@ describe('Outbox metrics instrumentation', () => {
 
       await processor.processSingleEvent(event)
 
-      expect(await metricValue(outboxEventsRevertFailed)).toBe(1)
-      expect(await metricValue(outboxEventsReverted)).toBe(0)
+      expect(await metricValue(collectMetricsOutboxEventsRevertFailed)).toBe(1)
+      expect(await metricValue(collectMetricsOutboxEventsReverted)).toBe(0)
     })
 
     it('counts a terminal-fail when the event exceeds the dispatch attempts cap', async () => {
@@ -217,8 +217,8 @@ describe('Outbox metrics instrumentation', () => {
 
       await processor.processSingleEvent(event)
 
-      expect(await metricValue(outboxEventsMarkedAsTerminalFail)).toBe(1)
-      expect(await metricValue(outboxEventsDispatched)).toBe(0)
+      expect(await metricValue(collectMetricsOutboxEventsMarkedAsTerminalFail)).toBe(1)
+      expect(await metricValue(collectMetricsOutboxEventsDispatched)).toBe(0)
     })
 
     it('counts an expired event when the expiration gate deletes it', async () => {
@@ -227,8 +227,8 @@ describe('Outbox metrics instrumentation', () => {
 
       await processor.processSingleEvent(event)
 
-      expect(await metricValue(outboxEventsExpired)).toBe(1)
-      expect(await metricValue(outboxEventsDispatched)).toBe(0)
+      expect(await metricValue(collectMetricsOutboxEventsExpired)).toBe(1)
+      expect(await metricValue(collectMetricsOutboxEventsDispatched)).toBe(0)
     })
   })
 
@@ -243,7 +243,7 @@ describe('Outbox metrics instrumentation', () => {
 
       await processor.processStuckSendingEvents()
 
-      expect(await metricValue(outboxEventsStuckSendingEventsRecovered)).toBe(3)
+      expect(await metricValue(collectMetricsOutboxEventsStuckSendingEventsRecovered)).toBe(3)
     })
   })
 
@@ -255,8 +255,8 @@ describe('Outbox metrics instrumentation', () => {
 
       await OutboxSignal.publishNewItem('evt-1', event)
 
-      expect(await metricValue(outboxSignalPublished)).toBe(1)
-      expect(await metricValue(outboxSignalPublishFailed)).toBe(0)
+      expect(await metricValue(collectMetricsOutboxSignalPublished)).toBe(1)
+      expect(await metricValue(collectMetricsOutboxSignalPublishFailed)).toBe(0)
     })
 
     it('counts a publish failure when the publish throws', async () => {
@@ -264,8 +264,8 @@ describe('Outbox metrics instrumentation', () => {
 
       await OutboxSignal.publishNewItem('evt-1', event)
 
-      expect(await metricValue(outboxSignalPublishFailed)).toBe(1)
-      expect(await metricValue(outboxSignalPublished)).toBe(0)
+      expect(await metricValue(collectMetricsOutboxSignalPublishFailed)).toBe(1)
+      expect(await metricValue(collectMetricsOutboxSignalPublished)).toBe(0)
     })
   })
 
@@ -280,7 +280,7 @@ describe('Outbox metrics instrumentation', () => {
 
       await maintenance.sweepExpiredEvents()
 
-      expect(await metricValue(outboxMaintenanceDeleted, { operation: 'expiry_sweep' })).toBe(2)
+      expect(await metricValue(collectMetricsOutboxMaintenanceDeleted, { operation: 'expiry_sweep' })).toBe(2)
     })
 
     it('counts retention-purge deletions by the number of events removed', async () => {
@@ -293,7 +293,7 @@ describe('Outbox metrics instrumentation', () => {
 
       await maintenance.purgeOldEvents()
 
-      expect(await metricValue(outboxMaintenanceDeleted, { operation: 'retention_purge' })).toBe(4)
+      expect(await metricValue(collectMetricsOutboxMaintenanceDeleted, { operation: 'retention_purge' })).toBe(4)
     })
   })
 
@@ -316,11 +316,11 @@ describe('Outbox metrics instrumentation', () => {
       await midnightCb()
       await retentionCb()
 
-      expect(await metricValue(outboxCronRuns, { phase: 'five_min_sweep' })).toBe(1)
-      expect(await metricValue(outboxCronRuns, { phase: 'five_min_pending' })).toBe(1)
-      expect(await metricValue(outboxCronRuns, { phase: 'midnight_recovery' })).toBe(1)
-      expect(await metricValue(outboxCronRuns, { phase: 'midnight_pending' })).toBe(1)
-      expect(await metricValue(outboxCronRuns, { phase: 'retention_purge' })).toBe(1)
+      expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'five_min_sweep' })).toBe(1)
+      expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'five_min_pending' })).toBe(1)
+      expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'midnight_recovery' })).toBe(1)
+      expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'midnight_pending' })).toBe(1)
+      expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'retention_purge' })).toBe(1)
     })
   })
 })

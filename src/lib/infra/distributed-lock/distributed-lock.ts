@@ -3,18 +3,18 @@ import { LOCK_LOGS } from 'messages/constants/logs/distributed-lock'
 import { getRedisCache } from '../../redis/clients/clients'
 import { randomUUID } from 'node:crypto'
 import {
-  lockAcquired,
-  lockContention,
-  lockReleased,
-  lockExpired,
-  lockErrors,
-  lockDuration,
+  collectMetricsLockAcquired,
+  collectMetricsLockContention,
+  collectMetricsLockReleased,
+  collectMetricsLockExpired,
+  collectMetricsLockErrors,
+  collectMetricsLockDuration,
 } from '@lib/metrics/lock-metrics'
 
 /**
  * Marca de tempo (ms) do momento da aquisição, indexada pelo token.
  * Alimenta o histograma de duração observado no release. As escritas
- * são guardadas por `lockDuration` para não alocar nada quando as
+ * são guardadas por `collectMetricsLockDuration` para não alocar nada quando as
  * métricas estão desabilitadas.
  */
 const lockHoldStart = new Map<LockToken, number>()
@@ -77,18 +77,18 @@ export class DistributedLock {
       const result = await redisCache.set(key, token, 'PX', ttlMs, 'NX')
 
       if (result !== 'OK') {
-        lockContention?.inc({ key })
+        collectMetricsLockContention?.inc({ key })
         return null
       }
 
-      lockAcquired?.inc({ key })
-      if (lockDuration) {
+      collectMetricsLockAcquired?.inc({ key })
+      if (collectMetricsLockDuration) {
         lockHoldStart.set(token, Date.now())
       }
 
       return token
     } catch (error) {
-      lockErrors?.inc({ operation: 'acquire' })
+      collectMetricsLockErrors?.inc({ operation: 'acquire' })
       logger.error({ error, key }, LOCK_LOGS.ACQUIRE_FAILED)
       return null
     }
@@ -116,13 +116,13 @@ export class DistributedLock {
       const renewed = result === 1
 
       if (!renewed) {
-        lockExpired?.inc({ key })
+        collectMetricsLockExpired?.inc({ key })
         logger.warn({ key }, LOCK_LOGS.RENEW_EXPIRED)
       }
 
       return renewed
     } catch (error) {
-      lockErrors?.inc({ operation: 'renew' })
+      collectMetricsLockErrors?.inc({ operation: 'renew' })
       logger.error({ error, key }, LOCK_LOGS.RENEW_FAILED)
       return false
     }
@@ -147,21 +147,21 @@ export class DistributedLock {
       if (result === 0) {
         // Não é necessariamente um erro: o lock pode ter expirado pelo TTL
         // antes do release manual (processo lento ou crash parcial).
-        lockExpired?.inc({ key })
+        collectMetricsLockExpired?.inc({ key })
         logger.warn({ key }, LOCK_LOGS.RELEASE_EXPIRED)
       } else {
-        lockReleased?.inc({ key })
+        collectMetricsLockReleased?.inc({ key })
       }
     } catch (error) {
-      lockErrors?.inc({ operation: 'release' })
+      collectMetricsLockErrors?.inc({ operation: 'release' })
       logger.warn({ error, key }, LOCK_LOGS.RELEASE_FAILED)
     } finally {
       // Observa a duração de posse independentemente do desfecho do release,
       // e sempre limpa a marca de tempo para não vazar entradas no Map.
-      if (lockDuration) {
+      if (collectMetricsLockDuration) {
         const start = lockHoldStart.get(token)
         if (start !== undefined) {
-          lockDuration.observe({ key }, (Date.now() - start) / 1000)
+          collectMetricsLockDuration.observe({ key }, (Date.now() - start) / 1000)
         }
         lockHoldStart.delete(token)
       }

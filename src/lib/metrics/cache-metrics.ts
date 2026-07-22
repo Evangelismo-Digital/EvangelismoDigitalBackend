@@ -3,7 +3,7 @@ import { getRegistry } from './index'
 
 const registry = getRegistry()
 
-export const cacheHits = registry
+export const collectMetricsCacheHits = registry
   ? new Counter({
       name: 'cache_hits_total',
       help: 'Cache envelope found in Redis (hit)',
@@ -12,7 +12,7 @@ export const cacheHits = registry
     })
   : null
 
-export const cacheMisses = registry
+export const collectMetricsCacheMisses = registry
   ? new Counter({
       name: 'cache_misses_total',
       help: 'Cache miss, fetcher invoked',
@@ -21,7 +21,7 @@ export const cacheMisses = registry
     })
   : null
 
-export const cacheErrors = registry
+export const collectMetricsCacheErrors = registry
   ? new Counter({
       name: 'cache_errors_total',
       help: 'Redis read/write errors, corrupted envelopes',
@@ -30,7 +30,7 @@ export const cacheErrors = registry
     })
   : null
 
-export const cachePendingFetches = registry
+export const collectMetricsCachePendingFetches = registry
   ? new Gauge({
       name: 'cache_pending_fetches',
       help: 'Current pendingFetches.size (circuit-breaker gauge)',
@@ -39,7 +39,7 @@ export const cachePendingFetches = registry
     })
   : null
 
-export const cacheFetchDuration = registry
+export const collectMetricsCacheFetchDuration = registry
   ? new Histogram({
       name: 'cache_fetch_duration_seconds',
       help: 'Duration of the fetcher call',
@@ -49,7 +49,7 @@ export const cacheFetchDuration = registry
     })
   : null
 
-export const cacheCircuitBreakerTrips = registry
+export const collectMetricsCacheCircuitBreakerTrips = registry
   ? new Counter({
       name: 'cache_circuit_breaker_trips_total',
       help: 'Times pendingFetches >= MAX_PENDING',

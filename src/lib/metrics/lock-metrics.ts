@@ -3,7 +3,7 @@ import { getRegistry } from './index'
 
 const registry = getRegistry()
 
-export const lockAcquired = registry
+export const collectMetricsLockAcquired = registry
   ? new Counter({
       name: 'distributed_lock_acquired_total',
       help: 'Successful lock acquisitions',
@@ -12,7 +12,7 @@ export const lockAcquired = registry
     })
   : null
 
-export const lockContention = registry
+export const collectMetricsLockContention = registry
   ? new Counter({
       name: 'distributed_lock_contention_total',
       help: 'Failed acquisitions (lock held by another)',
@@ -21,7 +21,7 @@ export const lockContention = registry
     })
   : null
 
-export const lockReleased = registry
+export const collectMetricsLockReleased = registry
   ? new Counter({
       name: 'distributed_lock_released_total',
       help: 'Successful releases',
@@ -30,7 +30,7 @@ export const lockReleased = registry
     })
   : null
 
-export const lockExpired = registry
+export const collectMetricsLockExpired = registry
   ? new Counter({
       name: 'distributed_lock_expired_total',
       help: 'Release/renew found lock expired or owned by another instance',
@@ -39,7 +39,7 @@ export const lockExpired = registry
     })
   : null
 
-export const lockErrors = registry
+export const collectMetricsLockErrors = registry
   ? new Counter({
       name: 'distributed_lock_errors_total',
       help: 'Redis/infrastructure failures during lock operations',
@@ -48,7 +48,7 @@ export const lockErrors = registry
     })
   : null
 
-export const lockDuration = registry
+export const collectMetricsLockDuration = registry
   ? new Histogram({
       name: 'distributed_lock_duration_seconds',
       help: 'Time between acquire and release',

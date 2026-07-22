@@ -59,10 +59,10 @@ import type { Metric } from 'prom-client'
 import { RedisRateLimiter, EnumProviderConfig } from './redis-rate-limiter'
 import { getRegistry } from '@lib/metrics'
 import {
-  rateLimiterConsumed,
-  rateLimiterRejected,
-  rateLimiterInfraDegraded,
-  rateLimiterInfraRecovered,
+  collectMetricsRateLimiterConsumed,
+  collectMetricsRateLimiterRejected,
+  collectMetricsRateLimiterInfraDegraded,
+  collectMetricsRateLimiterInfraRecovered,
 } from '@lib/metrics/rate-limiter-metrics'
 
 const PROVIDER = EnumProviderConfig.AWESOME_API_ADDRESS
@@ -101,8 +101,8 @@ describe('RedisRateLimiter metrics instrumentation', () => {
     const allowed = await limiter.tryConsume(PROVIDER)
 
     expect(allowed).toBe(true)
-    expect(await metricValue(rateLimiterConsumed, { provider: PROVIDER })).toBe(1)
-    expect(await metricValue(rateLimiterRejected, { provider: PROVIDER })).toBe(0)
+    expect(await metricValue(collectMetricsRateLimiterConsumed, { provider: PROVIDER })).toBe(1)
+    expect(await metricValue(collectMetricsRateLimiterRejected, { provider: PROVIDER })).toBe(0)
   })
 
   it('counts a rejection when the rate limit is exceeded', async () => {
@@ -112,8 +112,8 @@ describe('RedisRateLimiter metrics instrumentation', () => {
     const allowed = await limiter.tryConsume(PROVIDER)
 
     expect(allowed).toBe(false)
-    expect(await metricValue(rateLimiterRejected, { provider: PROVIDER })).toBe(1)
-    expect(await metricValue(rateLimiterConsumed, { provider: PROVIDER })).toBe(0)
+    expect(await metricValue(collectMetricsRateLimiterRejected, { provider: PROVIDER })).toBe(1)
+    expect(await metricValue(collectMetricsRateLimiterConsumed, { provider: PROVIDER })).toBe(0)
   })
 
   it('counts a fail-open (degraded) event on Redis failure and allows traffic', async () => {
@@ -123,8 +123,8 @@ describe('RedisRateLimiter metrics instrumentation', () => {
     const allowed = await limiter.tryConsume(PROVIDER)
 
     expect(allowed).toBe(true)
-    expect(await metricValue(rateLimiterInfraDegraded, { provider: PROVIDER })).toBe(1)
-    expect(await metricValue(rateLimiterConsumed, { provider: PROVIDER })).toBe(0)
+    expect(await metricValue(collectMetricsRateLimiterInfraDegraded, { provider: PROVIDER })).toBe(1)
+    expect(await metricValue(collectMetricsRateLimiterConsumed, { provider: PROVIDER })).toBe(0)
   })
 
   it('counts every fail-open request while Redis stays down', async () => {
@@ -135,7 +135,7 @@ describe('RedisRateLimiter metrics instrumentation', () => {
     await limiter.tryConsume(PROVIDER)
     await limiter.tryConsume(PROVIDER)
 
-    expect(await metricValue(rateLimiterInfraDegraded, { provider: PROVIDER })).toBe(3)
+    expect(await metricValue(collectMetricsRateLimiterInfraDegraded, { provider: PROVIDER })).toBe(3)
   })
 
   it('counts a single recovery when Redis comes back after an outage', async () => {
@@ -148,6 +148,6 @@ describe('RedisRateLimiter metrics instrumentation', () => {
     await limiter.tryConsume(PROVIDER)
     await limiter.tryConsume(PROVIDER)
 
-    expect(await metricValue(rateLimiterInfraRecovered, { provider: PROVIDER })).toBe(1)
+    expect(await metricValue(collectMetricsRateLimiterInfraRecovered, { provider: PROVIDER })).toBe(1)
   })
 })

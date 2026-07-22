@@ -13,12 +13,12 @@ import {
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 import { captureError } from '@lib/sentry/capture'
 import {
-  outboxEventsDispatched,
-  outboxEventsReverted,
-  outboxEventsRevertFailed,
-  outboxEventsMarkedAsTerminalFail,
-  outboxEventsExpired,
-  outboxEventsStuckSendingEventsRecovered,
+  collectMetricsOutboxEventsDispatched,
+  collectMetricsOutboxEventsReverted,
+  collectMetricsOutboxEventsRevertFailed,
+  collectMetricsOutboxEventsMarkedAsTerminalFail,
+  collectMetricsOutboxEventsExpired,
+  collectMetricsOutboxEventsStuckSendingEventsRecovered,
 } from '@lib/metrics/outbox-metrics'
 
 export class OutboxProcessor {
@@ -95,7 +95,7 @@ export class OutboxProcessor {
         logger.warn(`Encontrados ${stuckEvents.length} eventos travados em SENDING. Iniciando recuperação...`)
         for (const event of stuckEvents) {
           await DistributedLock.renew(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, lockToken, this.LOCK_TTL_MS)
-          outboxEventsStuckSendingEventsRecovered?.inc()
+          collectMetricsOutboxEventsStuckSendingEventsRecovered?.inc()
           await this.processSingleEvent(event)
         }
       }
@@ -121,7 +121,7 @@ export class OutboxProcessor {
         logger.error({ publicId: event.publicId, error: deleteResult.error }, OUTBOX_LOGS.EXPIRED_EVENT_DELETE_ERROR)
         captureError(deleteResult.error, { publicId: event.publicId })
       } else {
-        outboxEventsExpired?.inc()
+        collectMetricsOutboxEventsExpired?.inc()
         logger.info({ publicId: event.publicId, type: event.type }, OUTBOX_LOGS.EXPIRED_EVENT_DELETED)
       }
       return
@@ -135,7 +135,7 @@ export class OutboxProcessor {
         logger.error({ publicId: event.publicId, error: failResult.error }, OUTBOX_LOGS.FAILED_MARK_ERROR)
         captureError(failResult.error, { publicId: event.publicId })
       } else {
-        outboxEventsMarkedAsTerminalFail?.inc()
+        collectMetricsOutboxEventsMarkedAsTerminalFail?.inc()
         logger.warn({ publicId: event.publicId, attempts: event.attempts }, OUTBOX_LOGS.MARKED_FAILED)
         // Evento terminal (poison message): sem exceção real para capturar, então
         // sintetizamos uma Error para dar visibilidade no Sentry (política "terminal/critical only").
@@ -155,16 +155,16 @@ export class OutboxProcessor {
     // Phase 2: Dispatch to BullMQ (revert on failure)
     try {
       await this.dispatchToBullMQ(event)
-      outboxEventsDispatched?.inc()
+      collectMetricsOutboxEventsDispatched?.inc()
     } catch (error) {
       const revertResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventStatus.PENDING)
 
       if (isErr(revertResult)) {
-        outboxEventsRevertFailed?.inc()
+        collectMetricsOutboxEventsRevertFailed?.inc()
         logger.error({ publicId: event.publicId, error: revertResult.error }, OUTBOX_LOGS.REVERT_FATAL)
         captureError(revertResult.error, { publicId: event.publicId })
       } else {
-        outboxEventsReverted?.inc()
+        collectMetricsOutboxEventsReverted?.inc()
         logger.error({ publicId: event.publicId, error }, OUTBOX_LOGS.DISPATCH_REVERTED)
       }
     }

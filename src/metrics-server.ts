@@ -1,6 +1,7 @@
 import Fastify, { FastifyInstance } from 'fastify'
 import { Counter } from 'prom-client'
 import { getRegistry } from '@lib/metrics'
+import { collectBullMQMetrics } from '@lib/metrics/bullmq-metrics'
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
 
@@ -21,10 +22,10 @@ interface StartOptions {
   port: number
 }
 
-function withTimeout(promise: Promise<string>, ms: number, source: string): Promise<string> {
+function withTimeout<T>(promise: Promise<T>, ms: number, source: string): Promise<T> {
   return Promise.race([
     promise,
-    new Promise<string>((_, reject) => {
+    new Promise<T>((_, reject) => {
       setTimeout(() => {
         metricsCollectionErrors?.inc({ source })
         reject(new Error(`${source} timeout`))
@@ -45,6 +46,14 @@ export async function startMetricsServer(options: StartOptions): Promise<void> {
     const currentRegistry = getRegistry()
     if (!currentRegistry) {
       return reply.code(503).send('Metrics disabled')
+    }
+
+    // Lazy BullMQ collection: pull job counts from Redis just before serializing,
+    // so bullmq_jobs is fresh in this scrape. No-op on the API process (no queues).
+    try {
+      await withTimeout(collectBullMQMetrics(), 2000, 'bullmq')
+    } catch (err) {
+      logger.warn({ err }, 'Falha na coleta de métricas do BullMQ')
     }
 
     const results = await Promise.allSettled([withTimeout(currentRegistry.metrics(), 2000, 'prom-client')])
