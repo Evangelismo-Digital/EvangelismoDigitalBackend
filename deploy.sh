@@ -46,7 +46,7 @@ docker compose -f docker-compose.prod.yml up --abort-on-container-exit migrator
 # 6. Start application services
 # ---------------------------------------------------------------------------
 echo "⚙️  Starting application services..."
-docker compose -f docker-compose.prod.yml up -d app worker
+docker compose -f docker-compose.prod.yml up -d fastify-backend fastify-worker
 
 # ---------------------------------------------------------------------------
 # 7. Cleanup

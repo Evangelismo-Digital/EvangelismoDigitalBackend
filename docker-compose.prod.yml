@@ -1,0 +1,132 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: db_evangelismo_prod
+    env_file: .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - evangelismo-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis_evangelismo_prod
+    command: redis-server --requirepass ${REDIS_PASSWORD} --save "" --appendonly no
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - evangelismo-network
+
+  # One-shot migrator. Built from the `builder` stage because the prisma CLI is a
+  # devDependency and is absent from the pruned `runner` image. `prisma.config.ts`
+  # resolves DATABASE_URL_LOCAL ?? DATABASE_URL — we override the LOCAL var (which
+  # points at localhost in .env) to the in-network @db URL.
+  migrator:
+    build:
+      context: .
+      target: builder
+    command: ["npx", "prisma", "migrate", "deploy"]
+    env_file: .env
+    environment:
+      DATABASE_URL_LOCAL: ${DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - evangelismo-network
+
+  fastify-backend:
+    build:
+      context: .
+      target: runner
+    image: evangelismodigital-app:latest
+    container_name: fastify-backend
+    env_file: .env
+    # REDIS_HOST=localhost in .env is correct only for host-run dev; inside the
+    # compose network the app reaches Redis at `redis`. DATABASE_URL_LOCAL is
+    # overridden to the @db URL (runtime client prefers it — see
+    # src/lib/prisma/helpers/configuration.ts).
+    environment:
+      REDIS_HOST: redis
+      DATABASE_URL_LOCAL: ${DATABASE_URL}
+    ports:
+      - "3333:3333"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:3333/health/',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - evangelismo-network
+
+  fastify-worker:
+    build:
+      context: .
+      target: runner
+    image: evangelismodigital-app:latest
+    container_name: fastify-worker
+    command: ["node", "dist/worker.js"]
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+      DATABASE_URL_LOCAL: ${DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    # Relies on METRICS_ENABLED=true: the worker's only HTTP surface is the metrics
+    # server's /health on :9092.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:9092/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - evangelismo-network
+
+volumes:
+  pgdata:
+  redis_data:
+
+networks:
+  evangelismo-network:
+    driver: bridge
