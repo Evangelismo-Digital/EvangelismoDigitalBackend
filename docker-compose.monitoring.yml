@@ -61,8 +61,19 @@ services:
   alertmanager:
     image: prom/alertmanager:v0.33.1
     container_name: alertmanager
+    # The config is a template; docker-entrypoint.sh expands ${VAR} from the env
+    # below (envsubst is absent from the image) and starts alertmanager.
+    entrypoint: ["/bin/sh", "/etc/alertmanager/docker-entrypoint.sh"]
+    environment:
+      SMTP_HOST: ${SMTP_HOST}
+      ALERTMANAGER_SMTP_PORT: ${ALERTMANAGER_SMTP_PORT:-587}
+      SMTP_EMAIL: ${SMTP_EMAIL}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ALERTMANAGER_WEBHOOK_URL: ${ALERTMANAGER_WEBHOOK_URL}
+      WATCHDOG_HEARTBEAT_URL: ${WATCHDOG_HEARTBEAT_URL}
     volumes:
-      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alertmanager:/etc/alertmanager:ro
       - alertmanager_data:/alertmanager
     deploy:
       resources:
