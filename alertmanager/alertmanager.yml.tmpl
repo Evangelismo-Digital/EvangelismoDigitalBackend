@@ -1,7 +1,7 @@
 # Template rendered at container start by docker-entrypoint.sh, which expands the
-# placeholders below from the environment (Alertmanager does not expand env vars
-# natively and the image lacks envsubst). Keep this file free of shell metacharacters
-# other than the intended placeholders, so nothing else is interpreted at render time.
+# placeholders below from the environment and strips the optional #IF_.../#ENDIF_...
+# blocks when their URL is not configured (Alertmanager rejects an empty url).
+# Keep this file free of shell metacharacters other than the intended placeholders.
 global:
   smtp_smarthost: '${SMTP_HOST}:${ALERTMANAGER_SMTP_PORT}'
   smtp_from: '${SMTP_EMAIL}'
@@ -18,14 +18,14 @@ route:
   repeat_interval: 4h
   routes:
     # Watchdog dead-man's-switch: always-firing rule (severity=none, watchdog=true).
-    # Routed to a continuous external heartbeat (e.g. Healthchecks.io); its ABSENCE
-    # signals that Prometheus/Alertmanager is dead.
+    # Sent to the heartbeat webhook when WATCHDOG_HEARTBEAT_URL is set, otherwise to the
+    # 'null' blackhole so it never emails on every repeat.
     - matchers: ['watchdog="true"']
-      receiver: 'watchdog-heartbeat'
+      receiver: '${WATCHDOG_RECEIVER}'
       group_wait: 0s
       group_interval: 1m
       repeat_interval: 1m
-    # Critical: immediate email + webhook. continue:true so inhibit rules still apply.
+    # Critical: immediate email (+ webhook when configured). continue:true so inhibit rules apply.
     - matchers: ['severity="critical"']
       receiver: 'critical-alerts'
       continue: true
@@ -43,19 +43,26 @@ receivers:
     email_configs:
       - to: '${ADMIN_EMAIL}'
         send_resolved: true
+#IF_WEBHOOK
     webhook_configs:
       - url: '${ALERTMANAGER_WEBHOOK_URL}'
         send_resolved: true
+#ENDIF_WEBHOOK
 
   - name: 'warning-alerts'
     email_configs:
       - to: '${ADMIN_EMAIL}'
         send_resolved: true
 
+  # Blackhole receiver (no integrations) — target for the watchdog when no heartbeat URL is set.
+  - name: 'null'
+
+#IF_WATCHDOG
   - name: 'watchdog-heartbeat'
     webhook_configs:
       - url: '${WATCHDOG_HEARTBEAT_URL}'
         send_resolved: false
+#ENDIF_WATCHDOG
 
 inhibit_rules:
   # A firing critical suppresses same-alertname warnings.

@@ -70,8 +70,9 @@ services:
       SMTP_EMAIL: ${SMTP_EMAIL}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
-      ALERTMANAGER_WEBHOOK_URL: ${ALERTMANAGER_WEBHOOK_URL}
-      WATCHDOG_HEARTBEAT_URL: ${WATCHDOG_HEARTBEAT_URL}
+      # Optional channels; empty = disabled (email still works).
+      ALERTMANAGER_WEBHOOK_URL: ${ALERTMANAGER_WEBHOOK_URL:-}
+      WATCHDOG_HEARTBEAT_URL: ${WATCHDOG_HEARTBEAT_URL:-}
     volumes:
       - ./alertmanager:/etc/alertmanager:ro
       - alertmanager_data:/alertmanager
