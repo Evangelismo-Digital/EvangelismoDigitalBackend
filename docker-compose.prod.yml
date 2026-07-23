@@ -76,8 +76,13 @@ services:
     # REDIS_HOST=localhost in .env is correct only for host-run dev; inside the
     # compose network the app reaches Redis at `redis`. DATABASE_URL_LOCAL is
     # overridden to the @db URL (runtime client prefers it — see
-    # src/lib/prisma/helpers/configuration.ts).
+    # src/lib/prisma/helpers/configuration.ts). NODE_ENV=development in .env is
+    # correct only for host-run `npm run dev`; env_file overrides the image's
+    # baked-in `ENV NODE_ENV=production` (Dockerfile), so it must be restored
+    # here — otherwise src/lib/logger picks the dev pino-pretty transport,
+    # which is a devDependency absent from this pruned runner image (crash).
     environment:
+      NODE_ENV: production
       REDIS_HOST: redis
       DATABASE_URL_LOCAL: ${DATABASE_URL}
     ports:
@@ -118,7 +123,9 @@ services:
     container_name: fastify-worker
     command: ["node", "dist/worker.js"]
     env_file: .env
+    # See the fastify-backend NODE_ENV comment above — same env_file leak applies here.
     environment:
+      NODE_ENV: production
       REDIS_HOST: redis
       DATABASE_URL_LOCAL: ${DATABASE_URL}
     depends_on:
