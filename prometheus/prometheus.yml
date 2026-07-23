@@ -1,0 +1,53 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 15s
+  external_labels:
+    environment: production
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+scrape_configs:
+  # Application processes (custom + prom-client default metrics).
+  - job_name: 'fastify-api'
+    static_configs:
+      - targets: ['fastify-backend:9091']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'nodejs_gc_duration_seconds_bucket'
+        action: drop
+
+  - job_name: 'fastify-worker'
+    static_configs:
+      - targets: ['fastify-worker:9092']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'nodejs_gc_duration_seconds_bucket'
+        action: drop
+
+  # Infrastructure exporters.
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  - job_name: 'postgresql'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Monitoring stack self-observability.
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']

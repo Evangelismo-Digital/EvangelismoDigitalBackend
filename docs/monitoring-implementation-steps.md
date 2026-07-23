@@ -1544,6 +1544,13 @@ providers:
 | Fastify HTTP & BullMQ | Custom build | Request rate, latency, queue gauges |
 | Prisma Database | Custom build | Query duration, pool saturation |
 
+> [!IMPORTANT]
+> **DB prerequisite (deferred from Step 16):** the PostgreSQL query-statistics panels (community
+> dashboard 9628 and the custom Prisma Database dashboard) require `pg_stat_statements`. Before this
+> step, set `shared_preload_libraries = 'pg_stat_statements'` on the Postgres server (a restart-only
+> setting) and run `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;` on the target database, then
+> configure the postgres-exporter to expose those metrics. Not needed by the Step 16 alert rules.
+
 ### Dependencies
 
 - Step 15 (Docker compose)

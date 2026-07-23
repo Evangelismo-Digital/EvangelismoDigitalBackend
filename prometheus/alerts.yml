@@ -1,0 +1,307 @@
+groups:
+  # ---------------------------------------------------------------------------
+  - name: availability
+    rules:
+      - alert: BackendApiDown
+        expr: up{job="fastify-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'API fora do ar (job fastify-api)'
+          description: 'O alvo de scrape fastify-api está inacessível há mais de 2 minutos.'
+
+      - alert: BackendWorkerDown
+        expr: up{job="fastify-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Worker fora do ar (job fastify-worker)'
+          description: 'O alvo de scrape fastify-worker está inacessível há mais de 2 minutos; jobs de e-mail/outbox não estão sendo processados.'
+
+      # DeadMansSwitch: sempre dispara. O Alertmanager (Step 17) roteia watchdog="true"
+      # para um webhook de heartbeat contínuo (ex.: Healthchecks.io). A AUSÊNCIA deste
+      # alerta indica que o Prometheus/Alertmanager parou.
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+          watchdog: 'true'
+        annotations:
+          summary: 'Watchdog de heartbeat (sempre ativo)'
+          description: 'Alerta sempre disparando para monitorar a saúde do próprio pipeline de alertas.'
+
+  # ---------------------------------------------------------------------------
+  - name: http
+    rules:
+      - alert: HighHttpErrorRate
+        expr: |
+          sum(rate(http_request_duration_seconds_count{job="fastify-api",status_code=~"5.."}[5m]))
+            / sum(rate(http_request_duration_seconds_count{job="fastify-api"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Taxa de erros HTTP 5xx acima de 5%'
+          description: 'Mais de 5% das requisições HTTP retornaram 5xx nos últimos 5 minutos.'
+
+      - alert: HighHttpLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_request_duration_seconds_bucket{job="fastify-api"}[5m]))) > 1.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Latência HTTP p95 acima de 1,5s'
+          description: 'O p95 da duração das requisições HTTP está acima de 1,5s há 10 minutos.'
+
+  # ---------------------------------------------------------------------------
+  - name: nodejs
+    rules:
+      - alert: HighHeapMemoryUsage
+        expr: nodejs_heap_size_used_bytes / nodejs_heap_size_total_bytes > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Uso de heap Node.js acima de 90% ({{ $labels.job }})'
+          description: 'O heap usado está acima de 90% do total há 10 minutos no job {{ $labels.job }}.'
+
+      - alert: HighEventLoopLag
+        expr: nodejs_eventloop_lag_p99_seconds > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Event loop lag p99 acima de 200ms ({{ $labels.job }})'
+          description: 'O p99 do event loop lag está acima de 200ms há 10 minutos no job {{ $labels.job }}.'
+
+  # ---------------------------------------------------------------------------
+  - name: bullmq
+    rules:
+      - alert: BullMQHighFailedJobs
+        expr: bullmq_jobs{state="failed"} > 20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Muitos jobs falhados na fila {{ $labels.queue }}'
+          description: 'Há mais de 20 jobs no estado "failed" na fila {{ $labels.queue }} há 10 minutos.'
+
+      - alert: BullMQJobsBacklog
+        expr: bullmq_jobs{state="waiting"} > 100
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Backlog de jobs na fila {{ $labels.queue }}'
+          description: 'Há mais de 100 jobs no estado "waiting" na fila {{ $labels.queue }} há 15 minutos; a fila pode estar sobrecarregada ou travada.'
+
+  # ---------------------------------------------------------------------------
+  - name: database
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'PostgreSQL inacessível'
+          description: 'O postgres-exporter não consegue conectar ao banco há mais de 2 minutos.'
+
+      - alert: HighDbConnectionPoolUsage
+        expr: sum(pg_stat_database_numbackends) / scalar(max(pg_settings_max_connections)) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Uso de conexões do PostgreSQL acima de 80%'
+          description: 'As conexões ativas estão acima de 80% do max_connections há 10 minutos.'
+
+      - alert: PostgresLongRunningTransaction
+        expr: pg_long_running_transactions > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Transação de longa duração no PostgreSQL'
+          description: 'Há transação(ões) de longa duração ativas há mais de 5 minutos; risco de bloqueios e inchaço de tabelas.'
+
+  # ---------------------------------------------------------------------------
+  - name: redis
+    rules:
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Redis inacessível'
+          description: 'O redis-exporter não consegue conectar ao Redis há mais de 2 minutos; cache, rate-limiting e locks estão degradados.'
+
+      - alert: RateLimiterFailOpen
+        expr: increase(rate_limiter_infra_degraded_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Rate limiter em fail-open ({{ $labels.provider }})'
+          description: 'O rate limiter entrou em modo fail-open (Redis indisponível) — tráfego liberado sem limitação para {{ $labels.provider }}.'
+
+      - alert: DistributedLockErrors
+        expr: increase(distributed_lock_errors_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Erros no lock distribuído (op {{ $labels.operation }})'
+          description: 'Falhas de infraestrutura (Redis) durante operações de lock distribuído nos últimos 10 minutos.'
+
+      - alert: CacheCircuitBreakerTripping
+        expr: increase(cache_circuit_breaker_trips_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Circuit breaker de cache acionado ({{ $labels.prefix }})'
+          description: 'O circuit breaker do cache resiliente foi acionado (pendingFetches >= MAX_PENDING) para o prefixo {{ $labels.prefix }}.'
+
+  # ---------------------------------------------------------------------------
+  - name: email-outbox
+    rules:
+      - alert: SmtpDispatchFailure
+        expr: |
+          sum(increase(emails_failed_total{error_type="smtp"}[15m]))
+            / clamp_min(sum(increase(emails_sent_total[15m])) + sum(increase(emails_failed_total[15m])), 1) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Taxa de falha de envio SMTP acima de 20%'
+          description: 'Mais de 20% das tentativas de envio de e-mail falharam por erro SMTP na janela de 15 minutos.'
+
+      - alert: EmailInfraFailure
+        expr: increase(emails_failed_total{error_type="infra"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Falhas de infraestrutura no envio de e-mail'
+          description: 'Falhas classificadas como "infra" no envio de e-mail nos últimos 15 minutos.'
+
+      - alert: OutboxRevertFailed
+        expr: increase(outbox_events_revert_failed_total[15m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Evento do outbox preso em SENDING'
+          description: 'O dispatch falhou E a reversão para PENDING também falhou — evento(s) estranhado(s) no estado SENDING. Intervenção manual pode ser necessária.'
+
+      - alert: OutboxDispatchRevertRate
+        expr: sum(rate(outbox_events_reverted_total[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Alta taxa de reversão de dispatch do outbox'
+          description: 'Muitos eventos do outbox estão sendo revertidos para PENDING após falha de dispatch (BullMQ/Redis pode estar instável).'
+
+      - alert: OutboxTerminalFailure
+        expr: increase(outbox_events_marked_as_terminal_fail_total[1h]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Evento do outbox marcado como FAILED terminal (poison message)'
+          description: 'Evento(s) excederam o limite de tentativas de dispatch e foram marcados como FAILED terminal na última hora.'
+
+      - alert: OutboxSignalPublishFailing
+        expr: increase(outbox_signal_publish_failed_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Falha ao publicar sinal pub/sub do outbox'
+          description: 'Falhas ao publicar o sinal de wakeup do outbox (Redis indisponível); o processamento depende do fallback via cron.'
+
+  # ---------------------------------------------------------------------------
+  - name: providers
+    rules:
+      - alert: AddressProviderChainExhausted
+        expr: increase(provider_chain_exhausted_total{layer="address"}[10m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Cadeia de provedores de endereço esgotada'
+          description: 'Todos os provedores da camada "address" falharam com erros de infraestrutura nos últimos 10 minutos.'
+
+      - alert: GeoProviderChainExhausted
+        expr: increase(provider_chain_exhausted_total{layer="geocoding"}[10m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Cadeia de provedores de geocoding esgotada'
+          description: 'Todos os provedores da camada "geocoding" falharam com erros de infraestrutura nos últimos 10 minutos.'
+
+      - alert: RoutingProviderChainExhausted
+        expr: increase(provider_chain_exhausted_total{layer="routing"}[10m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Cadeia de provedores de rota esgotada'
+          description: 'Todos os provedores da camada "routing" falharam com erros de infraestrutura nos últimos 10 minutos.'
+
+      - alert: ProviderHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, provider, layer) (rate(provider_latency_seconds_bucket[10m]))) > 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Latência p95 alta no provedor {{ $labels.provider }} ({{ $labels.layer }})'
+          description: 'O p95 da latência do provedor {{ $labels.provider }} na camada {{ $labels.layer }} está acima de 3s há 10 minutos.'
+
+  # ---------------------------------------------------------------------------
+  - name: host
+    rules:
+      - alert: HostDiskSpaceRunningLow
+        expr: |
+          node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+            / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} < 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Espaço em disco abaixo de 15%'
+          description: 'O sistema de arquivos raiz tem menos de 15% de espaço livre há 10 minutos.'
+
+      - alert: HostDiskSpaceCritical
+        expr: |
+          node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+            / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} < 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Espaço em disco abaixo de 5% (crítico)'
+          description: 'O sistema de arquivos raiz tem menos de 5% de espaço livre; risco iminente de falha de escrita.'
+
+      - alert: HostCpuSaturation
+        expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Saturação de CPU do host acima de 90%'
+          description: 'A CPU do host está acima de 90% de utilização média há 15 minutos.'
+
+      - alert: HostMemoryRunningLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Memória disponível do host abaixo de 10%'
+          description: 'A memória disponível do host está abaixo de 10% do total há 10 minutos.'
