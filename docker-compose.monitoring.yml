@@ -152,10 +152,13 @@ services:
   postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
     container_name: postgres-exporter
-    # long_running_transactions collector is disabled by default; enable it so
-    # `pg_long_running_transactions` exists for the PostgresLongRunningTransaction alert.
+    # Both collectors are disabled by default. long_running_transactions backs the
+    # PostgresLongRunningTransaction alert; stat_statements backs the Grafana query-stats
+    # panels (needs the pg_stat_statements extension + shared_preload_libraries on db).
     command:
       - '--collector.long_running_transactions'
+      - '--collector.stat_statements'
+      - '--collector.stat_statements.include_query'
     environment:
       - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable
     deploy:

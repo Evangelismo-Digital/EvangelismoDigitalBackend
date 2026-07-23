@@ -1542,14 +1542,21 @@ providers:
 | Redis | Grafana ID 763 | Memory, clients, commands |
 | PostgreSQL | Grafana ID 9628 | Connections, locks, cache hit |
 | Fastify HTTP & BullMQ | Custom build | Request rate, latency, queue gauges |
-| Prisma Database | Custom build | Query duration, pool saturation |
+| Database internals | Custom build | Connections, cache-hit, locks, long-running tx, top queries |
 
-> [!IMPORTANT]
-> **DB prerequisite (deferred from Step 16):** the PostgreSQL query-statistics panels (community
-> dashboard 9628 and the custom Prisma Database dashboard) require `pg_stat_statements`. Before this
-> step, set `shared_preload_libraries = 'pg_stat_statements'` on the Postgres server (a restart-only
-> setting) and run `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;` on the target database, then
-> configure the postgres-exporter to expose those metrics. Not needed by the Step 16 alert rules.
+> [!NOTE]
+> **Prisma Database board replaced:** Prisma runtime metrics are not wired (`startMetricsServer` takes
+> only `{ port }`), so the doc's "Prisma Database" dashboard has no data source. It is replaced by a
+> custom **Database internals** dashboard built from postgres-exporter metrics.
+
+> [!NOTE]
+> **`pg_stat_statements` — implemented in this step (was deferred from Step 16):**
+> `shared_preload_libraries = 'pg_stat_statements'` is set via the `db` service `command:` in
+> `docker-compose.yml` and `docker-compose.prod.yml`; the extension is declared in
+> `prisma/schema.prisma` (`postgresqlExtensions`) and created by migration
+> `20260723010000_add_pg_stat_statements`; and the exporter enables `--collector.stat_statements`
+> (`--collector.stat_statements.include_query`). Enabling `shared_preload_libraries` requires a **db
+> container recreate** (the data volume persists).
 
 ### Dependencies
 

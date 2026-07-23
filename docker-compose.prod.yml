@@ -2,6 +2,9 @@ services:
   db:
     image: postgis/postgis:16-3.4
     container_name: db_evangelismo_prod
+    # Preload pg_stat_statements so `CREATE EXTENSION pg_stat_statements` (migration)
+    # succeeds and postgres-exporter can collect query statistics.
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements"]
     env_file: .env
     volumes:
       - pgdata:/var/lib/postgresql/data

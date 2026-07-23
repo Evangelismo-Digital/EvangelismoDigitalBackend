@@ -11,7 +11,7 @@ generator client {
 
 datasource db {
   provider   = "postgresql"
-  extensions = [postgis]
+  extensions = [postgis, pg_stat_statements]
 }
 
 enum AuthenticationStatus {
