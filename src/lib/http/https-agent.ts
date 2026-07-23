@@ -13,7 +13,7 @@ const DEFAULT_CONFIG: https.AgentOptions = {
   keepAliveMsecs: 1000,
   maxSockets: 128,
   maxFreeSockets: 32,
-  timeout: 60000,
+  timeout: 30000,
   scheduling: 'lifo',
 }
 

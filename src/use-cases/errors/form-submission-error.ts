@@ -1,7 +1,9 @@
-import { messages } from 'core/constants/messages'
+import { ErrorType } from 'core/types/error-type/error-type'
+import { DomainError } from 'errors/domain-error'
+import { FORM_ERRORS } from 'messages/errors/forms'
 
-export class FormSubmissionError extends Error {
+export class FormSubmissionError extends DomainError {
   constructor() {
-    super(messages.errors.formSubmissionFailed)
+    super(FORM_ERRORS.SUBMISSION, ErrorType.INTERNAL_SERVER_ERROR)
   }
 }

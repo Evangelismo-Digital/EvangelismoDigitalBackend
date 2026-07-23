@@ -1,7 +1,8 @@
-import { messages } from 'core/constants/messages'
+import { InfrastructureError } from '../../../errors/infrastructure-error'
+import { GEO_ERRORS } from 'messages/errors/geolocation'
 
-export class NoGeoProviderError extends Error {
+export class NoGeoProviderError extends InfrastructureError {
   constructor() {
-    super(messages.errors.noGeoProviderError)
+    super(GEO_ERRORS.NO_PROVIDER)
   }
 }

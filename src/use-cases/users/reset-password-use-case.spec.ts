@@ -1,226 +1,179 @@
-import { InMemoryUsersRepository } from '@repositories/in-memory/in-memory-users-repository'
 import { describe, it, expect, vi } from 'vitest'
+import { InMemoryUsersRepository } from '@repositories/in-memory/in-memory-users-repository'
+import { InMemoryOutboxRepository } from '@repositories/in-memory/in-memory-outbox-repository'
+import { OutboxEventUseCase } from '@use-cases/outbox-event/outbox-event-use-case'
 import { RegisterUserUseCase } from './register-user'
-import { compare } from 'bcryptjs'
-import { UserRole } from 'core/contracts/repository/users-repository.interface'
-import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { ForgotPasswordUseCase } from './forgot-password'
 import { ResetPasswordUseCase } from './reset-password'
 import { InvalidTokenError } from '@use-cases/errors/invalid-token-error'
+import { UserRole } from 'core/contracts/repository/users-repository.interface'
+import { PasswordResetRequestedPayload } from 'core/types/outbox/outbox-event-input'
+import { cpf as cpfValidator } from 'cpf-cnpj-validator'
+import { compare } from 'bcryptjs'
+import { isOk, isErr, err } from 'core/shared/result'
+import { InfrastructureError } from 'errors/infrastructure-error'
+
+class InfraTestError extends InfrastructureError {
+  constructor() {
+    super({ code: 'INFRA_TEST_ERROR', message: 'falha de infra injetada' })
+  }
+}
+
+/**
+ * Fluxo real de ponta a ponta em memória: o forgot-password grava o hash no
+ * usuário e o token cru vai para o payload da outbox — como no e-mail enviado.
+ */
+async function makeSutWithToken() {
+  const usersRepository = new InMemoryUsersRepository()
+  const outboxRepository = new InMemoryOutboxRepository()
+  const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository, new OutboxEventUseCase(outboxRepository))
+  const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
+  const registerUseCase = new RegisterUserUseCase(usersRepository)
+
+  const email = `johndoe${Date.now()}@gmail.com`
+  const registerResult = await registerUseCase.execute({
+    name: 'John Doe',
+    email,
+    cpf: cpfValidator.generate(),
+    password: 'Teste123x!',
+    username: 'johndoe',
+    role: UserRole.DEFAULT,
+  })
+  expect(isOk(registerResult)).toBe(true)
+
+  const forgotResult = await forgotPasswordUseCase.execute({ email })
+  expect(isOk(forgotResult)).toBe(true)
+
+  // O token cru vive apenas no payload transitório (e no e-mail)
+  const rawToken = (outboxRepository.items[0].payload as PasswordResetRequestedPayload).token
+
+  async function getUser() {
+    const result = await usersRepository.findBy({ email })
+    if (!isOk(result) || !result.value) throw new Error('setup: usuário não encontrado')
+    return result.value
+  }
+
+  return { usersRepository, resetPasswordUseCase, rawToken, getUser }
+}
 
 describe('Reset Password Use Case', () => {
-  it('should throw InvalidTokenError when user is not found by token', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
-      const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
-      const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
+  it('token desconhecido: InvalidTokenError sem alterar nenhum usuário', async () => {
+    const { usersRepository, resetPasswordUseCase } = await makeSutWithToken()
+    const updateSpy = vi.spyOn(usersRepository, 'updatePassword')
 
-      const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
-      const password = 'Teste123x!'
+    const result = await resetPasswordUseCase.execute({ token: 'token-que-nao-existe', password: 'newPassword123!' })
 
-      await registerUseCase.execute({
-        name: 'John Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'johndoe',
-        role: UserRole.DEFAULT,
-      })
-
-      await forgotPasswordUseCase.execute({
-        email: uniqueEmail,
-      })
-
-      await expect(() =>
-        resetPasswordUseCase.execute({
-          token: 'some-token',
-          password: 'newPassword123!',
-        }),
-      ).rejects.toBeInstanceOf(InvalidTokenError)
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
-    }
+    expect(isErr(result)).toBe(true)
+    if (!isErr(result)) return
+    expect(result.error).toBeInstanceOf(InvalidTokenError)
+    expect(updateSpy).not.toHaveBeenCalled()
   })
 
-  it('should throw InvalidTokenError when tokenExpiresAt does not exist', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
-      const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
-      const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
+  it('busca é feita pelo HASH do token cru (regressão do hashing at-rest)', async () => {
+    const { resetPasswordUseCase, rawToken, getUser } = await makeSutWithToken()
+    const user = await getUser()
 
-      const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
-      const password = 'Teste123x!'
+    // O valor armazenado não é o token cru — usar o hash direto como "token" falha
+    expect(user.token).not.toBe(rawToken)
+    const withStoredValue = await resetPasswordUseCase.execute({ token: user.token!, password: 'newPassword123!' })
+    expect(isErr(withStoredValue)).toBe(true)
 
-      await registerUseCase.execute({
-        name: 'John Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'johndoe',
-        role: UserRole.DEFAULT,
-      })
-
-      const { token, user } = await forgotPasswordUseCase.execute({
-        email: uniqueEmail,
-      })
-
-      await usersRepository.updatePassword(user.publicId, {
-        tokenExpiresAt: null,
-      })
-
-      await expect(() =>
-        resetPasswordUseCase.execute({
-          token: token,
-          password: 'newPassword123!',
-        }),
-      ).rejects.toBeInstanceOf(InvalidTokenError)
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
-    }
+    // O token cru (do e-mail) funciona
+    const withRawToken = await resetPasswordUseCase.execute({ token: rawToken, password: 'newPassword123!' })
+    expect(isOk(withRawToken)).toBe(true)
   })
 
-  it('should throw InvalidTokenError when tokenExpiresAt is in the past', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
-      const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
-      const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
+  it('tokenExpiresAt ausente: InvalidTokenError e higiene limpa as colunas de token', async () => {
+    const { resetPasswordUseCase, rawToken, getUser } = await makeSutWithToken()
+    const user = await getUser()
+    user.tokenExpiresAt = null
 
-      const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
-      const password = 'Teste123x!'
+    const result = await resetPasswordUseCase.execute({ token: rawToken, password: 'newPassword123!' })
 
-      await registerUseCase.execute({
-        name: 'John Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'johndoe',
-        role: UserRole.DEFAULT,
-      })
+    expect(isErr(result)).toBe(true)
+    if (!isErr(result)) return
+    expect(result.error).toBeInstanceOf(InvalidTokenError)
 
-      const { token, user } = await forgotPasswordUseCase.execute({
-        email: uniqueEmail,
-      })
-
-      await usersRepository.updatePassword(user.publicId, {
-        tokenExpiresAt: new Date(Date.now() - 1000 * 60 * 60),
-      })
-
-      await expect(() =>
-        resetPasswordUseCase.execute({
-          token: token,
-          password: 'newPassword123!',
-        }),
-      ).rejects.toBeInstanceOf(InvalidTokenError)
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
-    }
+    const cleaned = await getUser()
+    expect(cleaned.token).toBeNull()
+    expect(cleaned.tokenExpiresAt).toBeNull()
   })
 
-  it('should reset user password', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
-      const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
-      const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
+  it('token expirado: InvalidTokenError e higiene preguiçosa limpa token e expiração', async () => {
+    const { resetPasswordUseCase, rawToken, getUser } = await makeSutWithToken()
+    const user = await getUser()
+    user.tokenExpiresAt = new Date(Date.now() - 60 * 60 * 1000)
 
-      const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
-      const password = 'Teste123x!'
+    const result = await resetPasswordUseCase.execute({ token: rawToken, password: 'newPassword123!' })
 
-      await registerUseCase.execute({
-        name: 'John Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'johndoe',
-        role: UserRole.DEFAULT,
-      })
+    expect(isErr(result)).toBe(true)
+    if (!isErr(result)) return
+    expect(result.error).toBeInstanceOf(InvalidTokenError)
 
-      const { token } = await forgotPasswordUseCase.execute({
-        email: uniqueEmail,
-      })
-
-      const before = Date.now()
-
-      const { user } = await resetPasswordUseCase.execute({
-        token,
-        password: 'newPassword123!',
-      })
-
-      const after = Date.now()
-
-      if (user.passwordChangedAt && user.updatedAt) {
-        const passWordChangedAt = new Date(user.passwordChangedAt).getTime()
-
-        expect(passWordChangedAt).toBeGreaterThanOrEqual(before)
-        expect(passWordChangedAt).toBeLessThanOrEqual(after)
-
-        const updatedAt = new Date(user.updatedAt).getTime()
-
-        expect(updatedAt).toBeGreaterThanOrEqual(before)
-        expect(updatedAt).toBeLessThanOrEqual(after)
-      } else {
-        throw new Error('passwordChangedAt is not set')
-      }
-
-      const isPasswordCorrectlyHashed = await compare('newPassword123!', user.passwordHash)
-
-      expect(isPasswordCorrectlyHashed).toBe(true)
-
-      expect(user.token).toBeNull()
-      expect(user.tokenExpiresAt).toBeNull()
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
-    }
+    const cleaned = await getUser()
+    expect(cleaned.token).toBeNull()
+    expect(cleaned.tokenExpiresAt).toBeNull()
   })
 
-  it('should throw Error when user password is not updated', async () => {
-    try {
-      const usersRepository = new InMemoryUsersRepository()
-      const registerUseCase = new RegisterUserUseCase(usersRepository)
-      const forgotPasswordUseCase = new ForgotPasswordUseCase(usersRepository)
-      const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
+  it('falha na limpeza do token expirado: ainda retorna InvalidTokenError (best-effort, nunca mascara)', async () => {
+    const { usersRepository, resetPasswordUseCase, rawToken, getUser } = await makeSutWithToken()
+    const user = await getUser()
+    user.tokenExpiresAt = new Date(Date.now() - 1000)
+    vi.spyOn(usersRepository, 'updatePassword').mockResolvedValueOnce(err(new InfraTestError()))
 
-      const uniqueEmail = `johndoe${Date.now()}@gmail.com`
-      const uniqueCpf = cpfValidator.generate()
-      const password = 'Teste123x!'
+    const result = await resetPasswordUseCase.execute({ token: rawToken, password: 'newPassword123!' })
 
-      await registerUseCase.execute({
-        name: 'John Doe',
-        email: uniqueEmail,
-        cpf: uniqueCpf,
-        password,
-        username: 'johndoe',
-        role: UserRole.DEFAULT,
-      })
+    expect(isErr(result)).toBe(true)
+    if (!isErr(result)) return
+    expect(result.error).toBeInstanceOf(InvalidTokenError)
+  })
 
-      const { token } = await forgotPasswordUseCase.execute({
-        email: uniqueEmail,
-      })
+  it('token válido: redefine a senha, limpa o token e marca passwordChangedAt/updatedAt', async () => {
+    const { resetPasswordUseCase, rawToken } = await makeSutWithToken()
 
-      const resetSpy = vi.spyOn(usersRepository, 'updatePassword').mockReturnValueOnce(null as any)
+    const before = Date.now()
+    const result = await resetPasswordUseCase.execute({ token: rawToken, password: 'newPassword123!' })
+    const after = Date.now()
 
-      await expect(() =>
-        resetPasswordUseCase.execute({
-          token,
-          password: 'newPassword123!',
-        }),
-      ).rejects.toThrowError('Failed to update user')
+    expect(isOk(result)).toBe(true)
+    if (!isOk(result)) return
 
-      resetSpy.mockRestore()
-    } catch (error) {
-      console.log('ERROR: ', error)
-      throw error
-    }
+    const user = result.value.user
+    expect(user.token).toBeNull()
+    expect(user.tokenExpiresAt).toBeNull()
+
+    const passwordChangedAt = new Date(user.passwordChangedAt!).getTime()
+    expect(passwordChangedAt).toBeGreaterThanOrEqual(before)
+    expect(passwordChangedAt).toBeLessThanOrEqual(after)
+
+    const updatedAt = new Date(user.updatedAt!).getTime()
+    expect(updatedAt).toBeGreaterThanOrEqual(before)
+    expect(updatedAt).toBeLessThanOrEqual(after)
+
+    expect(await compare('newPassword123!', user.passwordHash)).toBe(true)
+  })
+
+  it('token já usado não funciona de novo (single-use)', async () => {
+    const { resetPasswordUseCase, rawToken } = await makeSutWithToken()
+
+    const first = await resetPasswordUseCase.execute({ token: rawToken, password: 'newPassword123!' })
+    expect(isOk(first)).toBe(true)
+
+    const second = await resetPasswordUseCase.execute({ token: rawToken, password: 'outraSenha123!' })
+    expect(isErr(second)).toBe(true)
+    if (!isErr(second)) return
+    expect(second.error).toBeInstanceOf(InvalidTokenError)
+  })
+
+  it('falha ao atualizar a senha: propaga o err', async () => {
+    const { usersRepository, resetPasswordUseCase, rawToken } = await makeSutWithToken()
+    const infraError = new InfraTestError()
+    vi.spyOn(usersRepository, 'updatePassword').mockResolvedValueOnce(err(infraError))
+
+    const result = await resetPasswordUseCase.execute({ token: rawToken, password: 'newPassword123!' })
+
+    expect(isErr(result)).toBe(true)
+    if (!isErr(result)) return
+    expect(result.error).toBe(infraError)
   })
 })

@@ -4,5 +4,3 @@ import { emailSchema } from '../utils/email'
 export const forgotPasswordSchema = z.object({
   email: emailSchema,
 })
-
-export type ForgotPasswordSchemaType = z.infer<typeof forgotPasswordSchema>

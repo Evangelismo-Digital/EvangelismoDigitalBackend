@@ -10,39 +10,37 @@ import { getUserByPublicId, getUserProfile } from './get-user-profile.controller
 import { updateUser } from './update-user.controller'
 import { UserRole } from '@prisma/client'
 import { listUsers } from './list-users.controller'
-import rateLimit from '@fastify/rate-limit'
-import { verifyUserOrAdmin } from '@middlewares/verify-user-or-admin.middleware'
 import { searchUsersController } from './search-users.controller'
+import { HTTP_RATE_LIMIT_POLICIES } from '@http/policies/rate-limit'
 
 export async function usersRoutes(app: FastifyInstance) {
-  await app.register(rateLimit, {
-    global: true,
-    max: 2000,
-    timeWindow: '1 minute',
-  })
-
   // Register routes:
   app.post(
     '/register/admin',
     {
       onRequest: [verifyJwt, verifyUserRole([UserRole.ADMIN])],
-      config: { rateLimit: { max: 15, timeWindow: '1 hour' } },
+      config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.register },
     },
     registerAdmin,
   )
-  app.post('/register', { config: { rateLimit: { max: 1000, timeWindow: '1 minute' } } }, register)
+  app.post('/register', { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.register } }, register)
 
   // Authentication routes:
-  app.post('/sessions', authenticateUser)
-  app.post('/forgot-password', { config: { rateLimit: { max: 100, timeWindow: '1 hour' } } }, forgotPassword)
-  app.patch('/reset-password', { config: { rateLimit: { max: 200, timeWindow: '1 hour' } } }, resetPassword)
+  app.post(
+    '/sessions',
+    {
+      config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.session },
+    },
+    authenticateUser,
+  )
+  app.post('/forgot-password', { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.forgotPassword } }, forgotPassword)
+  app.patch('/reset-password', { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.resetPassword } }, resetPassword)
 
   // User profile routes
   app.patch(
     '/me',
     {
       onRequest: [verifyJwt],
-      preHandler: [verifyUserOrAdmin()],
     },
     updateUser,
   )
@@ -50,7 +48,6 @@ export async function usersRoutes(app: FastifyInstance) {
     '/me',
     {
       onRequest: [verifyJwt],
-      preHandler: [verifyUserOrAdmin()],
     },
     getUserProfile,
   )
@@ -58,7 +55,6 @@ export async function usersRoutes(app: FastifyInstance) {
     '/me',
     {
       onRequest: [verifyJwt],
-      preHandler: [verifyUserOrAdmin()],
     },
     deleteUser,
   )
@@ -68,7 +64,7 @@ export async function usersRoutes(app: FastifyInstance) {
     '/',
     {
       onRequest: [verifyJwt, verifyUserRole([UserRole.ADMIN])],
-      config: { rateLimit: { max: 20, timeWindow: '1 hour' } },
+      config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.users.list },
     },
     listUsers,
   )
@@ -80,7 +76,7 @@ export async function usersRoutes(app: FastifyInstance) {
     '/:publicId',
     {
       onRequest: [verifyJwt, verifyUserRole([UserRole.ADMIN])],
-      config: { rateLimit: { max: 10, timeWindow: '1 hour' } },
+      config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.users.delete },
     },
     deleteUserByPublicId,
   )

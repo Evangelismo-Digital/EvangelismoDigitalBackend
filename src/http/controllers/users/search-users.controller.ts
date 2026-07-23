@@ -1,38 +1,27 @@
 import { logger } from '@lib/logger'
-import { ResourceNotFoundError } from '@use-cases/errors/resource-not-found-error'
 import { makeSearchUsersUseCase } from '@use-cases/factories/make-search-users-use-case'
 import { FastifyReply, FastifyRequest } from 'fastify'
+import { isErr } from 'core/shared/result'
+import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
+import { searchUsersSchema } from '@http/schemas/users/search-users-schema'
 
 export async function searchUsersController(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    const { query, page } = request.query as { query: string; page: string }
+  const { query, page } = searchUsersSchema.parse(request.query)
 
-    const searchQuery = query || ''
-    const pageNumber = page ? parseInt(page, 10) : 1
+  const searchUsersUseCase = makeSearchUsersUseCase()
 
-    if (isNaN(pageNumber) || pageNumber < 1) {
-      return reply
-        .status(400)
-        .send({ message: 'Número de página inválido. A página deve ser um número inteiro maior que zero.' })
-    }
+  const result = await searchUsersUseCase.execute({
+    query,
+    page,
+  })
 
-    const searchUsersUseCase = makeSearchUsersUseCase()
-
-    const { users } = await searchUsersUseCase.execute({
-      query: searchQuery,
-      page: pageNumber,
-    })
-
-    logger.info(`Encontrados ${users.length} usuários para a consulta: "${searchQuery}" na página ${pageNumber}.`)
-
-    return reply.status(200).send({ users })
-  } catch (error) {
-    if (error instanceof ResourceNotFoundError) {
-      return reply.status(404).send({ message: 'Nenhum usuário encontrado para a consulta fornecida.' })
-    }
-
-    logger.error('Erro ao buscar usuários:')
-
-    throw error
+  if (isErr(result)) {
+    return HttpErrorMapper.map(result.error, reply)
   }
+
+  const { users } = result.value
+
+  logger.info(`Encontrados ${users.length} usuários para a consulta: "${query}" na página ${page}.`)
+
+  return reply.code(200).send({ users })
 }

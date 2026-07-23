@@ -1,5 +1,6 @@
 import { Church, ChurchesRepository } from 'core/contracts/repository/churches-repository.interface'
-import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
+import { Result, ok, isErr } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 
 interface DeleteChurchUseCaseRequest {
   publicId: string
@@ -12,12 +13,12 @@ interface DeleteChurchUseCaseResponse {
 export class DeleteChurchUseCase {
   constructor(private churchesRepository: ChurchesRepository) {}
 
-  async execute({ publicId }: DeleteChurchUseCaseRequest): Promise<DeleteChurchUseCaseResponse> {
-    const deleted = await this.churchesRepository.deleteChurchByPublicId(publicId)
-    if (!deleted) {
-      throw new ChurchNotFoundError()
+  async execute({ publicId }: DeleteChurchUseCaseRequest): Promise<Result<DeleteChurchUseCaseResponse, AppError>> {
+    const result = await this.churchesRepository.deleteChurchByPublicId(publicId)
+    if (isErr(result)) {
+      return result
     }
 
-    return { church: deleted }
+    return ok({ church: result.value })
   }
 }

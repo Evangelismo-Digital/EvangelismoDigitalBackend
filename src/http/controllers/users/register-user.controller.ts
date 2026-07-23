@@ -1,54 +1,58 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { logger } from '@lib/logger'
-import { UserAlreadyExistsError } from '@use-cases/errors/user-already-exists-error'
 import { registerSchema } from '@http/schemas/users/register-schema'
 import { makeRegisterUserUseCase } from '@use-cases/factories/make-register-user-use-case'
 import { UserPresenter } from '@http/presenters/user-presenter'
 import { UserRole } from 'core/contracts/repository/users-repository.interface'
+import { isErr } from 'core/shared/result'
+import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 
 export async function register(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    const { name, email, cpf, username, password } = registerSchema.parse(request.body)
+  const { name, email, cpf, username, password } = registerSchema.parse(request.body)
 
-    const registerUseCase = makeRegisterUserUseCase()
+  const registerUseCase = makeRegisterUserUseCase()
 
-    const { user } = await registerUseCase.execute({
-      name,
-      email,
-      cpf,
-      password,
-      username,
-      role: UserRole.DEFAULT,
-    })
+  const result = await registerUseCase.execute({
+    name,
+    email,
+    cpf,
+    password,
+    username,
+    role: UserRole.DEFAULT,
+  })
 
-    logger.info({ userId: user.publicId }, 'Default user registered successfully!')
-
-    reply.status(201).send({ user: UserPresenter.toHTTP(user) })
-  } catch (error) {
-    if (error instanceof UserAlreadyExistsError) {
-      return reply.status(409).send({ message: error.message })
-    }
-
-    throw error
+  if (isErr(result)) {
+    return HttpErrorMapper.map(result.error, reply)
   }
+
+  const { user } = result.value
+
+  logger.info({ userId: user.publicId }, 'Usuário comum registrado com sucesso!')
+
+  return reply.code(201).send({ user: UserPresenter.toHTTP(user) })
 }
 
 export async function registerAdmin(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    const { name, email, cpf, username, password } = registerSchema.parse(request.body)
+  const { name, email, cpf, username, password } = registerSchema.parse(request.body)
 
-    const registerUseCase = makeRegisterUserUseCase()
+  const registerUseCase = makeRegisterUserUseCase()
 
-    const { user } = await registerUseCase.execute({ name, email, cpf, username, password, role: UserRole.ADMIN })
+  const result = await registerUseCase.execute({
+    name,
+    email,
+    cpf,
+    username,
+    password,
+    role: UserRole.ADMIN,
+  })
 
-    logger.info({ userId: user.publicId }, 'Admin user registered successfully!')
-
-    return reply.status(201).send({ user: UserPresenter.toHTTP(user) })
-  } catch (error) {
-    if (error instanceof UserAlreadyExistsError) {
-      return reply.status(409).send({ message: error.message })
-    }
-
-    throw error
+  if (isErr(result)) {
+    return HttpErrorMapper.map(result.error, reply)
   }
+
+  const { user } = result.value
+
+  logger.info({ userId: user.publicId }, 'Usuário administrador registrado com sucesso!')
+
+  return reply.code(201).send({ user: UserPresenter.toHTTP(user) })
 }

@@ -1,0 +1,17 @@
+# Gitleaks configuration — Evangelismo Digital Backend
+#
+# NOTE: real production secrets must NEVER live in tracked files. If a genuine
+# credential is ever committed, rotate it at its provider first.
+#
+# Historical findings are suppressed via `--baseline-path .gitleaks-baseline.json`
+# (see the secret-scan job in ci.yml), not via allowlisting here. That baseline
+# captures real credentials previously committed in git history (JWT_SECRET,
+# COOKIE_SECRET, SMTP_PASSWORD, LOCATION_IQ/AWESOME/STADIA API tokens, a
+# seed-data admin password, and a shared dev/CI-only Redis password) which have
+# since been scrubbed from HEAD and rotated at their providers where live.
+# New findings are NOT suppressed by the baseline and will still fail CI.
+
+title = "Evangelismo Digital gitleaks config"
+
+[extend]
+useDefault = true

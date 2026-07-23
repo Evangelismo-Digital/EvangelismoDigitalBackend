@@ -1,0 +1,13 @@
+import { SHARED_PROVIDER_DEFAULTS } from './shared'
+
+export const LOCATION_IQ_CONFIG = {
+  TIMEOUT_MS: 2500,
+  MAX_RETRIES: 2,
+  BACKOFF_MS: 200,
+  HTTPS_AGENT: SHARED_PROVIDER_DEFAULTS.HTTPS_AGENT,
+  API_PARAMS: {
+    FORMAT: 'json',
+    SEARCH_LIMIT: 1,
+    ADDRESS_DETAILS: 1,
+  },
+} as const

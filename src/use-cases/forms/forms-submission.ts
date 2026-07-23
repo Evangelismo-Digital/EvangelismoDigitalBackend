@@ -1,15 +1,18 @@
 import { IOutboxEventRegistration } from 'core/contracts/use-cases/outbox-event/outbox-event.interface'
 import { FormsRepository, IFormSubmissionInputData } from 'core/contracts/repository/forms-repository.interface'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
-import { ok, Result } from 'core/shared/result'
+import { FormsAlreadyExistsError } from '@use-cases/errors/forms/forms-already-exists-error'
+import { ok, err, isOk, isErr, Result } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
+import { OUTBOX_EVENT_TYPES } from 'core/types/outbox/outbox-event-input'
 
 type Response = Result<
   {
     sanitizedFormSubmission: FormPayload
     outboxEvent: IOutboxEvent
   },
-  Error
+  AppError
 >
 
 export class FormsSubmissionUseCase {
@@ -21,7 +24,11 @@ export class FormsSubmissionUseCase {
   async execute(request: IFormSubmissionInputData): Promise<Response> {
     const findEmailResult = await this.formsSubmissionRepository.findByEmail(request.email)
 
-    if (findEmailResult.success === false) {
+    if (isOk(findEmailResult)) {
+      return err(new FormsAlreadyExistsError())
+    }
+
+    if (findEmailResult.error.body.code !== 'FORM_NOT_FOUND') {
       return findEmailResult
     }
 
@@ -33,9 +40,10 @@ export class FormsSubmissionUseCase {
       email: request.email,
       decisaoPorCristo: request.decisaoPorCristo,
       location: request.location || undefined,
+      ipAddress: request.ipAddress || undefined,
     })
 
-    if (formSubmissionResult.success === false) {
+    if (isErr(formSubmissionResult)) {
       return formSubmissionResult
     }
 
@@ -49,13 +57,24 @@ export class FormsSubmissionUseCase {
       email: formSubmission.email,
       decisaoPorCristo: formSubmission.decisaoPorCristo,
       location: formSubmission.location ?? null,
+      ipAddress: formSubmission.ipAddress ?? null,
     }
 
     // 3. Side-Effect Seguro (Outbox Pattern)
-    // Salva o evento na tabela 'outbox_events' NA MESMA TRANSAÇÃO do formulário
-    const outboxEvent = await this.eventRegistration.register(sanitizedFormSubmission)
+    // Salva o evento na tabela 'outbox_events' NA MESMA TRANSAÇÃO do formulário.
+    // O ipAddress fica fora do payload persistido (dado sensível, desnecessário para o e-mail).
+    const outboxEvent = await this.eventRegistration.register({
+      type: OUTBOX_EVENT_TYPES.FORM_SUBMISSION_CREATED,
+      payload: {
+        name: sanitizedFormSubmission.name,
+        lastName: sanitizedFormSubmission.lastName,
+        email: sanitizedFormSubmission.email,
+        decisaoPorCristo: sanitizedFormSubmission.decisaoPorCristo,
+        location: sanitizedFormSubmission.location,
+      },
+    })
 
-    if (outboxEvent.success === false) {
+    if (isErr(outboxEvent)) {
       return outboxEvent
     }
 

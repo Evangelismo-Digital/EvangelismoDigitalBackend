@@ -1,3 +1,5 @@
+import { Result } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 import { EnumGeoPrecision } from './geo-provider.interface'
 
 export interface IAddressData {
@@ -12,5 +14,5 @@ export interface IAddressData {
 }
 
 export interface IAddressProvider {
-  fetchAddress(cep: string, signal?: AbortSignal): Promise<IAddressData | null>
+  fetchAddress(cep: string, signal?: AbortSignal): Promise<Result<IAddressData | null, AppError>>
 }

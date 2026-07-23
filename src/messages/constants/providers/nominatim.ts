@@ -1,0 +1,12 @@
+import { SHARED_PROVIDER_DEFAULTS } from './shared'
+
+export const NOMINATIM_CONFIG = {
+  TIMEOUT_MS: 3000,
+  MAX_RETRIES: 2,
+  BACKOFF_MS: 200,
+  HTTPS_AGENT: SHARED_PROVIDER_DEFAULTS.HTTPS_AGENT,
+  API_PARAMS: {
+    FORMAT: 'json',
+    SEARCH_LIMIT: 1,
+  },
+} as const

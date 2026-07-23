@@ -1,7 +1,9 @@
-import { messages } from 'core/constants/messages'
+import { ErrorType } from 'core/types/error-type/error-type'
+import { DomainError } from 'errors/domain-error'
+import { CHURCH_ERRORS } from 'messages/errors/churches'
 
-export class NoAddressError extends Error {
+export class NoAddressError extends DomainError {
   constructor() {
-    super(messages.errors.noAddressProvided)
+    super(CHURCH_ERRORS.NO_ADDRESS_PROVIDED, ErrorType.BAD_REQUEST)
   }
 }

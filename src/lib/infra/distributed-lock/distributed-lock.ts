@@ -1,6 +1,23 @@
 import { logger } from '@lib/logger'
-import { redisCache } from '../../redis/clients/clients'
+import { LOCK_LOGS } from 'messages/constants/logs/distributed-lock'
+import { getRedisCache } from '../../redis/clients/clients'
 import { randomUUID } from 'node:crypto'
+import {
+  collectMetricsLockAcquired,
+  collectMetricsLockContention,
+  collectMetricsLockReleased,
+  collectMetricsLockExpired,
+  collectMetricsLockErrors,
+  collectMetricsLockDuration,
+} from '@lib/metrics/lock-metrics'
+
+/**
+ * Marca de tempo (ms) do momento da aquisição, indexada pelo token.
+ * Alimenta o histograma de duração observado no release. As escritas
+ * são guardadas por `collectMetricsLockDuration` para não alocar nada quando as
+ * métricas estão desabilitadas.
+ */
+const lockHoldStart = new Map<LockToken, number>()
 
 /**
  * Script Lua para release seguro.
@@ -54,17 +71,25 @@ export class DistributedLock {
    */
   static async acquire(key: string, ttlMs: number): Promise<LockToken | null> {
     const token = randomUUID()
+    const redisCache = getRedisCache()
 
     try {
       const result = await redisCache.set(key, token, 'PX', ttlMs, 'NX')
 
       if (result !== 'OK') {
+        collectMetricsLockContention?.inc({ key })
         return null
+      }
+
+      collectMetricsLockAcquired?.inc({ key })
+      if (collectMetricsLockDuration) {
+        lockHoldStart.set(token, Date.now())
       }
 
       return token
     } catch (error) {
-      logger.error({ error, key }, 'Falha ao tentar adquirir Distributed Lock')
+      collectMetricsLockErrors?.inc({ operation: 'acquire' })
+      logger.error({ error, key }, LOCK_LOGS.ACQUIRE_FAILED)
       return null
     }
   }
@@ -84,17 +109,21 @@ export class DistributedLock {
    *          false se o lock expirou ou foi assumido por outra instância.
    */
   static async renew(key: string, token: LockToken, ttlMs: number): Promise<boolean> {
+    const redisCache = getRedisCache()
+
     try {
       const result = await redisCache.eval(RENEW_SCRIPT, 1, key, token, String(ttlMs))
       const renewed = result === 1
 
       if (!renewed) {
-        logger.warn({ key }, 'Distributed Lock não renovado: expirou ou pertence a outra instância')
+        collectMetricsLockExpired?.inc({ key })
+        logger.warn({ key }, LOCK_LOGS.RENEW_EXPIRED)
       }
 
       return renewed
     } catch (error) {
-      logger.error({ error, key }, 'Falha ao tentar renovar Distributed Lock')
+      collectMetricsLockErrors?.inc({ operation: 'renew' })
+      logger.error({ error, key }, LOCK_LOGS.RENEW_FAILED)
       return false
     }
   }
@@ -110,16 +139,32 @@ export class DistributedLock {
    * @param token - O token retornado pelo acquire
    */
   static async release(key: string, token: LockToken): Promise<void> {
+    const redisCache = getRedisCache()
+
     try {
       const result = await redisCache.eval(RELEASE_SCRIPT, 1, key, token)
 
       if (result === 0) {
         // Não é necessariamente um erro: o lock pode ter expirado pelo TTL
         // antes do release manual (processo lento ou crash parcial).
-        logger.warn({ key }, 'Distributed Lock já havia expirado ou pertencia a outra instância no momento do release')
+        collectMetricsLockExpired?.inc({ key })
+        logger.warn({ key }, LOCK_LOGS.RELEASE_EXPIRED)
+      } else {
+        collectMetricsLockReleased?.inc({ key })
       }
     } catch (error) {
-      logger.warn({ error, key }, 'Falha ao liberar Distributed Lock (ele expirará sozinho pelo TTL)')
+      collectMetricsLockErrors?.inc({ operation: 'release' })
+      logger.warn({ error, key }, LOCK_LOGS.RELEASE_FAILED)
+    } finally {
+      // Observa a duração de posse independentemente do desfecho do release,
+      // e sempre limpa a marca de tempo para não vazar entradas no Map.
+      if (collectMetricsLockDuration) {
+        const start = lockHoldStart.get(token)
+        if (start !== undefined) {
+          collectMetricsLockDuration.observe({ key }, (Date.now() - start) / 1000)
+        }
+        lockHoldStart.delete(token)
+      }
     }
   }
 }

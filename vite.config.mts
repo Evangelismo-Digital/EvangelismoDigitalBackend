@@ -16,6 +16,13 @@ export default defineConfig(({ mode }) => {
         {
           extends: true,
           test: {
+            name: 'unit-errors',
+            dir: 'src/errors',
+          },
+        },
+        {
+          extends: true,
+          test: {
             name: 'unit-use-cases',
             dir: 'src/use-cases',
           },
@@ -65,15 +72,56 @@ export default defineConfig(({ mode }) => {
         {
           extends: true,
           test: {
+            name: 'unit-http',
+            dir: 'src/http',
+            include: ['plugins/**/*.spec.ts'],
+          },
+        },
+        {
+          extends: true,
+          test: {
+            name: 'unit-http-users',
+            dir: 'src/http/controllers/users',
+            environment: 'node',
+            include: ['**/*.spec.ts'],
+          },
+        },
+        {
+          extends: true,
+          test: {
+            name: 'unit-church-routing-provider',
+            dir: 'src/providers/church-routing-provider',
+            include: ['**/*.spec.ts'],
+          },
+        },
+        {
+          extends: true,
+          test: {
+            name: 'unit-lib',
+            dir: 'src/lib',
+            include: ['**/*.spec.ts'],
+          },
+        },
+        {
+          extends: true,
+          test: {
             name: 'unit-resilient-cache',
-            dir: 'src/lib/redis/helper',
+            dir: 'src/lib/infra/cache',
           },
         },
         {
           extends: true,
           test: {
             name: 'unit-rate-limiter',
-            dir: 'src/lib/redis',
+            dir: 'src/lib/infra/rate-limiter',
+          },
+        },
+        {
+          extends: true,
+          test: {
+            name: 'unit-repositories',
+            dir: 'src/repositories',
+            include: ['**/*.spec.ts'],
           },
         },
         {
@@ -82,8 +130,8 @@ export default defineConfig(({ mode }) => {
             name: 'e2e',
             dir: 'src/http/controllers',
             exclude: ['**/api-providers-fallback-strategy.e2e.spec.ts'],
-            // Uses isolated schemas for each test run
-            environment: './prisma/vitest-environment-prisma/prisma-test-environment.ts',
+            // Uses Docker database with public schema
+            environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
           },
         },
         {
@@ -100,7 +148,7 @@ export default defineConfig(({ mode }) => {
           test: {
             name: 'e2e-users',
             dir: 'src/http/controllers/users',
-            environment: './prisma/vitest-environment-prisma/prisma-test-environment.ts',
+            environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
           },
         },
       ],

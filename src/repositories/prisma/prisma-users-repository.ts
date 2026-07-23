@@ -1,4 +1,4 @@
-import { prisma } from '@lib/prisma'
+import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { Prisma, User } from '@prisma/client'
 import {
   CreateUser,
@@ -8,82 +8,136 @@ import {
   UserUpdateInput,
   UserWhereUniqueInput,
 } from 'core/contracts/repository/users-repository.interface'
+import { Result, ok, err } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
 
 export class PrismaUsersRepository implements UsersRepository {
-  async create(data: CreateUser) {
-    return await prisma.user.create({
-      data: {
-        name: data.name,
-        email: data.email,
-        cpf: data.cpf,
-        username: data.username,
-        passwordHash: data.passwordHash,
-        role: data.role,
-      },
-    })
-  }
+  constructor(
+    private readonly errorMapper: PrismaErrorMapper<AppError>,
+    private readonly dbContext: DatabaseContext = new DatabaseContext(),
+  ) {}
 
-  async findBy(where: UserWhereUniqueInput) {
-    const prismaWhere = {} as Prisma.UserWhereUniqueInput
-
-    if (where.id !== undefined) prismaWhere.id = where.id
-    if (where.publicId !== undefined) prismaWhere.publicId = where.publicId
-    if (where.email !== undefined) prismaWhere.email = where.email
-    if (where.username !== undefined) prismaWhere.username = where.username
-    if (where.cpf !== undefined) prismaWhere.cpf = where.cpf
-    if (where.token !== undefined) prismaWhere.token = where.token
-
-    return await prisma.user.findUnique({
-      where: prismaWhere,
-    })
-  }
-
-  async findByToken({ token }: FindByToken) {
-    return await prisma.user.findFirst({
-      where: {
-        token,
-      },
-    })
-  }
-
-  async list() {
-    return await prisma.user.findMany()
-  }
-
-  async search(query: string, page: number): Promise<User[]> {
-    const users = await prisma.user.findMany({
-      where: {
-        name: {
-          contains: query,
-          mode: 'insensitive',
+  async create(data: CreateUser): Promise<Result<User, AppError>> {
+    try {
+      const user = await this.dbContext.client.user.create({
+        data: {
+          name: data.name,
+          email: data.email,
+          cpf: data.cpf,
+          username: data.username,
+          passwordHash: data.passwordHash,
+          role: data.role,
         },
-      },
-      skip: (page - 1) * 20,
-      take: 20,
-    })
-
-    return users
+      })
+      return ok(user)
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error))
+    }
   }
 
-  async update(publicId: string, data: UserUpdateInput) {
-    return await prisma.user.update({
-      where: { publicId },
-      data,
-    })
+  async findBy(where: UserWhereUniqueInput): Promise<Result<User | null, AppError>> {
+    try {
+      const conditions: Prisma.UserWhereInput[] = []
+
+      if (where.id !== undefined) conditions.push({ id: where.id })
+      if (where.publicId !== undefined) conditions.push({ publicId: where.publicId })
+      if (where.email !== undefined) conditions.push({ email: where.email })
+      if (where.username !== undefined) conditions.push({ username: where.username })
+      if (where.cpf !== undefined) conditions.push({ cpf: where.cpf })
+      if (where.token !== undefined) conditions.push({ token: where.token })
+
+      if (conditions.length === 0) {
+        return ok(null)
+      }
+
+      const user = await this.dbContext.client.user.findFirst({
+        where: conditions.length === 1 ? conditions[0] : { OR: conditions },
+      })
+      return ok(user)
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error))
+    }
   }
 
-  async updatePassword(publicId: string, data: UserPasswordUpdateInput) {
-    return await prisma.user.update({
-      where: { publicId },
-      data,
-    })
+  async findByToken({ token }: FindByToken): Promise<Result<User | null, AppError>> {
+    try {
+      const user = await this.dbContext.client.user.findFirst({
+        where: {
+          token,
+        },
+      })
+      return ok(user)
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error))
+    }
   }
 
-  async delete(publicId: string) {
-    return await prisma.user.delete({
-      where: {
-        publicId,
-      },
-    })
+  async list(): Promise<Result<User[], AppError>> {
+    try {
+      const users = await this.dbContext.client.user.findMany()
+
+      return ok(users)
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error))
+    }
+  }
+
+  async search(query: string, page: number): Promise<Result<User[], AppError>> {
+    try {
+      const users = await this.dbContext.client.user.findMany({
+        where: {
+          name: {
+            contains: query,
+            mode: 'insensitive',
+          },
+        },
+        skip: (page - 1) * 20,
+        take: 20,
+      })
+
+      return ok(users)
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error))
+    }
+  }
+
+  async update(publicId: string, data: UserUpdateInput): Promise<Result<User, AppError>> {
+    try {
+      const user = await this.dbContext.client.user.update({
+        where: { publicId },
+        data,
+      })
+
+      return ok(user)
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error))
+    }
+  }
+
+  async updatePassword(publicId: string, data: UserPasswordUpdateInput): Promise<Result<User, AppError>> {
+    try {
+      const user = await this.dbContext.client.user.update({
+        where: { publicId },
+        data,
+      })
+
+      return ok(user)
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error))
+    }
+  }
+
+  async delete(publicId: string): Promise<Result<User, AppError>> {
+    try {
+      const user = await this.dbContext.client.user.delete({
+        where: {
+          publicId,
+        },
+      })
+      return ok(user)
+    } catch (error) {
+      return err(this.errorMapper.mapToKnownError(error))
+    }
   }
 }

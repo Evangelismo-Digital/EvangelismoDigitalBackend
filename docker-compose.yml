@@ -2,18 +2,26 @@ services:
   db:
     image: postgis/postgis:16-3.4
     container_name: db_evangelismo_dev
+    # Preload pg_stat_statements so `CREATE EXTENSION pg_stat_statements` (migration)
+    # succeeds and postgres-exporter can collect query statistics.
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements"]
     ports:
       - "5432:5432"
     env_file: .env
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
     networks:
       - evangelismo-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   redis:
     image: redis:7-alpine
@@ -30,135 +38,11 @@ services:
       retries: 5
     networks:
       - evangelismo-network
-
-  # ---------------------------------------------------------------------------
-  # Prisma Init (DEV ONLY)
-  # reset → migrate dev (with SQL injection) → seed
-  # ---------------------------------------------------------------------------
-  init:
-      build:
-        context: .
-        dockerfile: Dockerfile
-        target: development
-      container_name: init_evangelismo_dev
-      volumes:
-        - .:/app
-        - /app/node_modules
-      env_file: .env
-      environment:
-        NODE_ENV: development
-        POSTGRES_HOST: db
-        REDIS_HOST: redis
-      depends_on:
-        db:
-          condition: service_healthy
-        redis:
-          condition: service_healthy
-      command:
-        - bash
-        - -c
-        - |
-          echo '⏳ Aguardando banco...'
-          sleep 5
-          
-          echo '🗑️  Limpando migrações antigas...'
-          rm -rf prisma/migrations/*
-          
-          echo '🔄 Resetando banco (remove drift)...'
-          npx prisma migrate reset --force
-          
-          echo '⚙️  Gerando migration (Init)...'
-          npx prisma migrate dev --create-only --name init
-          
-          echo '🗺️  Injetando SQL Manual...'
-          MIGRATION_FILE=$$(find prisma/migrations -type f -name 'migration.sql' | head -n 1)
-          
-          if [ -f "$$MIGRATION_FILE" ]; then
-            cat /app/sql_scripts/postgis_trigger_setup.sql >> "$$MIGRATION_FILE"
-            echo '✅ SQL injetado: $$MIGRATION_FILE'
-          else
-            echo '❌ ERRO: Migration file não encontrado!'
-            exit 1
-          fi
-          
-          echo '🚀 Aplicando migração com deploy...'
-          npx prisma migrate deploy
-          
-          echo '🔄 Regenerando Client...'
-          npx prisma generate
-          
-          echo '🌱 Seeding...'
-          npx prisma db seed
-          
-          echo '✅ INIT CONCLUÍDO COM SUCESSO'
-      networks:
-        - evangelismo-network
-
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: development
-    container_name: api_evangelismo_dev
-    ports:
-      - "3333:3333"
-      - "5555:5555"
-    volumes:
-      - .:/app
-      - /app/node_modules
-    env_file: .env
-    environment:
-      NODE_ENV: development
-      POSTGRES_HOST: db
-      REDIS_HOST: redis
-    depends_on:
-      init:
-        condition: service_completed_successfully
-    command:
-      - bash
-      - -c
-      - |
-        npx prisma generate
-        echo '🚀 API running in DEV mode'
-        npm run dev
-    networks:
-      - evangelismo-network
-
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: development
-    container_name: worker_evangelismo_dev
-    volumes:
-      - .:/app
-      - /app/node_modules
-    env_file: .env
-    environment:
-      NODE_ENV: development
-      POSTGRES_HOST: db
-      REDIS_HOST: redis
-    depends_on:
-      init:
-        condition: service_completed_successfully
-    command:
-      - bash
-      - -c
-      - |
-        npx prisma generate
-        echo '🔧 Worker running in DEV mode'
-        npm run start:worker
-    networks:
-      - evangelismo-network
-  #valhalla:
-  #  image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
-  #  container_name: valhalla_server_compose
-  #  ports:
-  #    - "8002:8002"
-  #  volumes:
-  #    - /home/amaro/valhalla_docker/custom_files:/custom_files
-  #  networks:
-  #    - evangelismo-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pgdata:
@@ -167,3 +51,4 @@ volumes:
 networks:
   evangelismo-network:
     driver: bridge
+    name: evangelismo-network

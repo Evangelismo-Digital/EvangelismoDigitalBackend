@@ -1,15 +1,13 @@
 import { z } from 'zod'
-import { messages } from 'core/constants/messages'
+import { VALIDATION_CONSTANTS } from 'messages/constants/validation/validation'
 
 export const passwordSchema = z
   .string()
   .trim()
-  .min(8, { message: messages.validation.passwordTooShort })
-  .max(64, { message: messages.validation.passwordTooLong })
-  .regex(/[A-Z]/, { message: messages.validation.passwordUppercase })
-  .regex(/[a-z]/, { message: messages.validation.passwordLowercase })
-  .regex(/[0-9]/, { message: messages.validation.passwordDigit })
-  .regex(/[\W_]/, { message: messages.validation.passwordSpecial })
-  .refine((val) => !val.includes(' '), { message: messages.validation.passwordNoSpaces })
-
-export type PasswordSchemaType = z.infer<typeof passwordSchema>
+  .min(8, { message: VALIDATION_CONSTANTS.PASSWORD.TOO_SHORT })
+  .max(64, { message: VALIDATION_CONSTANTS.PASSWORD.TOO_LONG })
+  .regex(/[A-Z]/, { message: VALIDATION_CONSTANTS.PASSWORD.UPPERCASE })
+  .regex(/[a-z]/, { message: VALIDATION_CONSTANTS.PASSWORD.LOWERCASE })
+  .regex(/[0-9]/, { message: VALIDATION_CONSTANTS.PASSWORD.DIGIT })
+  .regex(/[\W_]/, { message: VALIDATION_CONSTANTS.PASSWORD.SPECIAL })
+  .refine((val) => !val.includes(' '), { message: VALIDATION_CONSTANTS.PASSWORD.NO_SPACES })

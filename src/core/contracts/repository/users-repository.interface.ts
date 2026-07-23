@@ -1,4 +1,6 @@
 import { User } from '@prisma/client'
+import { Result } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 
 export enum UserRole {
   ADMIN = 'ADMIN',
@@ -44,12 +46,12 @@ export interface FindByToken {
 }
 
 export interface UsersRepository {
-  create(data: CreateUser): Promise<User | null>
-  findByToken(token: FindByToken): Promise<User | null>
-  findBy(where: UserWhereUniqueInput): Promise<User | null>
-  list(): Promise<User[] | null>
-  search(query: string, page: number): Promise<User[] | null>
-  update(publicId: string, data: UserUpdateInput): Promise<User | null>
-  updatePassword(publicId: string, data: UserPasswordUpdateInput): Promise<User | null>
-  delete(publicId: string): Promise<User>
+  create(data: CreateUser): Promise<Result<User, AppError>>
+  findByToken(token: FindByToken): Promise<Result<User | null, AppError>>
+  findBy(where: UserWhereUniqueInput): Promise<Result<User | null, AppError>>
+  list(): Promise<Result<User[], AppError>>
+  search(query: string, page: number): Promise<Result<User[], AppError>>
+  update(publicId: string, data: UserUpdateInput): Promise<Result<User, AppError>>
+  updatePassword(publicId: string, data: UserPasswordUpdateInput): Promise<Result<User, AppError>>
+  delete(publicId: string): Promise<Result<User, AppError>>
 }

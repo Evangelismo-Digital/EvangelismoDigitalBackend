@@ -1,8 +1,8 @@
-import { Prisma } from '@prisma/client'
 import { ChurchesRepository } from 'core/contracts/repository/churches-repository.interface'
 import { ChurchAlreadyExistsError } from '@use-cases/errors/church-already-exists-error'
-import { CreateChurchError } from '@use-cases/errors/create-church-error'
 import { NoAddressError } from '@use-cases/errors/no-address-error'
+import { Result, ok, err, isErr } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 
 interface CreateChurchUseCaseRequest {
   name: string
@@ -26,50 +26,47 @@ interface CreateChurchUseCaseResponse {
 export class CreateChurchUseCase {
   constructor(private churchesRepository: ChurchesRepository) {}
 
-  async execute({ name, address, lat, lon }: CreateChurchUseCaseRequest): Promise<CreateChurchUseCaseResponse> {
+  async execute({
+    name,
+    address,
+    lat,
+    lon,
+  }: CreateChurchUseCaseRequest): Promise<Result<CreateChurchUseCaseResponse, AppError>> {
     if (!address || address.trim() === '') {
-      throw new NoAddressError()
+      return err(new NoAddressError())
     }
 
-    const churchWithSameName = await this.churchesRepository.findByName(name)
-
-    if (churchWithSameName !== null) {
-      throw new ChurchAlreadyExistsError()
+    const nameResult = await this.churchesRepository.findByName(name)
+    if (isErr(nameResult)) {
+      return nameResult
+    }
+    if (nameResult.value !== null) {
+      return err(new ChurchAlreadyExistsError())
     }
 
-    const churchAlreadyExists = await this.churchesRepository.findByParams({
+    const paramsResult = await this.churchesRepository.findByParams({
       name,
       lat,
       lon,
     })
-
-    if (churchAlreadyExists !== null) {
-      throw new ChurchAlreadyExistsError()
+    if (isErr(paramsResult)) {
+      return paramsResult
+    }
+    if (paramsResult.value !== null) {
+      return err(new ChurchAlreadyExistsError())
     }
 
-    try {
-      const church = await this.churchesRepository.createChurch({
-        name,
-        address,
-        lat,
-        lon,
-      })
+    const createResult = await this.churchesRepository.createChurch({
+      name,
+      address,
+      lat,
+      lon,
+    })
 
-      if (!church) {
-        throw new CreateChurchError()
-      }
-
-      return church
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ChurchAlreadyExistsError()
-      }
-
-      if (error instanceof ChurchAlreadyExistsError) {
-        throw new ChurchAlreadyExistsError()
-      }
-
-      throw error
+    if (isErr(createResult)) {
+      return createResult
     }
+
+    return ok(createResult.value)
   }
 }

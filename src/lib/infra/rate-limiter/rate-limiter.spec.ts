@@ -1,5 +1,3 @@
-// src/lib/redis/helper/rate-limiter.spec.ts
-
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
 // 1. Mock Environment Variables
@@ -51,7 +49,7 @@ vi.mock('rate-limiter-flexible', () => {
 // Imports reais após mocks
 import Redis from 'ioredis'
 import { RateLimiterRedis } from 'rate-limiter-flexible'
-import { RedisRateLimiter, EnumProviderConfig } from './rate-limiter'
+import { RedisRateLimiter, EnumProviderConfig } from './redis-rate-limiter'
 import { logger } from '@lib/logger'
 
 describe('RedisRateLimiter Unit Tests', () => {
@@ -61,6 +59,9 @@ describe('RedisRateLimiter Unit Tests', () => {
     vi.clearAllMocks()
     // Reset do Singleton hackeando a propriedade privada
     ;(RedisRateLimiter as any).instance = undefined
+    ;(RedisRateLimiter as any).infraOutageStartedAt = null
+    ;(RedisRateLimiter as any).infraLastWarnAt = 0
+    ;(RedisRateLimiter as any).infraSuppressedLogs = 0
     redisClient = new Redis()
   })
 
@@ -100,7 +101,7 @@ describe('RedisRateLimiter Unit Tests', () => {
       expect(logger.error).not.toHaveBeenCalled()
     })
 
-    it('should block request (return false) and Log Error on Infrastructure Failure (Fail-Closed)', async () => {
+    it('should allow request (return true) and log WARN on infrastructure failure (Fail-Open)', async () => {
       const limiter = RedisRateLimiter.getInstance(redisClient)
 
       // Mock erro genérico (ex: Redis caiu)
@@ -109,15 +110,15 @@ describe('RedisRateLimiter Unit Tests', () => {
 
       const result = await limiter.tryConsume(EnumProviderConfig.VIACEP_ADDRESS)
 
-      expect(result).toBe(false) // Estratégia Fail-Closed
+      expect(result).toBe(true) // Estratégia Fail-Open
 
-      // CORREÇÃO: Verificando a mensagem exata definida na implementação
-      expect(logger.error).toHaveBeenCalledWith(
+      expect(logger.warn).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: 'Connection Lost',
+          err: infraError,
+          mode: 'fail-open',
           provider: EnumProviderConfig.VIACEP_ADDRESS,
         }),
-        expect.stringContaining('ERRO CRÍTICO RedisRateLimiter: Redis indisponível. Fail-Closed ativado.'),
+        expect.stringContaining('RedisRateLimiter com erro: Redis não disponível, permitindo requisições (fail-open).'),
       )
     })
   })

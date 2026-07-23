@@ -1,8 +1,8 @@
-import { SMTP_DISPATCH_ERROR } from 'messages/errors/system/queue'
-import { InfrastructureError } from '../../../errors/infra-errors/infrastructure-error'
+import { QUEUE_ERRORS } from 'messages/errors/queue'
+import { InfrastructureError } from '../../../errors/infrastructure-error'
 
 export class SmtpDispatchError extends InfrastructureError {
   constructor(originalError?: unknown) {
-    super(SMTP_DISPATCH_ERROR, originalError)
+    super(QUEUE_ERRORS.SMTP_DISPATCH_FAILED, originalError)
   }
 }

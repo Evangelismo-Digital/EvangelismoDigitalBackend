@@ -1,174 +1,134 @@
-import { Redis } from 'ioredis'
 import { logger } from '@lib/logger'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { NoAddressProviderError } from './error/no-address-provider-error'
-import { AddressProviderFailureError } from './error/address-provider-failure-error'
-import { AddressServiceBusyError } from '@use-cases/errors/address-service-busy-error'
-import { TimeoutExceededOnFetchError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
-import { CachedFailureError, ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
+import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
+import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
+import { Result, ok, err, isOk } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
+import {
+  collectMetricsProviderLatency,
+  collectMetricsProviderFallback,
+  collectMetricsProviderChainExhausted,
+  recordProviderRequest,
+} from '@lib/metrics/provider-metrics'
 
-enum AddressCacheScope {
-  CEP = 'cep',
-}
-
+/**
+ * ResilientAddressProvider chains multiple `IAddressProvider` implementations
+ * and advances to the next provider whenever the current one returns a
+ * `RETRYABLE` failure mode.  It bails immediately for any other failure mode
+ * (NOT_FOUND, unknown / no failure mode).
+ *
+ * No `instanceof` checks are used — routing is driven purely by
+ * `error.failureMode`.
+ */
 export class ResilientAddressProvider implements IAddressProvider {
-  private readonly cacheManager: ResilientCache
-
-  constructor(
-    private readonly providers: IAddressProvider[],
-    redis: Redis,
-    optionsOverride: ResilientCacheOptions,
-  ) {
+  constructor(private readonly providers: IAddressProvider[]) {
     if (this.providers.length === 0) {
       throw new NoAddressProviderError()
     }
-
-    this.cacheManager = new ResilientCache(redis, {
-      prefix: optionsOverride.prefix,
-      defaultTtlSeconds: optionsOverride.defaultTtlSeconds,
-      negativeTtlSeconds: optionsOverride.negativeTtlSeconds,
-      maxPendingFetches: optionsOverride.maxPendingFetches,
-      fetchTimeoutMs: optionsOverride.fetchTimeoutMs,
-      ttlJitterPercentage: optionsOverride.ttlJitterPercentage,
-    })
   }
 
-  async fetchAddress(cep: string, signal?: AbortSignal): Promise<IAddressData | null> {
+  async fetchAddress(cep: string, signal?: AbortSignal): Promise<Result<IAddressData | null, AppError>> {
     const cleanCep = cep.replace(/\D/g, '')
+    const effectiveSignal = signal ?? new AbortController().signal
 
-    const cacheKey = this.cacheManager.generateKey({
-      _scope: AddressCacheScope.CEP,
-      cep: cleanCep,
-    })
-
-    try {
-      return await this.cacheManager.getOrFetch<IAddressData>(
-        cacheKey,
-        async (effectiveSignal) => {
-          return await this.executeStrategy(cleanCep, effectiveSignal)
-        },
-        // errorMapper: Cache business errors (invalid CEP)
-        (error) => {
-          if (error instanceof InvalidCepError) {
-            return {
-              type: 'InvalidCepError',
-              message: error.message,
-              data: { cep: cleanCep },
-            }
-          }
-          // System errors (network, timeouts, rate limits) - don't cache
-          return null
-        },
-        signal,
-      )
-    } catch (error) {
-      // Convert CachedFailureError back to domain error
-      if (error instanceof CachedFailureError) {
-        if (error.errorType === 'InvalidCepError') {
-          throw new InvalidCepError()
-        }
-        // Unexpected cached error type
-        logger.error(
-          { cep: cleanCep, cachedError: error },
-          'Tipo de erro em cache inesperado no ResilientAddressProvider',
-        )
-        throw new AddressProviderFailureError()
-      }
-
-      // Re-throw domain and system errors as-is
-      throw error
-    }
-  }
-
-  private async executeStrategy(cep: string, signal: AbortSignal): Promise<IAddressData> {
-    let lastError: Error | unknown = undefined
-    let hasSystemError = false
+    let lastRetryableError: AppError | undefined = undefined
     let lastProviderName = ''
     let notFoundCount = 0
 
     for (const [index, provider] of this.providers.entries()) {
-      const providerName = provider.constructor.name
+      const providerName = (provider as { providerName?: string }).providerName ?? provider.constructor.name
 
-      // Defensive check: Stop immediately if timeout/abort fired
-      if (signal.aborted) {
-        throw new TimeoutExceededOnFetchError(signal.reason)
+      // Defensive check — honour abort before each provider attempt
+      if (effectiveSignal.aborted) {
+        return err(new TimeoutExceededError(effectiveSignal.reason))
       }
 
-      try {
-        const result = await provider.fetchAddress(cep, signal)
+      const endTimer = collectMetricsProviderLatency?.startTimer({ provider: providerName, layer: 'address' })
+      const result = await provider.fetchAddress(cleanCep, effectiveSignal)
+      endTimer?.()
 
-        if (result) {
+      recordProviderRequest('address', providerName, result)
+
+      if (isOk(result)) {
+        if (result.value) {
           logger.info({ provider: providerName }, 'Endereço obtido com sucesso por um provedor de endereço')
-          return result
+          return ok(result.value)
         }
-
-        // Provider returned null (not found) - count and try next provider
+        // Provider returned null (not found)
         notFoundCount++
         logger.info({ provider: providerName }, 'Provedor retornou null (não encontrado) - tentando próximo')
-      } catch (error) {
-        if (error instanceof TimeoutExceededOnFetchError) {
-          throw error
-        }
+        continue
+      }
 
-        // Business Error: Provider explicitly confirmed CEP doesn't exist
-        if (error instanceof InvalidCepError) {
-          notFoundCount++
-          logger.info({ provider: providerName, cep }, 'CEP inválido reportado por provedor - tentando próximo')
-          continue
-        }
+      const error = result.error
 
-        // Check if error is 404 - treat as "not found" and try next provider
-        if (error && typeof error === 'object' && 'status' in error && error.status === 404) {
-          notFoundCount++
-          logger.info({ provider: providerName }, 'Provedor retornou 404 (Não Encontrado) - tentando próximo')
-          continue
-        }
+      // NOT_FOUND: resource genuinely missing — treat same as null response
+      if (error.failureMode === FailureMode.NOT_FOUND) {
+        notFoundCount++
+        logger.info(
+          { provider: providerName, cep: cleanCep },
+          'Provedor confirmou que o recurso não existe - tentando próximo',
+        )
+        continue
+      }
 
-        // SYSTEM ERROR: Record that a system error occurred
-        hasSystemError = true
-        lastError = error
+      // RETRYABLE: transient infra error — log and advance to next provider
+      if (error.failureMode === FailureMode.RETRYABLE) {
+        lastRetryableError = error
         lastProviderName = providerName
-        const errMsg = error instanceof Error ? error.message : String(error)
 
-        if (error instanceof AddressServiceBusyError) {
-          logger.warn(
-            { provider: providerName, error: errMsg, attempt: index + 1 },
-            'Provedor de endereço ocupado (429). Alternando para o próximo provedor...',
-          )
-        } else {
-          logger.warn({ provider: providerName, error: errMsg }, 'Provedor falhou (Erro de Sistema). Alternando...')
+        const nextProvider = this.providers[index + 1]
+        if (nextProvider) {
+          const nextProviderName =
+            (nextProvider as { providerName?: string }).providerName ?? nextProvider.constructor.name
+          collectMetricsProviderFallback?.inc({
+            layer: 'address',
+            from_provider: providerName,
+            to_provider: nextProviderName,
+          })
         }
-      }
-    }
 
-    // === DECISION PHASE ===
-    // Priority 1: If we had system errors, throw the last error (won't be cached)
-    // This ensures we retry when providers are unstable, even if some said "not found"
-    if (hasSystemError) {
-      logger.error(
-        { cep, provider: lastProviderName, notFoundCount },
-        'Provedores de endereço falharam com erros de sistema (não cacheando)',
-      )
-
-      if (lastError instanceof AddressServiceBusyError) {
-        throw lastError
+        logger.warn(
+          { provider: providerName, error, attempt: index + 1 },
+          'Provedor de endereço retornou erro recuperável. Alternando para o próximo provedor...',
+        )
+        continue
       }
 
-      throw new AddressProviderFailureError(lastError)
+      // Unknown / fatal error — bail immediately without trying other providers
+      logger.error({ provider: providerName, error }, 'Provedor retornou erro fatal. Abortando cadeia.')
+      return err(error)
     }
 
-    // Priority 2: ALL providers returned null/404/InvalidCepError (no system errors)
-    // Only throw InvalidCepError if ALL providers confirmed it doesn't exist
+    // Decision phase: all providers exhausted
     if (notFoundCount === this.providers.length) {
-      logger.info(
-        { cep, notFoundCount, totalProviders: this.providers.length },
-        'TODOS os provedores confirmaram CEP inválido - cacheando como não encontrado',
+      // Every provider confirmed the resource does not exist
+      logger.warn(
+        { cep: cleanCep, notFoundCount, totalProviders: this.providers.length },
+        'TODOS os provedores confirmaram CEP inválido/não encontrado',
       )
-      throw new InvalidCepError()
+      return err(new InvalidCepError())
     }
 
-    // This should be unreachable, but as safety net
-    throw new AddressProviderFailureError()
+    if (lastRetryableError) {
+      collectMetricsProviderChainExhausted?.inc({ layer: 'address' })
+      logger.error(
+        { cep: cleanCep, provider: lastProviderName, notFoundCount, error: lastRetryableError },
+        'Provedores de endereço falharam com erros de sistema',
+      )
+      return err(lastRetryableError)
+    }
+
+    collectMetricsProviderChainExhausted?.inc({ layer: 'address' })
+    return err(
+      new ProviderFailureError(
+        'ResilientAddressProvider',
+        ProviderLayer.Address,
+        new Error('TODOS os provedores falharam'),
+      ),
+    )
   }
 }

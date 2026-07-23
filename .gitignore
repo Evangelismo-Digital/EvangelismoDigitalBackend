@@ -3,3 +3,4 @@ coverage
 build
 /src/generated/prisma
 .env
+.ci-local

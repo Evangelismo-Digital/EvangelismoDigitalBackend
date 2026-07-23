@@ -3,6 +3,7 @@ import { formsSchema } from '@http/schemas/forms/forms-schema'
 import { makeFormSubmissionUseCase } from '@use-cases/forms/factories/make-form-submission-use-case'
 import { logger } from '@lib/logger'
 import { OutboxSignal } from '@lib/infra/events/outbox-signal'
+import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 
 export async function formSubmission(request: FastifyRequest, reply: FastifyReply) {
@@ -15,26 +16,23 @@ export async function formSubmission(request: FastifyRequest, reply: FastifyRepl
   // 3. Execução
   const result = await formSubmissionUseCase.execute({
     ...data,
+    ipAddress: request.ip,
   })
 
   // 4. Tratamento de erro (HTTP Errors)
-  if (result.success === false) {
+  if (isErr(result)) {
     return HttpErrorMapper.map(result.error, reply)
   }
 
   // 5. Sucesso
   const { sanitizedFormSubmission, outboxEvent } = result.value
 
-  OutboxSignal.publishNewItem(outboxEvent.publicId, outboxEvent).catch(() => {
-    logger.error(
-      { publicId: outboxEvent.publicId },
-      'Prosseguindo com a resposta, mas falha acorreu ao publicar o evento na fila',
-    )
-  })
+  // Fire-and-forget: publishNewItem catches and logs its own failures internally.
+  void OutboxSignal.publishNewItem(outboxEvent.publicId, outboxEvent)
 
   logger.info({ sanitizedFormSubmission }, 'Formulário recebido com sucesso')
 
-  return reply.status(201).send({
+  return reply.code(201).send({
     sanitizedFormSubmission,
   })
 }

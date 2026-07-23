@@ -1,8 +1,14 @@
-import { REDIS_CHANNELS } from 'core/constants/redis/redis-channells'
+import { REDIS_CONSTANTS } from 'messages/constants/redis/redis'
+import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 import Redis from 'ioredis'
+import { captureError } from '@lib/sentry/capture'
+import {
+  collectMetricsOutboxSignalPublished,
+  collectMetricsOutboxSignalPublishFailed,
+} from '@lib/metrics/outbox-metrics'
 
 const baseConfig = {
   host: env.REDIS_HOST,
@@ -11,45 +17,53 @@ const baseConfig = {
   lazyConnect: true,
 }
 
-const publisher = new Redis({
-  ...baseConfig,
-  enableOfflineQueue: true,
-  commandTimeout: 2000,
-})
+let publisher: Redis | null = null
+let subscriber: Redis | null = null
 
-const subscriber = new Redis({
-  ...baseConfig,
-  maxRetriesPerRequest: null,
-  enableOfflineQueue: false,
-  retryStrategy: (times) => {
-    const delay = Math.min(Math.pow(2, times) * 100, 5000)
-    logger.warn({
-      times,
-      delay,
+function getPublisher() {
+  if (!publisher) {
+    publisher = new Redis({
+      ...baseConfig,
+      enableOfflineQueue: true,
+      commandTimeout: 2000,
     })
 
-    return delay
-  },
-})
+    publisher.on('connect', () => logger.info(OUTBOX_LOGS.PUBLISHER_CONNECTED))
+    publisher.on('error', (err: unknown) => logger.error({ err }, OUTBOX_LOGS.PUBLISHER_ERROR))
+    publisher.on('close', () => logger.warn(OUTBOX_LOGS.PUBLISHER_CLOSED))
+  }
 
-// ---------------------------------------------------------------------------
-// Connection lifecycle events
-// --------------------------------------------------------------
-publisher.on('connect', () => logger.info('✅ Redis publisher conectado ao outbox-signal'))
+  return publisher
+}
 
-publisher.on('error', (err) => logger.error({ err }, '❌ Redis publisher error no outbox-signal'))
+function getSubscriber() {
+  if (!subscriber) {
+    subscriber = new Redis({
+      ...baseConfig,
+      maxRetriesPerRequest: null,
+      enableOfflineQueue: false,
+      retryStrategy: (times) => {
+        const delay = Math.min(Math.pow(2, times) * 100, 5000)
+        logger.warn({
+          times,
+          delay,
+        })
 
-publisher.on('close', () => logger.warn('⚠️ Redis publisher connection fechada para outbox-signal'))
+        return delay
+      },
+    })
 
-subscriber.on('connect', () => logger.info('✅ Redis subscriber conectado para outbox-signal'))
+    subscriber.on('connect', () => logger.info(OUTBOX_LOGS.SUBSCRIBER_CONNECTED))
+    subscriber.on('error', (err: unknown) => logger.error({ err }, OUTBOX_LOGS.SUBSCRIBER_ERROR))
+    subscriber.on('close', () => logger.warn(OUTBOX_LOGS.SUBSCRIBER_CLOSED))
+  }
 
-subscriber.on('error', (err) => logger.error({ err }, '❌ Redis subscriber error no outbox-signal'))
-
-subscriber.on('close', () => logger.warn('⚠️ Redis subscriber connection fechada para outbox-signal'))
+  return subscriber
+}
 
 /** Connects a client only if it hasn't connected yet. */
 async function ensureConnected(client: Redis, name: string): Promise<void> {
-  if (client.status === 'wait' || client.status === 'close') {
+  if (client.status === 'wait' || client.status === 'close' || client.status === 'end') {
     logger.info(`Conectando ${name}...`)
     await client.connect()
   }
@@ -68,13 +82,13 @@ export const OutboxSignal = {
    */
   async publishNewItem(publicId: string, event: IOutboxEvent): Promise<void> {
     try {
-      await ensureConnected(publisher, 'OutboxPublisher')
-      await publisher.publish(REDIS_CHANNELS.OUTBOX_SIGNAL, JSON.stringify({ publicId, event }))
+      const client = getPublisher()
+      await ensureConnected(client, 'OutboxPublisher')
+      await client.publish(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL, JSON.stringify({ publicId, event }))
+      collectMetricsOutboxSignalPublished?.inc()
     } catch (err) {
-      logger.warn(
-        { err },
-        'Não foi possível publicar sinal de nova outbox. O cron job continuará funcionando como fallback.',
-      )
+      collectMetricsOutboxSignalPublishFailed?.inc()
+      logger.warn({ err }, OUTBOX_LOGS.SIGNAL_PUBLISH_FAILED)
     }
   },
 
@@ -93,16 +107,17 @@ export const OutboxSignal = {
    */
   async subscribe(onSignal: (publicId: string, event: IOutboxEvent) => Promise<void>): Promise<void> {
     try {
-      await ensureConnected(subscriber, 'OutboxSubscriber')
+      const client = getSubscriber()
+      await ensureConnected(client, 'OutboxSubscriber')
 
       if (activeMessageListener !== null) {
-        subscriber.off('message', activeMessageListener)
-        logger.info('Listener anterior de OutboxSignal removido com sucesso')
+        client.off('message', activeMessageListener)
+        logger.info(OUTBOX_LOGS.LISTENER_REMOVED)
       }
 
       activeMessageListener = async (channel: string, message: string) => {
-        if (channel !== REDIS_CHANNELS.OUTBOX_SIGNAL) {
-          logger.warn({ channel }, 'Mensagem recebida em canal inesperado. Ignorando.')
+        if (channel !== REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL) {
+          logger.warn({ channel }, OUTBOX_LOGS.UNEXPECTED_CHANNEL)
           return
         }
 
@@ -110,25 +125,34 @@ export const OutboxSignal = {
           const parsed = JSON.parse(message)
           await onSignal(parsed.publicId, parsed.event)
         } catch (err) {
-          logger.error({ err, publicId: message }, 'Erro ao processar sinal de Outbox')
+          logger.error({ err, publicId: message }, OUTBOX_LOGS.SIGNAL_PROCESSING_ERROR)
+          captureError(err, { publicId: message })
         }
       }
 
-      subscriber.on('message', activeMessageListener)
+      client.on('message', activeMessageListener)
 
-      await subscriber.subscribe(REDIS_CHANNELS.OUTBOX_SIGNAL)
+      await client.subscribe(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL)
     } catch (err) {
-      logger.error({ err }, '❌ Erro ao subscrever ao canal de OutboxSignal')
+      logger.error({ err }, OUTBOX_LOGS.SUBSCRIBE_ERROR)
+      captureError(err)
     }
   },
 
   async disconnect(): Promise<void> {
+    const targets = [publisher, subscriber].filter((client): client is Redis => client !== null)
+
     if (activeMessageListener !== null) {
-      subscriber.off('message', activeMessageListener)
+      if (subscriber !== null) {
+        subscriber.off('message', activeMessageListener)
+      }
+
       activeMessageListener = null
     }
 
-    const targets = [publisher, subscriber]
-    await Promise.allSettled(targets.map((c) => (c.status !== 'end' ? c.quit() : Promise.resolve())))
+    await Promise.allSettled(targets.map((client) => (client.status !== 'end' ? client.quit() : Promise.resolve())))
+
+    publisher = null
+    subscriber = null
   },
 }

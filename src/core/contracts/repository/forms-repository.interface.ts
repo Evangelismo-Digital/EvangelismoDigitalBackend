@@ -1,4 +1,5 @@
 import { Result } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
 
 export interface IFormSubmissionInputData {
   name: string
@@ -6,6 +7,7 @@ export interface IFormSubmissionInputData {
   email: string
   decisaoPorCristo: boolean
   location?: string
+  ipAddress?: string
 }
 
 export interface IFormSubmission {
@@ -16,11 +18,12 @@ export interface IFormSubmission {
   email: string
   decisaoPorCristo: boolean
   location?: string | null
+  ipAddress?: string | null
   createdAt: Date
   updatedAt: Date
 }
 
 export interface FormsRepository {
-  create(data: IFormSubmissionInputData): Promise<Result<IFormSubmission, Error>>
-  findByEmail(email: string): Promise<Result<IFormSubmission, Error>>
+  create(data: IFormSubmissionInputData): Promise<Result<IFormSubmission, AppError>>
+  findByEmail(email: string): Promise<Result<IFormSubmission, AppError>>
 }

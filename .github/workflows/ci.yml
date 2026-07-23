@@ -1,0 +1,421 @@
+name: CI
+
+# Fast-feedback, fail-fast pipeline for the Fastify + TypeScript + Prisma backend.
+# Only free / OSS tooling that runs entirely inside GitHub Actions (no paid tier,
+# no SaaS account). Third-party actions are pinned to commit SHAs; a version
+# comment records the human-readable tag they resolve to.
+
+on:
+  pull_request:
+    branches:
+      - '**'
+  push:
+    branches:
+      - main
+      - dev
+
+# Cancel superseded runs on the same ref to save runner minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege by default; individual jobs elevate only what they need.
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Stage 1 — fast static checks (no services). Gates the heavy jobs below.
+  # ---------------------------------------------------------------------------
+  static:
+    name: Static checks (types / lint / format / dead-code / prisma)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Prisma schema validate
+        run: npx prisma validate
+
+      - name: Dead code / unused exports (Knip)
+        run: npm run knip
+
+  # ---------------------------------------------------------------------------
+  # Stage 2 — security & supply chain. Independent jobs, run in parallel.
+  # ---------------------------------------------------------------------------
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout (full history)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        # Historical debt triaged: real credentials found in git history were
+        # rotated (where live) and scrubbed from HEAD; the dead historical
+        # occurrences are suppressed via .gitleaks-baseline.json (not a config
+        # allowlist), so NEW leaks still fail the build.
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/repo" -w /repo \
+            ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            detect --source=/repo --config=/repo/.gitleaks.toml \
+            --baseline-path=/repo/.gitleaks-baseline.json \
+            --redact --verbose \
+            --report-format=sarif --report-path=/repo/gitleaks.sarif
+
+      - name: Upload gitleaks report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gitleaks-report
+          path: gitleaks.sarif
+          if-no-files-found: ignore
+
+  sast:
+    name: SAST (Semgrep OSS)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run Semgrep
+        # Community rulesets, telemetry off, no account required. Blocking gate:
+        # the current tree is clean, so `--error` fails only on NEW findings.
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/src" -w /src \
+            semgrep/semgrep:1.170.0 \
+            semgrep scan --metrics=off --error \
+            --config p/typescript --config p/nodejs --config p/javascript \
+            --sarif --output semgrep.sarif
+
+      - name: Upload Semgrep report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: semgrep-report
+          path: semgrep.sarif
+          if-no-files-found: ignore
+
+  deps:
+    name: Dependency vulnerabilities (OSV-Scanner)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run OSV-Scanner
+        # Dependency tree triaged: ~30 advisories fixed via version bumps (see
+        # package.json). The 2 remaining (transitive @hono/node-server via
+        # prisma's dev-only CLI tooling; nodemailer's unfixed-without-a-major-
+        # bump advisories) are documented and ignored in osv-scanner.toml.
+        uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018 # v2.3.8
+        with:
+          scan-args: |-
+            --config=osv-scanner.toml
+            --lockfile=package-lock.json
+
+  license:
+    name: License compliance (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Scan licenses
+        # Verified clean: 283 licenses across the dependency tree, all
+        # permissive (MIT/Apache-2.0/ISC/BSD/0BSD/Unlicense), zero HIGH/CRITICAL.
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: fs
+          scanners: license
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          scan-ref: .
+
+  # ---------------------------------------------------------------------------
+  # Stage 3 — correctness & artifacts (gated behind Stage 1).
+  # ---------------------------------------------------------------------------
+  test:
+    name: Tests + coverage (unit + e2e)
+    runs-on: ubuntu-latest
+    needs: static
+    permissions:
+      contents: read
+      pull-requests: write # coverage comment
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: evangelismodigital
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d evangelismodigital"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Matches the committed .env.test so `prisma` CLI + the app agree.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/evangelismodigital?schema=public
+      REDIS_HOST: localhost
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ZP8xM6H4R5A0dJQ7L2WcN3E9yFVkBG
+      # Read by prisma.config.ts; Prisma 7 dropped the --shadow-database-url
+      # CLI flag for `migrate diff`, and requires the DB to already exist.
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/prisma_shadow?schema=public
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Start Redis (password-protected, mirrors docker-compose)
+        run: |
+          docker run -d --name redis -p 6379:6379 redis:7-alpine \
+            redis-server --requirepass "$REDIS_PASSWORD" --save "" --appendonly no
+          for _ in $(seq 1 20); do
+            if docker exec redis redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q PONG; then
+              echo "Redis is up"; break
+            fi
+            echo "Waiting for Redis..."; sleep 1
+          done
+
+      - name: Create shadow database
+        # Prisma 7's config-based shadowDatabaseUrl requires the DB to
+        # pre-exist (unlike the old --shadow-database-url CLI flag, which
+        # created/dropped it automatically).
+        run: PGPASSWORD=postgres psql -h localhost -U postgres -c 'CREATE DATABASE prisma_shadow;'
+
+      - name: Prisma migration drift check
+        run: |
+          npx prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema ./prisma/schema.prisma \
+            --exit-code
+
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      - name: Run tests with coverage
+        # Explicit project allowlist (not negation): vitest 4.1's --project='!a'
+        # --project='!b' double-negation unreliably still ran the excluded
+        # project in local verification, so every project except the
+        # real-external-API one (flaky) and the redundant e2e-users subset
+        # (superset `e2e` already covers those controllers) is listed by name.
+        run: |
+          npx vitest run --coverage \
+            --project=unit-errors --project=unit-use-cases --project=unit-churches \
+            --project=unit-users --project=unit-messaging --project=unit-forms \
+            --project=unit-geo-provider --project=unit-address-provider --project=unit-http \
+            --project=unit-http-users --project=unit-church-routing-provider --project=unit-lib \
+            --project=unit-resilient-cache --project=unit-rate-limiter --project=unit-repositories --project=e2e \
+            --coverage.reporter=json-summary \
+            --coverage.reporter=json \
+            --coverage.reporter=text \
+            --coverage.reportOnFailure=true
+
+      - name: Coverage report comment
+        if: github.event_name == 'pull_request'
+        uses: davelosert/vitest-coverage-report-action@8ab049ff5a2c6e78f78af446329379b318544a1a # v2.8.3
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage
+          path: coverage
+          if-no-files-found: ignore
+
+  build:
+    name: Build verification (tsup)
+    runs-on: ubuntu-latest
+    needs: static
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+
+  docker:
+    name: Docker build validation
+    runs-on: ubuntu-latest
+    needs: static
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: evangelismodigital
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d evangelismodigital"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Matches the committed .env.test, used below to run the built image.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/evangelismodigital?schema=public
+      REDIS_PASSWORD: ZP8xM6H4R5A0dJQ7L2WcN3E9yFVkBG
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: evangelismo-digital-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply migrations (smoke-test database)
+        run: npx prisma migrate deploy
+
+      - name: Start Redis (password-protected, mirrors docker-compose)
+        run: |
+          docker run -d --name redis -p 6379:6379 redis:7-alpine \
+            redis-server --requirepass "$REDIS_PASSWORD" --save "" --appendonly no
+          for _ in $(seq 1 20); do
+            if docker exec redis redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q PONG; then
+              echo "Redis is up"; break
+            fi
+            echo "Waiting for Redis..."; sleep 1
+          done
+
+      - name: Smoke-test built image (boots + /health/ hits the real DB)
+        # Runs the exact image that will ship. --network host lets it reach the
+        # postgres service + Redis via localhost, same as the `test` job.
+        # .env.test already supplies every required env var (src/env/index.ts).
+        run: |
+          docker run -d --name app-smoke --network host --env-file .env.test \
+            evangelismo-digital-backend:ci
+
+          for _ in $(seq 1 20); do
+            if curl -sf http://localhost:3333/health/ > /dev/null; then
+              echo "App is healthy"
+              exit 0
+            fi
+            echo "Waiting for app..."; sleep 1
+          done
+
+          echo "App did not become healthy in time"
+          exit 1
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker logs app-smoke || true
+
+      - name: Stop smoke-test containers
+        if: always()
+        run: docker rm -f app-smoke redis || true

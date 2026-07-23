@@ -1,22 +1,15 @@
 import { logger } from './index'
 
-export function logError(error: unknown, context: Record<string, unknown> = {}, msg = 'Unexpected error') {
-  if (error instanceof Error) {
-    logger.error(
-      {
-        message: error.message,
-        stack: error.stack,
-        ...context,
-      },
-      msg,
-    )
-  } else {
-    logger.error(
-      {
-        message: 'Unknown error',
-        ...context,
-      },
-      msg,
-    )
-  }
+interface LogErrorOptions {
+  level?: 'error' | 'warn' | 'fatal'
+}
+
+export function logError(
+  error: unknown,
+  context: Record<string, unknown> = {},
+  msg = 'Erro inesperado',
+  options: LogErrorOptions = {},
+) {
+  const level = options.level ?? 'error'
+  logger[level]({ err: error, ...context }, msg)
 }

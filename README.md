@@ -130,6 +130,8 @@ Neste repositório está o projeto para ...
 10. Rode o comando do `docker-compose up --build` para subir os servidores do projeto.
 11. Se quiser desligar o servidor `docker-compose down -v` (apaga tudo).
 
+Observacao: quando a API roda diretamente na maquina com `npm run start:dev`, o Redis deve estar acessivel em `localhost:6379`. O hostname `redis` so funciona dentro da rede do Docker.
+
 ### Se você já possui o Docker e deseja executar o Servidor em Produção. Faça:
 1. Com o projeto aberto no terminal, execute `npm install --save-optional @rollup/rollup-linux-x64-gnu`.
 2. Após a instalação, execute `docker-compose -f docker-compose.prod.yml up -d --build`.

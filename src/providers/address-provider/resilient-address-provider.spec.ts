@@ -1,15 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
-// 1. Mocks de Ambiente e Logger
-vi.mock('@lib/env', () => ({
-  env: {
-    NODE_ENV: 'test',
-    LOG_LEVEL: 'silent',
-    REDIS_HOST: 'localhost',
-    REDIS_PORT: 6379,
-  },
-}))
-
 vi.mock('@lib/logger', () => ({
   logger: {
     info: vi.fn(),
@@ -19,60 +9,15 @@ vi.mock('@lib/logger', () => ({
   },
 }))
 
-// 2. Mock do IORedis
-vi.mock('ioredis', () => {
-  return {
-    default: vi.fn(),
-    Redis: vi.fn(),
-  }
-})
-
-// 3. Mock do ResilientCache e CachedFailureError
-// Usamos vi.hoisted para variáveis acessíveis dentro e fora do mock
-const { mockGetOrFetch, mockGenerateKey } = vi.hoisted(() => {
-  return {
-    mockGetOrFetch: vi.fn(),
-    mockGenerateKey: vi.fn().mockReturnValue('mock-key'),
-  }
-})
-
-vi.mock('@lib/redis/helper/resilient-cache', () => {
-  class MockCachedFailureError extends Error {
-    public errorType: string
-    public errorData?: any
-
-    constructor(type: string, message: string, data?: any) {
-      super(message)
-      this.name = 'CachedFailureError'
-      this.errorType = type
-      this.errorData = data
-    }
-  }
-
-  return {
-    // Usamos function() tradicional para permitir 'new ResilientCache()'
-    ResilientCache: vi.fn().mockImplementation(function () {
-      return {
-        getOrFetch: mockGetOrFetch,
-        generateKey: mockGenerateKey,
-      }
-    }),
-    CachedFailureError: MockCachedFailureError,
-  }
-})
-
-// Imports reais
-import Redis from 'ioredis'
 import { ResilientAddressProvider } from './resilient-address-provider'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { NoAddressProviderError } from './error/no-address-provider-error'
-import { AddressProviderFailureError } from './error/address-provider-failure-error'
-import { AddressServiceBusyError } from '@use-cases/errors/address-service-busy-error'
-import { TimeoutExceededOnFetchError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
+import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
+import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
-import { CachedFailureError } from '@lib/infra/cache/resilient-cache'
+import { ok, err, isOk, isErr } from 'core/shared/result'
 
-// Helper: Objeto mockado estritamente tipado conforme AddressData
 const mockAddress: IAddressData = {
   logradouro: 'Rua Teste',
   bairro: 'Bairro Teste',
@@ -81,32 +26,18 @@ const mockAddress: IAddressData = {
 }
 
 describe('ResilientAddressProvider Unit Tests', () => {
-  let redisClient: Redis
   let provider1: IAddressProvider
   let provider2: IAddressProvider
 
   beforeEach(() => {
     vi.clearAllMocks()
-    redisClient = new Redis()
 
-    // Mocks dos providers tipados como AddressProvider
     provider1 = { fetchAddress: vi.fn() }
     provider2 = { fetchAddress: vi.fn() }
-
-    // Mock padrão do getOrFetch para simular Cache Miss (executa o fetcher real)
-    // CORREÇÃO: Garante que um AbortSignal seja passado, mesmo que undefined no teste
-    mockGetOrFetch.mockImplementation(async (key, fetcher, mapper, signal) => {
-      const effectiveSignal = signal || new AbortController().signal
-      return fetcher(effectiveSignal)
-    })
   })
 
   const createProvider = (providers = [provider1, provider2]) => {
-    return new ResilientAddressProvider(providers, redisClient, {
-      prefix: 'test:',
-      defaultTtlSeconds: 60,
-      negativeTtlSeconds: 10,
-    } as any)
+    return new ResilientAddressProvider(providers)
   }
 
   describe('Constructor', () => {
@@ -120,59 +51,18 @@ describe('ResilientAddressProvider Unit Tests', () => {
     })
   })
 
-  describe('fetchAddress - Cache Logic', () => {
-    it('should return address from CACHE HIT without calling providers', async () => {
-      const provider = createProvider()
-
-      // Simula Cache Hit (retorna valor AddressData direto)
-      mockGetOrFetch.mockResolvedValue(mockAddress)
-
-      const result = await provider.fetchAddress('12345678')
-
-      expect(result).toEqual(mockAddress)
-      expect(mockGetOrFetch).toHaveBeenCalled()
-      expect(provider1.fetchAddress).not.toHaveBeenCalled()
-    })
-
-    it('should re-throw InvalidCepError from CACHE HIT (Cached Failure)', async () => {
-      const provider = createProvider()
-
-      const cachedError = new CachedFailureError('InvalidCepError', 'CEP inválido')
-      mockGetOrFetch.mockRejectedValue(cachedError)
-
-      await expect(provider.fetchAddress('12345678')).rejects.toThrow(InvalidCepError)
-    })
-
-    it('should throw AddressProviderFailureError on CACHE HIT with unexpected error type', async () => {
-      const provider = createProvider()
-
-      const cachedError = new CachedFailureError('UnknownError', 'Algo estranho')
-      mockGetOrFetch.mockRejectedValue(cachedError)
-
-      await expect(provider.fetchAddress('12345678')).rejects.toThrow(AddressProviderFailureError)
-    })
-
-    it('should execute fetch strategy on CACHE MISS', async () => {
-      const provider = createProvider()
-
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(mockAddress)
-
-      const result = await provider.fetchAddress('12345678')
-
-      expect(result).toEqual(mockAddress)
-      expect(provider1.fetchAddress).toHaveBeenCalled()
-    })
-  })
-
   describe('executeStrategy (Provider Logic)', () => {
     it('should return result immediately if first provider succeeds', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(mockAddress)
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(ok(mockAddress))
 
       const result = await provider.fetchAddress('12345678')
 
-      expect(result).toEqual(mockAddress)
+      expect(isOk(result)).toBe(true)
+      if (isOk(result)) {
+        expect(result.value).toEqual(mockAddress)
+      }
       expect(provider1.fetchAddress).toHaveBeenCalled()
       expect(provider2.fetchAddress).not.toHaveBeenCalled()
     })
@@ -180,12 +70,15 @@ describe('ResilientAddressProvider Unit Tests', () => {
     it('should fallback to second provider if first returns NULL (not found)', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(null)
-      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(mockAddress)
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(ok(null))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(ok(mockAddress))
 
       const result = await provider.fetchAddress('12345678')
 
-      expect(result).toEqual(mockAddress)
+      expect(isOk(result)).toBe(true)
+      if (isOk(result)) {
+        expect(result.value).toEqual(mockAddress)
+      }
       expect(provider1.fetchAddress).toHaveBeenCalled()
       expect(provider2.fetchAddress).toHaveBeenCalled()
     })
@@ -193,156 +86,145 @@ describe('ResilientAddressProvider Unit Tests', () => {
     it('should fallback to second provider if first throws InvalidCepError', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockRejectedValue(new InvalidCepError())
-      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(mockAddress)
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new InvalidCepError()))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(ok(mockAddress))
 
       const result = await provider.fetchAddress('12345678')
 
-      expect(result).toEqual(mockAddress)
+      expect(isOk(result)).toBe(true)
+      if (isOk(result)) {
+        expect(result.value).toEqual(mockAddress)
+      }
       expect(provider2.fetchAddress).toHaveBeenCalled()
     })
 
     it('should fallback to second provider if first fails with System Error (Busy/Generic)', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockRejectedValue(new AddressServiceBusyError('MockProvider1'))
-      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(mockAddress)
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(ok(mockAddress))
 
       const result = await provider.fetchAddress('12345678')
 
-      expect(result).toEqual(mockAddress)
+      expect(isOk(result)).toBe(true)
+      if (isOk(result)) {
+        expect(result.value).toEqual(mockAddress)
+      }
       expect(provider2.fetchAddress).toHaveBeenCalled()
     })
 
-    it('should fallback to second provider if first returns 404 status object', async () => {
+    it('should throw InvalidCepError if ALL providers return not found (null/InvalidCep)', async () => {
       const provider = createProvider()
-      vi.spyOn(provider1, 'fetchAddress').mockRejectedValue({ status: 404, message: 'Not Found' })
-      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(mockAddress)
+
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(ok(null))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new InvalidCepError()))
 
       const result = await provider.fetchAddress('12345678')
-
-      expect(result).toEqual(mockAddress)
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(InvalidCepError)
+      }
     })
 
-    it('should throw InvalidCepError if ALL providers return not found (null/InvalidCep/404)', async () => {
+    it('should return ServiceBusyError if the last provider had a ServiceBusy error', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(null)
-      vi.spyOn(provider2, 'fetchAddress').mockRejectedValue(new InvalidCepError())
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(
+        err(new ProviderFailureError('MockProvider1', ProviderLayer.Address, new Error('Connection timeout'))),
+      )
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider2')))
 
-      await expect(provider.fetchAddress('12345678')).rejects.toThrow(InvalidCepError)
+      const result = await provider.fetchAddress('12345678')
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(ServiceBusyError)
+      }
     })
 
-    it('should throw AddressServiceBusyError if the last provider had a ServiceBusy error', async () => {
+    it('should return ProviderFailureError if the last provider had a non-busy System Error', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockRejectedValue(new Error('Connection timeout'))
-      vi.spyOn(provider2, 'fetchAddress').mockRejectedValue(new AddressServiceBusyError('MockProvider2'))
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(
+        err(new ProviderFailureError('MockProvider2', ProviderLayer.Address, new Error('Connection timeout'))),
+      )
 
-      await expect(provider.fetchAddress('12345678')).rejects.toThrow(AddressServiceBusyError)
+      const result = await provider.fetchAddress('12345678')
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(ProviderFailureError)
+      }
     })
 
-    it('should throw AddressProviderFailureError if the last provider had a non-busy System Error', async () => {
+    it('should return ServiceBusyError if ANY provider had a System Error and last was ServiceBusy, even if others said Not Found', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockRejectedValue(new AddressServiceBusyError('MockProvider1'))
-      vi.spyOn(provider2, 'fetchAddress').mockRejectedValue(new Error('Connection timeout'))
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(ok(null))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider2')))
 
-      await expect(provider.fetchAddress('12345678')).rejects.toThrow(AddressProviderFailureError)
+      const result = await provider.fetchAddress('12345678')
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(ServiceBusyError)
+      }
     })
 
-    it('should throw AddressServiceBusyError if ANY provider had a System Error and last was ServiceBusy, even if others said Not Found', async () => {
+    it('should return ProviderFailureError if ANY provider had a non-busy System Error and last was not ServiceBusy, even if others said Not Found', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(null)
-      vi.spyOn(provider2, 'fetchAddress').mockRejectedValue(new AddressServiceBusyError('MockProvider2'))
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(ok(null))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(
+        err(new ProviderFailureError('MockProvider2', ProviderLayer.Address, new Error('Network error'))),
+      )
 
-      await expect(provider.fetchAddress('12345678')).rejects.toThrow(AddressServiceBusyError)
+      const result = await provider.fetchAddress('12345678')
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(ProviderFailureError)
+      }
     })
 
-    it('should throw AddressProviderFailureError if ANY provider had a non-busy System Error and last was not ServiceBusy, even if others said Not Found', async () => {
+    it('should return ServiceBusyError if ALL providers have ServiceBusy errors', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(null)
-      vi.spyOn(provider2, 'fetchAddress').mockRejectedValue(new Error('Network error'))
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider2')))
 
-      await expect(provider.fetchAddress('12345678')).rejects.toThrow(AddressProviderFailureError)
+      const result = await provider.fetchAddress('12345678')
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(ServiceBusyError)
+      }
     })
 
-    it('should throw AddressServiceBusyError if ALL providers have ServiceBusy errors', async () => {
-      const provider = createProvider()
-
-      vi.spyOn(provider1, 'fetchAddress').mockRejectedValue(new AddressServiceBusyError('MockProvider1'))
-      vi.spyOn(provider2, 'fetchAddress').mockRejectedValue(new AddressServiceBusyError('MockProvider2'))
-
-      await expect(provider.fetchAddress('12345678')).rejects.toThrow(AddressServiceBusyError)
-    })
-
-    it('should throw AddressProviderFailureError with wrapped error when last error is generic system error', async () => {
+    it('should return ProviderFailureError with wrapped error when last error is generic system error', async () => {
       const provider = createProvider()
       const systemError = new Error('Database connection failed')
 
-      vi.spyOn(provider1, 'fetchAddress').mockRejectedValue(new AddressServiceBusyError('MockProvider1'))
-      vi.spyOn(provider2, 'fetchAddress').mockRejectedValue(systemError)
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(
+        err(new ProviderFailureError('MockProvider2', ProviderLayer.Address, systemError)),
+      )
 
-      await expect(provider.fetchAddress('12345678')).rejects.toThrow(AddressProviderFailureError)
+      const result = await provider.fetchAddress('12345678')
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(ProviderFailureError)
+      }
     })
 
-    it('should stop immediately and throw TimeoutExceededOnFetchError if signal is aborted', async () => {
+    it('should stop immediately and return TimeoutExceededError if signal is aborted', async () => {
       const provider = createProvider()
       const controller = new AbortController()
       controller.abort(new Error('Timeout'))
 
-      mockGetOrFetch.mockImplementation(async (key, fetcher, mapper, signal) => {
-        // Neste caso específico, queremos testar o repasse do sinal abortado
-        return fetcher(signal)
-      })
-
-      await expect(provider.fetchAddress('12345678', controller.signal)).rejects.toThrow(TimeoutExceededOnFetchError)
+      const result = await provider.fetchAddress('12345678', controller.signal)
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(TimeoutExceededError)
+      }
 
       expect(provider1.fetchAddress).not.toHaveBeenCalled()
-    })
-  })
-
-  describe('Error Mapper Logic', () => {
-    it('should map InvalidCepError to cacheable object', async () => {
-      const provider = createProvider()
-      let interceptedMapper: any
-
-      mockGetOrFetch.mockImplementation(async (key, fetcher, errorMapper) => {
-        interceptedMapper = errorMapper
-        return null
-      })
-
-      await provider.fetchAddress('12345678')
-
-      expect(interceptedMapper).toBeDefined()
-
-      const error = new InvalidCepError()
-      const mapped = interceptedMapper(error)
-
-      expect(mapped).toEqual({
-        type: 'InvalidCepError',
-        message: expect.any(String),
-        data: { cep: '12345678' },
-      })
-    })
-
-    it('should return NULL for system errors (preventing cache)', async () => {
-      const provider = createProvider()
-      let interceptedMapper: any
-
-      mockGetOrFetch.mockImplementation(async (key, fetcher, errorMapper) => {
-        interceptedMapper = errorMapper
-        return null
-      })
-
-      await provider.fetchAddress('12345678')
-
-      const error = new Error('System Crash')
-      const mapped = interceptedMapper(error)
-
-      expect(mapped).toBeNull()
     })
   })
 })

@@ -1,17 +1,17 @@
 import { type FastifyReply, type FastifyRequest } from 'fastify'
 import { UserRole } from '@prisma/client'
-import { messages } from 'core/constants/messages'
+import { AUTH_ERRORS } from 'messages/errors/auth'
 
 export function verifyUserRole(allowedRoles: UserRole[]) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const { role } = request.user
 
     if (!role) {
-      return reply.status(401).send({ message: messages.errors.unauthorized ?? 'Unauthorized' })
+      return reply.code(401).send({ message: AUTH_ERRORS.UNAUTHORIZED.message })
     }
 
     if (!allowedRoles.includes(role)) {
-      return reply.status(403).send({ message: messages.errors.forbidden ?? 'Forbidden' })
+      return reply.code(403).send({ message: AUTH_ERRORS.FORBIDDEN.message })
     }
   }
 }

@@ -6,40 +6,45 @@ import {
   UsersRepository,
   UserWhereUniqueInput,
 } from 'core/contracts/repository/users-repository.interface'
+import { Result, ok, err } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
 
 export class InMemoryUsersRepository implements UsersRepository {
   public items: User[] = []
 
-  async findByToken(data: FindByToken): Promise<User | null> {
+  async findByToken(data: FindByToken): Promise<Result<User | null, AppError>> {
     const user = this.items.find((item) => item.token === data.token)
 
-    return user ?? null
+    return ok(user ?? null)
   }
 
-  async findBy(where: UserWhereUniqueInput): Promise<User | null> {
+  async findBy(where: UserWhereUniqueInput): Promise<Result<User | null, AppError>> {
     const user = this.items.find(
       (item) =>
-        (where.id && item.id === where.id) ||
-        (where.publicId && item.publicId === where.publicId) ||
-        (where.email && item.email === where.email) ||
-        (where.username && item.username === where.username) ||
-        (where.cpf && item.cpf === where.cpf),
+        (where.id !== undefined && item.id === where.id) ||
+        (where.publicId !== undefined && item.publicId === where.publicId) ||
+        (where.email !== undefined && item.email === where.email) ||
+        (where.username !== undefined && item.username === where.username) ||
+        (where.cpf !== undefined && item.cpf === where.cpf),
     )
 
-    return user ?? null
+    return ok(user ?? null)
   }
 
-  async search(query: string, page: number): Promise<User[]> {
-    return this.items
+  async search(query: string, page: number): Promise<Result<User[], AppError>> {
+    const users = this.items
       .filter(
         (item) =>
           item.name.toLowerCase().includes(query.toLowerCase()) ||
           item.email.toLowerCase().includes(query.toLowerCase()),
       )
       .slice((page - 1) * 20, page * 20)
+
+    return ok(users)
   }
 
-  async create(data: CreateUser): Promise<User> {
+  async create(data: CreateUser): Promise<Result<User, AppError>> {
     const now = new Date()
 
     const userData = data as unknown as {
@@ -75,26 +80,29 @@ export class InMemoryUsersRepository implements UsersRepository {
     }
 
     this.items.push(user)
-    return user
+    return ok(user)
   }
 
-  async list(): Promise<User[]> {
-    return this.items
+  async list(): Promise<Result<User[], AppError>> {
+    return ok(this.items)
   }
 
-  async delete(publicId: string): Promise<User> {
+  async delete(publicId: string): Promise<Result<User, AppError>> {
     const userIndex = this.items.findIndex((item) => item.publicId === publicId)
     if (userIndex === -1) {
-      throw new Error('User not found')
+      return err(new UserNotFoundError())
     }
     const [deletedUser] = this.items.splice(userIndex, 1)
-    return deletedUser
+    return ok(deletedUser)
   }
 
-  async update(publicId: string, data: { name: string; email: string; username: string }): Promise<User | null> {
+  async update(
+    publicId: string,
+    data: { name?: string; email?: string; username?: string },
+  ): Promise<Result<User, AppError>> {
     const userIndex = this.items.findIndex((item) => item.publicId === publicId)
     if (userIndex === -1) {
-      return null
+      return err(new UserNotFoundError())
     }
     const existingUser = this.items[userIndex]
     const updatedUser = {
@@ -103,13 +111,13 @@ export class InMemoryUsersRepository implements UsersRepository {
       updatedAt: new Date(),
     }
     this.items[userIndex] = updatedUser
-    return updatedUser
+    return ok(updatedUser)
   }
 
-  async updatePassword(publicId: string, data: UserPasswordUpdateInput): Promise<User | null> {
+  async updatePassword(publicId: string, data: UserPasswordUpdateInput): Promise<Result<User, AppError>> {
     const userIndex = this.items.findIndex((item) => item.publicId === publicId)
     if (userIndex === -1) {
-      return null
+      return err(new UserNotFoundError())
     }
     const existingUser = this.items[userIndex]
     const updatedUser = {
@@ -117,6 +125,6 @@ export class InMemoryUsersRepository implements UsersRepository {
       ...data,
     }
     this.items[userIndex] = updatedUser
-    return updatedUser
+    return ok(updatedUser)
   }
 }

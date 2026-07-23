@@ -26,7 +26,7 @@ Content-Type: application/json
 
 {
   "login": "admin@example.com",
-  "password": "ybp_whf3wxn2xdr6MTE"
+  "password": "ChangeMe123!SeedAdmin"
 }
 
 ### POST forgot password

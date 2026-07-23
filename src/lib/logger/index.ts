@@ -1,8 +1,6 @@
 import pino, { multistream, StreamEntry, type LoggerOptions } from 'pino'
 import { env } from '@env/index'
-import { AsyncLocalStorage } from 'node:async_hooks'
-
-const asyncLocalStorage = new AsyncLocalStorage<{ requestId: string; userId?: string }>()
+import { asyncLocalStorage } from '@lib/async-local-storage'
 
 export function getRequestId() {
   return asyncLocalStorage.getStore()?.requestId
@@ -12,20 +10,43 @@ export function getUserId() {
   return asyncLocalStorage.getStore()?.userId
 }
 
-export function runWithRequestId<T>(requestId: string, fn: () => T) {
-  return asyncLocalStorage.run({ requestId }, fn)
-}
-
-export function runWithUserContext<T>(userId: string, fn: () => T) {
+export function setUserId(userId: string) {
   const store = asyncLocalStorage.getStore()
   if (store) {
     store.userId = userId
-    return asyncLocalStorage.run(store, fn)
   }
-  return fn()
 }
 
 const isDev = env.NODE_ENV === 'development'
+
+type SerializableError = Error & {
+  code?: string
+  body?: { code?: string }
+  type?: string
+  failureMode?: string
+}
+
+/**
+ * Dev mantém o stack completo (pino.stdSerializers.err). Fora do dev, reduzimos
+ * para campos buscáveis/baratos de armazenar — apenas as 6 primeiras linhas do
+ * stack (breadcrumb), já que o stack completo fica no Sentry (@lib/sentry/capture).
+ * Evita gravar o payload verboso em todo log de erro de um processo de longa duração.
+ */
+export function errSerializer(err: unknown) {
+  if (!(err instanceof Error)) return err
+
+  if (isDev) return pino.stdSerializers.err(err)
+
+  const error = err as SerializableError
+  return {
+    name: error.name,
+    message: error.message,
+    code: error.body?.code ?? error.code,
+    type: error.type,
+    failureMode: error.failureMode,
+    stack: error.stack?.split('\n').slice(0, 6).join('\n'),
+  }
+}
 
 const baseConfig: LoggerOptions = {
   level: env.LOG_LEVEL || 'info',
@@ -37,6 +58,11 @@ const baseConfig: LoggerOptions = {
   mixin() {
     return { requestId: getRequestId(), userId: getUserId() }
   },
+  serializers: {
+    err: errSerializer,
+    error: errSerializer,
+    cause: errSerializer,
+  },
 }
 
 const prodStreams: StreamEntry[] = [
@@ -44,7 +70,7 @@ const prodStreams: StreamEntry[] = [
   { level: 'error', stream: process.stderr },
 ]
 
-export const loggerConfig: LoggerOptions = isDev
+const loggerConfig: LoggerOptions = isDev
   ? {
       ...baseConfig,
       transport: {

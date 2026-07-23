@@ -1,3 +1,6 @@
+import { Result } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+
 export interface ChurchAlreadyExists {
   name: string
   lat: number
@@ -35,9 +38,11 @@ export interface Church {
 }
 
 export interface ChurchesRepository {
-  findNearest(params: FindNearbyParams): Promise<NearbyChurch[]>
-  findByParams(params: ChurchAlreadyExists): Promise<Church | null>
-  findByName(name: string): Promise<Church | null>
-  createChurch(data: Omit<Church, 'id' | 'publicId' | 'createdAt' | 'updatedAt' | 'geog'>): Promise<Church | null>
-  deleteChurchByPublicId(publicId: string): Promise<Church | null>
+  findNearest(params: FindNearbyParams): Promise<Result<NearbyChurch[], AppError>>
+  findByParams(params: ChurchAlreadyExists): Promise<Result<Church | null, AppError>>
+  findByName(name: string): Promise<Result<Church | null, AppError>>
+  createChurch(
+    data: Omit<Church, 'id' | 'publicId' | 'createdAt' | 'updatedAt' | 'geog'>,
+  ): Promise<Result<Church, AppError>>
+  deleteChurchByPublicId(publicId: string): Promise<Result<Church, AppError>>
 }

@@ -1,39 +1,51 @@
-import { LOCK_KEYS, LOCK_TTL_MS } from 'core/constants/outbox/locks'
-import { JOB_NAMES } from 'core/constants/queue/queue'
+import { OUTBOX_CONSTANTS, OUTBOX_CONSTANTS as OUTBOX_CFG } from 'messages/constants/outbox/outbox'
+import { QUEUE } from 'messages/constants/queue/queue'
 import { logger } from '@lib/logger'
-import { mailQueue } from '@lib/queue/mail-queue'
+import { getMailQueue } from '@lib/queue/mail-queue'
 import { DistributedLock, LockToken } from '@lib/infra/distributed-lock/distributed-lock'
-import { ContactEmailStrategy } from '@use-cases/forms/strategies/contact-email-strategy'
-import { DecisionForChristEmailStrategy } from '@use-cases/forms/strategies/decision-for-christ-email-strategy'
+import { OutboxDispatchStrategyRegistry } from './outbox-dispatch-strategy-registry'
+import { isErr } from 'core/shared/result'
 import {
   IOutboxRepository,
   IOutboxEvent,
-  IOutboxEventType,
+  IOutboxEventStatus,
 } from 'core/contracts/repository/outbox-repository.interface'
-import { FormPayload } from 'core/types/use-cases/forms/form-payload'
-import { OUTBOX_THRESHOLDS } from 'core/constants/outbox/outbox-thresholds'
+import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
+import { captureError } from '@lib/sentry/capture'
+import {
+  collectMetricsOutboxEventsDispatched,
+  collectMetricsOutboxEventsReverted,
+  collectMetricsOutboxEventsRevertFailed,
+  collectMetricsOutboxEventsMarkedAsTerminalFail,
+  collectMetricsOutboxEventsExpired,
+  collectMetricsOutboxEventsStuckSendingEventsRecovered,
+} from '@lib/metrics/outbox-metrics'
 
 export class OutboxProcessor {
-  private readonly LOCK_KEY = LOCK_KEYS.OUTBOX_PROCESSOR
-  private readonly LOCK_TTL_MS = LOCK_TTL_MS.DEFAULT
+  private readonly LOCK_KEY = OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_PROCESSOR
+  private readonly LOCK_TTL_MS = OUTBOX_CONSTANTS.LOCK_TTL_MS.DEFAULT
 
-  constructor(private outboxRepository: IOutboxRepository) {}
+  constructor(
+    private outboxRepository: IOutboxRepository,
+    private dispatchRegistry: OutboxDispatchStrategyRegistry,
+  ) {}
 
-  async processEvents(): Promise<void> {
+  async processPendingEvents(): Promise<void> {
     let lockToken: LockToken | null = null
 
     try {
       lockToken = await DistributedLock.acquire(this.LOCK_KEY, this.LOCK_TTL_MS)
       if (!lockToken) {
-        logger.warn('processEvents: Processamento ignorado. Outra instância já está rodando.')
+        logger.warn(OUTBOX_LOGS.SKIPPED_ANOTHER_RUNNING)
         return
       }
 
-      const pendingEventsResult = await this.outboxRepository.findPending(OUTBOX_THRESHOLDS.PENDING_FETCH_LIMIT)
+      const pendingEventsResult = await this.outboxRepository.findPending(OUTBOX_CFG.THRESHOLDS.PENDING_FETCH_LIMIT)
 
       // Verificação do Result
-      if (pendingEventsResult.success === false) {
-        logger.error({ error: pendingEventsResult.error }, '❌ Erro de Infra ao buscar eventos pendentes.')
+      if (isErr(pendingEventsResult)) {
+        logger.error({ error: pendingEventsResult.error }, OUTBOX_LOGS.PENDING_FETCH_ERROR)
+        captureError(pendingEventsResult.error)
         return
       }
 
@@ -48,7 +60,8 @@ export class OutboxProcessor {
         await this.processSingleEvent(event)
       }
     } catch (error) {
-      logger.error({ error }, '❌ Erro crítico inesperado no loop principal de processEvents')
+      logger.error({ error }, OUTBOX_LOGS.CRITICAL_LOOP_ERROR)
+      captureError(error)
     } finally {
       if (lockToken) {
         await DistributedLock.release(this.LOCK_KEY, lockToken)
@@ -56,77 +69,143 @@ export class OutboxProcessor {
     }
   }
 
-  async recoverStuckSendingEvents(): Promise<void> {
+  async processStuckSendingEvents(): Promise<void> {
     let lockToken: LockToken | null = null
 
     try {
-      lockToken = await DistributedLock.acquire(LOCK_KEYS.OUTBOX_RECOVERY, this.LOCK_TTL_MS)
+      lockToken = await DistributedLock.acquire(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, this.LOCK_TTL_MS)
       if (!lockToken) return
 
-      const thresholdDate = new Date(Date.now() - OUTBOX_THRESHOLDS.STUCK_SENDING_MS)
-      const stuckEventsResult = await this.outboxRepository.findStuck(thresholdDate)
+      const thresholdDate = new Date(Date.now() - OUTBOX_CFG.THRESHOLDS.STUCK_SENDING_MS)
+      const stuckEventsResult = await this.outboxRepository.findStuck(
+        thresholdDate,
+        OUTBOX_CFG.THRESHOLDS.STUCK_FETCH_LIMIT,
+      )
 
       // Verificação do Result
-      if (stuckEventsResult.success === false) {
-        logger.error({ error: stuckEventsResult.error }, '❌ Erro de Infra ao buscar eventos travados na Outbox.')
+      if (isErr(stuckEventsResult)) {
+        logger.error({ error: stuckEventsResult.error }, OUTBOX_LOGS.STUCK_FETCH_ERROR)
+        captureError(stuckEventsResult.error)
         return
       }
 
       const stuckEvents = stuckEventsResult.value
 
       if (stuckEvents.length > 0) {
-        logger.warn(`♻️ Encontrados ${stuckEvents.length} eventos travados em SENDING. Iniciando recuperação...`)
+        logger.warn(`Encontrados ${stuckEvents.length} eventos travados em SENDING. Iniciando recuperação...`)
         for (const event of stuckEvents) {
-          await DistributedLock.renew(LOCK_KEYS.OUTBOX_RECOVERY, lockToken, this.LOCK_TTL_MS)
+          await DistributedLock.renew(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, lockToken, this.LOCK_TTL_MS)
+          collectMetricsOutboxEventsStuckSendingEventsRecovered?.inc()
           await this.processSingleEvent(event)
         }
       }
     } catch (error) {
-      logger.error({ error }, '❌ Erro crítico inesperado no recoverStuckSendingEvents')
+      logger.error({ error }, OUTBOX_LOGS.CRITICAL_RECOVERY_ERROR)
+      captureError(error)
     } finally {
       if (lockToken) {
-        await DistributedLock.release(LOCK_KEYS.OUTBOX_RECOVERY, lockToken)
+        await DistributedLock.release(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, lockToken)
       }
     }
   }
 
   async processSingleEvent(event: IOutboxEvent): Promise<void> {
-    try {
-      const updateResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.SENDING)
+    // Gate de expiração — ANTES de qualquer fase: um evento expirado sai da
+    // tabela em vez de virar FAILED (o payload carrega um segredo e a linha é
+    // lixo em qualquer status). Eventos vindos do Pub/Sub chegam com datas
+    // serializadas como string, por isso o new Date().
+    if (event.expiresAt && new Date(event.expiresAt).getTime() <= Date.now()) {
+      const deleteResult = await this.outboxRepository.delete(event.publicId)
 
-      // Se não conseguimos atualizar para SENDING, jogamos para o catch reverter
-      if (updateResult.success === false) throw updateResult.error
-
-      await this.dispatchToBullMQ(event)
-    } catch (error) {
-      const revertResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventType.PENDING)
-
-      if (revertResult.success === false) {
-        logger.error(
-          { publicId: event.publicId, error: revertResult.error },
-          '🚨 FATAL: Falha ao reverter status para PENDING. Inconsistência na DB.',
-        )
+      if (isErr(deleteResult)) {
+        logger.error({ publicId: event.publicId, error: deleteResult.error }, OUTBOX_LOGS.EXPIRED_EVENT_DELETE_ERROR)
+        captureError(deleteResult.error, { publicId: event.publicId })
       } else {
-        logger.error({ publicId: event.publicId, error }, '❌ Falha no dispatch, revertido para PENDING')
+        collectMetricsOutboxEventsExpired?.inc()
+        logger.info({ publicId: event.publicId, type: event.type }, OUTBOX_LOGS.EXPIRED_EVENT_DELETED)
+      }
+      return
+    }
+
+    // Phase 0: eventos que excederam o limite de ciclos de despacho são terminais (poison message)
+    if (event.attempts >= OUTBOX_CFG.THRESHOLDS.MAX_DISPATCH_ATTEMPTS) {
+      const failResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventStatus.FAILED)
+
+      if (isErr(failResult)) {
+        logger.error({ publicId: event.publicId, error: failResult.error }, OUTBOX_LOGS.FAILED_MARK_ERROR)
+        captureError(failResult.error, { publicId: event.publicId })
+      } else {
+        collectMetricsOutboxEventsMarkedAsTerminalFail?.inc()
+        logger.warn({ publicId: event.publicId, attempts: event.attempts }, OUTBOX_LOGS.MARKED_FAILED)
+        // Evento terminal (poison message): sem exceção real para capturar, então
+        // sintetizamos uma Error para dar visibilidade no Sentry (política "terminal/critical only").
+        captureError(new Error(OUTBOX_LOGS.MARKED_FAILED), { publicId: event.publicId, attempts: event.attempts })
+      }
+      return
+    }
+
+    // Phase 1: Transition to SENDING
+    const updateResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventStatus.SENDING)
+
+    if (isErr(updateResult)) {
+      logger.error({ publicId: event.publicId, error: updateResult.error }, OUTBOX_LOGS.STATUS_UPDATE_FAILED)
+      return
+    }
+
+    // Phase 2: Dispatch to BullMQ (revert on failure)
+    try {
+      await this.dispatchToBullMQ(event)
+      collectMetricsOutboxEventsDispatched?.inc()
+    } catch (error) {
+      const revertResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventStatus.PENDING)
+
+      if (isErr(revertResult)) {
+        collectMetricsOutboxEventsRevertFailed?.inc()
+        logger.error({ publicId: event.publicId, error: revertResult.error }, OUTBOX_LOGS.REVERT_FATAL)
+        captureError(revertResult.error, { publicId: event.publicId })
+      } else {
+        collectMetricsOutboxEventsReverted?.inc()
+        logger.error({ publicId: event.publicId, error }, OUTBOX_LOGS.DISPATCH_REVERTED)
       }
     }
   }
 
   private async dispatchToBullMQ(event: IOutboxEvent): Promise<void> {
-    const payload = event.payload as FormPayload
+    const strategyResult = this.dispatchRegistry.resolve(event.type)
+    if (isErr(strategyResult)) {
+      throw strategyResult.error
+    }
 
-    const strategy = payload.decisaoPorCristo ? new DecisionForChristEmailStrategy() : new ContactEmailStrategy()
+    const planResult = strategyResult.value.buildDispatch(event)
+    if (isErr(planResult)) {
+      throw planResult.error
+    }
 
-    const userJob = strategy.buildUserEmail(payload)
-    const staffJob = strategy.buildStaffEmail(payload)
+    const { emails, jobOptions } = planResult.value
 
-    await mailQueue.add(
-      JOB_NAMES.OUTBOX_DISPATCH,
+    // Retry seletivo: se um envio parcial anterior registrou destinatários pendentes,
+    // despacha apenas esses; caso contrário (lista vazia), despacha o lote completo.
+    let finalEmails = emails
+    if (event.pendingRecipients.length > 0) {
+      const filtered = emails.filter((e) => event.pendingRecipients.includes(e.to))
+      if (filtered.length === 0) {
+        // Fallback defensivo: nenhum destinatário reconstruído bateu com o filtro
+        // (estratégia/payload mudou). Despacha o lote completo para preservar o at-least-once.
+        logger.warn({ publicId: event.publicId }, OUTBOX_LOGS.PENDING_RECIPIENTS_UNRESOLVED)
+      } else {
+        finalEmails = filtered
+      }
+    }
+
+    await getMailQueue().add(
+      QUEUE.JOBS.OUTBOX_DISPATCH,
       {
         publicId: event.publicId,
-        emails: [userJob, staffJob],
+        emails: finalEmails,
+        // Repassa a expiração para o gate do mail worker (job data é JSON)
+        ...(event.expiresAt ? { expiresAt: new Date(event.expiresAt).toISOString() } : {}),
       },
-      { jobId: event.publicId },
+      { jobId: event.publicId, ...jobOptions },
     )
   }
 }

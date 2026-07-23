@@ -6,16 +6,14 @@ import { verifyUserRole } from '@middlewares/verify-user-role.middleware'
 import { UserRole } from '@prisma/client'
 import { deleteChurch } from './delete-church.controller'
 import { findChurchPublicIdByName } from './find-church-publicId-by-name.controller'
+import { HTTP_RATE_LIMIT_POLICIES } from '@http/policies/rate-limit'
 
 export async function churchesRoutes(app: FastifyInstance) {
   app.get(
     '/nearest',
     {
       config: {
-        rateLimit: {
-          max: 30000,
-          timeWindow: '1 minute',
-        },
+        rateLimit: HTTP_RATE_LIMIT_POLICIES.churches.nearest,
       },
     },
     findNearestChurches,

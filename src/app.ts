@@ -1,155 +1,102 @@
 import fastify from 'fastify'
 import { env } from '@env/index'
 import { appRoutes } from '@http/routes'
-import { logger, runWithRequestId, runWithUserContext } from '@lib/logger'
-import { logError } from '@lib/logger/helpers'
+import { logger } from '@lib/logger'
 import { v7 as uuidv7 } from 'uuid'
-import z, { ZodError } from 'zod'
-import { messages } from 'core/constants/messages'
+import z from 'zod'
 import fastifyJwt from '@fastify/jwt'
 import fastifyCors from '@fastify/cors'
-import * as Sentry from '@sentry/node'
-import { nodeProfilingIntegration } from '@sentry/profiling-node'
-import { RedisRateLimiter } from '@lib/infra/rate-limiter/rate-limiter'
+import fastifyCookie from '@fastify/cookie'
+import { RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { asyncContext } from '@http/plugins/async-context.plugin'
 import { closeAllRedisConnections } from '@lib/redis/clients/clients'
+import { httpRateLimit } from '@http/plugins/rate-limit.plugin'
+import { errorHandler } from '@http/plugins/error-handler.plugin'
+import { requestLifecycle } from '@http/plugins/request-lifecycle.plugin'
+import { analytics } from '@http/plugins/analytics.plugin'
+import metricsPlugin from 'fastify-metrics'
+import promClient from 'prom-client'
+import { getRegistry } from '@lib/metrics'
+
 z.config(z.locales.pt())
 
 export const app = fastify({
   logger: false,
+  trustProxy: true,
+  genReqId: () => uuidv7(),
 })
 
-if (env.SENTRY_DSN) {
-  Sentry.init({
-    dsn: env.SENTRY_DSN,
-    environment: env.NODE_ENV,
-    integrations: [nodeProfilingIntegration()],
-    tracesSampleRate: 1.0,
-    profileSessionSampleRate: 1.0,
-    profileLifecycle: 'trace',
-  })
-
-  Sentry.setupFastifyErrorHandler(app)
-}
-
-if (env.NODE_ENV === 'production') {
-  setInterval(() => {
-    const memUsage = process.memoryUsage()
-    const heapUsedMB = memUsage.heapUsed / 1024 / 1024
-    const rssMB = memUsage.rss / 1024 / 1024
-
-    // Alert at 400MB heap usage (80% of 512MB Docker limit)
-    if (heapUsedMB > 400) {
-      logger.warn({
-        msg: 'High memory usage detected',
-        heapUsedMB: Math.round(heapUsedMB),
-        rssMB: Math.round(rssMB),
-        heapTotalMB: Math.round(memUsage.heapTotal / 1024 / 1024),
-      })
-    }
-  }, 60000)
-}
-
+// 1. AsyncContext — wraps every request in ALS with requestId from genReqId
 app.register(asyncContext)
 
-app.addHook('onRequest', (request, _reply, done) => {
-  const requestId = uuidv7()
-  const xff = request.headers['x-forwarded-for']
-  const clientIp = Array.isArray(xff) ? xff[0] : xff?.split(',')[0].trim() || request.ip
-
-  runWithRequestId(requestId, async () => {
-    try {
-      const decoded = await request.jwtVerify<{ sub: string }>()
-      runWithUserContext(decoded.sub, () => {
-        logRequestDetails()
-        done()
-      })
-    } catch {
-      logRequestDetails()
-      done()
-    }
-
-    function logRequestDetails() {
-      logger.info(
-        {
-          method: request.method,
-          url: request.url,
-          ip: clientIp,
-          remotePort: request.socket.remotePort,
-          userAgent: request.headers['user-agent'],
-        },
-        'Incoming request',
-      )
-    }
-  })
-})
-
-app.addHook('onResponse', (request, reply, done) => {
-  logger.info(
-    {
-      statusCode: reply.statusCode,
-      method: request.method,
-      url: request.url,
-      requestTime: reply.elapsedTime,
+// 1.5 HTTP metrics — per-route request duration histogram into the shared
+// metrics registry (served by the dedicated metrics-server, not this port).
+// Skipped entirely when METRICS_ENABLED=false (getRegistry() returns null).
+const metricsRegistry = getRegistry()
+if (metricsRegistry) {
+  app.register(metricsPlugin, {
+    promClient,
+    endpoint: null,
+    defaultMetrics: { enabled: false },
+    routeMetrics: {
+      enabled: { histogram: true, summary: false },
+      overrides: {
+        histogram: { registers: [metricsRegistry] },
+      },
     },
-    'Response sent',
-  )
+  })
+}
 
-  done()
-})
-
+// 2. CORS — short-circuits OPTIONS before auth/lifecycle / rate limit
 app.register(fastifyCors, {
   origin: env.FRONTEND_URL,
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   exposedHeaders: ['Authorization'],
   maxAge: 3600,
 })
 
+// 3. Rate limiting — drops abusive traffic before any crypto/cookie work
+app.register(httpRateLimit)
+
+// Cookies parser & signer
+app.register(fastifyCookie, {
+  secret: env.COOKIE_SECRET,
+})
+
+// Analytics sessions and events tracking
+app.register(analytics)
+
+// 4. JWT — decorates app with jwtVerify (no interception)
 app.register(fastifyJwt, {
   secret: env.JWT_SECRET,
 })
 
+// 5. Request lifecycle — JWT extraction, userId population, request/response logging
+app.register(requestLifecycle)
+
+// 6. Error handler — catches anything thrown by plugins and routes
+app.register(errorHandler)
+
+// 7. Routes
 app.register(appRoutes)
 
-app.setErrorHandler((error, _request, reply) => {
-  if (error instanceof ZodError) {
-    logger.debug(z.treeifyError(error), 'Validation error occurred')
-
-    return reply.status(400).send({ message: messages.validation.invalidData, details: z.treeifyError(error) })
-  }
-
-  if (error instanceof SyntaxError) {
-    logger.error(error, 'JSON inválido recebido')
-    return reply.status(400).send({ message: messages.validation.invalidJson })
-  }
-
-  if (env.NODE_ENV === 'development') {
-    logError(error, {}, 'Unhandled error occurred')
-  } else {
-    if (env.SENTRY_DSN) {
-      Sentry.captureException(error)
-    }
-    logger.error('Unhandled error occurred')
-  }
-
-  reply.status(500).send({ message: messages.errors.internalServer, error: error.message })
-})
-
+// Graceful shutdown — application-level resource cleanup
 app.addHook('onClose', async () => {
-  logger.info('🛑 Shutting down RateLimiter and Redis connections...')
+  logger.info('Finalizando as conexões do RateLimiter e Redis...')
 
   try {
     await RedisRateLimiter.destroyInstance()
-    logger.info('✅ RateLimiter destroyed')
+    logger.info('RateLimiter finalizado com sucesso')
   } catch (error) {
-    logger.error(error, '❌ Error destroying RateLimiter')
+    logger.error(error, 'Erro ao finalizar o RateLimiter')
   }
 
   try {
     await closeAllRedisConnections()
-    logger.info('✅ Redis connections closed')
+    logger.info('Conexões do Redis fechadas')
   } catch (error) {
-    logger.error(error, '❌ Error closing Redis connections')
+    logger.error(error, 'Erro ao fechar as conexões do Redis')
   }
 })

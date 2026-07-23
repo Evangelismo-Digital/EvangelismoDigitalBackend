@@ -1,8 +1,9 @@
-import { HTTPDomainError } from 'errors/http-errors/http-domain-error'
-import { FORM_SUBMISSION_ERROR } from 'messages/errors/use-cases/forms/forms-error-messages'
+import { ErrorType } from 'core/types/error-type/error-type'
+import { DomainError } from 'errors/domain-error'
+import { FORM_ERRORS } from 'messages/errors/forms'
 
-export class FormsSubmissionError extends HTTPDomainError {
+export class FormsSubmissionError extends DomainError {
   constructor() {
-    super(FORM_SUBMISSION_ERROR, 400)
+    super(FORM_ERRORS.SUBMISSION, ErrorType.BAD_REQUEST)
   }
 }

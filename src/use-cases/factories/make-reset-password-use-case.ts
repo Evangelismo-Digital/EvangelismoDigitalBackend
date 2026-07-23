@@ -1,8 +1,11 @@
 import { PrismaUsersRepository } from '@repositories/prisma/prisma-users-repository'
+import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
+import { userPrismaErrorMapping } from '@repositories/prisma/errors/users-error-mapping'
 import { ResetPasswordUseCase } from '@use-cases/users/reset-password'
 
 export function makeResetPasswordUseCase() {
-  const usersRepository = new PrismaUsersRepository()
+  const errorMapper = new PrismaErrorMapper(userPrismaErrorMapping)
+  const usersRepository = new PrismaUsersRepository(errorMapper)
   const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
 
   return resetPasswordUseCase

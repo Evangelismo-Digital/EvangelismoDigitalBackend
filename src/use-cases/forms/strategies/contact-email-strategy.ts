@@ -7,47 +7,66 @@ import { contactStaffTextTemplate } from '@templates/contact-staff/contact-staff
 import { contactStaffHtmlTemplate } from '@templates/contact-staff/contact-staff-html'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 import { IMailJobData } from 'core/contracts/lib/queue/mail-job-data.interface'
+import { Result, ok, err, isErr } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { InvalidFormPayloadError } from '@use-cases/errors/forms/invalid-form-payload-error'
 import { env } from '@env/index'
 
 export class ContactEmailStrategy implements IFormEmailStrategy {
-  buildUserEmail(form: FormPayload): IMailJobData {
-    const email = this.getStringField(form.email, 'form.email')
-    const name = this.getStringField(form.name, 'form.name')
+  buildUserEmail(form: FormPayload): Result<IMailJobData, AppError> {
+    const emailResult = this.getStringField(form.email, 'form.email')
+    if (isErr(emailResult)) return emailResult
 
-    return {
+    const nameResult = this.getStringField(form.name, 'form.name')
+    if (isErr(nameResult)) return nameResult
+
+    const email = emailResult.value
+    const name = nameResult.value
+
+    return ok({
       to: email,
       subject: contactUserSubjectTextTemplate(name),
       message: contactUserTextTemplate(name),
       html: contactUserHtmlTemplate(name),
       context: { type: 'contact', recipient: 'user' },
-    }
+    })
   }
 
-  buildStaffEmail(form: FormPayload): IMailJobData {
-    const email = this.getStringField(form.email, 'form.email')
-    const name = this.getStringField(form.name, 'form.name')
-    const lastName = this.getOptionalStringField(form.lastName, 'form.lastName')
+  buildStaffEmail(form: FormPayload): Result<IMailJobData, AppError> {
+    const emailResult = this.getStringField(form.email, 'form.email')
+    if (isErr(emailResult)) return emailResult
 
-    return {
+    const nameResult = this.getStringField(form.name, 'form.name')
+    if (isErr(nameResult)) return nameResult
+
+    const lastNameResult = this.getOptionalStringField(form.lastName, 'form.lastName')
+    if (isErr(lastNameResult)) return lastNameResult
+
+    const email = emailResult.value
+    const name = nameResult.value
+    const lastName = lastNameResult.value
+    const ipAddress = typeof form.ipAddress === 'string' ? form.ipAddress : undefined
+
+    return ok({
       to: env.ADMIN_EMAIL,
       subject: contactStaffSubjectTextTemplate(),
-      message: contactStaffTextTemplate(name, email),
-      html: contactStaffHtmlTemplate(name, lastName, email),
+      message: contactStaffTextTemplate(name, email, ipAddress),
+      html: contactStaffHtmlTemplate(name, lastName, email, ipAddress),
       context: { type: 'contact', recipient: 'internal' },
-    }
+    })
   }
 
-  private getStringField(value: unknown, fieldName: string): string {
+  private getStringField(value: unknown, fieldName: string): Result<string, AppError> {
     if (typeof value === 'string') {
-      return value
+      return ok(value)
     }
-    throw new Error(`Invalid value for ${fieldName}: expected a string.`)
+    return err(new InvalidFormPayloadError(fieldName))
   }
 
-  private getOptionalStringField(value: unknown, fieldName: string): string {
+  private getOptionalStringField(value: unknown, fieldName: string): Result<string, AppError> {
     if (value === undefined || typeof value === 'string') {
-      return value || '' // Return an empty string if undefined
+      return ok((value as string) || '')
     }
-    throw new Error(`Invalid value for ${fieldName}: expected a string or undefined.`)
+    return err(new InvalidFormPayloadError(fieldName))
   }
 }

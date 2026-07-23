@@ -1,12 +1,23 @@
 import { emailSchema } from '@http/schemas/utils/email'
-import { User } from '@prisma/client'
+import { User, AuthenticationStatus } from '@prisma/client'
 import { UsersRepository } from 'core/contracts/repository/users-repository.interface'
 import { InvalidCredentialsError } from '@use-cases/errors/invalid-credentials-error'
 import { compare } from 'bcryptjs'
+import { AuthenticationAuditUseCase } from '@use-cases/authentication-audit/authentication-audit'
+import { Result, ok, err, isErr } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+
+interface AuthenticationAuditContext {
+  ipAddress: string
+  remotePort: string | null
+  userAgent: string | null
+  origin: string | null
+}
 
 interface AuthenticateUserUseCaseRequest {
   login: string
   password: string
+  auditContext: AuthenticationAuditContext
 }
 
 type AuthenticateUserUseCaseResponse = {
@@ -14,27 +25,59 @@ type AuthenticateUserUseCaseResponse = {
 }
 
 export class AuthenticateUserUseCase {
-  constructor(private usersRepository: UsersRepository) {}
+  constructor(
+    private usersRepository: UsersRepository,
+    private authenticationAuditUseCase: AuthenticationAuditUseCase,
+  ) {}
 
-  async execute({ login, password }: AuthenticateUserUseCaseRequest): Promise<AuthenticateUserUseCaseResponse> {
-    let user: User | null = null
+  async execute({
+    login,
+    password,
+    auditContext,
+  }: AuthenticateUserUseCaseRequest): Promise<Result<AuthenticateUserUseCaseResponse, AppError>> {
+    let userResult: Result<User | null, AppError>
 
     if (emailSchema.safeParse(login).success) {
-      user = await this.usersRepository.findBy({ email: login })
+      userResult = await this.usersRepository.findBy({ email: login })
     } else {
-      user = await this.usersRepository.findBy({ username: login })
+      userResult = await this.usersRepository.findBy({ username: login })
     }
 
+    if (isErr(userResult)) {
+      return userResult
+    }
+
+    const user = userResult.value
+
     if (!user) {
-      throw new InvalidCredentialsError()
+      await this.authenticationAuditUseCase.execute({
+        ...auditContext,
+        status: AuthenticationStatus.USER_NOT_EXISTS,
+      })
+
+      return err(new InvalidCredentialsError())
     }
 
     const hashToCompare = user.passwordHash
 
     const doesPasswordMatch = await compare(password, hashToCompare)
 
-    if (!doesPasswordMatch) throw new InvalidCredentialsError()
+    if (!doesPasswordMatch) {
+      await this.authenticationAuditUseCase.execute({
+        ...auditContext,
+        status: AuthenticationStatus.INCORRECT_PASSWORD,
+        userId: user.id,
+      })
 
-    return { user }
+      return err(new InvalidCredentialsError())
+    }
+
+    await this.authenticationAuditUseCase.execute({
+      ...auditContext,
+      status: AuthenticationStatus.SUCCESS,
+      userId: user.id,
+    })
+
+    return ok({ user })
   }
 }

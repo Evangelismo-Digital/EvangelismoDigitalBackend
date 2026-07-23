@@ -11,5 +11,3 @@ export const registerSchema = z.object({
   cpf: cpfSchema,
   password: passwordSchema,
 })
-
-export type registerSchemaType = z.infer<typeof registerSchema>

@@ -2,6 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify'
 import { logger } from '@lib/logger'
 import { logError } from '@lib/logger/helpers'
 import { prisma } from '@lib/prisma'
+import { HEALTH_CHECK_CONSTANTS } from 'messages/constants/health-check/health-check'
 
 export async function healthCheck(_request: FastifyRequest, reply: FastifyReply) {
   const memoryUsage = process.memoryUsage()
@@ -14,9 +15,9 @@ export async function healthCheck(_request: FastifyRequest, reply: FastifyReply)
     const timestamp = new Date().toISOString()
     const duration = Date.now() - startTime
 
-    logger.info({ uptime, duration }, 'Healthcheck successful')
+    logger.info({ uptime, duration }, 'Healthcheck realizado com sucesso')
 
-    return reply.status(200).send({
+    return reply.code(200).send({
       status: 'ok',
       uptime,
       timestamp,
@@ -29,8 +30,8 @@ export async function healthCheck(_request: FastifyRequest, reply: FastifyReply)
     })
   } catch (error) {
     const duration = Date.now() - startTime
-    logError(error, { duration }, 'Healthcheck failed')
+    logError(error, { duration }, 'Falha no healthcheck')
 
-    return reply.status(500).send({ status: 'error', message: 'Internal healthcheck error' })
+    return reply.code(500).send({ status: 'error', message: HEALTH_CHECK_CONSTANTS.INTERNAL_ERROR })
   }
 }

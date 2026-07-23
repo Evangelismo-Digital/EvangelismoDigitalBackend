@@ -2,30 +2,24 @@ import { IOutboxEventRegistration } from 'core/contracts/use-cases/outbox-event/
 import {
   IOutboxRepository,
   IOutboxEvent,
-  IOutboxEventType,
+  IOutboxEventStatus,
 } from 'core/contracts/repository/outbox-repository.interface'
+import { OutboxEventInput } from 'core/types/outbox/outbox-event-input'
 import { Result } from 'core/shared/result'
-import { FormPayload } from 'core/types/use-cases/forms/form-payload'
+import { AppError } from 'errors/app-error'
 
+/**
+ * Registro genérico de eventos na Outbox. A montagem do payload é
+ * responsabilidade do use case de domínio que chama `register` — a união
+ * discriminada OutboxEventInput garante o formato correto por tipo.
+ */
 export class OutboxEventUseCase implements IOutboxEventRegistration {
   constructor(private outboxRepository: IOutboxRepository) {}
 
-  async register(form: FormPayload): Promise<Result<IOutboxEvent, Error>> {
-    const payload = {
-      name: form.name,
-      email: form.email,
-      lastName: form.lastName,
-      decisaoPorCristo: form.decisaoPorCristo,
-      location: form.location || null,
-    }
-
-    // Usa o novo método create com o formato InputData
-    const outboxEvent = await this.outboxRepository.create({
-      status: IOutboxEventType.PENDING,
-      type: 'FormSubmissionCreated',
-      payload,
+  async register(input: OutboxEventInput): Promise<Result<IOutboxEvent, AppError>> {
+    return this.outboxRepository.create({
+      status: IOutboxEventStatus.PENDING,
+      ...input,
     })
-
-    return outboxEvent
   }
 }

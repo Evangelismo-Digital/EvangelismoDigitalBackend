@@ -1,7 +1,9 @@
-import { messages } from 'core/constants/messages'
+import { ErrorType } from 'core/types/error-type/error-type'
+import { DomainError } from 'errors/domain-error'
+import { CHURCH_ERRORS } from 'messages/errors/churches'
 
-export class CreateChurchError extends Error {
+export class CreateChurchError extends DomainError {
   constructor() {
-    super(messages.errors.createChurchFailed)
+    super(CHURCH_ERRORS.CREATE_FAILED, ErrorType.INTERNAL_SERVER_ERROR)
   }
 }

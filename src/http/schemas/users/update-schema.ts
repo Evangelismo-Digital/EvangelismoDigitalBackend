@@ -7,5 +7,3 @@ export const updateSchema = z.object({
   email: emailSchema.optional(),
   username: usernameSchema.optional(),
 })
-
-export type updateSchemaType = z.infer<typeof updateSchema>

@@ -1,4 +1,5 @@
 import { env } from '@env/index'
+import { PASSWORD_RESET_CONSTANTS } from 'messages/constants/auth/password-reset'
 
 export function forgotPasswordHtmlTemplate(userName: string, token: string) {
   const url = `${env.FRONTEND_URL}/reset-password/${token}`
@@ -18,6 +19,9 @@ export function forgotPasswordHtmlTemplate(userName: string, token: string) {
       <p>
         Ou copie e cole este link no seu navegador:<br>
         <a href="${url}">${url}</a>
+      </p>
+      <p>
+        Este link é válido por ${PASSWORD_RESET_CONSTANTS.TOKEN_EXPIRES_IN_MINUTES} minutos.
       </p>
       <p>
         Se você não solicitou a recuperação de senha, ignore este e-mail.

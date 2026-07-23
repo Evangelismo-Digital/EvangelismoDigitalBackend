@@ -8,5 +8,3 @@ export const formsSchema = z.object({
   decisaoPorCristo: z.boolean(),
   location: z.string().optional(),
 })
-
-export type formsSchemaType = z.infer<typeof formsSchema>

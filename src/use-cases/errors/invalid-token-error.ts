@@ -1,7 +1,9 @@
-import { messages } from 'core/constants/messages'
+import { ErrorType } from 'core/types/error-type/error-type'
+import { DomainError } from 'errors/domain-error'
+import { AUTH_ERRORS } from 'messages/errors/auth'
 
-export class InvalidTokenError extends Error {
+export class InvalidTokenError extends DomainError {
   constructor() {
-    super(messages.errors.invalidToken)
+    super(AUTH_ERRORS.INVALID_TOKEN, ErrorType.UNAUTHORIZED)
   }
 }

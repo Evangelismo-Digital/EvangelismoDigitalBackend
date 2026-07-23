@@ -1,7 +1,9 @@
-import { messages } from 'core/constants/messages'
+import { ErrorType } from 'core/types/error-type/error-type'
+import { DomainError } from 'errors/domain-error'
+import { CHURCH_ERRORS } from 'messages/errors/churches'
 
-export class LongitudeRangeError extends Error {
+export class LongitudeRangeError extends DomainError {
   constructor() {
-    super(messages.longitude.outOfRange)
+    super(CHURCH_ERRORS.LONGITUDE_OUT_OF_RANGE, ErrorType.BAD_REQUEST)
   }
 }

@@ -1,4 +1,6 @@
+import { hash } from 'bcryptjs'
 import { prisma } from '../src/lib/prisma'
+import { env } from '../src/env'
 
 export async function seed() {
   // ---------------------------------------------------------------------------
@@ -13,8 +15,7 @@ export async function seed() {
       username: 'Admin',
       email: 'admin@example.com',
       cpf: '111.111.111-11',
-      // password: 'ybp_whf3wxn2xdr6MTE'
-      passwordHash: '$2a$12$y7AWvv8D1P9AVn2G8XkNZOXyrMZ658QFJyR.2kxM.oP/wmgB/.7.2',
+      passwordHash: await hash(env.SEED_ADMIN_PASSWORD, env.HASH_SALT_ROUNDS),
       role: 'ADMIN',
     },
   })
@@ -68,6 +69,13 @@ export async function seed() {
       address: 'R. Silva Jardim, 23 - Centro, Rio de Janeiro/RJ',
       lat: -22.90796180249929,
       lon: -43.181362869287575,
+    },
+    {
+      publicId: "71b1d3a3-e39a-4b9b-a737-a5af7da4ac3a",
+      name: "igreja batista carisma",
+      address: "r. atílio vivacqua, 101 - jardim américa, rio de janeiro - rj",
+      lat: -22.80580711046469,
+      lon: -43.32448393558175,
     },
     {
       publicId: '0197fa4a-02c2-7c9a-9e1d-2b3a4c5d6e02',

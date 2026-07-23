@@ -1,42 +1,31 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { forgotPasswordSchema } from '@http/schemas/users/forgot-password-schema'
 import { makeForgotPasswordUseCase } from '@use-cases/factories/make-forgot-password-use-case'
-import { logger } from '@lib/logger'
-import { makeSendEmailUseCase } from '@use-cases/factories/make-send-email-use-case'
-import { forgotPasswordTextTemplate } from '@templates/forgot-password/forgot-password-text'
-import { forgotPasswordHtmlTemplate } from '@templates/forgot-password/forgot-password-html'
-import { messages } from 'core/constants/messages'
-import { UserNotFoundForPasswordResetError } from '@use-cases/errors/user-not-found-for-password-reset-error'
+import { OutboxSignal } from '@lib/infra/events/outbox-signal'
+import { EMAIL_CONSTANTS } from 'messages/constants/email/email'
+import { isErr } from 'core/shared/result'
+import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 
 export async function forgotPassword(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    const { email } = forgotPasswordSchema.parse(request.body)
+  const { email } = forgotPasswordSchema.parse(request.body)
 
-    if (!email) {
-      throw new UserNotFoundForPasswordResetError()
-    }
-
-    const forgotPasswordUseCase = makeForgotPasswordUseCase()
-
-    const { user, token } = await forgotPasswordUseCase.execute({ email })
-
-    const sendEmailUseCase = makeSendEmailUseCase()
-
-    await sendEmailUseCase.execute({
-      to: user.email,
-      subject: messages.email.passwordRecoverySubject,
-      message: forgotPasswordTextTemplate(user.name, token),
-      html: forgotPasswordHtmlTemplate(user.name, token),
-    })
-
-    logger.info({ targetId: user.publicId }, 'Password reset email sent')
-
-    return reply.status(200).send({ message: messages.info.passwordResetGeneric })
-  } catch (error) {
-    if (error instanceof UserNotFoundForPasswordResetError) {
-      return reply.status(200).send({ message: error.message })
-    }
-
-    throw error
+  if (!email) {
+    return reply.code(200).send({ message: EMAIL_CONSTANTS.PASSWORD_RESET_GENERIC_MESSAGE })
   }
+
+  const forgotPasswordUseCase = makeForgotPasswordUseCase()
+
+  const result = await forgotPasswordUseCase.execute({ email })
+
+  if (isErr(result)) {
+    return HttpErrorMapper.map(result.error, reply)
+  }
+
+  const { outboxEvent } = result.value
+
+  if (outboxEvent) {
+    void OutboxSignal.publishNewItem(outboxEvent.publicId, outboxEvent)
+  }
+
+  return reply.code(200).send({ message: EMAIL_CONSTANTS.PASSWORD_RESET_GENERIC_MESSAGE })
 }

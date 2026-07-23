@@ -1,21 +1,17 @@
-import { AxiosError, AxiosInstance } from 'axios'
-import { logger } from '@lib/logger'
+import { AxiosInstance } from 'axios'
 import { createHttpClient } from '@lib/http/axios'
-import { EnumProviderConfig, RedisRateLimiter } from '@lib/infra/rate-limiter/rate-limiter'
-import { AddressServiceBusyError } from '@use-cases/errors/address-service-busy-error'
+import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
-import Redis from 'ioredis'
-import { AddressProviderFailureError } from './error/address-provider-failure-error'
-import { TimeoutExceededOnFetchError } from '@lib/errors/infra/cache/timeout-exceed-on-fetch-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
+import { IAddressData } from 'core/contracts/use-cases/providers/address-provider.interface'
+import { IRawAddressProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
+import { AWESOME_API_CONFIG } from 'messages/constants/providers/awesome-api'
+import { SHARED_PROVIDER_DEFAULTS } from 'messages/constants/providers/shared'
 
 export interface AwesomeApiConfig {
   apiUrl: string
   apiToken: string
 }
 
-// [MUDANÇA 2] Garantir que a interface da resposta da API esteja definida
 interface AwesomeApiResponse {
   cep: string
   address_type: string
@@ -30,145 +26,59 @@ interface AwesomeApiResponse {
   ddd: string
 }
 
-export class AwesomeApiProvider implements IAddressProvider {
-  private static api: AxiosInstance
+export class AwesomeApiProvider implements IRawAddressProvider {
+  private readonly api: AxiosInstance
 
-  private readonly MAX_RETRIES = 2
-  private readonly BACKOFF_MS = 100
-  private readonly TIMEOUT = 1500
+  readonly providerName = 'AwesomeAPI'
+  readonly rateLimitConfig = EnumProviderConfig.AWESOME_API_ADDRESS
+  readonly maxRetries = AWESOME_API_CONFIG.MAX_RETRIES
+  readonly backoffMs = AWESOME_API_CONFIG.BACKOFF_MS
 
-  // HTTPS Agent Settings
-  private readonly KEEP_ALIVE_MSECS = 1000
-  private readonly MAX_SOCKETS = 100
-  private readonly MAX_FREE_SOCKETS = 10
-  private readonly HTTPS_AGENT_TIMEOUT = 60000
-
-  constructor(
-    private readonly config: AwesomeApiConfig,
-    private readonly redisRateLimiterConnection: Redis,
-  ) {
-    if (!AwesomeApiProvider.api) {
-      AwesomeApiProvider.api = createHttpClient({
-        baseURL: this.config.apiUrl,
-        timeout: this.TIMEOUT,
-        headers: {
-          'User-Agent': 'EvangelismoDigitalBackend/1.0',
-        },
-        agentOptions: {
-          keepAliveMsecs: this.KEEP_ALIVE_MSECS,
-          maxSockets: this.MAX_SOCKETS,
-          maxFreeSockets: this.MAX_FREE_SOCKETS,
-          timeout: this.HTTPS_AGENT_TIMEOUT,
-        },
-      })
-    }
+  constructor(private readonly config: AwesomeApiConfig) {
+    this.api = createHttpClient({
+      baseURL: this.config.apiUrl,
+      timeout: AWESOME_API_CONFIG.TIMEOUT_MS,
+      headers: {
+        'User-Agent': SHARED_PROVIDER_DEFAULTS.USER_AGENT,
+      },
+      agentOptions: {
+        keepAliveMsecs: AWESOME_API_CONFIG.HTTPS_AGENT.KEEP_ALIVE_MSECS,
+        maxSockets: AWESOME_API_CONFIG.HTTPS_AGENT.MAX_SOCKETS,
+        maxFreeSockets: AWESOME_API_CONFIG.HTTPS_AGENT.MAX_FREE_SOCKETS,
+        timeout: AWESOME_API_CONFIG.HTTPS_AGENT.TIMEOUT_MS,
+      },
+    })
   }
 
-  async fetchAddress(cep: string, signal?: AbortSignal): Promise<IAddressData | null> {
+  async fetchRawAddress(cep: string, signal?: AbortSignal): Promise<IAddressData | null> {
     const cleanCep = cep.replace(/\D/g, '')
 
-    // Fail-Fast Rate Limit Check
-    const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection)
+    const { data } = await this.api.get<AwesomeApiResponse>(`/${cleanCep}`, {
+      signal,
+    })
 
-    const allowed = await rateLimiter.tryConsume(EnumProviderConfig.AWESOME_API_ADDRESS)
-
-    if (!allowed) {
-      throw new AddressServiceBusyError('AwesomeAPI (Rate Limit Excedido)')
+    if (!data || !data.cep) {
+      return null
     }
 
-    let lastError: Error | unknown = undefined
-
-    for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
-      if (signal?.aborted) {
-        throw signal.reason
-      }
-
-      try {
-        const { data } = await AwesomeApiProvider.api.get<AwesomeApiResponse>(`/${cleanCep}`, {
-          signal,
-        })
-
-        if (!data || !data.cep) {
-          return null
-        }
-
-        // [MUDANÇA 3] Normalizar dados para o PrecisionHelper
-        // A AwesomeAPI usa 'address_name' para rua e 'district' para bairro
-        const normalizedData = {
-          logradouro: data.address_name,
-          bairro: data.district,
-          localidade: data.city,
-          uf: data.state,
-        }
-
-        const precision = PrecisionHelper.fromAddressData(normalizedData)
-
-        return {
-          logradouro: data.address_name,
-          bairro: data.district,
-          localidade: data.city,
-          uf: data.state,
-          lat: parseFloat(data.lat),
-          lon: parseFloat(data.lng),
-          precision: precision,
-          providerName: 'AwesomeAPI',
-        }
-      } catch (error) {
-        if (signal?.aborted) {
-          throw new TimeoutExceededOnFetchError(signal.reason)
-        }
-
-        if (error instanceof AddressServiceBusyError) {
-          throw error
-        }
-
-        const err = error as AxiosError
-        const status = err.response?.status
-
-        // 404 means CEP not found - return null to try next provider
-        if (status === 404) {
-          logger.warn({ cep: cleanCep, attempt, status }, 'CEP não encontrado na AwesomeAPI (404)')
-          throw new InvalidCepError()
-        }
-
-        lastError = error
-
-        // Check if error is retryable (network issues, 5xx, 429)
-        const isRetryable = !err.response || (typeof status === 'number' && (status >= 500 || status === 429))
-
-        if (!isRetryable || attempt === this.MAX_RETRIES) {
-          if (status === 429 && attempt === this.MAX_RETRIES) {
-            throw new AddressServiceBusyError('AwesomeAPI (Rate Limit Excedido)')
-          }
-
-          logger.error(
-            {
-              cep: cleanCep,
-              attempt,
-              status,
-              code: err.code,
-              name: err.name,
-              url: err.config?.url,
-              method: err.config?.method,
-            },
-            'Falha ao buscar endereço AwesomeAPI após tentativas',
-          )
-          throw new AddressProviderFailureError(lastError)
-        }
-
-        // Backoff and retry for transient errors
-        const delay = this.BACKOFF_MS * Math.pow(2, attempt - 1)
-        logger.warn({ cep: cleanCep, attempt, delay, status }, 'Repetindo solicitação para AwesomeAPI')
-        await this.sleep(delay)
-      }
+    const normalizedData = {
+      logradouro: data.address_name,
+      bairro: data.district,
+      localidade: data.city,
+      uf: data.state,
     }
 
-    // This should be unreachable due to retry logic, but as safety net
-    logger.error({ cep: cleanCep }, 'AwesomeAPI - todas as tentativas esgotadas sem sucesso')
-    throw new AddressProviderFailureError(lastError)
-  }
+    const precision = PrecisionHelper.fromAddressData(normalizedData)
 
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
+    return {
+      logradouro: data.address_name,
+      bairro: data.district,
+      localidade: data.city,
+      uf: data.state,
+      lat: parseFloat(data.lat),
+      lon: parseFloat(data.lng),
+      precision: precision,
+      providerName: 'AwesomeAPI',
+    }
   }
 }

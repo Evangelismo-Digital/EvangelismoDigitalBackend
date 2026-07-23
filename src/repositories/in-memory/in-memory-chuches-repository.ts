@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client'
 import {
   ChurchesRepository,
   Church,
@@ -6,12 +5,15 @@ import {
   NearbyChurch,
   FindNearbyParams,
 } from 'core/contracts/repository/churches-repository.interface'
+import { Result, ok, err } from 'core/shared/result'
+import { AppError } from 'errors/app-error'
+import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
 import { randomUUID } from 'node:crypto'
 
 export class InMemoryChurchesRepository implements ChurchesRepository {
   public items: Church[] = []
 
-  async findNearest(params: FindNearbyParams): Promise<NearbyChurch[]> {
+  async findNearest(params: FindNearbyParams): Promise<Result<NearbyChurch[], AppError>> {
     const { userLat, userLon, limit = 10, maxRadiusMeters = 50000 } = params
 
     // Calculate distance using Haversine formula
@@ -30,6 +32,7 @@ export class InMemoryChurchesRepository implements ChurchesRepository {
 
       return {
         id: church.id,
+        publicId: church.publicId,
         name: church.name,
         address: church.address,
         lat: church.lat,
@@ -40,52 +43,56 @@ export class InMemoryChurchesRepository implements ChurchesRepository {
     })
 
     // Filter by max radius and sort by distance
-    return churchesWithDistance
+    const filtered = churchesWithDistance
       .filter((church) => church.distanceMeters <= maxRadiusMeters)
       .sort((a, b) => a.distanceMeters - b.distanceMeters)
       .slice(0, limit)
+
+    return ok(filtered)
   }
 
-  async findByParams(params: ChurchAlreadyExists): Promise<Church | null> {
+  async findByParams(params: ChurchAlreadyExists): Promise<Result<Church | null, AppError>> {
     const church = this.items.find(
       (item) => item.name === params.name && item.lat === params.lat && item.lon === params.lon,
     )
 
-    return church ?? null
+    return ok(church ?? null)
   }
 
-  async findByName(name: string): Promise<Church | null> {
+  async findByName(name: string): Promise<Result<Church | null, AppError>> {
     const church = this.items.find((item) => item.name === name)
 
-    return church ?? null
+    return ok(church ?? null)
   }
 
-  async createChurch(data: Prisma.ChurchCreateInput): Promise<Church | null> {
+  async createChurch(
+    data: Omit<Church, 'id' | 'publicId' | 'createdAt' | 'updatedAt' | 'geog'>,
+  ): Promise<Result<Church, AppError>> {
     const now = new Date()
     const church: Church = {
       id: this.items.length + 1,
       publicId: randomUUID(),
       name: data.name,
-      address: data.address ?? null,
-      lat: data.lat as number,
-      lon: data.lon as number,
+      address: data.address,
+      lat: data.lat,
+      lon: data.lon,
       geog: null,
       createdAt: now,
       updatedAt: now,
     }
 
     this.items.push(church)
-    return church
+    return ok(church)
   }
 
-  async deleteChurchByPublicId(publicId: string): Promise<Church | null> {
+  async deleteChurchByPublicId(publicId: string): Promise<Result<Church, AppError>> {
     const churchIndex = this.items.findIndex((item) => item.publicId === publicId)
 
     if (churchIndex === -1) {
-      return null
+      return err(new ChurchNotFoundError())
     }
 
     const [deletedChurch] = this.items.splice(churchIndex, 1)
-    return deletedChurch
+    return ok(deletedChurch)
   }
 }
