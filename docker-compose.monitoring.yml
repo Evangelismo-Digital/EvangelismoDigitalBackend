@@ -9,6 +9,7 @@ networks:
     driver: bridge
   evangelismo-network:
     driver: bridge
+    name: evangelismo-network
 
 volumes:
   prometheus_data:

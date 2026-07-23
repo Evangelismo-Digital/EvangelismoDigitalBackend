@@ -17,6 +17,11 @@ services:
       retries: 5
     networks:
       - evangelismo-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   redis:
     image: redis:7-alpine
@@ -33,6 +38,11 @@ services:
       retries: 5
     networks:
       - evangelismo-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pgdata:
@@ -41,3 +51,4 @@ volumes:
 networks:
   evangelismo-network:
     driver: bridge
+    name: evangelismo-network

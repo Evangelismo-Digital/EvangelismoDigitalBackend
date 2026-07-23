@@ -16,6 +16,11 @@ services:
     restart: unless-stopped
     networks:
       - evangelismo-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   redis:
     image: redis:7-alpine
@@ -31,6 +36,11 @@ services:
     restart: unless-stopped
     networks:
       - evangelismo-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # One-shot migrator. Built from the `builder` stage because the prisma CLI is a
   # devDependency and is absent from the pruned `runner` image. `prisma.config.ts`
@@ -50,6 +60,11 @@ services:
     restart: "no"
     networks:
       - evangelismo-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   fastify-backend:
     build:
@@ -89,6 +104,11 @@ services:
     restart: unless-stopped
     networks:
       - evangelismo-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   fastify-worker:
     build:
@@ -125,6 +145,11 @@ services:
     restart: unless-stopped
     networks:
       - evangelismo-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pgdata:
@@ -133,3 +158,4 @@ volumes:
 networks:
   evangelismo-network:
     driver: bridge
+    name: evangelismo-network
