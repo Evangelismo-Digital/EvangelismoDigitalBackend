@@ -1,16 +1,15 @@
 # OSV-Scanner ignore config — Evangelismo Digital Backend
 #
-# Both entries below have real upstream fixes, but not ones safe to take right
+# Every entry below has a real upstream fix, but not one safe to take right
 # now. Revisit periodically (aim: within ~90 days) rather than treating these
 # as permanent.
+#
+# (The two @hono/node-server entries that used to live here were dropped once
+# prisma 7.9.1 removed that transitive dependency entirely.)
 
 [[IgnoredVulns]]
-id = "GHSA-92pp-h63x-v22m"
-reason = "@hono/node-server, transitive via prisma's own @prisma/dev CLI dev-tooling (not @prisma/client). Never shipped in the production Docker image (Dockerfile only copies node_modules/.prisma and node_modules/@prisma/client). The only available fix path currently offered by npm is a downgrade to a prisma 6.20.0-dev/7.9.0-dev pre-release build, not a stable release."
-
-[[IgnoredVulns]]
-id = "GHSA-frvp-7c67-39w9"
-reason = "See GHSA-92pp-h63x-v22m — same @hono/node-server dev dependency, transitive via prisma's @prisma/dev CLI dev-tooling (not @prisma/client), never shipped in the production Docker image. The fix (2.0.5) is a major bump owned by prisma's pinned dependency, not reachable without prisma upgrading it upstream."
+id = "GHSA-mh99-v99m-4gvg"
+reason = "brace-expansion DoS (unbounded expansion -> OOM). Dev-only: reached via eslint-plugin-import (minimatch 3.x), typescript-eslint and tsup/sucrase (minimatch 9.x); never in the production Docker image, and the glob patterns fed to it are our own config, not attacker input. The advisory's only fixed version is 5.0.8, and brace-expansion 5.x changed its entry point to a named `expand` export while minimatch 3.x/9.x still import it as a callable default — an override would break lint and build. Reachable only when the tooling itself moves to minimatch 10.x."
 
 [[IgnoredVulns]]
 id = "GHSA-c7w3-x93f-qmm8"
