@@ -129,7 +129,24 @@ export default defineConfig(({ mode }) => {
           test: {
             name: 'e2e',
             dir: 'src/http/controllers',
-            exclude: ['**/api-providers-fallback-strategy.e2e.spec.ts'],
+            exclude: [
+              '**/api-providers-fallback-strategy.e2e.spec.ts',
+              '**/*.acceptance.spec.mts',
+            ],
+            // Uses Docker database with public schema
+            environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
+          },
+        },
+        {
+          extends: true,
+          test: {
+            // Layer 1 — Acceptance (Gherkin). `.feature` files under features/,
+            // step definitions colocated as *.acceptance.spec.ts, driven through
+            // Vitest by @amiceli/vitest-cucumber over the HTTP boundary.
+            name: 'acceptance',
+            dir: 'src/http/controllers',
+            // ESM (.mts) — @amiceli/vitest-cucumber is an ESM-only package.
+            include: ['**/*.acceptance.spec.mts'],
             // Uses Docker database with public schema
             environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
           },

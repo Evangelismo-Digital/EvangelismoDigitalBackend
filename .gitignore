@@ -4,3 +4,10 @@ build
 /src/generated/prisma
 .env
 .ci-local
+
+# Mutation testing (Layer 5)
+/reports/mutation
+/.stryker-tmp
+
+# Personal Claude Code overrides
+.claude/settings.local.json

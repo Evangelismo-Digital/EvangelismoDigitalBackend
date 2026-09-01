@@ -34,6 +34,6 @@
     "typeRoots": ["./node_modules/@types", "./src/types"],
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "src/load-test/load-test-resilient-cache.k6.js"],
+  "include": ["src/**/*.ts", "src/**/*.mts", "src/load-test/load-test-resilient-cache.k6.js"],
   "exclude": ["node_modules", "dist"]
 }

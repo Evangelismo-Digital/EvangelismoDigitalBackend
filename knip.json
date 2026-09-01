@@ -3,5 +3,5 @@
   "entry": ["prisma/vitest-environment-prisma/*.ts"],
   "project": ["src/**/*.ts"],
   "ignore": ["src/load-test/**"],
-  "ignoreDependencies": ["pino-pretty"]
+  "ignoreDependencies": ["pino-pretty", "fast-check"]
 }
