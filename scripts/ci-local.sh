@@ -88,9 +88,12 @@ stage_done 'Dependency vulnerabilities'
 
 # ─────────────────────────────────────────────────────────────────────────────
 stage 'License compliance — Trivy (mirrors job: license)'
+# CI runs on a fresh checkout; locally these gitignored scratch dirs would add
+# phantom targets (e.g. a leftover Stryker sandbox's package-lock.json).
 docker run --rm -v "$(pwd):/repo" \
   aquasec/trivy:0.72.0 \
-  fs --scanners license --severity HIGH,CRITICAL --exit-code 1 /repo
+  fs --scanners license --severity HIGH,CRITICAL --exit-code 1 \
+  --skip-dirs /repo/.stryker-tmp --skip-dirs /repo/.ci-local /repo
 stage_done 'License compliance'
 
 # ─────────────────────────────────────────────────────────────────────────────
