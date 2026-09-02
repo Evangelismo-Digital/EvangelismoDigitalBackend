@@ -134,5 +134,16 @@
   },
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "4.53.3"
+  },
+  "overrides": {
+    "typed-rest-client": {
+      "qs": "6.15.2"
+    },
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.0"
+    },
+    "prisma": {
+      "mysql2": "3.23.1"
+    }
   }
 }
