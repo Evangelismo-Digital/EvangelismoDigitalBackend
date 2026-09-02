@@ -104,12 +104,14 @@ Run before concluding any task:
 
 ## Autonomous operation
 
-`.claude/settings.json` (committed) pre-approves this project's dev commands and installs two hooks — see [`docs/autonomous-agent-setup.md`](docs/autonomous-agent-setup.md):
+This repo has **no** `.claude/settings.json` and no `.claude/settings.local.json`, by design. Permissions, permission mode, hooks, and remote control are dictated **exclusively** by the user-level `~/.claude/settings.json`. Do not create a project-level settings file (or reintroduce `defaultMode` anywhere in the repo) — project settings outrank user settings and would override the global configuration.
 
-- **`PostToolUse`** (`.claude/hooks/format-and-typecheck.sh`) — on every `src/**/*.ts` write: Prettier, then eslint `--max-warnings 0` (Layers 0 + 4), then `tsc --noEmit`.
-- **`Stop`** (`.claude/hooks/gate.sh`) — refuses to finish while typecheck, lint, or unit tests are red; also runs acceptance + e2e when the Docker stack is up. Has a per-session anti-loop guard. Mutation testing is intentionally not in this gate.
+`.claude/hooks/` holds two scripts. They **are** wired — from the user-level `~/.claude/settings.json`, never from a project settings file — and each command is guarded so it only runs when `$CLAUDE_PROJECT_DIR` is this repository; in any other project the hook exits 0 immediately.
 
-`defaultMode` is `acceptEdits`: file edits under `src/**` apply without prompting; shell commands outside the allow-list still prompt. The project `deny` list blocks `prisma migrate deploy`/`reset`, `db push`, `redis-cli FLUSH*`, and edits to `.env*`, `prisma/migrations/**`, and the prod/monitoring compose files, on top of the global `~/.claude/settings.json` baseline.
+- **`format-and-typecheck.sh`** (`PostToolUse` on `Edit|Write`, timeout 120 s) — on every `src/**/*.ts` write: Prettier, then eslint `--max-warnings 0` (Layers 0 + 4), then `tsc --noEmit`. Exit 2 hands the failure back to the agent to fix.
+- **`gate.sh`** (`Stop`, timeout 900 s) — refuses to finish while typecheck, lint, or unit tests are red; also runs acceptance + e2e when the Docker stack is up. Has a per-session anti-loop guard. Mutation testing is intentionally not in this gate.
+
+Editing the scripts changes what runs; adding or removing a hook means editing `~/.claude/settings.json` (or `/hooks`). The hooks are a safety net, not the plan — still run the pre-completion checklist explicitly, since Layer 5 (mutation) never fires from a hook.
 
 The agent does **not** run `git add` / `git commit` / `git push` — changes are left unstaged for the user to review and commit.
 

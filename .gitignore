@@ -9,5 +9,7 @@ build
 /reports/mutation
 /.stryker-tmp
 
-# Personal Claude Code overrides
+# Claude Code: configuration is global-only (~/.claude/settings.json).
+# No project-level settings file may exist — it would override the global one.
+.claude/settings.json
 .claude/settings.local.json
