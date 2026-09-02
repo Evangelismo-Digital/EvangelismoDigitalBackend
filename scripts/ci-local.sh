@@ -110,6 +110,7 @@ npx prisma migrate deploy
 # Same explicit project allowlist as ci.yml (see comment there for why the
 # flaky e2e-api-providers-fallback-strategy and redundant e2e-users are absent).
 npx vitest run --coverage \
+  --project=unit-core --project=unit-providers-helpers \
   --project=unit-errors --project=unit-use-cases --project=unit-churches \
   --project=unit-users --project=unit-messaging --project=unit-forms \
   --project=unit-geo-provider --project=unit-address-provider --project=unit-http \

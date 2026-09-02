@@ -42,7 +42,7 @@
     "test:e2e:watch": "vitest --project e2e",
     "test:e2e:users": "vitest run --project e2e src/http/controllers/users",
     "test:e2e:api-providers-fallback-strategy": "vitest run --project e2e-api-providers-fallback-strategy",
-    "test:unit:all": "vitest run --project=unit-errors --project=unit-use-cases --project=unit-churches --project=unit-users --project=unit-messaging --project=unit-forms --project=unit-geo-provider --project=unit-address-provider --project=unit-http --project=unit-http-users --project=unit-church-routing-provider --project=unit-lib --project=unit-resilient-cache --project=unit-rate-limiter --project=unit-repositories",
+    "test:unit:all": "vitest run --project=unit-core --project=unit-providers-helpers --project=unit-errors --project=unit-use-cases --project=unit-churches --project=unit-users --project=unit-messaging --project=unit-forms --project=unit-geo-provider --project=unit-address-provider --project=unit-http --project=unit-http-users --project=unit-church-routing-provider --project=unit-lib --project=unit-resilient-cache --project=unit-rate-limiter --project=unit-repositories",
     "test:unit": "npm run test:unit:all",
     "test:acceptance": "vitest run --project acceptance",
     "test:integration": "npm run test:e2e",

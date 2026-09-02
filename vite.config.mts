@@ -16,6 +16,22 @@ export default defineConfig(({ mode }) => {
         {
           extends: true,
           test: {
+            name: 'unit-core',
+            dir: 'src/core',
+            include: ['**/*.spec.ts'],
+          },
+        },
+        {
+          extends: true,
+          test: {
+            name: 'unit-providers-helpers',
+            dir: 'src/providers/helpers',
+            include: ['**/*.spec.ts'],
+          },
+        },
+        {
+          extends: true,
+          test: {
             name: 'unit-errors',
             dir: 'src/errors',
           },
@@ -74,7 +90,7 @@ export default defineConfig(({ mode }) => {
           test: {
             name: 'unit-http',
             dir: 'src/http',
-            include: ['plugins/**/*.spec.ts'],
+            include: ['plugins/**/*.spec.ts', 'presenters/**/*.spec.ts', 'middlewares/**/*.spec.ts'],
           },
         },
         {
@@ -129,10 +145,7 @@ export default defineConfig(({ mode }) => {
           test: {
             name: 'e2e',
             dir: 'src/http/controllers',
-            exclude: [
-              '**/api-providers-fallback-strategy.e2e.spec.ts',
-              '**/*.acceptance.spec.mts',
-            ],
+            exclude: ['**/api-providers-fallback-strategy.e2e.spec.ts', '**/*.acceptance.spec.mts'],
             // Uses Docker database with public schema
             environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
           },

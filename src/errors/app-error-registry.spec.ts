@@ -1,0 +1,143 @@
+import { describe, it, expect } from 'vitest'
+import { serializeAppError, deserializeAppError, AppErrorRegistry } from './app-error-registry'
+import { AppError } from './app-error'
+import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
+import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
+import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
+import { CepToLatLonError } from '@use-cases/errors/cep-to-lat-lon-error'
+import { ServiceBusyError } from './infrastructure/service-busy-error'
+import { ServiceOverloadError } from './infrastructure/service-overload-error'
+import { TimeoutExceededError } from './infrastructure/timeout-exceeded-error'
+import { ProviderFailureError, ProviderLayer } from './infrastructure/provider-failure-error'
+
+describe('serializeAppError', () => {
+  it('captures the constructor name and message', () => {
+    const serialized = serializeAppError(new CoordinatesNotFoundError())
+    expect(serialized.type).toBe('CoordinatesNotFoundError')
+    expect(typeof serialized.message).toBe('string')
+  })
+
+  it('serializes a ServiceBusyError under its constructor name', () => {
+    const serialized = serializeAppError(new ServiceBusyError('ViaCEP'))
+    expect(serialized.type).toBe('ServiceBusyError')
+  })
+
+  it('prefers an explicit `data` property over the error instance itself', () => {
+    const withData = Object.assign(new CoordinatesNotFoundError(), { data: { extra: 'payload' } })
+    expect(serializeAppError(withData).data).toEqual({ extra: 'payload' })
+  })
+
+  it('falls back to the error instance as `data` when no `data` property exists', () => {
+    const plain = new CoordinatesNotFoundError()
+    expect(serializeAppError(plain).data).toBe(plain)
+  })
+
+  it('recovers the ServiceBusyError provider from structured body data', () => {
+    const restored = deserializeAppError('ServiceBusyError', 'irrelevante', {
+      body: { provider: 'ViaCEP' },
+    })
+    expect(restored).toBeInstanceOf(ServiceBusyError)
+    expect((restored as ServiceBusyError).provider).toBe('ViaCEP')
+  })
+})
+
+describe('deserializeAppError', () => {
+  it('reconstructs InvalidCepError and recovers the 8-digit CEP from the message', () => {
+    const restored = deserializeAppError('InvalidCepError', 'O CEP fornecido 12345678 não existe.')
+    expect(restored).toBeInstanceOf(InvalidCepError)
+    expect(restored.message).toContain('12345678')
+  })
+
+  it('recovers the CEP via the non-word-boundary fallback when 8 digits are embedded in text', () => {
+    // "\b\d{8}\b" fails on "x12345678x"; the "\d{8}" fallback still matches.
+    const restored = deserializeAppError('InvalidCepError', 'erro no cep x12345678x invalido')
+    expect(restored).toBeInstanceOf(InvalidCepError)
+    expect(restored.message).toContain('12345678')
+  })
+
+  it('picks the 8-digit run, not a stray single digit, when both appear in the message', () => {
+    const restored = deserializeAppError('InvalidCepError', 'erro 5 no cep 12345678 invalido')
+    expect(restored.message).toContain('12345678')
+    expect(restored.message).not.toContain('fornecido 5 ')
+  })
+
+  it('reconstructs InvalidCepError with an undefined CEP when the message has no digit run', () => {
+    const restored = deserializeAppError('InvalidCepError', 'CEP invalido, sem numeros')
+    expect(restored).toBeInstanceOf(InvalidCepError)
+    // Message is the parameterless variant (no "fornecido <cep>")
+    expect(restored.message).not.toMatch(/\d/)
+  })
+
+  it('reconstructs CepToLatLonError with the numeric run from the message', () => {
+    const restored = deserializeAppError('CepToLatLonError', 'Falha ao converter o CEP 87654321.')
+    expect(restored).toBeInstanceOf(CepToLatLonError)
+    expect(restored.message).toContain('87654321')
+  })
+
+  it('reconstructs CepToLatLonError with an empty CEP when the message has no digits', () => {
+    const restored = deserializeAppError('CepToLatLonError', 'Falha ao converter o CEP.')
+    expect(restored).toBeInstanceOf(CepToLatLonError)
+    // trailing " ." from `${message} ${''}.`
+    expect(restored.message).toMatch(/\s\.$/)
+  })
+
+  it('reconstructs parameterless errors', () => {
+    expect(deserializeAppError('CoordinatesNotFoundError', 'x')).toBeInstanceOf(CoordinatesNotFoundError)
+    expect(deserializeAppError('NoNearbyChurchesFoundError', 'x')).toBeInstanceOf(NoNearbyChurchesFoundError)
+    expect(deserializeAppError('ServiceOverloadError', 'x')).toBeInstanceOf(ServiceOverloadError)
+    expect(deserializeAppError('TimeoutExceededError', 'slow')).toBeInstanceOf(TimeoutExceededError)
+  })
+
+  it('derives ServiceBusyError provider from the message when no structured data is given', () => {
+    const restored = deserializeAppError('ServiceBusyError', 'Serviço temporariamente indisponível: Nominatim')
+    expect((restored as ServiceBusyError).provider).toBe('Nominatim')
+  })
+
+  it('safely falls back to the message when data is present but has no body (optional chaining on data.body)', () => {
+    const restored = deserializeAppError('ServiceBusyError', 'Serviço temporariamente indisponível: LocationIQ', {
+      originalError: 'boom',
+    })
+    expect(restored).toBeInstanceOf(ServiceBusyError)
+    expect((restored as ServiceBusyError).provider).toBe('LocationIQ')
+  })
+
+  it('rebuilds ProviderFailureError from providerContext data', () => {
+    const restored = deserializeAppError('ProviderFailureError', 'falha', {
+      providerContext: { provider: 'LocationIQ', layer: ProviderLayer.Geo },
+    })
+    expect(restored).toBeInstanceOf(ProviderFailureError)
+    expect(restored.failureMode).toBe('RETRYABLE')
+  })
+
+  it('rebuilds ProviderFailureError from body.providerContext data', () => {
+    const restored = deserializeAppError('ProviderFailureError', 'falha', {
+      body: { providerContext: { provider: 'LocationIQ', layer: ProviderLayer.Address } },
+    })
+    expect(restored).toBeInstanceOf(ProviderFailureError)
+  })
+
+  it('defaults ProviderFailureError to Unknown/Address when data is absent', () => {
+    const restored = deserializeAppError('ProviderFailureError', 'falha')
+    expect(restored).toBeInstanceOf(ProviderFailureError)
+  })
+
+  it('falls back to an InfrastructureError-shaped AppError for an unknown type', () => {
+    const restored = deserializeAppError('SomethingUnregistered', 'weird')
+    expect(restored).toBeInstanceOf(AppError)
+    expect(restored.body.code).toBe('UNKNOWN_DESERIALIZATION_ERROR')
+    expect(restored.message).toBe('weird')
+  })
+
+  it('falls back when a registry factory throws', () => {
+    const original = AppErrorRegistry.CoordinatesNotFoundError
+    AppErrorRegistry.CoordinatesNotFoundError = () => {
+      throw new Error('factory blew up')
+    }
+    try {
+      const restored = deserializeAppError('CoordinatesNotFoundError', 'msg')
+      expect(restored.body.code).toBe('UNKNOWN_DESERIALIZATION_ERROR')
+    } finally {
+      AppErrorRegistry.CoordinatesNotFoundError = original
+    }
+  })
+})
