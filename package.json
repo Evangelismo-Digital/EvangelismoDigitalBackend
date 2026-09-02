@@ -46,6 +46,7 @@
     "test:unit": "npm run test:unit:all",
     "test:acceptance": "vitest run --project acceptance",
     "test:integration": "npm run test:e2e",
+    "test:integration:full": "vitest run --project integration",
     "test:mutation": "stryker run",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
