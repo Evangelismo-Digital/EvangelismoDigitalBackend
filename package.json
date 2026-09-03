@@ -83,7 +83,7 @@
     "close-with-grace": "2.5.0",
     "cpf-cnpj-validator": "1.0.3",
     "dotenv": "17.4.2",
-    "fastify": "5.10.0",
+    "fastify": "5.12.1",
     "fastify-metrics": "13.2.1",
     "fastify-plugin": "5.0.1",
     "ioredis": "5.9.3",
@@ -138,7 +138,7 @@
   },
   "overrides": {
     "typed-rest-client": {
-      "qs": "6.15.2"
+      "qs": "6.16.0"
     },
     "@prisma/config": {
       "deepmerge-ts": "8.0.0"
