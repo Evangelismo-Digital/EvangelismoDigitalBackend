@@ -41,6 +41,13 @@ coverage
 *.spec.ts
 __tests__
 
+# Local tooling scratch dirs (Stryker sandboxes, ci-local build output, reports).
+# These are gitignored, so GitHub CI never sees them; without these entries a
+# leftover sandbox is copied into the build context and bloats the image build.
+.stryker-tmp
+.ci-local
+reports
+
 # Misc
 .prettierrc
 .eslintrc

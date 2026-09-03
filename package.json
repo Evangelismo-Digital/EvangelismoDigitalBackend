@@ -42,9 +42,17 @@
     "test:e2e:watch": "vitest --project e2e",
     "test:e2e:users": "vitest run --project e2e src/http/controllers/users",
     "test:e2e:api-providers-fallback-strategy": "vitest run --project e2e-api-providers-fallback-strategy",
-    "test:unit:all": "vitest run --project=unit-errors --project=unit-use-cases --project=unit-churches --project=unit-users --project=unit-messaging --project=unit-forms --project=unit-geo-provider --project=unit-address-provider --project=unit-http --project=unit-http-users --project=unit-church-routing-provider --project=unit-lib --project=unit-resilient-cache --project=unit-rate-limiter --project=unit-repositories",
+    "test:unit:all": "vitest run --project=unit-core --project=unit-providers-helpers --project=unit-errors --project=unit-use-cases --project=unit-churches --project=unit-users --project=unit-messaging --project=unit-forms --project=unit-geo-provider --project=unit-address-provider --project=unit-http --project=unit-http-users --project=unit-church-routing-provider --project=unit-lib --project=unit-resilient-cache --project=unit-rate-limiter --project=unit-repositories",
+    "test:unit": "npm run test:unit:all",
+    "test:acceptance": "vitest run --project acceptance",
+    "test:integration": "npm run test:e2e",
+    "test:integration:full": "vitest run --project integration",
+    "test:mutation": "stryker run",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
+    "lint:complexity": "eslint src/ --max-warnings 0",
+    "check:cycles": "dpdm --no-warning --no-tree --exit-code circular:1 src/server.ts src/worker.ts",
+    "verify": "run-s typecheck lint test:unit test:acceptance",
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:validate": "prisma validate",
     "ci:static": "run-s typecheck lint format:check prisma:validate knip",
@@ -75,7 +83,7 @@
     "close-with-grace": "2.5.0",
     "cpf-cnpj-validator": "1.0.3",
     "dotenv": "17.4.2",
-    "fastify": "5.10.0",
+    "fastify": "5.12.1",
     "fastify-metrics": "13.2.1",
     "fastify-plugin": "5.0.1",
     "ioredis": "5.9.3",
@@ -90,7 +98,10 @@
     "zod": "4.0.17"
   },
   "devDependencies": {
+    "@amiceli/vitest-cucumber": "7.0.0",
     "@eslint/js": "9.33.0",
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0",
     "@types/ms": "2.1.0",
     "@types/node": "24.3.0",
     "@types/nodemailer": "7.0.0",
@@ -98,11 +109,13 @@
     "@types/supertest": "6.0.3",
     "@vitest/coverage-v8": "4.1.10",
     "@vitest/ui": "4.1.10",
+    "dpdm": "4.3.0",
     "eslint": "9.33.0",
     "eslint-config-prettier": "10.1.8",
     "eslint-import-resolver-typescript": "4.4.4",
     "eslint-plugin-import": "2.32.0",
     "eslint-plugin-prettier": "5.5.4",
+    "fast-check": "4.9.0",
     "globals": "14.0.0",
     "husky": "9.1.7",
     "knip": "6.27.0",
@@ -122,5 +135,16 @@
   },
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "4.53.3"
+  },
+  "overrides": {
+    "typed-rest-client": {
+      "qs": "6.16.0"
+    },
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.0"
+    },
+    "prisma": {
+      "mysql2": "3.23.1"
+    }
   }
 }

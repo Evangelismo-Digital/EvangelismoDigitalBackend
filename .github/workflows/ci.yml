@@ -269,6 +269,7 @@ jobs:
         # (superset `e2e` already covers those controllers) is listed by name.
         run: |
           npx vitest run --coverage \
+            --project=unit-core --project=unit-providers-helpers \
             --project=unit-errors --project=unit-use-cases --project=unit-churches \
             --project=unit-users --project=unit-messaging --project=unit-forms \
             --project=unit-geo-provider --project=unit-address-provider --project=unit-http \

@@ -56,6 +56,65 @@ E2E projects use a custom Vitest environment (`prisma/vitest-environment-prisma/
 
 The CI coverage step uses an explicit project **allowlist** that omits `e2e-api-providers-fallback-strategy` and `e2e-users`, so those two projects do not run in CI. `e2e-api-providers-fallback-strategy` calls **live** geocoding APIs (LocationIQ, Nominatim, ViaCEP, BrasilAPI); LocationIQ's free tier limits to ~2 req/s, so running its scenarios back-to-back can return HTTP 429 and make the resilient chain fall through to Nominatim — Scenarios 4 and 7 (`expect(spyNominatim).not.toHaveBeenCalled()`) may fail locally on quota rather than logic. Run it in isolation and space executions out if you need it green locally.
 
+## Agent Quality & Mutation Testing Gauntlet
+
+This is **non-negotiable** for any change to a controller, use-case/service, repository, provider, lib module, or BullMQ job handler. Write the tests before or alongside the code, and pass every gate below before declaring work complete.
+
+### Layers
+
+| Layer | Tooling here | Objective | Gate |
+|---|---|---|---|
+| 0 — Static & types | `npm run typecheck`, `npm run lint` | no hallucinated syntax / API calls | 0 type errors; 0 lint **errors** (see Layer 4 note) |
+| 1 — Acceptance (Gherkin) | `@amiceli/vitest-cucumber` + `supertest` — `npm run test:acceptance` | business intent from `features/*.feature` over the HTTP boundary | 100 % green steps; no pending/undefined step |
+| 2 — Unit & domain invariants | Vitest `unit-*` projects, in-memory doubles — `npm run test:unit` | boundaries, calculations, **every `err(...)` branch**, state machines | zero-I/O, < ~1 ms/test, 100 % pass |
+| 3 — Property-based | `fast-check` inside `*.spec.ts` | thousands of randomised inputs at pure functions (Result helpers, geo math, validators, template rendering) | no falsifying case |
+| 4 — Structural & complexity | `eslint` (`complexity`, `max-lines-per-function`, `max-depth`, `import/no-cycle`), `npm run check:cycles` | no monolithic / tangled generated code | Cyclomatic complexity ≤ 6; function ≤ 30 lines; `max-depth` ≤ 3; no new circular deps across module boundaries |
+| 5 — Mutation gauntlet | Stryker — `npm run test:mutation -- --mutate "<changed globs>"` | kill deliberate bugs planted in the AST | mutation score ≥ 85 % on the changed diff |
+
+The Layer 4 rules are `warn` repo-wide (so `npm run lint` / `ci:static` stay green while the legacy tree is cleaned up), but the `PostToolUse` hook lints each file you touch with `--max-warnings 0` — so on **changed** code they are blocking. `npm run lint:complexity` runs the strict check on demand.
+
+Layer 1 lives in `features/*.feature` (Gherkin) with step definitions colocated as `src/http/controllers/<area>/<area>.acceptance.spec.mts` — `.mts` because `@amiceli/vitest-cucumber` is ESM-only. See [`features/README.md`](features/README.md).
+
+### Golden rules
+
+- **Red-Green-Refactor.** Write the failing acceptance + unit tests first, run them, confirm they fail *for the reason you expect*, then write the minimum code to pass. Refactor only with the suite green.
+- **Assertion rigor.** No hollow/tautological assertions — `expect(result).toBeDefined()` is not acceptable where a specific value or `Result`/state transition is required. A test that still passes when you delete the function body is not a test.
+- **Fast-to-slow.** Never trigger Layer 5 (mutation) before Layers 0–2 are 100 % green. Mutation testing never runs in the inner loop or in the `Stop` gate — it is manual / CI.
+- **Fail-fast.** On any layer failure, stop, fix the root cause, and re-run *that* layer before moving on.
+- Never mark a task complete with a failing or skipped test. If a test is genuinely wrong, say so and explain — do **not** silently delete it, weaken its assertion, or add `.skip`.
+
+### Per-artefact requirements
+
+- **Job handlers** additionally get unit cases for: success, `RETRYABLE` failure, permanent failure, idempotent re-delivery — plus an assertion that the relevant Prometheus counter moved.
+- **Repositories / providers / adapters / controllers** additionally get a Layer 4 integration test (`npm run test:e2e`, real Docker Postgres + Redis) exercising real query behaviour and contract serialisation.
+- **Regression**: every bug fix adds a test named for the symptom that **fails on the pre-fix code**, colocated as `<symptom>.regression.spec.ts` next to the unit tests (picked up by the existing `unit-*` projects).
+- Property-based tests belong on pure functions; no test may `sleep` — use fake timers.
+
+### Pre-completion checklist
+
+Run before concluding any task:
+
+1. `npm run typecheck`
+2. `npm run lint` — and `npx eslint --max-warnings 0 <each changed .ts>` (Layer 4)
+3. `npm run test:unit && npm run test:acceptance`
+4. `npm run test:mutation -- --mutate "<changed src globs>"` — kill every survivor (boolean flip, boundary operator, deleted return) with a targeted test
+5. `npm run test:integration` — if the change touches a repository, provider/adapter, or controller
+
+`npm run verify` chains steps 1–3.
+
+## Autonomous operation
+
+This repo has **no** `.claude/settings.json` and no `.claude/settings.local.json`, by design. Permissions, permission mode, hooks, and remote control are dictated **exclusively** by the user-level `~/.claude/settings.json`. Do not create a project-level settings file (or reintroduce `defaultMode` anywhere in the repo) — project settings outrank user settings and would override the global configuration.
+
+`.claude/hooks/` holds two scripts. They **are** wired — from the user-level `~/.claude/settings.json`, never from a project settings file — and each command is guarded so it only runs when `$CLAUDE_PROJECT_DIR` is this repository; in any other project the hook exits 0 immediately.
+
+- **`format-and-typecheck.sh`** (`PostToolUse` on `Edit|Write`, timeout 120 s) — on every `src/**/*.ts` write: Prettier, then eslint `--max-warnings 0` (Layers 0 + 4), then `tsc --noEmit`. Exit 2 hands the failure back to the agent to fix.
+- **`gate.sh`** (`Stop`, timeout 900 s) — refuses to finish while typecheck, lint, or unit tests are red; also runs acceptance + e2e when the Docker stack is up. Has a per-session anti-loop guard. Mutation testing is intentionally not in this gate.
+
+Editing the scripts changes what runs; adding or removing a hook means editing `~/.claude/settings.json` (or `/hooks`). The hooks are a safety net, not the plan — still run the pre-completion checklist explicitly, since Layer 5 (mutation) never fires from a hook.
+
+The agent does **not** run `git add` / `git commit` / `git push` — changes are left unstaged for the user to review and commit.
+
 ## CI (`.github/workflows/ci.yml`)
 
 Node is pinned via `.nvmrc`. Jobs: static checks (typecheck, lint, format check, `prisma validate`, Knip), secret scan (gitleaks), SAST (Semgrep OSS), dependency vulnerabilities (OSV-Scanner — accepted/deferred advisories are baselined in `osv-scanner.toml` with reasons; revisit rather than treat as permanent), license compliance (Trivy), tests + coverage (unit + e2e), build verification (tsup), and Docker build validation with a container smoke test.

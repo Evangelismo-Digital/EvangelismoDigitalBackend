@@ -16,6 +16,22 @@ export default defineConfig(({ mode }) => {
         {
           extends: true,
           test: {
+            name: 'unit-core',
+            dir: 'src/core',
+            include: ['**/*.spec.ts'],
+          },
+        },
+        {
+          extends: true,
+          test: {
+            name: 'unit-providers-helpers',
+            dir: 'src/providers/helpers',
+            include: ['**/*.spec.ts'],
+          },
+        },
+        {
+          extends: true,
+          test: {
             name: 'unit-errors',
             dir: 'src/errors',
           },
@@ -67,6 +83,8 @@ export default defineConfig(({ mode }) => {
           test: {
             name: 'unit-address-provider',
             dir: 'src/providers/address-provider',
+            include: ['**/*.spec.ts'],
+            exclude: ['**/*.integration.spec.ts'],
           },
         },
         {
@@ -74,7 +92,7 @@ export default defineConfig(({ mode }) => {
           test: {
             name: 'unit-http',
             dir: 'src/http',
-            include: ['plugins/**/*.spec.ts'],
+            include: ['plugins/**/*.spec.ts', 'presenters/**/*.spec.ts', 'middlewares/**/*.spec.ts'],
           },
         },
         {
@@ -100,6 +118,7 @@ export default defineConfig(({ mode }) => {
             name: 'unit-lib',
             dir: 'src/lib',
             include: ['**/*.spec.ts'],
+            exclude: ['**/*.integration.spec.ts'],
           },
         },
         {
@@ -107,6 +126,8 @@ export default defineConfig(({ mode }) => {
           test: {
             name: 'unit-resilient-cache',
             dir: 'src/lib/infra/cache',
+            include: ['**/*.spec.ts'],
+            exclude: ['**/*.integration.spec.ts'],
           },
         },
         {
@@ -114,6 +135,8 @@ export default defineConfig(({ mode }) => {
           test: {
             name: 'unit-rate-limiter',
             dir: 'src/lib/infra/rate-limiter',
+            include: ['**/*.spec.ts'],
+            exclude: ['**/*.integration.spec.ts'],
           },
         },
         {
@@ -129,7 +152,26 @@ export default defineConfig(({ mode }) => {
           test: {
             name: 'e2e',
             dir: 'src/http/controllers',
-            exclude: ['**/api-providers-fallback-strategy.e2e.spec.ts'],
+            exclude: [
+              '**/api-providers-fallback-strategy.e2e.spec.ts',
+              '**/*.acceptance.spec.mts',
+              // Opt-in integration suite (own `integration` project, not in CI).
+              '**/*.integration.spec.ts',
+            ],
+            // Uses Docker database with public schema
+            environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
+          },
+        },
+        {
+          extends: true,
+          test: {
+            // Layer 1 — Acceptance (Gherkin). `.feature` files under features/,
+            // step definitions colocated as *.acceptance.spec.ts, driven through
+            // Vitest by @amiceli/vitest-cucumber over the HTTP boundary.
+            name: 'acceptance',
+            dir: 'src/http/controllers',
+            // ESM (.mts) — @amiceli/vitest-cucumber is an ESM-only package.
+            include: ['**/*.acceptance.spec.mts'],
             // Uses Docker database with public schema
             environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
           },
@@ -149,6 +191,24 @@ export default defineConfig(({ mode }) => {
             name: 'e2e-users',
             dir: 'src/http/controllers/users',
             environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
+          },
+        },
+        {
+          extends: true,
+          test: {
+            // Opt-in integration suite: real Docker Postgres + Redis, external
+            // HTTP (geocoding/address APIs) and SMTP stubbed at the client
+            // boundary. NOT in the CI allowlist or scripts/ci-local.sh — run
+            // locally with the compose stack up: `npm run test:integration:full`.
+            name: 'integration',
+            dir: 'src',
+            include: ['**/*.integration.spec.ts'],
+            environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
+            // Real Redis pub/sub + BullMQ + Fastify singletons don't tolerate
+            // parallel files sharing one Redis keyspace; run serially.
+            fileParallelism: false,
+            hookTimeout: 30_000,
+            testTimeout: 20_000,
           },
         },
       ],

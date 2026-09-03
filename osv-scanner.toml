@@ -8,10 +8,6 @@
 # prisma 7.9.1 removed that transitive dependency entirely.)
 
 [[IgnoredVulns]]
-id = "GHSA-mh99-v99m-4gvg"
-reason = "brace-expansion DoS (unbounded expansion -> OOM). Dev-only: reached via eslint-plugin-import (minimatch 3.x), typescript-eslint and tsup/sucrase (minimatch 9.x); never in the production Docker image, and the glob patterns fed to it are our own config, not attacker input. The advisory's only fixed version is 5.0.8, and brace-expansion 5.x changed its entry point to a named `expand` export while minimatch 3.x/9.x still import it as a callable default — an override would break lint and build. Reachable only when the tooling itself moves to minimatch 10.x."
-
-[[IgnoredVulns]]
 id = "GHSA-c7w3-x93f-qmm8"
 reason = "nodemailer SMTP/CRLF injection advisories. Fixed versions require a v7 -> v9 major bump with no @types/nodemailer release yet matching v9, and no verified migration test pass in this session. Needs a dedicated, tested migration rather than a security-triage side effect."
 
