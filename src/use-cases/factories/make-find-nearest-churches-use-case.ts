@@ -19,21 +19,13 @@ import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { ResilientAddressProviderDecorator } from 'providers/address-provider/decorators/resilient-address-provider.decorator'
 import { ResilientGeocodingProviderDecorator } from 'providers/geo-provider/decorators/resilient-geocoding-provider.decorator'
 import { ResilientChurchRoutingProviderDecorator } from 'providers/church-routing-provider/decorators/resilient-church-routing-provider.decorator'
-import { serializeAppError, deserializeAppError } from 'errors/app-error-registry'
-import { CACHE_CONFIG } from 'messages/constants/cache/cache'
+import { Redis } from 'ioredis'
+import { makeNearestChurchesCacheOptions } from '@use-cases/churches/church-lookup-cache-policy'
 import { STADIA_CONFIG } from 'messages/constants/providers/stadia'
 
 let cachedUseCase: FindNearestChurchesUseCase | null = null
 
-export function makeFindNearestChurchesUseCase(
-  redisCacheConnection = getRedisCache(),
-  redisRateLimitConnection = getRedisRateLimit(),
-): FindNearestChurchesUseCase {
-  if (cachedUseCase) {
-    return cachedUseCase
-  }
-
-  // Setup Raw Geocoding Providers
+function makeResilientGeoProvider(redisRateLimitConnection: Redis): ResilientGeoProvider {
   const rawNominatimProvider = new NominatimGeoProvider({
     apiUrl: env.NOMINATIM_API_URL,
   })
@@ -47,10 +39,10 @@ export function makeFindNearestChurchesUseCase(
   const nominatimProvider = new ResilientGeocodingProviderDecorator(rawNominatimProvider, redisRateLimitConnection)
   const locationIqProvider = new ResilientGeocodingProviderDecorator(rawLocationIqProvider, redisRateLimitConnection)
 
-  // Setup Resilient Geo Strategy
-  const resilientGeoProvider = new ResilientGeoProvider([locationIqProvider, nominatimProvider])
+  return new ResilientGeoProvider([locationIqProvider, nominatimProvider])
+}
 
-  // Setup Raw Address Providers
+function makeResilientAddressProvider(redisRateLimitConnection: Redis): ResilientAddressProvider {
   const rawAwesomeApiProvider = new AwesomeApiProvider({
     apiUrl: env.AWESOME_API_URL,
     apiToken: env.AWESOME_API_TOKEN,
@@ -69,28 +61,12 @@ export function makeFindNearestChurchesUseCase(
   const brasilApiProvider = new ResilientAddressProviderDecorator(rawBrasilApiProvider, redisRateLimitConnection)
   const viaCepProvider = new ResilientAddressProviderDecorator(rawViaCepProvider, redisRateLimitConnection)
 
-  const resilientAddressProvider = new ResilientAddressProvider([awesomeApiProvider, brasilApiProvider, viaCepProvider])
+  return new ResilientAddressProvider([awesomeApiProvider, brasilApiProvider, viaCepProvider])
+}
 
-  const cepToLatLonUseCase = new CepToLatLonUseCase(
-    resilientGeoProvider,
-    resilientAddressProvider,
-    redisCacheConnection,
-    {
-      prefix: CACHE_CONFIG.CEP_COORDS.PREFIX,
-      defaultTtlSeconds: CACHE_CONFIG.CEP_COORDS.DEFAULT_TTL_SECONDS,
-      negativeTtlSeconds: CACHE_CONFIG.CEP_COORDS.NEGATIVE_TTL_SECONDS,
-      maxPendingFetches: CACHE_CONFIG.CEP_COORDS.MAX_PENDING_FETCHES,
-      fetchTimeoutMs: CACHE_CONFIG.CEP_COORDS.FETCH_TIMEOUT_MS,
-      serializeError: serializeAppError,
-      deserializeError: deserializeAppError,
-    },
-    false,
-  )
-
-  const errorMapper = new PrismaErrorMapper(churchPrismaErrorMapping)
-  const churchesRepository = new PrismaChurchesRepository(errorMapper)
-  const findNearbyChurchesKnnUseCase = new FindNearbyChurchesKnnUseCase(churchesRepository)
-
+function makeCalculateChurchRouteDistancesUseCase(
+  redisRateLimitConnection: Redis,
+): CalculateChurchRouteDistancesUseCase {
   // Setup Raw Routing Provider (batch matrix API)
   const rawRoutingProvider = new StadiaChurchRoutingProvider({
     apiUrl: env.STADIA_MAPS_API_URL,
@@ -100,25 +76,38 @@ export function makeFindNearestChurchesUseCase(
     timeoutMs: STADIA_CONFIG.DEFAULT_TIMEOUT_MS,
   })
 
-  // Wrap with Resilient Decorator (rate limiting + error mapping only, cache is at L3)
+  // Wrap with Resilient Decorator (rate limiting + error mapping only; caching
+  // happens once, at the FindNearestChurchesUseCase layer)
   const routingProvider = new ResilientChurchRoutingProviderDecorator(rawRoutingProvider, redisRateLimitConnection)
 
-  const calculateChurchRouteDistancesUseCase = new CalculateChurchRouteDistancesUseCase(routingProvider)
+  return new CalculateChurchRouteDistancesUseCase(routingProvider)
+}
+
+export function makeFindNearestChurchesUseCase(
+  redisCacheConnection = getRedisCache(),
+  redisRateLimitConnection = getRedisRateLimit(),
+): FindNearestChurchesUseCase {
+  if (cachedUseCase) {
+    return cachedUseCase
+  }
+
+  // No cache here: FindNearestChurchesUseCase below is the single cache layer
+  // for this flow, so intermediate coordinates are never stored.
+  const cepToLatLonUseCase = new CepToLatLonUseCase(
+    makeResilientGeoProvider(redisRateLimitConnection),
+    makeResilientAddressProvider(redisRateLimitConnection),
+  )
+
+  const errorMapper = new PrismaErrorMapper(churchPrismaErrorMapping)
+  const churchesRepository = new PrismaChurchesRepository(errorMapper)
+  const findNearbyChurchesKnnUseCase = new FindNearbyChurchesKnnUseCase(churchesRepository)
 
   cachedUseCase = new FindNearestChurchesUseCase(
     cepToLatLonUseCase,
     findNearbyChurchesKnnUseCase,
-    calculateChurchRouteDistancesUseCase,
+    makeCalculateChurchRouteDistancesUseCase(redisRateLimitConnection),
     redisCacheConnection,
-    {
-      prefix: CACHE_CONFIG.NEAREST_CHURCHES.PREFIX,
-      defaultTtlSeconds: CACHE_CONFIG.NEAREST_CHURCHES.DEFAULT_TTL_SECONDS,
-      negativeTtlSeconds: CACHE_CONFIG.NEAREST_CHURCHES.NEGATIVE_TTL_SECONDS,
-      maxPendingFetches: CACHE_CONFIG.NEAREST_CHURCHES.MAX_PENDING_FETCHES,
-      fetchTimeoutMs: CACHE_CONFIG.NEAREST_CHURCHES.FETCH_TIMEOUT_MS,
-      serializeError: serializeAppError,
-      deserializeError: deserializeAppError,
-    },
+    makeNearestChurchesCacheOptions(),
     RoutingProfile.PEDESTRIAN,
   )
 

@@ -3,23 +3,16 @@ import { InfrastructureError } from './infrastructure-error'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
+import { EmptyChurchListError } from '@use-cases/errors/empty-church-list-error'
 import { CepToLatLonError } from '@use-cases/errors/cep-to-lat-lon-error'
 import { ServiceBusyError } from './infrastructure/service-busy-error'
 import { ServiceOverloadError as InfraServiceOverloadError } from './infrastructure/service-overload-error'
 import { TimeoutExceededError } from './infrastructure/timeout-exceeded-error'
-import { ProviderFailureError, ProviderLayer } from './infrastructure/provider-failure-error'
+import { ProviderFailureError } from './infrastructure/provider-failure-error'
 
 export interface SerializedErrorData {
   body?: {
     provider?: string
-    providerContext?: {
-      provider?: string
-      layer?: ProviderLayer
-    }
-  }
-  providerContext?: {
-    provider?: string
-    layer?: ProviderLayer
   }
   originalError?: unknown
 }
@@ -33,6 +26,8 @@ export const AppErrorRegistry: Record<string, (message: string, data?: Serialize
   CoordinatesNotFoundError: () => new CoordinatesNotFoundError(),
 
   NoNearbyChurchesFoundError: () => new NoNearbyChurchesFoundError(),
+
+  EmptyChurchListError: () => new EmptyChurchListError(),
 
   CepToLatLonError: (msg) => {
     const cep = msg.match(/\d+/)?.[0] || ''
@@ -48,11 +43,7 @@ export const AppErrorRegistry: Record<string, (message: string, data?: Serialize
 
   TimeoutExceededError: (msg) => new TimeoutExceededError(msg),
 
-  ProviderFailureError: (msg, data) => {
-    const provider = data?.body?.providerContext?.provider || data?.providerContext?.provider || 'Unknown'
-    const layer = data?.body?.providerContext?.layer || data?.providerContext?.layer || ProviderLayer.Address
-    return new ProviderFailureError(provider, layer, data?.originalError)
-  },
+  ProviderFailureError: (msg, data) => new ProviderFailureError(data?.originalError),
 }
 
 export function serializeAppError(err: AppError): { type: string; message: string; data?: unknown } {

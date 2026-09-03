@@ -32,7 +32,7 @@ import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
+import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { getRegistry } from '@lib/metrics'
 import {
   collectMetricsProviderRequest,
@@ -123,9 +123,7 @@ describe('Provider metrics instrumentation', () => {
     })
 
     it('records provider_error for a ProviderFailureError', async () => {
-      const chain = new ResilientAddressProvider([
-        fakeAddressProvider('BrasilAPI', err(new ProviderFailureError('BrasilAPI', ProviderLayer.Address))),
-      ])
+      const chain = new ResilientAddressProvider([fakeAddressProvider('BrasilAPI', err(new ProviderFailureError()))])
       await chain.fetchAddress('01001000')
       expect(
         await metricValue(collectMetricsProviderRequest, {

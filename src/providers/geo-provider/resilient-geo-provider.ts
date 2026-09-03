@@ -1,6 +1,6 @@
 import { logger } from '@lib/logger'
 import { NoGeoProviderError } from './error/no-geo-provider-error'
-import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
+import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import {
@@ -141,8 +141,6 @@ export class ResilientGeoProvider implements IGeocodingProvider {
     }
 
     collectMetricsProviderChainExhausted?.inc({ layer: 'geocoding' })
-    return err(
-      new ProviderFailureError('ResilientGeoProvider', ProviderLayer.Geo, new Error('TODOS os provedores falharam')),
-    )
+    return err(new ProviderFailureError(new Error('TODOS os provedores falharam')))
   }
 }
