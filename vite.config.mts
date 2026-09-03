@@ -118,7 +118,7 @@ export default defineConfig(({ mode }) => {
             name: 'unit-lib',
             dir: 'src/lib',
             include: ['**/*.spec.ts'],
-            exclude: ['**/*.integration.spec.ts'],
+            exclude: ['**/*.integration.spec.ts', '**/*.redis-integration.spec.ts'],
           },
         },
         {
@@ -127,7 +127,7 @@ export default defineConfig(({ mode }) => {
             name: 'unit-resilient-cache',
             dir: 'src/lib/infra/cache',
             include: ['**/*.spec.ts'],
-            exclude: ['**/*.integration.spec.ts'],
+            exclude: ['**/*.integration.spec.ts', '**/*.redis-integration.spec.ts'],
           },
         },
         {
@@ -191,6 +191,23 @@ export default defineConfig(({ mode }) => {
             name: 'e2e-users',
             dir: 'src/http/controllers/users',
             environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
+          },
+        },
+        {
+          extends: true,
+          test: {
+            // Redis-only integration suite for the cache layer. Deliberately
+            // separate from `integration`: it needs no Postgres, no Prisma
+            // environment and none of the BullMQ / pub-sub singletons, so it is
+            // cheap enough to run in CI on every push. Listed in BOTH the
+            // ci.yml and scripts/ci-local.sh allowlists — keep them in lockstep.
+            name: 'integration-cache',
+            dir: 'src/lib/infra/cache',
+            include: ['**/*.redis-integration.spec.ts'],
+            // One shared Redis keyspace; parallel files would collide.
+            fileParallelism: false,
+            hookTimeout: 30_000,
+            testTimeout: 20_000,
           },
         },
         {

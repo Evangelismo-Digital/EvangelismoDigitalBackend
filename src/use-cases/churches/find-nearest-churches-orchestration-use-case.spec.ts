@@ -10,6 +10,7 @@ import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-err
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
+import { LatitudeRangeError } from '@use-cases/errors/latitude-range-error'
 
 const mockGetOrFetch = vi.fn()
 const mockGenerateKey = vi.fn()
@@ -142,7 +143,7 @@ describe('FindNearestChurchesUseCase orchestration', () => {
         coordinatesProviderName: 'LocationIQ',
       })
     }
-    expect(cepToLatLonUseCase.execute).toHaveBeenCalledWith({ cep: '01310100' })
+    expect(cepToLatLonUseCase.execute).toHaveBeenCalledWith({ cep: '01310100', signal: undefined })
     expect(findNearbyChurchesKnnUseCase.execute).toHaveBeenCalledWith({ userLat: -23.55, userLon: -46.63 })
     expect(calculateChurchRouteDistancesUseCase.findNearest).toHaveBeenCalledWith(
       {
@@ -152,6 +153,84 @@ describe('FindNearestChurchesUseCase orchestration', () => {
       },
       expect.anything(),
     )
+  })
+
+  it('propagates a KNN failure and never reaches the routing step', async () => {
+    cepToLatLonUseCase.execute.mockResolvedValueOnce(
+      ok({ userLat: -23.55, userLon: -46.63, precision: 'ROOFTOP', coordinatesProviderName: 'LocationIQ' }),
+    )
+    findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce(err(new LatitudeRangeError()))
+
+    const result = await useCase.execute({ cep: '01310100' })
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(LatitudeRangeError)
+    }
+    expect(calculateChurchRouteDistancesUseCase.findNearest).not.toHaveBeenCalled()
+  })
+
+  it('propagates a routing failure instead of returning a partial response', async () => {
+    cepToLatLonUseCase.execute.mockResolvedValueOnce(
+      ok({ userLat: -23.55, userLon: -46.63, precision: 'ROOFTOP', coordinatesProviderName: 'LocationIQ' }),
+    )
+    findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce(ok({ churches: [{ id: 1 }], totalFound: 1 }))
+    calculateChurchRouteDistancesUseCase.findNearest.mockResolvedValueOnce(err(new NoNearbyChurchesFoundError()))
+
+    const result = await useCase.execute({ cep: '01310100' })
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(NoNearbyChurchesFoundError)
+    }
+  })
+
+  it('propagates a CEP failure and never reaches the KNN step', async () => {
+    cepToLatLonUseCase.execute.mockResolvedValueOnce(err(new InvalidCepError()))
+
+    const result = await useCase.execute({ cep: '00000000' })
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(InvalidCepError)
+    }
+    expect(findNearbyChurchesKnnUseCase.execute).not.toHaveBeenCalled()
+  })
+
+  it('shares one timeout budget: the cache signal reaches both the CEP step and the routing step', async () => {
+    const controller = new AbortController()
+    mockGetOrFetch.mockImplementationOnce(async (_key: string, fetcher: (s: AbortSignal) => Promise<unknown>) =>
+      fetcher(controller.signal),
+    )
+
+    cepToLatLonUseCase.execute.mockResolvedValueOnce(
+      ok({ userLat: -23.55, userLon: -46.63, precision: 'ROOFTOP', coordinatesProviderName: 'LocationIQ' }),
+    )
+    findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce(ok({ churches: [{ id: 1 }], totalFound: 1 }))
+    calculateChurchRouteDistancesUseCase.findNearest.mockResolvedValueOnce(ok([{ id: 1, distanceKm: 1 }]))
+
+    await useCase.execute({ cep: '01310100' })
+
+    expect(cepToLatLonUseCase.execute).toHaveBeenCalledWith({ cep: '01310100', signal: controller.signal })
+    expect(calculateChurchRouteDistancesUseCase.findNearest).toHaveBeenCalledWith(
+      expect.objectContaining({ signal: controller.signal }),
+      expect.anything(),
+    )
+  })
+
+  it('caches only the final response — no intermediate value is ever written', async () => {
+    cepToLatLonUseCase.execute.mockResolvedValueOnce(
+      ok({ userLat: -23.55, userLon: -46.63, precision: 'ROOFTOP', coordinatesProviderName: 'LocationIQ' }),
+    )
+    findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce(ok({ churches: [{ id: 1 }], totalFound: 1 }))
+    calculateChurchRouteDistancesUseCase.findNearest.mockResolvedValueOnce(ok([{ id: 1, distanceKm: 1 }]))
+
+    await useCase.execute({ cep: '01310100' })
+
+    // A single cache round-trip for the whole flow, keyed by cep + profile.
+    expect(mockGetOrFetch).toHaveBeenCalledTimes(1)
+    expect(mockGenerateKey).toHaveBeenCalledTimes(1)
+    expect(mockGenerateKey).toHaveBeenCalledWith({ cep: '01310100', profile: expect.anything() })
   })
 
   it('should return TimeoutExceededError when cache returns it (CacheOvertime)', async () => {

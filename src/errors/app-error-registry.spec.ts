@@ -8,7 +8,7 @@ import { CepToLatLonError } from '@use-cases/errors/cep-to-lat-lon-error'
 import { ServiceBusyError } from './infrastructure/service-busy-error'
 import { ServiceOverloadError } from './infrastructure/service-overload-error'
 import { TimeoutExceededError } from './infrastructure/timeout-exceeded-error'
-import { ProviderFailureError, ProviderLayer } from './infrastructure/provider-failure-error'
+import { ProviderFailureError } from './infrastructure/provider-failure-error'
 
 describe('serializeAppError', () => {
   it('captures the constructor name and message', () => {
@@ -101,24 +101,18 @@ describe('deserializeAppError', () => {
     expect((restored as ServiceBusyError).provider).toBe('LocationIQ')
   })
 
-  it('rebuilds ProviderFailureError from providerContext data', () => {
-    const restored = deserializeAppError('ProviderFailureError', 'falha', {
-      providerContext: { provider: 'LocationIQ', layer: ProviderLayer.Geo },
-    })
+  it('rebuilds ProviderFailureError and preserves its RETRYABLE routing hint', () => {
+    const restored = deserializeAppError('ProviderFailureError', 'falha')
     expect(restored).toBeInstanceOf(ProviderFailureError)
     expect(restored.failureMode).toBe('RETRYABLE')
   })
 
-  it('rebuilds ProviderFailureError from body.providerContext data', () => {
-    const restored = deserializeAppError('ProviderFailureError', 'falha', {
-      body: { providerContext: { provider: 'LocationIQ', layer: ProviderLayer.Address } },
-    })
+  it('carries the original error through as the cause when one was serialized', () => {
+    const cause = new Error('socket hang up')
+    const restored = deserializeAppError('ProviderFailureError', 'falha', { originalError: cause })
     expect(restored).toBeInstanceOf(ProviderFailureError)
-  })
-
-  it('defaults ProviderFailureError to Unknown/Address when data is absent', () => {
-    const restored = deserializeAppError('ProviderFailureError', 'falha')
-    expect(restored).toBeInstanceOf(ProviderFailureError)
+    expect((restored as ProviderFailureError).originalError).toBe(cause)
+    expect(restored.cause).toBe(cause)
   })
 
   it('falls back to an InfrastructureError-shaped AppError for an unknown type', () => {

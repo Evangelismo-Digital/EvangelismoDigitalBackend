@@ -1,6 +1,6 @@
 import { logger } from '@lib/logger'
 import { NoAddressProviderError } from './error/no-address-provider-error'
-import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
+import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
@@ -123,12 +123,6 @@ export class ResilientAddressProvider implements IAddressProvider {
     }
 
     collectMetricsProviderChainExhausted?.inc({ layer: 'address' })
-    return err(
-      new ProviderFailureError(
-        'ResilientAddressProvider',
-        ProviderLayer.Address,
-        new Error('TODOS os provedores falharam'),
-      ),
-    )
+    return err(new ProviderFailureError(new Error('TODOS os provedores falharam')))
   }
 }

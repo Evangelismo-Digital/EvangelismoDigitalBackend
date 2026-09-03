@@ -22,6 +22,11 @@ export default defineConfig(({ mode }) => ({
       'src/http/controllers/**/*.e2e.spec.ts',
       'src/http/controllers/**/*.acceptance.spec.mts',
       '**/api-providers-fallback-strategy*',
+      // Integration suites need a real Redis/Postgres and are parallel-hostile.
+      // Stryker runs many workers at once over one keyspace, which made the
+      // dry run fail intermittently; mutation testing is a unit-level gate.
+      '**/*.integration.spec.ts',
+      '**/*.redis-integration.spec.ts',
     ],
   },
 }))

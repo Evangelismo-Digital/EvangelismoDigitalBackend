@@ -4,10 +4,25 @@ import { AxiosError, isAxiosError } from 'axios'
 import { Prisma } from '@prisma/client'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
+import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
+
+/** URL fragment -> human-readable provider name, most specific first. */
+const PROVIDER_BY_URL_FRAGMENT: ReadonlyArray<readonly [string, string]> = [
+  ['viacep', 'ViaCEP'],
+  ['awesomeapi', 'AwesomeAPI'],
+  ['brasilapi', 'BrasilAPI'],
+  ['nominatim', 'Nominatim'],
+  ['locationiq', 'LocationIQ'],
+  ['stadia', 'Stadia Maps'],
+]
+
+/** Providers that resolve a CEP, so a 404 from them means the CEP is invalid. */
+const ADDRESS_URL_FRAGMENTS = ['viacep', 'awesomeapi', 'brasilapi']
+
+const TIMEOUT_CODES = ['ERR_CANCELED', 'ECONNABORTED']
 
 export class FindNearestChurchesErrorMapper {
   static async runCatching<T>(fn: () => Promise<Result<T, AppError>>): Promise<Result<T, AppError>> {
@@ -24,32 +39,7 @@ export class FindNearestChurchesErrorMapper {
     }
 
     if (FindNearestChurchesErrorMapper.isAxiosError(error)) {
-      const axiosError = error as AxiosError
-      const status = axiosError.response?.status
-      const code = axiosError.code
-
-      if (status === 429) {
-        return new ServiceBusyError(FindNearestChurchesErrorMapper.detectProvider(axiosError))
-      }
-
-      if (code === 'ERR_CANCELED' || code === 'ECONNABORTED' || axiosError.message.toLowerCase().includes('timeout')) {
-        return new TimeoutExceededError(axiosError.message)
-      }
-
-      if (status === 404) {
-        const url = axiosError.config?.url || ''
-        if (url.includes('viacep') || url.includes('awesomeapi') || url.includes('brasilapi')) {
-          const cep = FindNearestChurchesErrorMapper.extractCep(url)
-          return new InvalidCepError(cep)
-        }
-        return new CoordinatesNotFoundError()
-      }
-
-      return new ProviderFailureError(
-        FindNearestChurchesErrorMapper.detectProvider(axiosError),
-        FindNearestChurchesErrorMapper.detectLayer(axiosError),
-        error,
-      )
+      return FindNearestChurchesErrorMapper.mapAxiosError(error as AxiosError)
     }
 
     if (
@@ -59,37 +49,54 @@ export class FindNearestChurchesErrorMapper {
       return new DatabaseQueryError(error)
     }
 
-    return new ProviderFailureError(
-      'System',
-      ProviderLayer.Address,
-      error instanceof Error ? error : new Error(String(error)),
-    )
+    return new ProviderFailureError(error instanceof Error ? error : new Error(String(error)))
+  }
+
+  private static mapAxiosError(error: AxiosError): AppError {
+    const status = error.response?.status
+
+    if (status === 429) {
+      return new ServiceBusyError(FindNearestChurchesErrorMapper.detectProvider(error))
+    }
+
+    if (FindNearestChurchesErrorMapper.isTimeout(error)) {
+      return new TimeoutExceededError(error.message)
+    }
+
+    if (status === 404) {
+      return FindNearestChurchesErrorMapper.mapNotFound(error)
+    }
+
+    return new ProviderFailureError(error)
+  }
+
+  /**
+   * A 404 from an address provider means the CEP itself does not exist; from a
+   * geocoder it means the address could not be placed on the map.
+   */
+  private static mapNotFound(error: AxiosError): AppError {
+    const url = error.config?.url || ''
+
+    if (ADDRESS_URL_FRAGMENTS.some((fragment) => url.includes(fragment))) {
+      return new InvalidCepError(FindNearestChurchesErrorMapper.extractCep(url))
+    }
+
+    return new CoordinatesNotFoundError()
   }
 
   private static isAxiosError(error: unknown): boolean {
     return isAxiosError(error)
   }
 
-  private static detectProvider(error: AxiosError): string {
-    const url = error.config?.url || ''
-    if (url.includes('viacep')) return 'ViaCEP'
-    if (url.includes('awesomeapi')) return 'AwesomeAPI'
-    if (url.includes('brasilapi')) return 'BrasilAPI'
-    if (url.includes('nominatim')) return 'Nominatim'
-    if (url.includes('locationiq')) return 'LocationIQ'
-    if (url.includes('stadia')) return 'Stadia Maps'
-    return 'Unknown Provider'
+  private static isTimeout(error: AxiosError): boolean {
+    return TIMEOUT_CODES.includes(error.code ?? '') || error.message.toLowerCase().includes('timeout')
   }
 
-  private static detectLayer(error: AxiosError): ProviderLayer {
+  private static detectProvider(error: AxiosError): string {
     const url = error.config?.url || ''
-    if (url.includes('viacep') || url.includes('awesomeapi') || url.includes('brasilapi')) {
-      return ProviderLayer.Address
-    }
-    if (url.includes('nominatim') || url.includes('locationiq')) {
-      return ProviderLayer.Geo
-    }
-    return ProviderLayer.Route
+    const match = PROVIDER_BY_URL_FRAGMENT.find(([fragment]) => url.includes(fragment))
+
+    return match ? match[1] : 'Unknown Provider'
   }
 
   private static extractCep(url: string): string | undefined {

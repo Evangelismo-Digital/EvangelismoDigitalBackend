@@ -1,16 +1,15 @@
-import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest'
+import { describe, it, expect, vi, beforeEach, Mock } from 'vitest'
 import { CepToLatLonUseCase } from './cep-to-lat-lon-use-case'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { CepToLatLonError } from '@use-cases/errors/cep-to-lat-lon-error'
-import { Redis } from 'ioredis'
 import { IGeocodingProvider, EnumGeoPrecision } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { ok, err, isOk, isErr } from 'core/shared/result'
-import { ProviderFailureError, ProviderLayer } from 'errors/infrastructure/provider-failure-error'
-import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
+import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { logger } from '@lib/logger'
 
 vi.mock('@lib/env', () => ({
   env: {
@@ -35,61 +34,20 @@ vi.mock('@lib/sentry/capture', () => ({
   captureError: (...args: any[]) => mockCaptureError(...args),
 }))
 
-vi.mock('ioredis', () => {
-  return {
-    Redis: vi.fn(),
-  }
-})
-
-const mockGetOrFetch = vi.fn()
-const mockGenerateKey = vi.fn()
-
-vi.mock('@lib/infra/cache/resilient-cache', () => {
-  return {
-    ResilientCache: class ResilientCacheMock {
-      getOrFetch(...args: any[]) {
-        return mockGetOrFetch(...args)
-      }
-      generateKey(...args: any[]) {
-        return mockGenerateKey(...args)
-      }
-    },
-  }
-})
-
 describe('CepToLatLon Use Case', () => {
   let useCase: CepToLatLonUseCase
   let addressProviderMock: { fetchAddress: Mock }
   let geocodingProviderMock: { search: Mock; searchStructured: Mock }
-  let redisMock: Redis
-
-  const defaultOptions = {
-    prefix: 'test',
-    defaultTtlSeconds: 60,
-    negativeTtlSeconds: 10,
-  }
 
   beforeEach(() => {
     vi.clearAllMocks()
 
-    mockGetOrFetch.mockReset()
-    mockGenerateKey.mockReset()
-
-    mockGetOrFetch.mockImplementation(async (_key, fetcher, _mapper) => {
-      return fetcher(new AbortController().signal)
-    })
-
-    mockGenerateKey.mockImplementation(({ cep }) => `cep:${cep}`)
-
     addressProviderMock = { fetchAddress: vi.fn() }
     geocodingProviderMock = { search: vi.fn(), searchStructured: vi.fn() }
-    redisMock = new Redis()
 
     useCase = new CepToLatLonUseCase(
       geocodingProviderMock as unknown as IGeocodingProvider,
       addressProviderMock as unknown as IAddressProvider,
-      redisMock,
-      defaultOptions as any,
     )
   })
 
@@ -97,7 +55,7 @@ describe('CepToLatLon Use Case', () => {
   // SUCCESS SCENARIOS
   // ============================================================================
 
-  it('should format CEP correctly and use generated cache key', async () => {
+  it('should strip non-digits from the CEP before querying the address provider', async () => {
     addressProviderMock.fetchAddress.mockResolvedValue(
       ok({
         lat: -23,
@@ -110,8 +68,7 @@ describe('CepToLatLon Use Case', () => {
     const result = await useCase.execute({ cep: '12.345-678' })
 
     expect(isOk(result)).toBe(true)
-    expect(mockGenerateKey).toHaveBeenCalledWith({ cep: '12345678' })
-    expect(addressProviderMock.fetchAddress).toHaveBeenCalledWith('12345678', expect.any(AbortSignal))
+    expect(addressProviderMock.fetchAddress).toHaveBeenCalledWith('12345678', undefined)
   })
 
   it('OPTIMIZATION: should return coordinates directly if AddressProvider returns them', async () => {
@@ -139,6 +96,35 @@ describe('CepToLatLon Use Case', () => {
     expect(geocodingProviderMock.search).not.toHaveBeenCalled()
   })
 
+  it('OPTIMIZATION: should fall back to defaults when the address provider omits precision and name', async () => {
+    addressProviderMock.fetchAddress.mockResolvedValue(ok({ localidade: 'São Paulo', uf: 'SP', lat: -23, lon: -46 }))
+
+    const result = await useCase.execute({ cep: '01310100' })
+
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      expect(result.value.precision).toBe(EnumGeoPrecision.NO_CERTAINTY)
+      expect(result.value.coordinatesProviderName).toBe('Unknown')
+    }
+  })
+
+  it('OPTIMIZATION: should fall through to geocoding when only one coordinate is present', async () => {
+    // A latitude without a longitude is unusable — both must be present.
+    addressProviderMock.fetchAddress.mockResolvedValue(ok({ lat: -23, localidade: 'São Paulo', uf: 'SP' }))
+    geocodingProviderMock.searchStructured.mockResolvedValue(
+      ok({ lat: -23.5, lon: -46.6, precision: EnumGeoPrecision.CITY, providerName: 'LocationIQ' }),
+    )
+
+    const result = await useCase.execute({ cep: '01310100' })
+
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      expect(result.value.userLat).toBe(-23.5)
+      expect(result.value.userLon).toBe(-46.6)
+    }
+    expect(geocodingProviderMock.searchStructured).toHaveBeenCalled()
+  })
+
   it('STRATEGY A: should find coordinates using exact address (Street + City)', async () => {
     addressProviderMock.fetchAddress.mockResolvedValue(
       ok({
@@ -160,10 +146,7 @@ describe('CepToLatLon Use Case', () => {
     const result = await useCase.execute({ cep: '01310100' })
 
     expect(isOk(result)).toBe(true)
-    expect(geocodingProviderMock.search).toHaveBeenCalledWith(
-      'Avenida Paulista, São Paulo - SP, Brazil',
-      expect.any(AbortSignal),
-    )
+    expect(geocodingProviderMock.search).toHaveBeenCalledWith('Avenida Paulista, São Paulo - SP, Brazil', undefined)
     if (isOk(result)) {
       expect(result.value.userLat).toBe(-23.5631)
     }
@@ -226,48 +209,100 @@ describe('CepToLatLon Use Case', () => {
     if (isOk(result)) {
       expect(result.value.precision).toBe(EnumGeoPrecision.CITY)
     }
-    expect(geocodingProviderMock.searchStructured).toHaveBeenCalled()
+    expect(geocodingProviderMock.searchStructured).toHaveBeenCalledWith(
+      { city: 'São Paulo', state: 'SP', country: 'Brazil' },
+      undefined,
+    )
   })
 
-  // ============================================================================
-  // CACHE BEHAVIOR TESTS
-  // ============================================================================
+  it('should fall through to the neighborhood strategy when the street search fails with NOT_FOUND', async () => {
+    addressProviderMock.fetchAddress.mockResolvedValue(
+      ok({ logradouro: 'Rua X', bairro: 'Centro', localidade: 'São Paulo', uf: 'SP' }),
+    )
 
-  it('should return cached value immediately (Cache Hit)', async () => {
-    const cachedResponse = { userLat: 1, userLon: 1, precision: EnumGeoPrecision.ROOFTOP }
-    mockGetOrFetch.mockResolvedValue(ok(cachedResponse))
+    geocodingProviderMock.search
+      .mockResolvedValueOnce(err(new CoordinatesNotFoundError()))
+      .mockResolvedValueOnce(
+        ok({ lat: -23.1, lon: -46.2, precision: EnumGeoPrecision.NEIGHBORHOOD, providerName: 'LocationIQ' }),
+      )
 
-    const result = await useCase.execute({ cep: '00000000' })
+    const result = await useCase.execute({ cep: '01310100' })
 
     expect(isOk(result)).toBe(true)
     if (isOk(result)) {
-      expect(result.value).toBe(cachedResponse)
+      expect(result.value.precision).toBe(EnumGeoPrecision.NEIGHBORHOOD)
     }
-    expect(addressProviderMock.fetchAddress).not.toHaveBeenCalled()
+    // NOT_FOUND is a fall-through, not a terminal failure.
+    expect(geocodingProviderMock.search).toHaveBeenCalledTimes(2)
   })
 
-  it('should return err(InvalidCepError) when cache returns it', async () => {
-    mockGetOrFetch.mockResolvedValue(err(new InvalidCepError()))
+  it('should skip the street strategy entirely when the address has no logradouro', async () => {
+    addressProviderMock.fetchAddress.mockResolvedValue(ok({ bairro: 'Centro', localidade: 'São Paulo', uf: 'SP' }))
 
-    const result = await useCase.execute({ cep: '000' })
-    expect(isErr(result)).toBe(true)
-    if (isErr(result)) {
-      expect(result.error).toBeInstanceOf(InvalidCepError)
-    }
+    geocodingProviderMock.search.mockResolvedValueOnce(
+      ok({ lat: -23.1, lon: -46.2, precision: EnumGeoPrecision.NEIGHBORHOOD, providerName: 'LocationIQ' }),
+    )
+
+    const result = await useCase.execute({ cep: '01310100' })
+
+    expect(isOk(result)).toBe(true)
+    expect(geocodingProviderMock.search).toHaveBeenCalledTimes(1)
+    expect(geocodingProviderMock.search).toHaveBeenCalledWith('Centro, São Paulo - SP, Brazil', undefined)
   })
 
-  it('should return err(CoordinatesNotFoundError) when cache returns it', async () => {
-    mockGetOrFetch.mockResolvedValue(err(new CoordinatesNotFoundError()))
+  // ============================================================================
+  // SIGNAL PROPAGATION
+  // ============================================================================
+  //
+  // This use-case no longer owns a cache, so it no longer owns a timeout
+  // budget either: the caller's signal must reach every provider untouched.
 
-    const result = await useCase.execute({ cep: '000' })
+  it('should forward the caller signal to the address provider', async () => {
+    const signal = new AbortController().signal
+    addressProviderMock.fetchAddress.mockResolvedValue(ok({ lat: -23, lon: -46 }))
+
+    await useCase.execute({ cep: '01310100', signal })
+
+    expect(addressProviderMock.fetchAddress).toHaveBeenCalledWith('01310100', signal)
+  })
+
+  it('should forward the caller signal to both geocoding strategies', async () => {
+    const signal = new AbortController().signal
+    addressProviderMock.fetchAddress.mockResolvedValue(
+      ok({ logradouro: 'Rua X', bairro: 'Centro', localidade: 'São Paulo', uf: 'SP' }),
+    )
+    geocodingProviderMock.search.mockResolvedValue(ok(null))
+    geocodingProviderMock.searchStructured.mockResolvedValue(
+      ok({ lat: -23, lon: -46, precision: EnumGeoPrecision.CITY, providerName: 'LocationIQ' }),
+    )
+
+    await useCase.execute({ cep: '01310100', signal })
+
+    expect(geocodingProviderMock.search).toHaveBeenCalledWith(expect.any(String), signal)
+    expect(geocodingProviderMock.searchStructured).toHaveBeenCalledWith(expect.any(Object), signal)
+  })
+
+  it('should surface a provider abort as TimeoutExceededError', async () => {
+    const controller = new AbortController()
+    controller.abort(new Error('Aborted by client'))
+
+    addressProviderMock.fetchAddress.mockImplementation(async (_cep, signal) => {
+      if (signal?.aborted) {
+        return err(new TimeoutExceededError(signal.reason))
+      }
+      return ok(null)
+    })
+
+    const result = await useCase.execute({ cep: '00000000', signal: controller.signal })
+
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
-      expect(result.error).toBeInstanceOf(CoordinatesNotFoundError)
+      expect(result.error).toBeInstanceOf(TimeoutExceededError)
     }
   })
 
   // ============================================================================
-  // ERROR HANDLING (NON-CACHED & SYSTEM ERRORS)
+  // ERROR HANDLING
   // ============================================================================
 
   it('should return InvalidCepError when provider returns null', async () => {
@@ -291,83 +326,41 @@ describe('CepToLatLon Use Case', () => {
     }
   })
 
-  it('should bubble up ServiceBusyError (Rate Limit)', async () => {
-    addressProviderMock.fetchAddress.mockResolvedValue(ok({ logradouro: 'Rua A', localidade: 'B', uf: 'C' }))
+  it('should bubble up ServiceBusyError (Rate Limit) instead of trying the next strategy', async () => {
+    addressProviderMock.fetchAddress.mockResolvedValue(
+      ok({ logradouro: 'Rua A', bairro: 'Centro', localidade: 'B', uf: 'C' }),
+    )
     geocodingProviderMock.search.mockResolvedValue(err(new ServiceBusyError('Nominatim')))
 
     const result = await useCase.execute({ cep: '00000000' })
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(ServiceBusyError)
+    }
+    // A retryable failure is terminal: the neighborhood strategy must not run.
+    expect(geocodingProviderMock.search).toHaveBeenCalledTimes(1)
+    expect(geocodingProviderMock.searchStructured).not.toHaveBeenCalled()
+  })
+
+  it('should bubble up an error from the structured city search', async () => {
+    addressProviderMock.fetchAddress.mockResolvedValue(ok({ localidade: 'São Paulo', uf: 'SP' }))
+    geocodingProviderMock.searchStructured.mockResolvedValue(err(new ServiceBusyError('LocationIQ')))
+
+    const result = await useCase.execute({ cep: '00000000' })
+
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
       expect(result.error).toBeInstanceOf(ServiceBusyError)
     }
   })
 
-  it('should return generic CepToLatLonError on unexpected system failure', async () => {
-    addressProviderMock.fetchAddress.mockResolvedValue(
-      err(new ProviderFailureError('Mock', ProviderLayer.Address, new Error('Unknown Axios Error'))),
-    )
+  it('should propagate an address provider failure untouched', async () => {
+    addressProviderMock.fetchAddress.mockResolvedValue(err(new ProviderFailureError(new Error('Unknown Axios Error'))))
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
       expect(result.error).toBeInstanceOf(ProviderFailureError)
-    }
-  })
-
-  it('should return generic CepToLatLonError if cache returns generic error', async () => {
-    mockGetOrFetch.mockResolvedValue(err(new CepToLatLonError('00000000')))
-    const result = await useCase.execute({ cep: '00000000' })
-    expect(isErr(result)).toBe(true)
-    if (isErr(result)) {
-      expect(result.error).toBeInstanceOf(CepToLatLonError)
-    }
-  })
-
-  it('should return TimeoutExceededError when cache returns it (CacheOvertime)', async () => {
-    mockGetOrFetch.mockResolvedValueOnce(err(new TimeoutExceededError('Cache get timeout')))
-    const result = await useCase.execute({ cep: '00000000' })
-    expect(isErr(result)).toBe(true)
-    if (isErr(result)) {
-      expect(result.error).toBeInstanceOf(TimeoutExceededError)
-    }
-  })
-
-  it('should return InfraServiceOverloadError when cache returns it (CacheOverload)', async () => {
-    mockGetOrFetch.mockResolvedValueOnce(err(new InfraServiceOverloadError()))
-    const result = await useCase.execute({ cep: '00000000' })
-    expect(isErr(result)).toBe(true)
-    if (isErr(result)) {
-      expect(result.error).toBeInstanceOf(InfraServiceOverloadError)
-    }
-  })
-
-  it('should return TimeoutExceededError when signal is already aborted (Signal Abortion)', async () => {
-    const controller = new AbortController()
-    controller.abort(new Error('Aborted by client'))
-
-    mockGetOrFetch.mockImplementationOnce(async (_key, fetcher) => {
-      return fetcher(controller.signal)
-    })
-
-    addressProviderMock.fetchAddress.mockImplementationOnce(async (cep, signal) => {
-      if (signal?.aborted) {
-        return err(new TimeoutExceededError(signal.reason))
-      }
-      return ok(null)
-    })
-
-    const result = await useCase.execute({ cep: '00000000' })
-    expect(isErr(result)).toBe(true)
-    if (isErr(result)) {
-      expect(result.error).toBeInstanceOf(TimeoutExceededError)
-    }
-  })
-
-  it('should return generic CepToLatLonError when cache returns an unexpected error', async () => {
-    mockGetOrFetch.mockResolvedValueOnce(err(new CepToLatLonError('00000000')))
-    const result = await useCase.execute({ cep: '00000000' })
-    expect(isErr(result)).toBe(true)
-    if (isErr(result)) {
-      expect(result.error).toBeInstanceOf(CepToLatLonError)
     }
   })
 
@@ -381,5 +374,9 @@ describe('CepToLatLon Use Case', () => {
       expect(result.error).toBeInstanceOf(CepToLatLonError)
     }
     expect(mockCaptureError).not.toHaveBeenCalled()
+    expect(logger.error).toHaveBeenCalledWith(
+      { cep: '00000000', city: undefined },
+      'Crítico: Geocoding Provider não encontrou a cidade.',
+    )
   })
 })
