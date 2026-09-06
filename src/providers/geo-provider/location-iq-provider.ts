@@ -26,6 +26,7 @@ export class LocationIqProvider implements IRawGeocodingProvider {
   readonly rateLimitConfig = EnumProviderConfig.LOCATION_IQ_GEOCODING
   readonly maxRetries = LOCATION_IQ_CONFIG.MAX_RETRIES
   readonly backoffMs = LOCATION_IQ_CONFIG.BACKOFF_MS
+  readonly timeoutMs = LOCATION_IQ_CONFIG.TIMEOUT_MS
 
   constructor(private readonly config: LocationIqConfig) {
     this.api = createHttpClient({

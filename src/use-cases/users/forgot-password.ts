@@ -53,8 +53,18 @@ export class ForgotPasswordUseCase {
       return updateResult
     }
 
-    // Mesma transação da gravação do token (TransactionalUseCaseDecorator):
-    // ou o token e o evento existem juntos, ou nenhum dos dois — sem compensação.
+    return await this.registerResetEvent(user, rawToken, tokenExpiresAt)
+  }
+
+  /**
+   * Same transaction as the token write (TransactionalUseCaseDecorator): either
+   * the token and the event both exist, or neither does — no compensation step.
+   */
+  private async registerResetEvent(
+    user: { publicId: string; name: string; email: string },
+    rawToken: string,
+    tokenExpiresAt: Date,
+  ): Promise<Result<ForgotPasswordUseCaseResponse, AppError>> {
     const outboxEvent = await this.eventRegistration.register({
       type: OUTBOX_EVENT_TYPES.PASSWORD_RESET_REQUESTED,
       payload: {

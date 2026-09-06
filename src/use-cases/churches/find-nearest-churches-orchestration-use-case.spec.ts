@@ -11,6 +11,7 @@ import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
 import { LatitudeRangeError } from '@use-cases/errors/latitude-range-error'
+import { Deadline } from 'core/shared/deadline'
 
 const mockGetOrFetch = vi.fn()
 const mockGenerateKey = vi.fn()
@@ -41,7 +42,9 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     mockGetOrFetch.mockReset()
     mockGenerateKey.mockReset()
     mockGenerateKey.mockImplementation((params: any) => `nearest:${params.cep}`)
-    mockGetOrFetch.mockImplementation(async (_key: string, fetcher: () => Promise<unknown>) => fetcher())
+    mockGetOrFetch.mockImplementation(async (_key: string, fetcher: (d: Deadline) => Promise<unknown>) =>
+      fetcher(Deadline.none()),
+    )
 
     cepToLatLonUseCase = { execute: vi.fn() }
     findNearbyChurchesKnnUseCase = { execute: vi.fn() }
@@ -143,13 +146,18 @@ describe('FindNearestChurchesUseCase orchestration', () => {
         coordinatesProviderName: 'LocationIQ',
       })
     }
-    expect(cepToLatLonUseCase.execute).toHaveBeenCalledWith({ cep: '01310100', signal: undefined })
-    expect(findNearbyChurchesKnnUseCase.execute).toHaveBeenCalledWith({ userLat: -23.55, userLon: -46.63 })
+    expect(cepToLatLonUseCase.execute).toHaveBeenCalledWith({ cep: '01310100', deadline: expect.any(Deadline) })
+    // The KNN leg now shares the same budget as every other step.
+    expect(findNearbyChurchesKnnUseCase.execute).toHaveBeenCalledWith({
+      userLat: -23.55,
+      userLon: -46.63,
+      deadline: expect.any(Deadline),
+    })
     expect(calculateChurchRouteDistancesUseCase.findNearest).toHaveBeenCalledWith(
       {
         churches: knnChurches,
         user: { userLat: -23.55, userLon: -46.63 },
-        signal: undefined,
+        deadline: expect.any(Deadline),
       },
       expect.anything(),
     )
@@ -197,10 +205,10 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     expect(findNearbyChurchesKnnUseCase.execute).not.toHaveBeenCalled()
   })
 
-  it('shares one timeout budget: the cache signal reaches both the CEP step and the routing step', async () => {
+  it('shares one budget: the same deadline, carrying the cache cancellation, reaches the CEP and routing steps', async () => {
     const controller = new AbortController()
-    mockGetOrFetch.mockImplementationOnce(async (_key: string, fetcher: (s: AbortSignal) => Promise<unknown>) =>
-      fetcher(controller.signal),
+    mockGetOrFetch.mockImplementationOnce(async (_key: string, fetcher: (d: Deadline) => Promise<unknown>) =>
+      fetcher(Deadline.in(Infinity, { linkedTo: controller.signal })),
     )
 
     cepToLatLonUseCase.execute.mockResolvedValueOnce(
@@ -211,11 +219,17 @@ describe('FindNearestChurchesUseCase orchestration', () => {
 
     await useCase.execute({ cep: '01310100' })
 
-    expect(cepToLatLonUseCase.execute).toHaveBeenCalledWith({ cep: '01310100', signal: controller.signal })
-    expect(calculateChurchRouteDistancesUseCase.findNearest).toHaveBeenCalledWith(
-      expect.objectContaining({ signal: controller.signal }),
-      expect.anything(),
-    )
+    const cepDeadline = cepToLatLonUseCase.execute.mock.calls[0][0].deadline as Deadline
+    const routingDeadline = calculateChurchRouteDistancesUseCase.findNearest.mock.calls[0][0].deadline as Deadline
+
+    // One budget, not two: both steps must receive the very same instance.
+    expect(cepDeadline).toBeInstanceOf(Deadline)
+    expect(routingDeadline).toBe(cepDeadline)
+
+    // ...and cancelling the cache's signal must expire it.
+    expect(cepDeadline.expired).toBe(false)
+    controller.abort('cache budget spent')
+    expect(cepDeadline.expired).toBe(true)
   })
 
   it('caches only the final response — no intermediate value is ever written', async () => {
@@ -285,7 +299,7 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     controller.abort(new Error('Aborted by client'))
 
     mockGetOrFetch.mockImplementationOnce(async (_key, fetcher) => {
-      return fetcher(controller.signal)
+      return fetcher(Deadline.in(Infinity, { linkedTo: controller.signal }))
     })
 
     cepToLatLonUseCase.execute.mockImplementationOnce(async () => {

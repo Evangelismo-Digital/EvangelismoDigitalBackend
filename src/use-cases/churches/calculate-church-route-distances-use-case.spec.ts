@@ -10,6 +10,7 @@ import { ok, err, isOk, isErr } from 'core/shared/result'
 import { EmptyChurchListError } from '@use-cases/errors/empty-church-list-error'
 import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { Deadline } from 'core/shared/deadline'
 
 function church(overrides: Partial<NearbyChurch> = {}): NearbyChurch {
   return {
@@ -46,10 +47,10 @@ describe('CalculateChurchRouteDistancesUseCase', () => {
 
   it('forwards origin, destinations, profile and signal to the routing provider', async () => {
     const churches = [church({ id: 1, lat: 1, lon: 2 }), church({ id: 2, lat: 3, lon: 4 })]
-    const signal = new AbortController().signal
+    const deadline = Deadline.in(Infinity, { linkedTo: new AbortController().signal })
     vi.mocked(routingProvider.getDistances).mockResolvedValue(ok([{ distance: 5 }, { distance: 10 }]))
 
-    await useCase.findNearest({ churches, user, signal }, RoutingProfile.PEDESTRIAN)
+    await useCase.findNearest({ churches, user, deadline }, RoutingProfile.PEDESTRIAN)
 
     expect(routingProvider.getDistances).toHaveBeenCalledWith({
       origin: { lat: user.userLat, lon: user.userLon },
@@ -58,7 +59,7 @@ describe('CalculateChurchRouteDistancesUseCase', () => {
         { lat: 3, lon: 4 },
       ],
       profile: RoutingProfile.PEDESTRIAN,
-      signal,
+      deadline,
     })
   })
 

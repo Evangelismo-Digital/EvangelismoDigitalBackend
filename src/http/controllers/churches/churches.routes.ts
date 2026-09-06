@@ -7,6 +7,7 @@ import { UserRole } from '@prisma/client'
 import { deleteChurch } from './delete-church.controller'
 import { findChurchPublicIdByName } from './find-church-publicId-by-name.controller'
 import { HTTP_RATE_LIMIT_POLICIES } from '@http/policies/rate-limit'
+import { HTTP_DEADLINE_POLICIES } from '@http/policies/deadline'
 
 export async function churchesRoutes(app: FastifyInstance) {
   app.get(
@@ -14,6 +15,7 @@ export async function churchesRoutes(app: FastifyInstance) {
     {
       config: {
         rateLimit: HTTP_RATE_LIMIT_POLICIES.churches.nearest,
+        deadlineMs: HTTP_DEADLINE_POLICIES.churches.nearest,
       },
     },
     findNearestChurches,

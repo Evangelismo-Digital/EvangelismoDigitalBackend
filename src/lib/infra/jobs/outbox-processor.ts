@@ -31,116 +31,111 @@ export class OutboxProcessor {
   ) {}
 
   async processPendingEvents(): Promise<void> {
-    let lockToken: LockToken | null = null
+    await this.withLock(
+      this.LOCK_KEY,
+      OUTBOX_LOGS.CRITICAL_LOOP_ERROR,
+      OUTBOX_LOGS.SKIPPED_ANOTHER_RUNNING,
+      async (renew) => {
+        const pendingEventsResult = await this.outboxRepository.findPending(OUTBOX_CFG.THRESHOLDS.PENDING_FETCH_LIMIT)
 
-    try {
-      lockToken = await DistributedLock.acquire(this.LOCK_KEY, this.LOCK_TTL_MS)
-      if (!lockToken) {
-        logger.warn(OUTBOX_LOGS.SKIPPED_ANOTHER_RUNNING)
-        return
-      }
+        if (isErr(pendingEventsResult)) {
+          logger.error({ error: pendingEventsResult.error }, OUTBOX_LOGS.PENDING_FETCH_ERROR)
+          captureError(pendingEventsResult.error)
+          return
+        }
 
-      const pendingEventsResult = await this.outboxRepository.findPending(OUTBOX_CFG.THRESHOLDS.PENDING_FETCH_LIMIT)
+        const pendingEvents = pendingEventsResult.value
 
-      // Verificação do Result
-      if (isErr(pendingEventsResult)) {
-        logger.error({ error: pendingEventsResult.error }, OUTBOX_LOGS.PENDING_FETCH_ERROR)
-        captureError(pendingEventsResult.error)
-        return
-      }
+        if (pendingEvents.length === 0) return
 
-      const pendingEvents = pendingEventsResult.value
+        logger.info(`Processando ${pendingEvents.length} eventos pendentes da Outbox...`)
 
-      if (pendingEvents.length === 0) return
-
-      logger.info(`Processando ${pendingEvents.length} eventos pendentes da Outbox...`)
-
-      for (const event of pendingEvents) {
-        await DistributedLock.renew(this.LOCK_KEY, lockToken, this.LOCK_TTL_MS)
-        await this.processSingleEvent(event)
-      }
-    } catch (error) {
-      logger.error({ error }, OUTBOX_LOGS.CRITICAL_LOOP_ERROR)
-      captureError(error)
-    } finally {
-      if (lockToken) {
-        await DistributedLock.release(this.LOCK_KEY, lockToken)
-      }
-    }
+        for (const event of pendingEvents) {
+          await renew()
+          await this.processSingleEvent(event)
+        }
+      },
+    )
   }
 
   async processStuckSendingEvents(): Promise<void> {
-    let lockToken: LockToken | null = null
+    await this.withLock(
+      OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY,
+      OUTBOX_LOGS.CRITICAL_RECOVERY_ERROR,
+      null,
+      async (renew) => {
+        const thresholdDate = new Date(Date.now() - OUTBOX_CFG.THRESHOLDS.STUCK_SENDING_MS)
+        const stuckEventsResult = await this.outboxRepository.findStuck(
+          thresholdDate,
+          OUTBOX_CFG.THRESHOLDS.STUCK_FETCH_LIMIT,
+        )
 
-    try {
-      lockToken = await DistributedLock.acquire(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, this.LOCK_TTL_MS)
-      if (!lockToken) return
+        if (isErr(stuckEventsResult)) {
+          logger.error({ error: stuckEventsResult.error }, OUTBOX_LOGS.STUCK_FETCH_ERROR)
+          captureError(stuckEventsResult.error)
+          return
+        }
 
-      const thresholdDate = new Date(Date.now() - OUTBOX_CFG.THRESHOLDS.STUCK_SENDING_MS)
-      const stuckEventsResult = await this.outboxRepository.findStuck(
-        thresholdDate,
-        OUTBOX_CFG.THRESHOLDS.STUCK_FETCH_LIMIT,
-      )
+        const stuckEvents = stuckEventsResult.value
 
-      // Verificação do Result
-      if (isErr(stuckEventsResult)) {
-        logger.error({ error: stuckEventsResult.error }, OUTBOX_LOGS.STUCK_FETCH_ERROR)
-        captureError(stuckEventsResult.error)
-        return
-      }
+        if (stuckEvents.length === 0) return
 
-      const stuckEvents = stuckEventsResult.value
-
-      if (stuckEvents.length > 0) {
         logger.warn(`Encontrados ${stuckEvents.length} eventos travados em SENDING. Iniciando recuperação...`)
+
         for (const event of stuckEvents) {
-          await DistributedLock.renew(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, lockToken, this.LOCK_TTL_MS)
+          await renew()
           collectMetricsOutboxEventsStuckSendingEventsRecovered?.inc()
           await this.processSingleEvent(event)
         }
+      },
+    )
+  }
+
+  /**
+   * Roda `run` sob o lock distribuído, renovando-o entre eventos para que um
+   * lote longo não perca a exclusividade no meio do caminho. Se outra instância
+   * já detém o lock, nada roda — e `skippedMessage`, quando informado, registra
+   * a desistência.
+   */
+  private async withLock(
+    lockKey: string,
+    errorMessage: string,
+    skippedMessage: string | null,
+    run: (renew: () => Promise<void>) => Promise<void>,
+  ): Promise<void> {
+    let lockToken: LockToken | null = null
+
+    try {
+      lockToken = await DistributedLock.acquire(lockKey, this.LOCK_TTL_MS)
+
+      if (!lockToken) {
+        if (skippedMessage) logger.warn(skippedMessage)
+        return
       }
+
+      const token = lockToken
+
+      await run(async () => {
+        await DistributedLock.renew(lockKey, token, this.LOCK_TTL_MS)
+      })
     } catch (error) {
-      logger.error({ error }, OUTBOX_LOGS.CRITICAL_RECOVERY_ERROR)
+      logger.error({ error }, errorMessage)
       captureError(error)
     } finally {
       if (lockToken) {
-        await DistributedLock.release(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY, lockToken)
+        await DistributedLock.release(lockKey, lockToken)
       }
     }
   }
 
   async processSingleEvent(event: IOutboxEvent): Promise<void> {
-    // Gate de expiração — ANTES de qualquer fase: um evento expirado sai da
-    // tabela em vez de virar FAILED (o payload carrega um segredo e a linha é
-    // lixo em qualquer status). Eventos vindos do Pub/Sub chegam com datas
-    // serializadas como string, por isso o new Date().
-    if (event.expiresAt && new Date(event.expiresAt).getTime() <= Date.now()) {
-      const deleteResult = await this.outboxRepository.delete(event.publicId)
-
-      if (isErr(deleteResult)) {
-        logger.error({ publicId: event.publicId, error: deleteResult.error }, OUTBOX_LOGS.EXPIRED_EVENT_DELETE_ERROR)
-        captureError(deleteResult.error, { publicId: event.publicId })
-      } else {
-        collectMetricsOutboxEventsExpired?.inc()
-        logger.info({ publicId: event.publicId, type: event.type }, OUTBOX_LOGS.EXPIRED_EVENT_DELETED)
-      }
+    if (isExpired(event)) {
+      await this.discardExpired(event)
       return
     }
 
-    // Phase 0: eventos que excederam o limite de ciclos de despacho são terminais (poison message)
     if (event.attempts >= OUTBOX_CFG.THRESHOLDS.MAX_DISPATCH_ATTEMPTS) {
-      const failResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventStatus.FAILED)
-
-      if (isErr(failResult)) {
-        logger.error({ publicId: event.publicId, error: failResult.error }, OUTBOX_LOGS.FAILED_MARK_ERROR)
-        captureError(failResult.error, { publicId: event.publicId })
-      } else {
-        collectMetricsOutboxEventsMarkedAsTerminalFail?.inc()
-        logger.warn({ publicId: event.publicId, attempts: event.attempts }, OUTBOX_LOGS.MARKED_FAILED)
-        // Evento terminal (poison message): sem exceção real para capturar, então
-        // sintetizamos uma Error para dar visibilidade no Sentry (política "terminal/critical only").
-        captureError(new Error(OUTBOX_LOGS.MARKED_FAILED), { publicId: event.publicId, attempts: event.attempts })
-      }
+      await this.markPoisoned(event)
       return
     }
 
@@ -152,7 +147,46 @@ export class OutboxProcessor {
       return
     }
 
-    // Phase 2: Dispatch to BullMQ (revert on failure)
+    await this.dispatchOrRevert(event)
+  }
+
+  /**
+   * Gate de expiração — ANTES de qualquer fase: um evento expirado sai da tabela
+   * em vez de virar FAILED. O payload carrega um segredo e a linha é lixo em
+   * qualquer status.
+   */
+  private async discardExpired(event: IOutboxEvent): Promise<void> {
+    const deleteResult = await this.outboxRepository.delete(event.publicId)
+
+    if (isErr(deleteResult)) {
+      logger.error({ publicId: event.publicId, error: deleteResult.error }, OUTBOX_LOGS.EXPIRED_EVENT_DELETE_ERROR)
+      captureError(deleteResult.error, { publicId: event.publicId })
+      return
+    }
+
+    collectMetricsOutboxEventsExpired?.inc()
+    logger.info({ publicId: event.publicId, type: event.type }, OUTBOX_LOGS.EXPIRED_EVENT_DELETED)
+  }
+
+  /** Phase 0: excedeu o limite de ciclos de despacho — terminal (poison message). */
+  private async markPoisoned(event: IOutboxEvent): Promise<void> {
+    const failResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventStatus.FAILED)
+
+    if (isErr(failResult)) {
+      logger.error({ publicId: event.publicId, error: failResult.error }, OUTBOX_LOGS.FAILED_MARK_ERROR)
+      captureError(failResult.error, { publicId: event.publicId })
+      return
+    }
+
+    collectMetricsOutboxEventsMarkedAsTerminalFail?.inc()
+    logger.warn({ publicId: event.publicId, attempts: event.attempts }, OUTBOX_LOGS.MARKED_FAILED)
+    // Evento terminal: sem exceção real para capturar, então sintetizamos uma
+    // Error para dar visibilidade no Sentry (política "terminal/critical only").
+    captureError(new Error(OUTBOX_LOGS.MARKED_FAILED), { publicId: event.publicId, attempts: event.attempts })
+  }
+
+  /** Phase 2: despacha ao BullMQ, revertendo para PENDING se o despacho falhar. */
+  private async dispatchOrRevert(event: IOutboxEvent): Promise<void> {
     try {
       await this.dispatchToBullMQ(event)
       collectMetricsOutboxEventsDispatched?.inc()
@@ -163,10 +197,11 @@ export class OutboxProcessor {
         collectMetricsOutboxEventsRevertFailed?.inc()
         logger.error({ publicId: event.publicId, error: revertResult.error }, OUTBOX_LOGS.REVERT_FATAL)
         captureError(revertResult.error, { publicId: event.publicId })
-      } else {
-        collectMetricsOutboxEventsReverted?.inc()
-        logger.error({ publicId: event.publicId, error }, OUTBOX_LOGS.DISPATCH_REVERTED)
+        return
       }
+
+      collectMetricsOutboxEventsReverted?.inc()
+      logger.error({ publicId: event.publicId, error }, OUTBOX_LOGS.DISPATCH_REVERTED)
     }
   }
 
@@ -208,4 +243,12 @@ export class OutboxProcessor {
       { jobId: event.publicId, ...jobOptions },
     )
   }
+}
+
+/**
+ * Eventos vindos do Pub/Sub chegam com datas serializadas como string, por isso
+ * o `new Date()`.
+ */
+function isExpired(event: IOutboxEvent): boolean {
+  return Boolean(event.expiresAt) && new Date(event.expiresAt as Date).getTime() <= Date.now()
 }

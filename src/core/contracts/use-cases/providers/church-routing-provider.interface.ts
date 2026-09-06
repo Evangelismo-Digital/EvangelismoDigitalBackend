@@ -1,3 +1,4 @@
+import { Deadline } from 'core/shared/deadline'
 import { Result } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
@@ -17,6 +18,6 @@ export interface IChurchRoutingProvider {
     origin: RoutingPoint
     destinations: RoutingPoint[]
     profile?: RoutingProfile
-    signal?: AbortSignal
+    deadline?: Deadline
   }): Promise<Result<RouteDistanceResult[], AppError>>
 }

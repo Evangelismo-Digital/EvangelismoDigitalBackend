@@ -1,7 +1,6 @@
 import { env } from '@env/index'
-import { logger } from '@lib/logger'
 import Redis from 'ioredis'
-import { isRedisConnectivityError, RedisOutageLogger } from './redis-outage-logger'
+import { attachOutageLogging } from './attach-outage-logging'
 import { REDIS_LOGS } from 'messages/constants/logs/redis'
 
 export function createRedisRateLimiterConnection() {
@@ -27,40 +26,7 @@ export function createRedisRateLimiterConnection() {
     maxRetriesPerRequest: 0,
   })
 
-  const outageLogger = new RedisOutageLogger({
-    subsystem: 'rate-limiter',
-    host: env.REDIS_HOST,
-    port: env.REDIS_PORT,
-  })
-
-  redis.on('ready', () => {
-    outageLogger.onRecovery()
-  })
-
-  redis.on('connect', () => {
-    outageLogger.onRecovery()
-  })
-
-  redis.on('error', (error) => {
-    if (isRedisConnectivityError(error)) {
-      outageLogger.onOutage('error', error)
-      return
-    }
-
-    logger.error(
-      {
-        subsystem: 'rate-limiter',
-        redisHost: env.REDIS_HOST,
-        redisPort: env.REDIS_PORT,
-        err: error,
-      },
-      REDIS_LOGS.RATE_LIMITER_UNEXPECTED_ERROR,
-    )
-  })
-
-  redis.on('close', () => {
-    outageLogger.onOutage('close')
-  })
+  attachOutageLogging(redis, 'rate-limiter', REDIS_LOGS.RATE_LIMITER_UNEXPECTED_ERROR)
 
   return redis
 }

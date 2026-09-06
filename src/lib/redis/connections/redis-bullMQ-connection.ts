@@ -1,6 +1,7 @@
 import { env } from '@env/index'
-import { logger } from '@lib/logger'
 import Redis from 'ioredis'
+import { logger } from '@lib/logger'
+import { attachOutageLogging } from './attach-outage-logging'
 import { isRedisConnectivityError, RedisOutageLogger } from './redis-outage-logger'
 import { REDIS_LOGS } from 'messages/constants/logs/redis'
 
@@ -20,40 +21,7 @@ export function createRedisBullMQConnection() {
     },*/
   })
 
-  const outageLogger = new RedisOutageLogger({
-    subsystem: 'bullmq',
-    host: env.REDIS_HOST,
-    port: env.REDIS_PORT,
-  })
-
-  redis.on('ready', () => {
-    outageLogger.onRecovery()
-  })
-
-  redis.on('connect', () => {
-    outageLogger.onRecovery()
-  })
-
-  redis.on('error', (error) => {
-    if (isRedisConnectivityError(error)) {
-      outageLogger.onOutage('error', error)
-      return
-    }
-
-    logger.error(
-      {
-        subsystem: 'bullmq',
-        redisHost: env.REDIS_HOST,
-        redisPort: env.REDIS_PORT,
-        err: error,
-      },
-      REDIS_LOGS.BULLMQ_UNEXPECTED_ERROR,
-    )
-  })
-
-  redis.on('close', () => {
-    outageLogger.onOutage('close')
-  })
+  attachOutageLogging(redis, 'bullmq', REDIS_LOGS.BULLMQ_UNEXPECTED_ERROR)
 
   return redis
 }

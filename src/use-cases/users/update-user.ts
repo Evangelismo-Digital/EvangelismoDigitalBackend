@@ -37,51 +37,63 @@ export class UpdateUserUseCase {
       return err(new UserNotFoundError())
     }
 
-    const data: UserUpdateInput = {}
+    const conflict = await this.findUniquenessConflict({ email, username }, userToBeUpdated.publicId)
 
-    if (name !== undefined) data.name = name
-    if (email !== undefined) data.email = email
-    if (username !== undefined) data.username = username
-    data.updatedAt = new Date()
-
-    if (email !== undefined) {
-      const emailResult = await this.usersRepository.findBy({ email })
-
-      if (isErr(emailResult)) {
-        return emailResult
-      }
-
-      const userWithExistingEmail = emailResult.value
-
-      if (userWithExistingEmail && userWithExistingEmail.publicId !== userToBeUpdated.publicId) {
-        return err(new UserAlreadyExistsError())
-      }
+    if (conflict) {
+      return conflict
     }
 
-    if (username !== undefined) {
-      const usernameResult = await this.usersRepository.findBy({ username })
-
-      if (isErr(usernameResult)) {
-        return usernameResult
-      }
-
-      const usernameWithExistingUsername = usernameResult.value
-
-      if (usernameWithExistingUsername && usernameWithExistingUsername.publicId !== userToBeUpdated.publicId) {
-        return err(new UserAlreadyExistsError())
-      }
-    }
-
-    const updateResult = await this.usersRepository.update(userToBeUpdated.publicId, {
-      ...data,
-    })
+    const updateResult = await this.usersRepository.update(
+      userToBeUpdated.publicId,
+      buildUpdate({ name, email, username }),
+    )
 
     if (isErr(updateResult)) {
       return updateResult
     }
 
-    const user = updateResult.value
-
-    return ok({ user })
+    return ok({ user: updateResult.value })
   }
+
+  /**
+   * Email and username are both unique, and were checked with two copies of the
+   * same six lines. Checked in that order, as before: whichever conflicts first
+   * is the one reported.
+   */
+  private async findUniquenessConflict(
+    fields: { email?: string; username?: string },
+    currentPublicId: string,
+  ): Promise<Result<UpdateUserUseCaseResponse, AppError> | null> {
+    for (const [field, value] of Object.entries(fields)) {
+      if (value === undefined) {
+        continue
+      }
+
+      const result = await this.usersRepository.findBy({ [field]: value })
+
+      if (isErr(result)) {
+        return result
+      }
+
+      const owner = result.value
+
+      if (owner && owner.publicId !== currentPublicId) {
+        return err(new UserAlreadyExistsError())
+      }
+    }
+
+    return null
+  }
+}
+
+/** Only the fields the caller actually supplied, plus the update stamp. */
+function buildUpdate({ name, email, username }: Omit<UpdateUserUseCaseRequest, 'publicId'>): UserUpdateInput {
+  const data: UserUpdateInput = {}
+
+  if (name !== undefined) data.name = name
+  if (email !== undefined) data.email = email
+  if (username !== undefined) data.username = username
+  data.updatedAt = new Date()
+
+  return data
 }

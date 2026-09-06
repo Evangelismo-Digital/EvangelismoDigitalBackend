@@ -16,6 +16,9 @@ export default [
       'src/load-test/**',
       '**/*.spec.ts',
       '**/*.spec.mts',
+      // Shared test scenarios reused by several specs — test code, so exempt
+      // from the Layer 4 structural rules exactly as the specs themselves are.
+      '**/*.contract.ts',
     ],
   },
   {
@@ -55,24 +58,35 @@ export default [
       semi: ['error', 'never'],
 
       // --- Import Tracking Rules ---
-      'import/no-unresolved': 'error',        // Errors if the file doesn't exist
-      'import/no-duplicates': 'warn',         // Prevents double imports from same file
-      'import/no-self-import': 'error',       // Prevents a file from importing itself
-      'import/no-useless-path-segments': 'warn', // Cleans up ./../src/ logic
+      'import/no-unresolved': 'error', // Errors if the file doesn't exist
+      'import/no-duplicates': 'warn', // Prevents double imports from same file
+      'import/no-self-import': 'error', // Prevents a file from importing itself
+      'import/no-useless-path-segments': 'error', // Cleans up ./../src/ logic
     },
   },
   {
     // --- Layer 4: Structural & Complexity Gate ---
-    // Kept at 'warn' repo-wide so `npm run lint` / ci:static stay green while the
-    // legacy tree is brought into line. The PostToolUse hook lints each touched
-    // file with `--max-warnings 0`, so these are blocking on changed code.
+    // Errors, repo-wide. The legacy tree was brought into line in R5, so there is
+    // no longer a backlog to keep green around — a new violation is a build
+    // failure in `npm run lint`, ci:static and the PostToolUse hook alike.
     files: ['src/**/*.ts'],
     ignores: ['**/*.spec.ts'],
     rules: {
-      complexity: ['warn', 6],
-      'max-lines-per-function': ['warn', { max: 30, skipBlankLines: true, skipComments: true, IIFEs: true }],
-      'max-depth': ['warn', 3],
-      'import/no-cycle': ['warn', { maxDepth: Infinity, ignoreExternal: true }],
+      complexity: ['error', 6],
+      'max-lines-per-function': ['error', { max: 30, skipBlankLines: true, skipComments: true, IIFEs: true }],
+      'max-depth': ['error', 3],
+      'import/no-cycle': ['error', { maxDepth: Infinity, ignoreExternal: true }],
+    },
+  },
+  {
+    // --- Layer 4 exemption: e-mail templates ---
+    // These functions are a single HTML string literal with no branching, so
+    // `max-lines-per-function` measures markup rather than logic. Splitting the
+    // markup to satisfy a line count would make the templates harder to read,
+    // not easier. `complexity` and `max-depth` still apply here.
+    files: ['src/templates/**/*.ts'],
+    rules: {
+      'max-lines-per-function': 'off',
     },
   },
 ]

@@ -54,7 +54,7 @@ trap restore_backend EXIT
 
 # Fetches /metrics from inside an app container (ports 9091/9092 are internal
 # to the compose network, not published to the host) via the same node -e HTTP
-# idiom the healthchecks use, since node:20-slim has no curl/wget.
+# idiom the healthchecks use, since node:22-slim has no curl/wget.
 fetch_app_metrics() {
   local svc="$1" port="$2"
   "${COMPOSE[@]}" exec -T "$svc" node -e "

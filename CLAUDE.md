@@ -70,6 +70,7 @@ This is **non-negotiable** for any change to a controller, use-case/service, rep
 | 3 — Property-based | `fast-check` inside `*.spec.ts` | thousands of randomised inputs at pure functions (Result helpers, geo math, validators, template rendering) | no falsifying case |
 | 4 — Structural & complexity | `eslint` (`complexity`, `max-lines-per-function`, `max-depth`, `import/no-cycle`), `npm run check:cycles` | no monolithic / tangled generated code | Cyclomatic complexity ≤ 6; function ≤ 30 lines; `max-depth` ≤ 3; no new circular deps across module boundaries |
 | 5 — Mutation gauntlet | Stryker — `npm run test:mutation -- --mutate "<changed globs>"` | kill deliberate bugs planted in the AST | mutation score ≥ 85 % on the changed diff |
+| 6 — CI parity | `npm run ci:local` (`scripts/ci-local.sh`) | prove the change survives every gate CI applies, not just the ones you thought to run | exit 0, all stages green — **mandatory, run serially** |
 
 The Layer 4 rules are `warn` repo-wide (so `npm run lint` / `ci:static` stay green while the legacy tree is cleaned up), but the `PostToolUse` hook lints each file you touch with `--max-warnings 0` — so on **changed** code they are blocking. `npm run lint:complexity` runs the strict check on demand.
 
@@ -87,20 +88,60 @@ Layer 1 lives in `features/*.feature` (Gherkin) with step definitions colocated 
 
 - **Job handlers** additionally get unit cases for: success, `RETRYABLE` failure, permanent failure, idempotent re-delivery — plus an assertion that the relevant Prometheus counter moved.
 - **Repositories / providers / adapters / controllers** additionally get a Layer 4 integration test (`npm run test:e2e`, real Docker Postgres + Redis) exercising real query behaviour and contract serialisation.
-- **Regression**: every bug fix adds a test named for the symptom that **fails on the pre-fix code**, colocated as `<symptom>.regression.spec.ts` next to the unit tests (picked up by the existing `unit-*` projects).
-- Property-based tests belong on pure functions; no test may `sleep` — use fake timers.
+- **Regression**: every bug fix — including one you introduced and caught yourself mid-refactor — adds a
+  test named for the **symptom**, colocated as `<symptom>.regression.spec.ts` next to the unit tests
+  (`**/*.spec.ts` matches, so every `unit-*` project and both CI allowlists pick them up automatically).
+  Requirements, all of them:
+  - It must **fail on the pre-fix code.** Prove it: revert the fix, run the spec, restore. A regression
+    test that has never been seen red is an assumption, not a guard.
+  - Its file docblock states what broke, why it mattered, and which defect id it belongs to.
+  - It carries a **counterweight** case asserting the fix did not overshoot — "does not cache transient
+    failures" pairs with "still caches NOT_FOUND", or the next refactor satisfies it by doing nothing.
+- Property-based tests belong on pure functions; no test may `sleep` — use fake timers. A test that waits
+  on a real timer fails under load rather than on logic, which is worse than no test.
 
-### Pre-completion checklist
+### The per-change gate
 
-Run before concluding any task:
+Run the **whole** checklist below after **every single change** — not once per task, not once per phase,
+and not only when something feels risky. A "change" is any edit that lands in `src/`: a refactor, a
+one-line fix, a renamed symbol, a new test double. Batching the verification to the end of a task is
+what lets a regression ride along inside a larger diff and become expensive to locate.
+
+This is not ceremony. In this repo the practice has already caught, among others: single-flight
+silently breaking because an extracted helper added a microtask boundary; a `mapFetchThrow`
+simplification destroying error classification; and a test double whose missing field would have made
+a provider report itself as busy in production. None of those were suspected before the suite was run.
+
+**Every** change ships with unit tests, integration tests, a regression test when it fixes a bug,
+mutation testing, and a green `ci:local`. None of these steps is conditional or optional, and none may
+be skipped because a change "looks small" — the point is to prove no bug was introduced, and that proof
+is worth least exactly where you were most confident. Run all of it:
 
 1. `npm run typecheck`
 2. `npm run lint` — and `npx eslint --max-warnings 0 <each changed .ts>` (Layer 4)
-3. `npm run test:unit && npm run test:acceptance`
-4. `npm run test:mutation -- --mutate "<changed src globs>"` — kill every survivor (boolean flip, boundary operator, deleted return) with a targeted test
-5. `npm run test:integration` — if the change touches a repository, provider/adapter, or controller
+3. `npm run test:unit:all && npm run test:acceptance`
+4. `npm run test:integration` (e2e) — plus `npm run test:integration:cache` and
+   `npm run test:integration:full` when the change touches a repository, provider/adapter, cache,
+   controller, or anything wired to Redis/Postgres
+5. `npm run test:mutation -- --mutate "<changed src globs>"` — kill every survivor (boolean flip,
+   boundary operator, deleted return) with a targeted test. Note: repeating `--mutate` **overrides**
+   rather than appends; pass one comma-separated list. `--incremental false` is parsed as a config
+   filename — use `--incrementalFile <path>` to scope a run instead
+6. **`npm run ci:local`** — the final gate. Mirrors every CI job (security scanners, coverage, tsup
+   build, Docker image + smoke test) and must exit 0. It catches what the `PostToolUse` hook cannot:
+   the hook only formats and lints files edited through Edit/Write, so anything written by a script
+   reaches CI unformatted unless `ci:local` says otherwise
 
-`npm run verify` chains steps 1–3.
+`npm run verify` chains steps 1–3 only; it is not a substitute for 4–6.
+
+**`ci:local` must be run serially.** It manages the compose stack itself and binds port 3333, and it
+aborts if anything already answers there (`scripts/ci-local.sh:140`). Two overlapping invocations —
+or a `npm run dev` left running — will fail the run for reasons unrelated to the code.
+
+A test that passes the moment you write it has proved nothing yet. Confirm each new test fails
+against the un-fixed code (revert the fix, or hand-plant the mutant, then restore) before treating it
+as a gate. Where a suite fails for environmental reasons — Docker down, a rate-limited live API —
+prove it by reproducing the same failure on a clean tree (`git stash`) rather than assuming.
 
 ## Autonomous operation
 

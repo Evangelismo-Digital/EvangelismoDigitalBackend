@@ -1,5 +1,14 @@
 export const CACHE_CONFIG = {
   /**
+   * Ceiling for a single Redis round-trip inside a cached lookup.
+   *
+   * The cache used to read before its clock started and write after it stopped,
+   * so a degraded Redis could add its own `commandTimeout` (1s) at each end on
+   * top of the fetch budget. Both ends are now bounded by this instead.
+   */
+  REDIS_OP_BUDGET_MS: 300,
+
+  /**
    * The single cache layer for the "find the nearest church" flow. Keyed by
    * CEP + routing profile and holding the finished church list — never
    * intermediate coordinates. FETCH_TIMEOUT_MS is the budget for the entire
@@ -29,6 +38,19 @@ export const CACHE_CONFIG = {
     NEGATIVE_TTL_SECONDS: 60 * 30, // 30 min
 
     MAX_PENDING_FETCHES: 500,
-    FETCH_TIMEOUT_MS: 15_000,
+
+    /**
+     * Ceiling for the shared fetch behind one key (address → geocode → KNN →
+     * routing matrix).
+     *
+     * Deliberately just inside `HTTP_DEADLINE_POLICIES.churches.nearest` (8s):
+     * the fetch is detached from any single caller, so it needs its own bound,
+     * and giving up fractionally before the route budget means a waiting caller
+     * sees the fetch's answer rather than its own timeout.
+     *
+     * Was 15s, which — with an unbounded Redis read and write at either end —
+     * put the real ceiling near 17s for a synchronous client-facing GET.
+     */
+    FETCH_TIMEOUT_MS: 7_500,
   },
 } as const

@@ -122,8 +122,8 @@ Neste repositório está o projeto para ...
 2. No terminal, instale nvm através do chocolatey: `choco install nvm`
 3. Clone este repositório com o comando: `git clone https://github.com/Amaro-peter/EvangelismoDigitalBackend.git`.
 4. Navegue para dentro do projeto clonado com o comando: `cd backend-template-reborn`.
-5. Instale a versão do NodeJs com o comando `nvm install 20.19.0`.
-6. Execute `nvm use 20.19.0` para usar a versão
+5. Instale a versão do NodeJs com o comando `nvm install 22.23.2`.
+6. Execute `nvm use 22.23.2` para usar a versão
 7. Instale as dependências do projeto ao executar no console o comando: `npm install`.
 8. Crie um arquivo `.env` na raiz do projeto copiando o conteúdo do `.env.example`. Preencha manualmente os valores que não estiverem definidos.
 9. Envie no console o comando `npx prisma generate`.

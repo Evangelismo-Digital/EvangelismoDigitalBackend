@@ -20,6 +20,7 @@ export class NominatimGeoProvider implements IRawGeocodingProvider {
   readonly rateLimitConfig = EnumProviderConfig.NOMINATIM_GEOCODING
   readonly maxRetries = NOMINATIM_CONFIG.MAX_RETRIES
   readonly backoffMs = NOMINATIM_CONFIG.BACKOFF_MS
+  readonly timeoutMs = NOMINATIM_CONFIG.TIMEOUT_MS
 
   constructor(private readonly config: NominatimConfig) {
     this.api = createHttpClient({

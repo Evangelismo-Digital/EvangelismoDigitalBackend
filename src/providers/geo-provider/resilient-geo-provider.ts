@@ -1,13 +1,13 @@
 import { logger } from '@lib/logger'
 import { NoGeoProviderError } from './error/no-geo-provider-error'
 import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import {
   IGeocodingProvider,
   IGeoCoordinates,
   IGeoSearchOptions,
 } from 'core/contracts/use-cases/providers/geo-provider.interface'
+import { Deadline } from 'core/shared/deadline'
 import { Result, ok, err, isOk } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
@@ -27,6 +27,17 @@ import {
  * No `instanceof` checks are used — routing is driven purely by
  * `error.failureMode`.
  */
+/** What the chain has learned so far while walking its providers. */
+interface ChainTally {
+  notFoundCount: number
+  lastRetryableError?: AppError
+  lastProviderName?: string
+}
+
+function nameOf(provider: IGeocodingProvider): string {
+  return (provider as { providerName?: string }).providerName ?? provider.constructor.name
+}
+
 export class ResilientGeoProvider implements IGeocodingProvider {
   constructor(private readonly providers: IGeocodingProvider[]) {
     if (this.providers.length === 0) {
@@ -34,113 +45,145 @@ export class ResilientGeoProvider implements IGeocodingProvider {
     }
   }
 
-  async search(query: string, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
-    const effectiveSignal = signal ?? new AbortController().signal
-    return await this.executeStrategy((provider, innerSignal) => provider.search(query, innerSignal), effectiveSignal)
+  async search(query: string, deadline: Deadline = Deadline.none()): Promise<Result<IGeoCoordinates | null, AppError>> {
+    return await this.executeStrategy((provider, inner) => provider.search(query, inner), deadline)
   }
 
   async searchStructured(
     options: IGeoSearchOptions,
-    signal?: AbortSignal,
+    deadline: Deadline = Deadline.none(),
   ): Promise<Result<IGeoCoordinates | null, AppError>> {
-    const effectiveSignal = signal ?? new AbortController().signal
-    return await this.executeStrategy(
-      (provider, innerSignal) => provider.searchStructured(options, innerSignal),
-      effectiveSignal,
-    )
+    return await this.executeStrategy((provider, inner) => provider.searchStructured(options, inner), deadline)
   }
 
   private async executeStrategy(
-    action: (provider: IGeocodingProvider, signal: AbortSignal) => Promise<Result<IGeoCoordinates | null, AppError>>,
-    signal: AbortSignal,
+    action: (provider: IGeocodingProvider, deadline: Deadline) => Promise<Result<IGeoCoordinates | null, AppError>>,
+    deadline: Deadline,
   ): Promise<Result<IGeoCoordinates | null, AppError>> {
-    let lastRetryableError: AppError | undefined = undefined
-
-    let lastProviderName = ''
-
-    let notFoundCount = 0
+    const tally: ChainTally = { notFoundCount: 0 }
 
     for (const [index, provider] of this.providers.entries()) {
-      const providerName = (provider as { providerName?: string }).providerName ?? provider.constructor.name
-
-      // Defensive Check — honour abort before each provider attempt
-      if (signal.aborted) {
-        return err(new TimeoutExceededError(signal.reason))
+      // Honour the budget before each provider attempt: with none left, every
+      // remaining provider would fail instantly while still costing quota.
+      if (deadline.expired) {
+        return err(deadline.asError())
       }
 
-      const endTimer = collectMetricsProviderLatency?.startTimer({ provider: providerName, layer: 'geocoding' })
-      const result = await action(provider, signal)
-      endTimer?.()
+      const providerName = nameOf(provider)
+      const result = await this.callProvider(action, provider, deadline, providerName)
+      const terminal = this.interpret(result, providerName, index, tally)
 
-      recordProviderRequest('geocoding', providerName, result)
-
-      if (isOk(result)) {
-        if (result.value !== null) {
-          logger.info({ provider: providerName }, 'Geocodificação obtida com sucesso por um provedor de geocodificação')
-          return ok(result.value)
-        }
-        // Provider returned null (not found)
-        notFoundCount++
-        logger.info({ provider: providerName }, 'Provedor retornou null (não encontrado) - tentando próximo')
-        continue
+      if (terminal) {
+        return terminal
       }
-
-      const error = result.error
-
-      // NOT_FOUND: resource genuinely missing — treat same as null response
-      if (error.failureMode === FailureMode.NOT_FOUND) {
-        notFoundCount++
-        logger.info({ provider: providerName }, 'Coordenadas não encontradas - tentando próximo')
-        continue
-      }
-
-      // RETRYABLE: transient infra error — log and advance to next provider
-      if (error.failureMode === FailureMode.RETRYABLE) {
-        lastRetryableError = error
-        lastProviderName = providerName
-
-        const nextProvider = this.providers[index + 1]
-        if (nextProvider) {
-          const nextProviderName =
-            (nextProvider as { providerName?: string }).providerName ?? nextProvider.constructor.name
-          collectMetricsProviderFallback?.inc({
-            layer: 'geocoding',
-            from_provider: providerName,
-            to_provider: nextProviderName,
-          })
-        }
-
-        logger.warn(
-          { provider: providerName, attempt: index + 1, error },
-          'Provedor de geocodificação retornou erro recuperável. Alternando para o próximo provedor...',
-        )
-        continue
-      }
-
-      // Unknown / fatal error — bail immediately without trying other providers
-      logger.error({ provider: providerName, error }, 'Provedor retornou erro fatal. Abortando cadeia.')
-      return err(error)
     }
 
-    // Decision phase: all providers exhausted
-    if (notFoundCount === this.providers.length) {
+    return this.decideExhausted(tally)
+  }
+
+  private async callProvider(
+    action: (provider: IGeocodingProvider, deadline: Deadline) => Promise<Result<IGeoCoordinates | null, AppError>>,
+    provider: IGeocodingProvider,
+    deadline: Deadline,
+    providerName: string,
+  ): Promise<Result<IGeoCoordinates | null, AppError>> {
+    const endTimer = collectMetricsProviderLatency?.startTimer({ provider: providerName, layer: 'geocoding' })
+    const result = await action(provider, deadline)
+    endTimer?.()
+
+    recordProviderRequest('geocoding', providerName, result)
+
+    return result
+  }
+
+  /**
+   * Turns one provider's outcome into either a terminal result for the whole
+   * chain, or `null` meaning "keep going" — recording what we learned in `tally`.
+   */
+  private interpret(
+    result: Result<IGeoCoordinates | null, AppError>,
+    providerName: string,
+    index: number,
+    tally: ChainTally,
+  ): Result<IGeoCoordinates | null, AppError> | null {
+    if (isOk(result)) {
+      return this.interpretSuccess(result.value, providerName, tally)
+    }
+
+    const error = result.error
+
+    // NOT_FOUND: resource genuinely missing — treat same as null response
+    if (error.failureMode === FailureMode.NOT_FOUND) {
+      tally.notFoundCount++
+      logger.info({ provider: providerName }, 'Coordenadas não encontradas - tentando próximo')
+      return null
+    }
+
+    // RETRYABLE: transient infra error — log and advance to next provider
+    if (error.failureMode === FailureMode.RETRYABLE) {
+      this.noteRetryable(error, providerName, index, tally)
+      return null
+    }
+
+    // PERMANENT / ABORTED / untagged — bail without trying other providers
+    logger.error({ provider: providerName, error }, 'Provedor retornou erro fatal. Abortando cadeia.')
+    return err(error)
+  }
+
+  private interpretSuccess(
+    value: IGeoCoordinates | null,
+    providerName: string,
+    tally: ChainTally,
+  ): Result<IGeoCoordinates | null, AppError> | null {
+    if (value !== null) {
+      logger.info({ provider: providerName }, 'Geocodificação obtida com sucesso por um provedor de geocodificação')
+      return ok(value)
+    }
+
+    tally.notFoundCount++
+    logger.info({ provider: providerName }, 'Provedor retornou null (não encontrado) - tentando próximo')
+    return null
+  }
+
+  private noteRetryable(error: AppError, providerName: string, index: number, tally: ChainTally): void {
+    tally.lastRetryableError = error
+    tally.lastProviderName = providerName
+
+    const nextProvider = this.providers[index + 1]
+    if (nextProvider) {
+      collectMetricsProviderFallback?.inc({
+        layer: 'geocoding',
+        from_provider: providerName,
+        to_provider: nameOf(nextProvider),
+      })
+    }
+
+    logger.warn(
+      { provider: providerName, attempt: index + 1, error },
+      'Provedor de geocodificação retornou erro recuperável. Alternando para o próximo provedor...',
+    )
+  }
+
+  /** Every provider was asked and none answered. */
+  private decideExhausted(tally: ChainTally): Result<IGeoCoordinates | null, AppError> {
+    if (tally.notFoundCount === this.providers.length) {
       logger.warn(
-        { notFoundCount, totalProviders: this.providers.length },
+        { notFoundCount: tally.notFoundCount, totalProviders: this.providers.length },
         'Nenhum provedor retornou resultados - coordenadas não encontradas',
       )
       return err(new CoordinatesNotFoundError())
     }
 
-    if (lastRetryableError) {
-      collectMetricsProviderChainExhausted?.inc({ layer: 'geocoding' })
+    collectMetricsProviderChainExhausted?.inc({ layer: 'geocoding' })
+
+    if (tally.lastRetryableError) {
       logger.error(
-        { provider: lastProviderName, error: lastRetryableError },
+        { provider: tally.lastProviderName, error: tally.lastRetryableError },
         'Geocodificação falhou com erros de sistema',
       )
-      return err(lastRetryableError)
+      return err(tally.lastRetryableError)
     }
 
-    collectMetricsProviderChainExhausted?.inc({ layer: 'geocoding' })
     return err(new ProviderFailureError(new Error('TODOS os provedores falharam')))
   }
 }

@@ -30,35 +30,39 @@ export class ChurchPresenter {
     input: Church | Church[] | NearbyChurch | NearbyChurch[],
   ): HTTPChurch | HTTPChurch[] | HTTPNearbyChurch | HTTPNearbyChurch[] {
     if (Array.isArray(input)) {
-      return input.map((c) => {
-        if ('distanceKm' in c && 'distanceMeters' in c) {
-          return this.toHTTP(c as NearbyChurch)
-        }
-        return this.toHTTP(c as Church)
-      }) as HTTPChurch[] | HTTPNearbyChurch[]
+      return input.map((c) => (isNearby(c) ? toHTTPNearby(c) : toHTTPChurch(c))) as HTTPChurch[] | HTTPNearbyChurch[]
     }
 
-    if ('distanceKm' in input && 'distanceMeters' in input) {
-      return {
-        publicId: input.publicId,
-        name: input.name,
-        address: input.address,
-        lat: input.lat,
-        lon: input.lon,
-        distanceKm: input.distanceKm,
-        distanceMeters: input.distanceMeters,
-      }
-    }
+    return isNearby(input) ? toHTTPNearby(input) : toHTTPChurch(input)
+  }
+}
 
-    return {
-      publicId: input.publicId,
-      name: input.name,
-      address: input.address,
-      lat: input.lat,
-      lon: input.lon,
-      geog: input.geog,
-      createdAt: input.createdAt,
-      updatedAt: input.updatedAt,
-    }
+/** A nearby church is a church plus its two distance fields. */
+function isNearby(input: Church | NearbyChurch): input is NearbyChurch {
+  return 'distanceKm' in input && 'distanceMeters' in input
+}
+
+function toHTTPNearby(input: NearbyChurch): HTTPNearbyChurch {
+  return {
+    publicId: input.publicId,
+    name: input.name,
+    address: input.address,
+    lat: input.lat,
+    lon: input.lon,
+    distanceKm: input.distanceKm,
+    distanceMeters: input.distanceMeters,
+  }
+}
+
+function toHTTPChurch(input: Church): HTTPChurch {
+  return {
+    publicId: input.publicId,
+    name: input.name,
+    address: input.address,
+    lat: input.lat,
+    lon: input.lon,
+    geog: input.geog,
+    createdAt: input.createdAt,
+    updatedAt: input.updatedAt,
   }
 }

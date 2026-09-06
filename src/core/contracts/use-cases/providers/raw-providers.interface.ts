@@ -9,6 +9,8 @@ export interface IRawAddressProvider {
   readonly rateLimitConfig: EnumProviderConfig
   readonly maxRetries: number
   readonly backoffMs: number
+  /** Per-call ceiling. The decorator narrows it to the remaining budget. */
+  readonly timeoutMs: number
   fetchRawAddress(cep: string, signal?: AbortSignal): Promise<IAddressData | null>
 }
 
@@ -17,6 +19,8 @@ export interface IRawGeocodingProvider {
   readonly rateLimitConfig: EnumProviderConfig
   readonly maxRetries: number
   readonly backoffMs: number
+  /** Per-call ceiling. The decorator narrows it to the remaining budget. */
+  readonly timeoutMs: number
   searchRaw(query: string, signal?: AbortSignal): Promise<IGeoCoordinates | null>
   searchStructuredRaw(options: IGeoSearchOptions, signal?: AbortSignal): Promise<IGeoCoordinates | null>
 }
@@ -24,14 +28,11 @@ export interface IRawGeocodingProvider {
 export interface IRawChurchRoutingProvider {
   readonly providerName: string
   readonly rateLimitConfig: EnumProviderConfig
+  /** Per-call ceiling. The decorator narrows it to the remaining budget. */
   readonly timeoutMs: number
+  readonly maxRetries: number
+  readonly backoffMs: number
   readonly defaultCosting?: RoutingProfile
-  fetchRawDistance(
-    origin: RoutingPoint,
-    destination: RoutingPoint,
-    profile?: RoutingProfile,
-    signal?: AbortSignal,
-  ): Promise<RouteDistanceResult>
   fetchRawDistances(
     origin: RoutingPoint,
     destinations: RoutingPoint[],

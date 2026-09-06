@@ -16,27 +16,15 @@ export class InMemoryAnalyticsRepository implements AnalyticsRepository {
   async upsertSession(data: UpsertSessionInput): Promise<Result<IAnalyticsSession, AppError>> {
     let session = this.sessions.find((s) => s.sessionId === data.sessionId)
 
+    const attributes = toSessionAttributes(data)
+
     if (session) {
-      session.visitorId = data.visitorId
-      session.ipAddress = data.ipAddress ?? null
-      session.userAgent = data.userAgent ?? null
-      session.utmSource = data.utmSource ?? null
-      session.utmMedium = data.utmMedium ?? null
-      session.utmCampaign = data.utmCampaign ?? null
-      session.utmTerm = data.utmTerm ?? null
-      session.utmContent = data.utmContent ?? null
+      Object.assign(session, attributes)
     } else {
       session = {
         id: randomUUID(),
-        visitorId: data.visitorId,
         sessionId: data.sessionId,
-        ipAddress: data.ipAddress ?? null,
-        userAgent: data.userAgent ?? null,
-        utmSource: data.utmSource ?? null,
-        utmMedium: data.utmMedium ?? null,
-        utmCampaign: data.utmCampaign ?? null,
-        utmTerm: data.utmTerm ?? null,
-        utmContent: data.utmContent ?? null,
+        ...attributes,
         createdAt: new Date(),
       }
       this.sessions.push(session)
@@ -64,4 +52,28 @@ export class InMemoryAnalyticsRepository implements AnalyticsRepository {
     const session = this.sessions.find((s) => s.sessionId === sessionId) || null
     return ok(session)
   }
+}
+
+/**
+ * Mirrors the Prisma repository: the update and the insert write the same
+ * fields, so the double lives in one place too. A divergence here would make a
+ * unit test agree with a production path that does something else.
+ */
+const OPTIONAL_SESSION_FIELDS = [
+  'ipAddress',
+  'userAgent',
+  'utmSource',
+  'utmMedium',
+  'utmCampaign',
+  'utmTerm',
+  'utmContent',
+] as const
+
+function toSessionAttributes(data: UpsertSessionInput) {
+  const optional = Object.fromEntries(OPTIONAL_SESSION_FIELDS.map((field) => [field, data[field] ?? null])) as Record<
+    (typeof OPTIONAL_SESSION_FIELDS)[number],
+    string | null
+  >
+
+  return { visitorId: data.visitorId, ...optional }
 }

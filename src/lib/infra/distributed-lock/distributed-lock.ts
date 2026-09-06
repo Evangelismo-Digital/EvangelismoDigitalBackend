@@ -81,10 +81,7 @@ export class DistributedLock {
         return null
       }
 
-      collectMetricsLockAcquired?.inc({ key })
-      if (collectMetricsLockDuration) {
-        lockHoldStart.set(token, Date.now())
-      }
+      recordAcquisition(key, token)
 
       return token
     } catch (error) {
@@ -144,27 +141,52 @@ export class DistributedLock {
     try {
       const result = await redisCache.eval(RELEASE_SCRIPT, 1, key, token)
 
-      if (result === 0) {
-        // Não é necessariamente um erro: o lock pode ter expirado pelo TTL
-        // antes do release manual (processo lento ou crash parcial).
-        collectMetricsLockExpired?.inc({ key })
-        logger.warn({ key }, LOCK_LOGS.RELEASE_EXPIRED)
-      } else {
-        collectMetricsLockReleased?.inc({ key })
-      }
+      recordReleaseOutcome(key, result === 0)
     } catch (error) {
       collectMetricsLockErrors?.inc({ operation: 'release' })
       logger.warn({ error, key }, LOCK_LOGS.RELEASE_FAILED)
     } finally {
-      // Observa a duração de posse independentemente do desfecho do release,
-      // e sempre limpa a marca de tempo para não vazar entradas no Map.
-      if (collectMetricsLockDuration) {
-        const start = lockHoldStart.get(token)
-        if (start !== undefined) {
-          collectMetricsLockDuration.observe({ key }, (Date.now() - start) / 1000)
-        }
-        lockHoldStart.delete(token)
-      }
+      observeHoldDuration(key, token)
     }
   }
+}
+
+function recordAcquisition(key: string, token: LockToken): void {
+  collectMetricsLockAcquired?.inc({ key })
+
+  if (collectMetricsLockDuration) {
+    lockHoldStart.set(token, Date.now())
+  }
+}
+
+/**
+ * Um release que não encontra o lock não é necessariamente um erro: o TTL pode
+ * ter expirado antes do release manual (processo lento ou crash parcial).
+ */
+function recordReleaseOutcome(key: string, alreadyExpired: boolean): void {
+  if (alreadyExpired) {
+    collectMetricsLockExpired?.inc({ key })
+    logger.warn({ key }, LOCK_LOGS.RELEASE_EXPIRED)
+    return
+  }
+
+  collectMetricsLockReleased?.inc({ key })
+}
+
+/**
+ * Observa a duração de posse independentemente do desfecho do release, e sempre
+ * limpa a marca de tempo para não vazar entradas no Map.
+ */
+function observeHoldDuration(key: string, token: LockToken): void {
+  if (!collectMetricsLockDuration) {
+    return
+  }
+
+  const start = lockHoldStart.get(token)
+
+  if (start !== undefined) {
+    collectMetricsLockDuration.observe({ key }, (Date.now() - start) / 1000)
+  }
+
+  lockHoldStart.delete(token)
 }

@@ -3,14 +3,10 @@ import { trackEventSchema } from '@schemas/analytics/track-event-schema'
 import { makeTrackAnalyticsUseCase } from '@use-cases/factories/make-track-analytics-use-case'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
+import { clientIpOf } from '@http/client-ip'
 
 export async function trackEvent(request: FastifyRequest, reply: FastifyReply) {
   const { eventType, path, payload } = trackEventSchema.parse(request.body)
-
-  const xff = request.headers['x-forwarded-for']
-  const clientIp = Array.isArray(xff) ? xff[0] : xff?.split(',')[0].trim() || request.ip
-
-  const query = request.query as Record<string, string | undefined>
 
   const trackAnalyticsUseCase = makeTrackAnalyticsUseCase()
 
@@ -19,13 +15,9 @@ export async function trackEvent(request: FastifyRequest, reply: FastifyReply) {
     sessionId: request.sessionId,
     eventType,
     path,
-    ipAddress: clientIp,
+    ipAddress: clientIpOf(request),
     userAgent: request.headers['user-agent'] || null,
-    utmSource: query?.['utm_source'] || null,
-    utmMedium: query?.['utm_medium'] || null,
-    utmCampaign: query?.['utm_campaign'] || null,
-    utmTerm: query?.['utm_term'] || null,
-    utmContent: query?.['utm_content'] || null,
+    ...utmParams(request.query as Record<string, string | undefined>),
     payload,
   })
 
@@ -34,4 +26,19 @@ export async function trackEvent(request: FastifyRequest, reply: FastifyReply) {
   }
 
   return reply.code(201).send()
+}
+
+/** Campaign parameters are all optional and all normalised to null. */
+const UTM_PARAMS = {
+  utmSource: 'utm_source',
+  utmMedium: 'utm_medium',
+  utmCampaign: 'utm_campaign',
+  utmTerm: 'utm_term',
+  utmContent: 'utm_content',
+} as const
+
+function utmParams(query: Record<string, string | undefined>): Record<keyof typeof UTM_PARAMS, string | null> {
+  return Object.fromEntries(
+    Object.entries(UTM_PARAMS).map(([field, param]) => [field, query?.[param] || null]),
+  ) as Record<keyof typeof UTM_PARAMS, string | null>
 }

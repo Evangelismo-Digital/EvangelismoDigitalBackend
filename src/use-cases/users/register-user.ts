@@ -31,14 +31,10 @@ export class RegisterUserUseCase {
     password,
     role,
   }: RegisterUserUseCaseRequest): Promise<Result<RegisterUserUseCaseResponse, AppError>> {
-    const userWithExistingParams = await this.usersRepository.findBy({ email, cpf, username })
+    const taken = await this.findExistingUser({ email, cpf, username })
 
-    if (isErr(userWithExistingParams)) {
-      return userWithExistingParams
-    }
-
-    if (userWithExistingParams.value) {
-      return err(new UserAlreadyExistsError())
+    if (taken) {
+      return taken
     }
 
     const passwordHash = await hash(password, env.HASH_SALT_ROUNDS)
@@ -63,5 +59,24 @@ export class RegisterUserUseCase {
     }
 
     return ok({ user })
+  }
+
+  /**
+   * Email, CPF and username are all unique; any one of them already in use
+   * means the same answer. Returns the failure to propagate, or null when the
+   * identity is free.
+   */
+  private async findExistingUser(params: {
+    email: string
+    cpf: string
+    username: string
+  }): Promise<Result<RegisterUserUseCaseResponse, AppError> | null> {
+    const existing = await this.usersRepository.findBy(params)
+
+    if (isErr(existing)) {
+      return existing
+    }
+
+    return existing.value ? err(new UserAlreadyExistsError()) : null
   }
 }

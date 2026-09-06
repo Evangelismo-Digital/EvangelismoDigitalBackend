@@ -15,31 +15,18 @@ export class PrecisionHelper {
    */
   static fromOsm(data: OsmRawData): EnumGeoPrecision {
     const rank = Number(data.place_rank) || 0
-    const type = data.type || ''
-    const category = data.class || '' // 'class' geralmente mapeia categoria
 
-    // 1. Alta Precisão (ROOFTOP)
-    // Rank 30 = Endereço exato com número
-    // Rank 26-29 = Rua/Estrada
-    if (rank >= 26) return EnumGeoPrecision.ROOFTOP
-
-    if (
-      ['house', 'building', 'residential', 'apartments', 'commercial'].includes(type) ||
-      ['highway', 'secondary', 'primary', 'road'].includes(category)
-    ) {
+    // Rank 30 = endereço exato com número; 26-29 = rua/estrada.
+    if (rank >= ROOFTOP_MIN_RANK || isRooftopPlace(data)) {
       return EnumGeoPrecision.ROOFTOP
     }
 
-    // 2. Média Precisão (NEIGHBORHOOD)
-    // Rank 16-25 = Vilas, Bairros, Distritos
-    if (rank >= 16) return EnumGeoPrecision.NEIGHBORHOOD
-
-    if (['neighbourhood', 'suburb', 'quarter', 'hamlet', 'district'].includes(type) || data.addresstype === 'suburb') {
+    // Rank 16-25 = vilas, bairros, distritos.
+    if (rank >= NEIGHBORHOOD_MIN_RANK || isNeighborhoodPlace(data)) {
       return EnumGeoPrecision.NEIGHBORHOOD
     }
 
-    // 3. Baixa Precisão (CITY)
-    // Rank < 16 = Cidades, Estados, Países
+    // Rank < 16 = cidades, estados, países.
     return EnumGeoPrecision.CITY
   }
 
@@ -61,4 +48,20 @@ export class PrecisionHelper {
     // Se só tem cidade/estado, é precisão baixa
     return EnumGeoPrecision.CITY
   }
+}
+
+const ROOFTOP_MIN_RANK = 26
+const NEIGHBORHOOD_MIN_RANK = 16
+
+const ROOFTOP_TYPES = ['house', 'building', 'residential', 'apartments', 'commercial']
+/** `class` in the OSM payload generally maps to the category. */
+const ROOFTOP_CATEGORIES = ['highway', 'secondary', 'primary', 'road']
+const NEIGHBORHOOD_TYPES = ['neighbourhood', 'suburb', 'quarter', 'hamlet', 'district']
+
+function isRooftopPlace(data: OsmRawData): boolean {
+  return ROOFTOP_TYPES.includes(data.type || '') || ROOFTOP_CATEGORIES.includes(data.class || '')
+}
+
+function isNeighborhoodPlace(data: OsmRawData): boolean {
+  return NEIGHBORHOOD_TYPES.includes(data.type || '') || data.addresstype === 'suburb'
 }

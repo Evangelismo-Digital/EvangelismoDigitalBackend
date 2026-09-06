@@ -13,6 +13,7 @@ import { closeAllRedisConnections } from '@lib/redis/clients/clients'
 import { httpRateLimit } from '@http/plugins/rate-limit.plugin'
 import { errorHandler } from '@http/plugins/error-handler.plugin'
 import { requestLifecycle } from '@http/plugins/request-lifecycle.plugin'
+import { requestDeadline } from '@http/plugins/deadline.plugin'
 import { analytics } from '@http/plugins/analytics.plugin'
 import metricsPlugin from 'fastify-metrics'
 import promClient from 'prom-client'
@@ -75,6 +76,11 @@ app.register(fastifyJwt, {
 
 // 5. Request lifecycle — JWT extraction, userId population, request/response logging
 app.register(requestLifecycle)
+
+// 5.5 Request deadline — establishes the single clock a request is measured
+// against, linked to the client disconnecting. Registered before routes so the
+// handler can hand it straight to its use-case.
+app.register(requestDeadline)
 
 // 6. Error handler — catches anything thrown by plugins and routes
 app.register(errorHandler)

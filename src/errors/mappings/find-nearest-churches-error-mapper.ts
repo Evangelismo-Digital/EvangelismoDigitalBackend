@@ -8,6 +8,9 @@ import { ProviderFailureError } from 'errors/infrastructure/provider-failure-err
 import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
+import { CircuitOpenError } from 'errors/infrastructure/circuit-open-error'
+import { ServiceOverloadError } from 'errors/infrastructure/service-overload-error'
+import { BrokenCircuitError, BulkheadRejectedError } from 'cockatiel'
 
 /** URL fragment -> human-readable provider name, most specific first. */
 const PROVIDER_BY_URL_FRAGMENT: ReadonlyArray<readonly [string, string]> = [
@@ -25,6 +28,8 @@ const ADDRESS_URL_FRAGMENTS = ['viacep', 'awesomeapi', 'brasilapi']
 const TIMEOUT_CODES = ['ERR_CANCELED', 'ECONNABORTED']
 
 export class FindNearestChurchesErrorMapper {
+  private static readonly PROVIDER_UNKNOWN = 'Unknown Provider'
+
   static async runCatching<T>(fn: () => Promise<Result<T, AppError>>): Promise<Result<T, AppError>> {
     try {
       return await fn()
@@ -47,6 +52,26 @@ export class FindNearestChurchesErrorMapper {
       error instanceof Prisma.PrismaClientUnknownRequestError
     ) {
       return new DatabaseQueryError(error)
+    }
+
+    return FindNearestChurchesErrorMapper.mapUnrecognized(error)
+  }
+
+  /**
+   * Failures raised by a resilience policy itself rather than by the provider.
+   *
+   * These say the call never happened: a breaker had already tripped, or the
+   * concurrency limit was full. Left to the fallback below they would be
+   * reported as ProviderFailureError, which would both mislabel them in
+   * metrics and hide the fact that no upstream request was ever made.
+   */
+  private static mapUnrecognized(error: unknown): AppError {
+    if (error instanceof BrokenCircuitError) {
+      return new CircuitOpenError(FindNearestChurchesErrorMapper.PROVIDER_UNKNOWN, error)
+    }
+
+    if (error instanceof BulkheadRejectedError) {
+      return new ServiceOverloadError()
     }
 
     return new ProviderFailureError(error instanceof Error ? error : new Error(String(error)))
@@ -96,7 +121,7 @@ export class FindNearestChurchesErrorMapper {
     const url = error.config?.url || ''
     const match = PROVIDER_BY_URL_FRAGMENT.find(([fragment]) => url.includes(fragment))
 
-    return match ? match[1] : 'Unknown Provider'
+    return match ? match[1] : FindNearestChurchesErrorMapper.PROVIDER_UNKNOWN
   }
 
   private static extractCep(url: string): string | undefined {

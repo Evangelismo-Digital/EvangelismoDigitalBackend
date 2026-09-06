@@ -84,8 +84,29 @@ vi.mock('@use-cases/factories/make-find-nearest-churches-use-case', () => ({
 
 import { app } from 'app'
 
+/**
+ * Rate-limit counters live in Redis keyed by the client IP
+ * (`keyGenerator: request.ip`), they outlive the process, and this suite sets
+ * `churches.nearest.max` to 1 per minute. An address is therefore single-use
+ * for a whole minute, across every run that shares the Redis instance.
+ *
+ * The previous generator drew from only 200 addresses with no guarantee that
+ * two draws differed, so the control request could land on an address already
+ * spent — by the *same* test (a ~1-in-200 self-collision) or by a concurrent
+ * suite — and get a 429 where the test demands a 200. That is what failed under
+ * two overlapping runs.
+ *
+ * Fixed on both axes: addresses are issued sequentially from a per-process
+ * random offset, so two draws in one run can never collide, and the pool is
+ * 198.18.0.0/15 — IANA's benchmarking range, public enough for `trustProxy` to
+ * keep it — giving 65 536 addresses instead of 200.
+ */
+const ipOffset = Math.floor(Math.random() * 65_536)
+let ipsIssued = 0
+
 function createForwardedIp() {
-  return `203.0.113.${Math.floor(Math.random() * 200) + 1}`
+  const host = (ipOffset + ipsIssued++) % 65_536
+  return `198.18.${host >> 8}.${host & 0xff}`
 }
 
 import { HTTP_RATE_LIMIT_POLICIES } from '@http/policies/rate-limit'
@@ -114,6 +135,11 @@ describe('churches nearest route rate limit (e2e)', () => {
     const sharedIp = createForwardedIp()
     const otherIp = createForwardedIp()
     const query = { cep: '01310100' }
+
+    // The premise of the whole test: if these two ever coincide, the "different
+    // ip" control request is really a third request from the throttled ip, and
+    // the 200 it asserts is unobtainable.
+    expect(otherIp).not.toBe(sharedIp)
 
     const firstResponse = await request(app.server)
       .get('/churches/nearest')

@@ -25,14 +25,18 @@ import { isOk, isErr } from 'core/shared/result'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { Deadline } from 'core/shared/deadline'
+import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
 
 function makeRaw(overrides: Partial<IRawChurchRoutingProvider> = {}): IRawChurchRoutingProvider {
   return {
     providerName: 'Stadia',
     rateLimitConfig: EnumProviderConfig.STADIA_ROUTING,
     timeoutMs: 3000,
+    maxRetries: 2,
+    // Zero backoff keeps the retry tests free of any real waiting.
+    backoffMs: 0,
     defaultCosting: RoutingProfile.PEDESTRIAN,
-    fetchRawDistance: vi.fn(),
     fetchRawDistances: vi.fn(),
     ...overrides,
   }
@@ -65,16 +69,20 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
     expect(mockRecordProviderRequest).toHaveBeenCalledWith('routing', 'Stadia', result)
   })
 
-  it('returns TimeoutExceededError when the signal is already aborted', async () => {
+  it('returns a terminal ABORTED failure when the deadline is already expired', async () => {
     const controller = new AbortController()
     controller.abort('too slow')
     const raw = makeRaw()
     const decorator = new ResilientChurchRoutingProviderDecorator(raw, {} as Redis)
 
-    const result = await decorator.getDistances({ origin, destinations, signal: controller.signal })
+    const result = await decorator.getDistances({
+      origin,
+      destinations,
+      deadline: Deadline.in(Infinity, { linkedTo: controller.signal }),
+    })
 
     expect(isErr(result)).toBe(true)
-    if (isErr(result)) expect(result.error).toBeInstanceOf(TimeoutExceededError)
+    if (isErr(result)) expect(result.error).toBeInstanceOf(DeadlineExceededError)
     expect(raw.fetchRawDistances).not.toHaveBeenCalled()
     expect(mockRecordProviderRequest).toHaveBeenCalledWith('routing', 'Stadia', result)
   })
@@ -86,7 +94,12 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
 
     await decorator.getDistances({ origin, destinations, profile: RoutingProfile.BICYCLE })
 
-    expect(raw.fetchRawDistances).toHaveBeenCalledWith(origin, destinations, RoutingProfile.BICYCLE, undefined)
+    expect(raw.fetchRawDistances).toHaveBeenCalledWith(
+      origin,
+      destinations,
+      RoutingProfile.BICYCLE,
+      expect.any(AbortSignal),
+    )
   })
 
   it('falls back to defaultCosting, then AUTO, when no profile is given', async () => {
@@ -100,7 +113,7 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
       origin,
       destinations,
       RoutingProfile.PEDESTRIAN,
-      undefined,
+      expect.any(AbortSignal),
     )
 
     const noDefault = makeRaw({ defaultCosting: undefined })
@@ -109,7 +122,12 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
       origin,
       destinations,
     })
-    expect(noDefault.fetchRawDistances).toHaveBeenCalledWith(origin, destinations, RoutingProfile.AUTO, undefined)
+    expect(noDefault.fetchRawDistances).toHaveBeenCalledWith(
+      origin,
+      destinations,
+      RoutingProfile.AUTO,
+      expect.any(AbortSignal),
+    )
   })
 
   it('wraps a successful raw call in ok() and records success', async () => {
@@ -161,5 +179,59 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
 
     expect(isErr(result)).toBe(true)
     if (isErr(result)) expect(result.error).toBeInstanceOf(ProviderFailureError)
+  })
+
+  describe('retry loop (docs §4.3 — previously absent)', () => {
+    function axios429() {
+      return {
+        name: 'AxiosError',
+        message: 'Request failed with status code 429',
+        isAxiosError: true,
+        response: { status: 429, data: {}, statusText: '', headers: {}, config: { url: '/stadia' } },
+        config: { url: '/stadia' },
+        toJSON: () => ({}),
+      }
+    }
+
+    it('recovers from a transient blip instead of failing the whole request', async () => {
+      mockTryConsume.mockResolvedValue(true)
+      const raw = makeRaw()
+      vi.mocked(raw.fetchRawDistances)
+        .mockRejectedValueOnce(axios429())
+        .mockResolvedValueOnce([{ distance: 4, status: 0 }])
+      const decorator = new ResilientChurchRoutingProviderDecorator(raw, {} as Redis)
+
+      const result = await decorator.getDistances({ origin, destinations })
+
+      expect(isOk(result)).toBe(true)
+      expect(raw.fetchRawDistances).toHaveBeenCalledTimes(2)
+    })
+
+    it('consumes only one rate-limit point across the whole retry sequence', async () => {
+      mockTryConsume.mockResolvedValue(true)
+      const raw = makeRaw()
+      vi.mocked(raw.fetchRawDistances)
+        .mockRejectedValueOnce(axios429())
+        .mockResolvedValueOnce([{ distance: 4, status: 0 }])
+      const decorator = new ResilientChurchRoutingProviderDecorator(raw, {} as Redis)
+
+      await decorator.getDistances({ origin, destinations })
+
+      // Matches the address and geocoding decorators: admission is charged once.
+      expect(mockTryConsume).toHaveBeenCalledTimes(1)
+    })
+
+    it('still fails hard once the attempts are exhausted — there is no second routing provider', async () => {
+      mockTryConsume.mockResolvedValue(true)
+      const raw = makeRaw()
+      vi.mocked(raw.fetchRawDistances).mockRejectedValue(axios429())
+      const decorator = new ResilientChurchRoutingProviderDecorator(raw, {} as Redis)
+
+      const result = await decorator.getDistances({ origin, destinations })
+
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) expect(result.error).toBeInstanceOf(ServiceBusyError)
+      expect(raw.fetchRawDistances).toHaveBeenCalledTimes(2)
+    })
   })
 })

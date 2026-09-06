@@ -28,6 +28,8 @@ import {
   makeNearestChurchesCacheOptions,
 } from '@use-cases/churches/church-lookup-cache-policy'
 import { CACHE_CONFIG } from 'messages/constants/cache/cache'
+import { Deadline } from 'core/shared/deadline'
+import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
 
 const PREFIX = 'cache:it:redis:'
 
@@ -38,6 +40,7 @@ function makeCache(overrides: Partial<ResilientCacheOptions<AppError>> = {}) {
     prefix: PREFIX,
     defaultTtlSeconds: 60,
     negativeTtlSeconds: 30,
+    fetchTimeoutMs: 5_000,
     ttlJitterPercentage: 0,
     serializeError: serializeAppError,
     deserializeError: deserializeAppError,
@@ -253,6 +256,7 @@ describe('ResilientCache against real Redis — foreign and corrupt payloads', (
       prefix: PREFIX,
       defaultTtlSeconds: 60,
       negativeTtlSeconds: 30,
+      fetchTimeoutMs: 5_000,
     })
     const key = `${PREFIX}corrupt-no-deserializer`
     await redis.set(key, JSON.stringify({ s: false, e: { type: 'NotARealError', message: 'nope' } }))
@@ -401,7 +405,7 @@ describe('ResilientCache against real Redis — concurrency', () => {
 })
 
 describe('ResilientCache against real Redis — signal handling', () => {
-  it('does not persist a value produced after the caller aborted', async () => {
+  it('persists a value produced after the caller aborted, so the next caller gets a hit', async () => {
     const cache = makeCache()
     const key = `${PREFIX}post-abort`
     const controller = new AbortController()
@@ -413,14 +417,19 @@ describe('ResilientCache against real Redis — signal handling', () => {
         controller.abort('caller gave up')
         return settled
       },
-      controller.signal,
+      Deadline.in(Infinity, { linkedTo: controller.signal }),
     )
 
+    // Behaviour change (D11), proven against real Redis: the caller who walked
+    // away still gets its own DeadlineExceededError, but the answer it paid for
+    // is kept rather than thrown away and recomputed by the next request.
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
-      expect(result.error).toBeInstanceOf(TimeoutExceededError)
+      expect(result.error).toBeInstanceOf(DeadlineExceededError)
     }
-    expect(await redis.get(key)).toBeNull()
+
+    await vi.waitFor(async () => expect(await redis.get(key)).not.toBeNull())
+    expect(JSON.parse((await redis.get(key)) as string)).toMatchObject({ s: true, v: 'computed after abort' })
   })
 
   it('fails fast on an already-aborted signal without reading or writing Redis', async () => {
@@ -430,7 +439,7 @@ describe('ResilientCache against real Redis — signal handling', () => {
     controller.abort('gone')
 
     const fetcher = vi.fn()
-    const result = await cache.getOrFetch(key, fetcher, controller.signal)
+    const result = await cache.getOrFetch(key, fetcher, Deadline.in(Infinity, { linkedTo: controller.signal }))
 
     expect(isErr(result)).toBe(true)
     expect(fetcher).not.toHaveBeenCalled()
@@ -477,6 +486,7 @@ describe('ResilientCache against real Redis — outage behaviour', () => {
       prefix: PREFIX,
       defaultTtlSeconds: 60,
       negativeTtlSeconds: 30,
+      fetchTimeoutMs: 5_000,
       serializeError: serializeAppError,
       deserializeError: deserializeAppError,
     })

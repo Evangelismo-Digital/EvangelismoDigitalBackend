@@ -123,6 +123,59 @@ describe('RedisRateLimiter Unit Tests', () => {
     })
   })
 
+  describe('rejection classification (fail-closed vs fail-open)', () => {
+    // The single most consequential branch in this file. `rate-limiter-flexible`
+    // signals "over the limit" by rejecting with a RateLimiterRes carrying a
+    // numeric `remainingPoints`, and signals a Redis outage by rejecting with a
+    // real Error. Only the shape tells them apart — and getting it wrong either
+    // denies live traffic during an outage or lets traffic through over quota.
+    it.each([
+      ['a plain Error (Redis down)', new Error('Redis unavailable')],
+      ['null', null],
+      ['undefined', undefined],
+      ['a string', 'boom'],
+      ['an object with no remainingPoints', { message: 'nope' }],
+      ['remainingPoints that is not a number', { remainingPoints: 'many' }],
+    ])('fails OPEN for %s', async (_label, rejection) => {
+      const limiter = RedisRateLimiter.getInstance(redisClient)
+      mockConsume.mockRejectedValueOnce(rejection)
+
+      await expect(limiter.tryConsume(EnumProviderConfig.VIACEP_ADDRESS)).resolves.toBe(true)
+    })
+
+    it.each([
+      ['zero points left', { remainingPoints: 0 }],
+      ['a positive count', { remainingPoints: 3 }],
+    ])('fails CLOSED for a real rate-limit response with %s', async (_label, rejection) => {
+      const limiter = RedisRateLimiter.getInstance(redisClient)
+      mockConsume.mockRejectedValueOnce(rejection)
+
+      await expect(limiter.tryConsume(EnumProviderConfig.VIACEP_ADDRESS)).resolves.toBe(false)
+    })
+
+    it('does not log an outage warning for an ordinary rate-limit rejection', async () => {
+      // A busy provider is normal traffic shaping, not an infrastructure alert.
+      const limiter = RedisRateLimiter.getInstance(redisClient)
+      mockConsume.mockRejectedValueOnce({ remainingPoints: 0 })
+
+      await limiter.tryConsume(EnumProviderConfig.VIACEP_ADDRESS)
+
+      expect(logger.warn).not.toHaveBeenCalled()
+    })
+
+    it('still logs the outage details when a non-object is thrown', async () => {
+      const limiter = RedisRateLimiter.getInstance(redisClient)
+      mockConsume.mockRejectedValueOnce('a bare string')
+
+      await limiter.tryConsume(EnumProviderConfig.VIACEP_ADDRESS)
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: 'fail-open', redisOutage: true }),
+        expect.any(String),
+      )
+    })
+  })
+
   describe('getLimiter (Configuração e Cache)', () => {
     it('should create a new limiter with correct config for a provider', async () => {
       const limiter = RedisRateLimiter.getInstance(redisClient) as any
@@ -130,14 +183,14 @@ describe('RedisRateLimiter Unit Tests', () => {
       mockConsume.mockResolvedValue({})
 
       // Executa para triggerar a criação
-      await limiter.tryConsume(EnumProviderConfig.LOCATION_IQ_ADDRESS)
+      await limiter.tryConsume(EnumProviderConfig.LOCATION_IQ_GEOCODING)
 
       // Verifica se RateLimiterRedis foi instanciado com as configs corretas
-      // LOCATION_IQ_ADDRESS tem points: 2, windowSeconds: 1
+      // LOCATION_IQ_GEOCODING tem points: 2, windowSeconds: 1
       expect(RateLimiterRedis).toHaveBeenCalledWith(
         expect.objectContaining({
           storeClient: redisClient,
-          keyPrefix: `ratelimit:v1:${EnumProviderConfig.LOCATION_IQ_ADDRESS}`,
+          keyPrefix: `ratelimit:v1:${EnumProviderConfig.LOCATION_IQ_GEOCODING}`,
           points: 2,
           duration: 1,
         }),
@@ -158,6 +211,50 @@ describe('RedisRateLimiter Unit Tests', () => {
         args[0].keyPrefix?.includes(EnumProviderConfig.NOMINATIM_GEOCODING),
       )
       expect(callsForProvider).toHaveLength(1)
+    })
+  })
+
+  describe('the configured provider quotas', () => {
+    // These are the real limits published by the upstream APIs. Exceeding them
+    // risks blocks, extra cost, or outright suspension of the integration, so
+    // each value is asserted rather than assumed — and the key prefix with them,
+    // since a wrong prefix silently splits one global bucket into two.
+    it.each([
+      [EnumProviderConfig.AWESOME_API_ADDRESS, 'awesomeApiAddressProvider', 5],
+      [EnumProviderConfig.VIACEP_ADDRESS, 'viacepAddressProvider', 1],
+      [EnumProviderConfig.BRASIL_API_ADDRESS, 'brasilApiAddressProvider', 5],
+      [EnumProviderConfig.NOMINATIM_GEOCODING, 'nominatimGeocodingProvider', 1],
+      [EnumProviderConfig.LOCATION_IQ_GEOCODING, 'locationIqGeocodingProvider', 2],
+      [EnumProviderConfig.STADIA_ROUTING, 'stadiaRoutingProvider', 50],
+    ])('builds %s with its published limit', async (provider, expectedKey, points) => {
+      const limiter = RedisRateLimiter.getInstance(redisClient)
+      mockConsume.mockResolvedValue({})
+
+      await limiter.tryConsume(provider)
+
+      expect(provider).toBe(expectedKey)
+      expect(RateLimiterRedis).toHaveBeenCalledWith(
+        expect.objectContaining({
+          keyPrefix: `ratelimit:v1:${expectedKey}`,
+          points,
+          duration: 1,
+        }),
+      )
+    })
+
+    it('lets a caller use its allowance immediately and never blocks beyond the window', async () => {
+      // `execEvenly: false` — a caller may spend its points as soon as it wants
+      // rather than being paced across the window, which matters because this
+      // limiter sits inline in an HTTP request; pacing would add latency to a
+      // request that is within quota.
+      // `blockDuration: 0` — exceeding the limit denies that request only, and
+      // does not lock the provider out for an extra penalty period.
+      const limiter = RedisRateLimiter.getInstance(redisClient)
+      mockConsume.mockResolvedValue({})
+
+      await limiter.tryConsume(EnumProviderConfig.VIACEP_ADDRESS)
+
+      expect(RateLimiterRedis).toHaveBeenCalledWith(expect.objectContaining({ execEvenly: false, blockDuration: 0 }))
     })
   })
 

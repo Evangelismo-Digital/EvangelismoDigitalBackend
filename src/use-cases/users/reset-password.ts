@@ -38,20 +38,7 @@ export class ResetPasswordUseCase {
     }
 
     if (!userExists.tokenExpiresAt || userExists.tokenExpiresAt < new Date()) {
-      // Higiene preguiçosa: token expirado é limpo na primeira tentativa de uso,
-      // em vez de permanecer no banco até o próximo pedido de reset. Best-effort:
-      // a falha da limpeza nunca mascara o InvalidTokenError.
-      const cleanupResult = await this.usersRepository.updatePassword(userExists.publicId, {
-        token: null,
-        tokenExpiresAt: null,
-      })
-
-      if (isErr(cleanupResult)) {
-        logger.error(
-          { publicId: userExists.publicId, error: cleanupResult.error },
-          'Falha ao limpar token de reset expirado; o token permanece inválido e expira naturalmente',
-        )
-      }
+      await this.discardExpiredToken(userExists.publicId)
 
       return err(new InvalidTokenError())
     }
@@ -73,5 +60,25 @@ export class ResetPasswordUseCase {
     const user = updateResult.value
 
     return ok({ user })
+  }
+
+  /**
+   * Higiene preguiçosa: um token expirado é limpo na primeira tentativa de uso,
+   * em vez de permanecer no banco até o próximo pedido de reset. Best-effort —
+   * a falha da limpeza nunca mascara o InvalidTokenError, já que o token
+   * continua inválido de qualquer forma.
+   */
+  private async discardExpiredToken(publicId: string): Promise<void> {
+    const cleanupResult = await this.usersRepository.updatePassword(publicId, {
+      token: null,
+      tokenExpiresAt: null,
+    })
+
+    if (isErr(cleanupResult)) {
+      logger.error(
+        { publicId, error: cleanupResult.error },
+        'Falha ao limpar token de reset expirado; o token permanece inválido e expira naturalmente',
+      )
+    }
   }
 }

@@ -23,98 +23,58 @@ export class OutboxMaintenance {
   constructor(private outboxRepository: IOutboxRepository) {}
 
   async sweepExpiredEvents(): Promise<void> {
-    const lockKey = OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_EXPIRY_SWEEP
-    let lockToken: LockToken | null = null
+    await this.withLock(
+      OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_EXPIRY_SWEEP,
+      OUTBOX_LOGS.EXPIRY_SWEEP_ERROR,
+      async (renew) => {
+        const totalDeleted = await this.deleteExpiredInBatches(new Date(), renew)
 
-    try {
-      lockToken = await DistributedLock.acquire(lockKey, this.LOCK_TTL_MS)
-      if (!lockToken) return
-
-      const now = new Date()
-      let totalDeleted = 0
-
-      // Um lote por iteração, renovando o lock entre lotes — mesma defesa de
-      // deleteOlderThan caso a varredura de 5 min fique parada por muito tempo.
-      for (;;) {
-        await DistributedLock.renew(lockKey, lockToken, this.LOCK_TTL_MS)
-
-        const result = await this.outboxRepository.deleteExpired(now, OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE)
-
-        if (isErr(result)) {
-          logger.error({ error: result.error }, OUTBOX_LOGS.EXPIRY_SWEEP_ERROR)
-          captureError(result.error)
-          break
+        if (totalDeleted > 0) {
+          collectMetricsOutboxMaintenanceDeleted?.inc({ operation: 'expiry_sweep' }, totalDeleted)
+          logger.info({ deleted: totalDeleted }, OUTBOX_LOGS.EXPIRY_SWEEP_DELETED)
         }
-
-        totalDeleted += result.value
-        if (result.value < OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE) break
-      }
-
-      if (totalDeleted > 0) {
-        collectMetricsOutboxMaintenanceDeleted?.inc({ operation: 'expiry_sweep' }, totalDeleted)
-        logger.info({ deleted: totalDeleted }, OUTBOX_LOGS.EXPIRY_SWEEP_DELETED)
-      }
-    } catch (error) {
-      logger.error({ error }, OUTBOX_LOGS.EXPIRY_SWEEP_ERROR)
-      captureError(error)
-    } finally {
-      if (lockToken) {
-        await DistributedLock.release(lockKey, lockToken)
-      }
-    }
+      },
+    )
   }
 
   async purgeOldEvents(): Promise<void> {
-    const lockKey = OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RETENTION
+    await this.withLock(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RETENTION, OUTBOX_LOGS.RETENTION_ERROR, async (renew) => {
+      const cutoff = new Date(Date.now() - OUTBOX_CONSTANTS.RETENTION.DAYS * 24 * 60 * 60 * 1000)
+      const { totalDeleted, totalByStatus } = await this.deleteOlderThanInBatches(cutoff, renew)
+
+      if (totalDeleted > 0) {
+        collectMetricsOutboxMaintenanceDeleted?.inc({ operation: 'retention_purge' }, totalDeleted)
+        reportPurge(totalDeleted, totalByStatus)
+      }
+    })
+  }
+
+  /**
+   * Roda `run` sob o lock distribuído, ou não roda nada se outra instância já o
+   * detém. `renew` é passado adiante para que um lote longo possa estender o
+   * TTL — tabelas grandes após um incidente não podem estourar o lock.
+   */
+  private async withLock(
+    lockKey: string,
+    errorMessage: string,
+    run: (renew: () => Promise<void>) => Promise<void>,
+  ): Promise<void> {
     let lockToken: LockToken | null = null
 
     try {
       lockToken = await DistributedLock.acquire(lockKey, this.LOCK_TTL_MS)
+
       if (!lockToken) return
 
-      const cutoff = new Date(Date.now() - OUTBOX_CONSTANTS.RETENTION.DAYS * 24 * 60 * 60 * 1000)
+      const token = lockToken
 
-      let totalDeleted = 0
-      const totalByStatus: Partial<Record<IOutboxEventStatus, number>> = {}
-
-      // Um lote por iteração, renovando o lock entre lotes (tabelas grandes
-      // após um incidente não podem estourar o TTL do lock)
-      for (;;) {
-        await DistributedLock.renew(lockKey, lockToken, this.LOCK_TTL_MS)
-
-        const batchResult = await this.outboxRepository.deleteOlderThan(cutoff, OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE)
-
-        if (isErr(batchResult)) {
-          logger.error({ error: batchResult.error }, OUTBOX_LOGS.RETENTION_ERROR)
-          captureError(batchResult.error)
-          break
-        }
-
-        const { deleted, byStatus } = batchResult.value
-        totalDeleted += deleted
-        for (const [status, count] of Object.entries(byStatus) as [IOutboxEventStatus, number][]) {
-          totalByStatus[status] = (totalByStatus[status] ?? 0) + count
-        }
-
-        if (deleted < OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE) break
-      }
-
-      if (totalDeleted > 0) {
-        collectMetricsOutboxMaintenanceDeleted?.inc({ operation: 'retention_purge' }, totalDeleted)
-
-        const nonTerminal =
-          (totalByStatus[IOutboxEventStatus.PENDING] ?? 0) + (totalByStatus[IOutboxEventStatus.SENDING] ?? 0)
-
-        if (nonTerminal > 0) {
-          // PENDING/SENDING com 14+ dias é lixo inalcançável (o cap de attempts
-          // teria transicionado para FAILED) — mas merece investigação
-          logger.warn({ deleted: totalDeleted, byStatus: totalByStatus }, OUTBOX_LOGS.RETENTION_PURGED_NON_TERMINAL)
-        } else {
-          logger.info({ deleted: totalDeleted, byStatus: totalByStatus }, OUTBOX_LOGS.RETENTION_PURGED)
-        }
-      }
+      await run(async () => {
+        // `renew` reports whether the lock was still ours; the batch loops do
+        // not branch on it, so the boolean is deliberately discarded here.
+        await DistributedLock.renew(lockKey, token, this.LOCK_TTL_MS)
+      })
     } catch (error) {
-      logger.error({ error }, OUTBOX_LOGS.RETENTION_ERROR)
+      logger.error({ error }, errorMessage)
       captureError(error)
     } finally {
       if (lockToken) {
@@ -122,4 +82,74 @@ export class OutboxMaintenance {
       }
     }
   }
+
+  /** Um lote por iteração, renovando o lock entre lotes. */
+  private async deleteExpiredInBatches(now: Date, renew: () => Promise<void>): Promise<number> {
+    let totalDeleted = 0
+
+    for (;;) {
+      await renew()
+
+      const result = await this.outboxRepository.deleteExpired(now, OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE)
+
+      if (isErr(result)) {
+        logger.error({ error: result.error }, OUTBOX_LOGS.EXPIRY_SWEEP_ERROR)
+        captureError(result.error)
+        break
+      }
+
+      totalDeleted += result.value
+
+      if (result.value < OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE) break
+    }
+
+    return totalDeleted
+  }
+
+  private async deleteOlderThanInBatches(
+    cutoff: Date,
+    renew: () => Promise<void>,
+  ): Promise<{ totalDeleted: number; totalByStatus: Partial<Record<IOutboxEventStatus, number>> }> {
+    let totalDeleted = 0
+    const totalByStatus: Partial<Record<IOutboxEventStatus, number>> = {}
+
+    for (;;) {
+      await renew()
+
+      const batchResult = await this.outboxRepository.deleteOlderThan(cutoff, OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE)
+
+      if (isErr(batchResult)) {
+        logger.error({ error: batchResult.error }, OUTBOX_LOGS.RETENTION_ERROR)
+        captureError(batchResult.error)
+        break
+      }
+
+      const { deleted, byStatus } = batchResult.value
+      totalDeleted += deleted
+
+      for (const [status, count] of Object.entries(byStatus) as [IOutboxEventStatus, number][]) {
+        totalByStatus[status] = (totalByStatus[status] ?? 0) + count
+      }
+
+      if (deleted < OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE) break
+    }
+
+    return { totalDeleted, totalByStatus }
+  }
+}
+
+/**
+ * PENDING/SENDING com 14+ dias é lixo inalcançável (o cap de attempts teria
+ * transicionado para FAILED) — mas merece investigação, então sobe a warn.
+ */
+function reportPurge(totalDeleted: number, totalByStatus: Partial<Record<IOutboxEventStatus, number>>): void {
+  const nonTerminal =
+    (totalByStatus[IOutboxEventStatus.PENDING] ?? 0) + (totalByStatus[IOutboxEventStatus.SENDING] ?? 0)
+
+  if (nonTerminal > 0) {
+    logger.warn({ deleted: totalDeleted, byStatus: totalByStatus }, OUTBOX_LOGS.RETENTION_PURGED_NON_TERMINAL)
+    return
+  }
+
+  logger.info({ deleted: totalDeleted, byStatus: totalByStatus }, OUTBOX_LOGS.RETENTION_PURGED)
 }

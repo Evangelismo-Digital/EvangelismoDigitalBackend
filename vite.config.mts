@@ -92,7 +92,14 @@ export default defineConfig(({ mode }) => {
           test: {
             name: 'unit-http',
             dir: 'src/http',
-            include: ['plugins/**/*.spec.ts', 'presenters/**/*.spec.ts', 'middlewares/**/*.spec.ts'],
+            include: [
+              'plugins/**/*.spec.ts',
+              'presenters/**/*.spec.ts',
+              'middlewares/**/*.spec.ts',
+              // Church controllers: the users ones have their own project.
+              'controllers/churches/**/*.spec.ts',
+            ],
+            exclude: ['**/*.e2e.spec.ts', '**/*.acceptance.spec.mts'],
           },
         },
         {
@@ -152,6 +159,11 @@ export default defineConfig(({ mode }) => {
           test: {
             name: 'e2e',
             dir: 'src/http/controllers',
+            // Explicit: without it this defaults to every `*.spec.ts` under
+            // controllers, so plain unit specs colocated with a controller get
+            // dragged through the Docker Prisma environment as well as their
+            // own project — slower, and coupling a unit test to a container.
+            include: ['**/*.e2e.spec.ts'],
             exclude: [
               '**/api-providers-fallback-strategy.e2e.spec.ts',
               '**/*.acceptance.spec.mts',

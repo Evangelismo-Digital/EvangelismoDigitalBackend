@@ -13,6 +13,14 @@ export const INFRA_ERRORS = {
     code: 'DATABASE_QUERY_FAILURE',
     message: 'Falha de sistema ao processar consulta no banco de dados.',
   },
+  DEADLINE_EXCEEDED: {
+    code: 'DEADLINE_EXCEEDED',
+    message: 'O tempo limite total da requisição foi atingido antes da conclusão da operação.',
+  },
+  CIRCUIT_OPEN: {
+    code: 'CIRCUIT_OPEN',
+    message: 'Provedor externo temporariamente suspenso após falhas repetidas.',
+  },
   SERVICE_OVERLOAD: {
     code: 'SERVICE_OVERLOAD',
     message: 'Número de requisições simultâneas excedeu o limite de maxPendingFetches na memória cache do Redis.',

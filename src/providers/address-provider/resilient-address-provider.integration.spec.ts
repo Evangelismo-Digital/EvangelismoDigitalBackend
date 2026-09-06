@@ -155,12 +155,23 @@ describe('ResilientAddressProvider chain (integration, real Redis rate-limiter)'
   })
 
   it('a real Redis rate-limit rejection on a downstream provider is treated as RETRYABLE and short-circuits it', async () => {
-    // Pre-drain the shared ViaCEP bucket (configured at 1 token / 1s).
-    const consumed = await RedisRateLimiter.getInstance(rlConn).tryConsume(EnumProviderConfig.VIACEP_ADDRESS)
-    expect(consumed).toBe(true)
-
-    awesomeGet.mockRejectedValue(axiosError(429))
-    brasilGet.mockRejectedValue(axiosError(429))
+    // ViaCEP's bucket holds 1 token per 1s, so this assertion is only meaningful
+    // while the bucket is still empty when the chain reaches ViaCEP.
+    //
+    // Draining it up front used to leave the two upstream providers' retries and
+    // exponential backoff (~200ms, and unbounded under load) inside that 1s
+    // window — if the bucket refilled first, ViaCEP was allowed and the test
+    // failed for reasons unrelated to what it checks. Two changes make it
+    // deterministic: the upstream providers fail with 404, which maps to
+    // NOT_FOUND and returns from the decorator immediately (no retry, no
+    // backoff), and the drain happens *inside* BrasilAPI's call — microseconds
+    // before ViaCEP's decorator consults the limiter.
+    awesomeGet.mockRejectedValue(axiosError(404))
+    brasilGet.mockImplementation(async () => {
+      const consumed = await RedisRateLimiter.getInstance(rlConn).tryConsume(EnumProviderConfig.VIACEP_ADDRESS)
+      expect(consumed).toBe(true)
+      throw axiosError(404)
+    })
     viacepGet.mockResolvedValue({
       data: { cep: CEP, logradouro: 'Av Paulista', bairro: 'Bela Vista', localidade: 'SP', uf: 'SP' },
     })
