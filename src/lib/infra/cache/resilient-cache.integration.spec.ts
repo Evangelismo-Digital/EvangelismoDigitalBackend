@@ -22,6 +22,7 @@ function makeCache(overrides: Partial<ResilientCacheOptions<AppError>> = {}) {
     prefix: PREFIX,
     defaultTtlSeconds: 60,
     negativeTtlSeconds: 30,
+    fetchTimeoutMs: 5_000,
     serializeError: serializeAppError,
     deserializeError: deserializeAppError,
     ...overrides,

@@ -10,6 +10,7 @@ import { ok, err, isOk, isErr } from 'core/shared/result'
 import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { logger } from '@lib/logger'
+import { Deadline } from 'core/shared/deadline'
 
 vi.mock('@lib/env', () => ({
   env: {
@@ -257,17 +258,17 @@ describe('CepToLatLon Use Case', () => {
   // This use-case no longer owns a cache, so it no longer owns a timeout
   // budget either: the caller's signal must reach every provider untouched.
 
-  it('should forward the caller signal to the address provider', async () => {
-    const signal = new AbortController().signal
+  it('should forward the caller deadline to the address provider', async () => {
+    const deadline = Deadline.in(Infinity, { linkedTo: new AbortController().signal })
     addressProviderMock.fetchAddress.mockResolvedValue(ok({ lat: -23, lon: -46 }))
 
-    await useCase.execute({ cep: '01310100', signal })
+    await useCase.execute({ cep: '01310100', deadline })
 
-    expect(addressProviderMock.fetchAddress).toHaveBeenCalledWith('01310100', signal)
+    expect(addressProviderMock.fetchAddress).toHaveBeenCalledWith('01310100', deadline)
   })
 
-  it('should forward the caller signal to both geocoding strategies', async () => {
-    const signal = new AbortController().signal
+  it('should forward the caller deadline to both geocoding strategies', async () => {
+    const deadline = Deadline.in(Infinity, { linkedTo: new AbortController().signal })
     addressProviderMock.fetchAddress.mockResolvedValue(
       ok({ logradouro: 'Rua X', bairro: 'Centro', localidade: 'São Paulo', uf: 'SP' }),
     )
@@ -276,24 +277,27 @@ describe('CepToLatLon Use Case', () => {
       ok({ lat: -23, lon: -46, precision: EnumGeoPrecision.CITY, providerName: 'LocationIQ' }),
     )
 
-    await useCase.execute({ cep: '01310100', signal })
+    await useCase.execute({ cep: '01310100', deadline })
 
-    expect(geocodingProviderMock.search).toHaveBeenCalledWith(expect.any(String), signal)
-    expect(geocodingProviderMock.searchStructured).toHaveBeenCalledWith(expect.any(Object), signal)
+    expect(geocodingProviderMock.search).toHaveBeenCalledWith(expect.any(String), deadline)
+    expect(geocodingProviderMock.searchStructured).toHaveBeenCalledWith(expect.any(Object), deadline)
   })
 
   it('should surface a provider abort as TimeoutExceededError', async () => {
     const controller = new AbortController()
     controller.abort(new Error('Aborted by client'))
 
-    addressProviderMock.fetchAddress.mockImplementation(async (_cep, signal) => {
-      if (signal?.aborted) {
-        return err(new TimeoutExceededError(signal.reason))
+    addressProviderMock.fetchAddress.mockImplementation(async (_cep, deadline) => {
+      if (deadline?.expired) {
+        return err(new TimeoutExceededError(deadline.signal.reason))
       }
       return ok(null)
     })
 
-    const result = await useCase.execute({ cep: '00000000', signal: controller.signal })
+    const result = await useCase.execute({
+      cep: '00000000',
+      deadline: Deadline.in(Infinity, { linkedTo: controller.signal }),
+    })
 
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {

@@ -1,4 +1,5 @@
 import { env } from '@env/index'
+import { CacheCircuitBreakerOptions } from '@lib/infra/cache/resilient-cache'
 import { getRedisCache, getRedisRateLimit } from '@lib/redis/clients/clients'
 import { CepToLatLonUseCase } from '@use-cases/churches/cep-to-lat-lon-use-case'
 import { CalculateChurchRouteDistancesUseCase } from '@use-cases/churches/calculate-church-route-distances-use-case'
@@ -69,7 +70,6 @@ function makeCalculateChurchRouteDistancesUseCase(
 ): CalculateChurchRouteDistancesUseCase {
   // Setup Raw Routing Provider (batch matrix API)
   const rawRoutingProvider = new StadiaChurchRoutingProvider({
-    apiUrl: env.STADIA_MAPS_API_URL,
     matrixApiUrl: env.STADIA_MAPS_MATRIX_API_URL,
     apiToken: env.STADIA_API_TOKEN,
     defaultCosting: RoutingProfile.PEDESTRIAN,
@@ -81,6 +81,24 @@ function makeCalculateChurchRouteDistancesUseCase(
   const routingProvider = new ResilientChurchRoutingProviderDecorator(rawRoutingProvider, redisRateLimitConnection)
 
   return new CalculateChurchRouteDistancesUseCase(routingProvider)
+}
+
+/**
+ * Breaker settings for the cache's shared fetch, or `undefined` when breaking is
+ * off — which composes the cache without a breaker rather than with a disabled
+ * one, so the flag costs nothing per call.
+ */
+function cacheCircuitBreakerSettings(): CacheCircuitBreakerOptions | undefined {
+  if (!env.CIRCUIT_BREAKER_ENABLED) {
+    return undefined
+  }
+
+  return {
+    failureThreshold: env.CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    samplingWindowMs: env.CIRCUIT_BREAKER_SAMPLING_WINDOW_MS,
+    minimumThroughput: env.CIRCUIT_BREAKER_MIN_THROUGHPUT,
+    halfOpenAfterMs: env.CIRCUIT_BREAKER_HALF_OPEN_AFTER_MS,
+  }
 }
 
 export function makeFindNearestChurchesUseCase(
@@ -107,7 +125,7 @@ export function makeFindNearestChurchesUseCase(
     findNearbyChurchesKnnUseCase,
     makeCalculateChurchRouteDistancesUseCase(redisRateLimitConnection),
     redisCacheConnection,
-    makeNearestChurchesCacheOptions(),
+    makeNearestChurchesCacheOptions(cacheCircuitBreakerSettings()),
     RoutingProfile.PEDESTRIAN,
   )
 

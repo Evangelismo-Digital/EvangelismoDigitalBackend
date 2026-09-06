@@ -4,13 +4,12 @@ import {
   RoutingPoint,
 } from 'core/contracts/use-cases/providers/church-routing-provider.interface'
 import { IRawChurchRoutingProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
-import { RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
+import { Deadline } from 'core/shared/deadline'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
-import { Result, ok, err } from 'core/shared/result'
+import { Result, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
+import { runWithRetries } from 'providers/helpers/deadline-retry'
+import { checkAdmission } from 'providers/helpers/provider-admission'
 import { collectMetricsProviderLatency, recordProviderRequest } from '@lib/metrics/provider-metrics'
 import Redis from 'ioredis'
 
@@ -24,45 +23,54 @@ export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingPr
     this.providerName = rawProvider.providerName
   }
 
+  /**
+   * Unlike the address and geocoding layers there is no chain above this one —
+   * routing has a single provider by design — so this decorator records its own
+   * provider metrics rather than leaving them to a caller.
+   */
   async getDistances(params: {
     origin: RoutingPoint
     destinations: RoutingPoint[]
     profile?: RoutingProfile
-    signal?: AbortSignal
+    deadline?: Deadline
   }): Promise<Result<RouteDistanceResult[], AppError>> {
-    const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection)
-    const allowed = await rateLimiter.tryConsume(this.rawProvider.rateLimitConfig)
+    const deadline = params.deadline ?? Deadline.none()
 
-    if (!allowed) {
-      const busy = err(new ServiceBusyError(this.rawProvider.providerName))
-      recordProviderRequest('routing', this.providerName, busy)
-      return busy
+    const admission = await checkAdmission({
+      deadline,
+      providerName: this.providerName,
+      rateLimitConfig: this.rawProvider.rateLimitConfig,
+      redis: this.redisRateLimiterConnection,
+    })
+
+    if (isErr(admission)) {
+      recordProviderRequest('routing', this.providerName, admission)
+      return admission
     }
 
-    if (params.signal?.aborted) {
-      const timedOut = err(new TimeoutExceededError(params.signal.reason))
-      recordProviderRequest('routing', this.providerName, timedOut)
-      return timedOut
-    }
+    return await this.fetchDistances(params, deadline)
+  }
 
+  private async fetchDistances(
+    params: { origin: RoutingPoint; destinations: RoutingPoint[]; profile?: RoutingProfile },
+    deadline: Deadline,
+  ): Promise<Result<RouteDistanceResult[], AppError>> {
+    const costing = params.profile ?? this.rawProvider.defaultCosting ?? RoutingProfile.AUTO
     const endTimer = collectMetricsProviderLatency?.startTimer({ provider: this.providerName, layer: 'routing' })
-    try {
-      const costing = params.profile ?? this.rawProvider.defaultCosting ?? RoutingProfile.AUTO
-      const results = await this.rawProvider.fetchRawDistances(
-        params.origin,
-        params.destinations,
-        costing,
-        params.signal,
-      )
-      endTimer?.()
-      const success = ok(results)
-      recordProviderRequest('routing', this.providerName, success)
-      return success
-    } catch (error) {
-      endTimer?.()
-      const failure = err(FindNearestChurchesErrorMapper.map(error))
-      recordProviderRequest('routing', this.providerName, failure)
-      return failure
-    }
+
+    const outcome = await runWithRetries({
+      deadline,
+      providerName: this.providerName,
+      maxAttempts: this.rawProvider.maxRetries,
+      backoffMs: this.rawProvider.backoffMs,
+      attemptTimeoutMs: this.rawProvider.timeoutMs,
+      action: (attempt) =>
+        this.rawProvider.fetchRawDistances(params.origin, params.destinations, costing, attempt.signal),
+    })
+
+    endTimer?.()
+    recordProviderRequest('routing', this.providerName, outcome)
+
+    return outcome
   }
 }

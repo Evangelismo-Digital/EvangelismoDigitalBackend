@@ -60,11 +60,29 @@ type ProviderRateLimitConfig = {
 export enum EnumProviderConfig {
   AWESOME_API_ADDRESS = 'awesomeApiAddressProvider',
   VIACEP_ADDRESS = 'viacepAddressProvider',
-  LOCATION_IQ_ADDRESS = 'locationIqAddressProvider',
   BRASIL_API_ADDRESS = 'brasilApiAddressProvider',
   NOMINATIM_GEOCODING = 'nominatimGeocodingProvider',
   LOCATION_IQ_GEOCODING = 'locationIqGeocodingProvider',
   STADIA_ROUTING = 'stadiaRoutingProvider',
+}
+
+/**
+ * `rate-limiter-flexible` signals "over the limit" by rejecting with a
+ * RateLimiterRes carrying `remainingPoints`, and signals a Redis outage by
+ * rejecting with an actual Error. Only the shape tells them apart.
+ */
+function isRateLimitRejection(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'remainingPoints' in error &&
+    typeof (error as Record<string, unknown>).remainingPoints === 'number'
+  )
+}
+
+/** Narrows an unknown rejection to something loggable. */
+function asDetails(error: unknown): Record<string, unknown> {
+  return typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {}
 }
 
 export class RedisRateLimiter {
@@ -92,10 +110,6 @@ export class RedisRateLimiter {
     },
     [EnumProviderConfig.BRASIL_API_ADDRESS]: {
       points: 5,
-      windowSeconds: 1,
-    },
-    [EnumProviderConfig.LOCATION_IQ_ADDRESS]: {
-      points: 2,
       windowSeconds: 1,
     },
     [EnumProviderConfig.NOMINATIM_GEOCODING]: {
@@ -177,27 +191,18 @@ export class RedisRateLimiter {
 
       return true
     } catch (error) {
-      const err = error as unknown
-
-      if (
-        typeof err === 'object' &&
-        err !== null &&
-        'remainingPoints' in err &&
-        typeof (err as Record<string, unknown>).remainingPoints === 'number'
-      ) {
+      if (isRateLimitRejection(error)) {
         collectMetricsRateLimiterRejected?.inc({ provider })
 
         return false
       }
-
-      const obj = typeof err === 'object' && err !== null ? (err as Record<string, unknown>) : {}
 
       // Conta cada requisição liberada em fail-open (Redis indisponível).
       // A métrica NÃO é suprimida como o log de logInfraDegraded — cada
       // requisição permitida representa um evento de fail-open.
       collectMetricsRateLimiterInfraDegraded?.inc({ provider })
 
-      RedisRateLimiter.logInfraDegraded(provider, obj)
+      RedisRateLimiter.logInfraDegraded(provider, asDetails(error))
 
       return true
     }
@@ -207,20 +212,7 @@ export class RedisRateLimiter {
     const now = Date.now()
 
     if (this.infraOutageStartedAt === null) {
-      this.infraOutageStartedAt = now
-      this.infraLastWarnAt = now
-      this.infraSuppressedLogs = 0
-
-      logger.warn(
-        {
-          provider,
-          mode: 'fail-open',
-          redisOutage: true,
-          err: obj,
-        },
-        RATE_LIMITER_LOGS.INFRA_DEGRADED,
-      )
-
+      this.startOutage(provider, obj, now)
       return
     }
 
@@ -243,6 +235,23 @@ export class RedisRateLimiter {
     }
 
     this.infraSuppressedLogs += 1
+  }
+
+  /** First request to fail open: open the outage window and warn once. */
+  private static startOutage(provider: EnumProviderConfig, obj: Record<string, unknown>, now: number): void {
+    this.infraOutageStartedAt = now
+    this.infraLastWarnAt = now
+    this.infraSuppressedLogs = 0
+
+    logger.warn(
+      {
+        provider,
+        mode: 'fail-open',
+        redisOutage: true,
+        err: obj,
+      },
+      RATE_LIMITER_LOGS.INFRA_DEGRADED,
+    )
   }
 
   private static logInfraRecoveryIfNeeded(provider: EnumProviderConfig) {

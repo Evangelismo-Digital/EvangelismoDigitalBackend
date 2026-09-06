@@ -74,6 +74,23 @@ const envSchema = z.object({
   HTTP_RATE_LIMIT_HEALTH_CHECK_MAX: z.coerce.number().int().positive().default(120),
   HTTP_RATE_LIMIT_HEALTH_CHECK_TIME_WINDOW: z.string().default('1 minute'),
 
+  // Circuit breaker (resilient provider + cache policies)
+  // Enabled by default: when off, the policy stack is *composed* without a
+  // breaker rather than branching per call, so the flag costs nothing at runtime.
+  CIRCUIT_BREAKER_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default(true),
+  // Fraction of calls that must fail within the sampling window before the
+  // circuit opens. Exclusive bounds: 0 would trip on a healthy provider and 1
+  // could never trip, so both are configuration mistakes rather than settings.
+  CIRCUIT_BREAKER_FAILURE_THRESHOLD: z.coerce.number().gt(0).lt(1).default(0.5),
+  CIRCUIT_BREAKER_SAMPLING_WINDOW_MS: z.coerce.number().int().positive().default(ms('30s')),
+  // Minimum throughput before the breaker may open, so a single failure during
+  // an idle period cannot suspend a provider.
+  CIRCUIT_BREAKER_MIN_THROUGHPUT: z.coerce.number().int().positive().default(5),
+  CIRCUIT_BREAKER_HALF_OPEN_AFTER_MS: z.coerce.number().int().positive().default(ms('10s')),
+
   SENTRY_DSN: z.string().optional(),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.2),
   SENTRY_PROFILE_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
@@ -108,8 +125,8 @@ const envSchema = z.object({
   LOCATION_IQ_API_URL: z.string().default('https://us1.locationiq.com/v1'),
   LOCATION_IQ_API_TOKEN: z.string().min(1),
 
-  // Stadia API
-  STADIA_MAPS_API_URL: z.url().default('https://api.stadiamaps.com/route/v1'),
+  // Stadia API — only the batch matrix endpoint is called; the single-route
+  // endpoint went away with the unused `fetchRawDistance`.
   STADIA_MAPS_MATRIX_API_URL: z.url().default('https://api.stadiamaps.com/sources_to_targets'),
   STADIA_API_TOKEN: z.string().min(1, 'STADIA_API_TOKEN is required'),
   COOKIE_SECRET: z

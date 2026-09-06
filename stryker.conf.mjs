@@ -16,6 +16,7 @@ export default {
   mutate: [
     'src/**/*.ts',
     '!src/**/*.spec.ts',
+    '!src/**/*.contract.ts',
     '!src/**/*.acceptance.spec.mts',
     '!src/**/*.d.ts',
     '!src/server.ts',

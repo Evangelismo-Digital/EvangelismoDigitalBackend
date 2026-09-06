@@ -111,7 +111,11 @@ describe('Find Church PublicId By Name Use Case', () => {
     }
   })
 
-  it('should be case-sensitive when searching by name', async () => {
+  // This asserted a case-SENSITIVE lookup, which was only true of the in-memory
+  // double. The Prisma query compares `lower(trim(name))`, so production finds
+  // the church regardless of casing or surrounding whitespace. The double has
+  // been corrected and this now pins the real behaviour. See D19.
+  it('matches a name regardless of casing, as the database does', async () => {
     await createChurchUseCase.execute({
       name: 'Igreja Batista',
       address: 'Rua Teste, 123',
@@ -119,13 +123,22 @@ describe('Find Church PublicId By Name Use Case', () => {
       lon: -46.6333,
     })
 
-    const result = await findChurchPublicIdByNameUseCase.execute({
-      name: 'igreja batista',
+    const result = await findChurchPublicIdByNameUseCase.execute({ name: 'igreja batista' })
+
+    expect(isOk(result)).toBe(true)
+  })
+
+  it('matches a name with surrounding whitespace trimmed', async () => {
+    await createChurchUseCase.execute({
+      name: 'Igreja Batista',
+      address: 'Rua Teste, 123',
+      lat: -23.5505,
+      lon: -46.6333,
     })
-    expect(isErr(result)).toBe(true)
-    if (isErr(result)) {
-      expect(result.error).toBeInstanceOf(ChurchNotFoundError)
-    }
+
+    const result = await findChurchPublicIdByNameUseCase.execute({ name: '  Igreja Batista  ' })
+
+    expect(isOk(result)).toBe(true)
   })
 
   it('should return ChurchNotFoundError for partial name match', async () => {

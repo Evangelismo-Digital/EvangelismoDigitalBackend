@@ -33,6 +33,7 @@ export class AwesomeApiProvider implements IRawAddressProvider {
   readonly rateLimitConfig = EnumProviderConfig.AWESOME_API_ADDRESS
   readonly maxRetries = AWESOME_API_CONFIG.MAX_RETRIES
   readonly backoffMs = AWESOME_API_CONFIG.BACKOFF_MS
+  readonly timeoutMs = AWESOME_API_CONFIG.TIMEOUT_MS
 
   constructor(private readonly config: AwesomeApiConfig) {
     this.api = createHttpClient({

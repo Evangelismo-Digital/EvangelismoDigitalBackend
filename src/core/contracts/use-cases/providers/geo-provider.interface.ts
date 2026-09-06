@@ -1,3 +1,4 @@
+import { Deadline } from 'core/shared/deadline'
 import { Result } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 
@@ -24,6 +25,6 @@ export interface IGeoSearchOptions {
 }
 
 export interface IGeocodingProvider {
-  search(query: string, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>>
-  searchStructured(options: IGeoSearchOptions, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>>
+  search(query: string, deadline?: Deadline): Promise<Result<IGeoCoordinates | null, AppError>>
+  searchStructured(options: IGeoSearchOptions, deadline?: Deadline): Promise<Result<IGeoCoordinates | null, AppError>>
 }

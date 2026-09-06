@@ -9,6 +9,10 @@ import { ProviderFailureError } from 'errors/infrastructure/provider-failure-err
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
 import { deserializeAppError } from 'errors/app-error-registry'
+import { CircuitOpenError } from 'errors/infrastructure/circuit-open-error'
+import { ServiceOverloadError } from 'errors/infrastructure/service-overload-error'
+import { BrokenCircuitError, BulkheadRejectedError } from 'cockatiel'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 function createFakeAxiosError(
   status?: number,
@@ -168,5 +172,55 @@ describe('FindNearestChurchesErrorMapper', () => {
     const deserialized = deserializeAppError('InvalidCepError', 'O CEP fornecido 99392978 não existe.')
     expect(deserialized).toBeInstanceOf(InvalidCepError)
     expect(deserialized?.message).toBe('O CEP fornecido 99392978 não existe.')
+  })
+  describe('failures raised by a resilience policy rather than by a provider', () => {
+    // These mean the upstream call never happened. Falling through to
+    // ProviderFailureError would mislabel them in metrics and hide the fact
+    // that no request was made — the opposite of what an operator needs.
+    it('maps a tripped circuit to CircuitOpenError', () => {
+      const mapped = FindNearestChurchesErrorMapper.map(new BrokenCircuitError('circuit is open'))
+
+      expect(mapped).toBeInstanceOf(CircuitOpenError)
+    })
+
+    it('keeps a tripped circuit RETRYABLE so the chain tries the next provider', () => {
+      const mapped = FindNearestChurchesErrorMapper.map(new BrokenCircuitError('circuit is open'))
+
+      expect(mapped.failureMode).toBe(FailureMode.RETRYABLE)
+    })
+
+    it('preserves the cockatiel error as the cause', () => {
+      const raw = new BrokenCircuitError('circuit is open')
+      const mapped = FindNearestChurchesErrorMapper.map(raw) as CircuitOpenError
+
+      expect(mapped.originalError).toBe(raw)
+    })
+
+    it('maps a full bulkhead to ServiceOverloadError', () => {
+      const mapped = FindNearestChurchesErrorMapper.map(new BulkheadRejectedError(1, 0))
+
+      expect(mapped).toBeInstanceOf(ServiceOverloadError)
+    })
+
+    it('still falls back to ProviderFailureError for anything else', () => {
+      // The counterweight: the two new branches must not swallow ordinary
+      // failures on their way to the fallback.
+      const mapped = FindNearestChurchesErrorMapper.map(new Error('something else entirely'))
+
+      expect(mapped).toBeInstanceOf(ProviderFailureError)
+    })
+  })
+  describe('CEP extraction falls back past the word boundary', () => {
+    it('recovers an 8-digit CEP embedded in a longer digit run', () => {
+      // `\b\d{8}\b` cannot match inside a 9-digit run, which is exactly why the
+      // second, unanchored pattern exists. Without it the CEP is lost and the
+      // user is told which CEP was invalid without being told the CEP.
+      const mapped = FindNearestChurchesErrorMapper.map(
+        createFakeAxiosError(404, undefined, 'https://viacep.com.br/ws/123456789/json'),
+      )
+
+      expect(mapped).toBeInstanceOf(InvalidCepError)
+      expect(mapped.message).toContain('12345678')
+    })
   })
 })

@@ -64,6 +64,8 @@ import { errorHandler } from './error-handler.plugin'
 import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
 import { DatabaseQueryError } from '../../errors/infrastructure/database-query-error'
 import { ServiceBusyError } from '../../errors/infrastructure/service-busy-error'
+import { DeadlineExceededError } from '../../errors/infrastructure/deadline-exceeded-error'
+import { TimeoutExceededError } from '../../errors/infrastructure/timeout-exceeded-error'
 
 // ----- Test helpers -----
 function createMockReply(overrides: Record<string, unknown> = {}) {
@@ -215,6 +217,8 @@ describe('errorHandlerPlugin', () => {
           method: 'GET',
           url: '/test',
           ip: '203.0.113.10',
+          // Without this the Sentry event loses the client fingerprint.
+          userAgent: 'vitest/1.0',
         }),
       )
 
@@ -240,6 +244,63 @@ describe('errorHandlerPlugin', () => {
           code: 'SERVICE_UNAVAILABLE',
         }),
       )
+    })
+
+    it('sends a DeadlineExceededError as a sanitized 503, leaking no internal reason', async () => {
+      const deadlineError = new DeadlineExceededError('DEADLINE_EXPIRED')
+
+      await handler(deadlineError, request, reply)
+
+      expect(reply.code).toHaveBeenCalledWith(503)
+      const body = vi.mocked(reply.send).mock.calls[0][0] as Record<string, unknown>
+      expect(JSON.stringify(body)).not.toContain('DEADLINE_EXPIRED')
+    })
+
+    it('is indistinguishable from a TimeoutExceededError to the client', async () => {
+      // The public contract must not change just because we can now tell a
+      // spent budget from a slow attempt internally.
+      await handler(new TimeoutExceededError('slow'), request, reply)
+      const timeoutStatus = vi.mocked(reply.code).mock.calls[0][0]
+      const timeoutBody = vi.mocked(reply.send).mock.calls[0][0]
+
+      vi.mocked(reply.code).mockClear()
+      vi.mocked(reply.send).mockClear()
+
+      await handler(new DeadlineExceededError('DEADLINE_EXPIRED'), request, reply)
+
+      expect(vi.mocked(reply.code).mock.calls[0][0]).toBe(timeoutStatus)
+      expect(vi.mocked(reply.send).mock.calls[0][0]).toEqual(timeoutBody)
+    })
+
+    it('sends the SERVICE_UNAVAILABLE body for a SERVICE_UNAVAILABLE error, not the generic 500 body', async () => {
+      await handler(new TimeoutExceededError('slow'), request, reply)
+
+      expect(reply.code).toHaveBeenCalledWith(503)
+      expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_UNAVAILABLE' }))
+    })
+
+    it('does NOT capture an ABORTED failure in Sentry — it is load-shedding, not an exception', async () => {
+      const deadlineError = new DeadlineExceededError('DEADLINE_EXPIRED')
+
+      await handler(deadlineError, request, reply)
+
+      // A client navigating away must not become a Sentry event.
+      expect(mockCaptureException).not.toHaveBeenCalled()
+      expect(mockWithScope).not.toHaveBeenCalled()
+      expect(mockLogger.error).not.toHaveBeenCalled()
+      expect(mockLogger.warn).toHaveBeenCalledOnce()
+      // The log must still carry the error, or the warn path loses all diagnostics.
+      expect(mockLogger.warn).toHaveBeenCalledWith(expect.objectContaining({ err: deadlineError }), expect.any(String))
+      // The client still gets the same answer.
+      expect(reply.code).toHaveBeenCalledWith(503)
+    })
+
+    it('still captures a non-ABORTED infrastructure error in Sentry', async () => {
+      // Guard against the ABORTED skip silencing genuine failures.
+      await handler(new TimeoutExceededError('slow'), request, reply)
+
+      expect(mockCaptureException).toHaveBeenCalledOnce()
+      expect(mockLogger.error).toHaveBeenCalledOnce()
     })
 
     it('attaches userId to Sentry scope when user is authenticated', async () => {
@@ -272,6 +333,15 @@ describe('errorHandlerPlugin', () => {
       expect(reply.code).toHaveBeenCalledWith(401)
       expect(reply.send).toHaveBeenCalledWith({ message: 'Unauthorized' })
       expect(mockCaptureException).not.toHaveBeenCalled()
+    })
+
+    it('does NOT forward a non-Error object even when it carries a numeric statusCode', async () => {
+      // Guards the `error instanceof Error` half of the check: a plain object
+      // must not be able to dictate the response status.
+      await handler({ statusCode: 418, message: 'teapot' } as never, request, reply)
+
+      expect(reply.code).not.toHaveBeenCalledWith(418)
+      expect(reply.code).toHaveBeenCalledWith(500)
     })
 
     it('does NOT forward errors with non-number statusCode (falls through to unknown)', async () => {
@@ -380,6 +450,78 @@ describe('errorHandlerPlugin', () => {
       expect(reply.code).not.toHaveBeenCalled()
 
       consoleSpy.mockRestore()
+    })
+  })
+
+  describe('diagnostic contract', () => {
+    // The handler is the last place an error is seen; if its logs and Sentry
+    // tags lose their content, a production incident becomes untraceable.
+    it('tags the Sentry scope with the HTTP method under the "method" key', async () => {
+      await handler(new DatabaseQueryError(), request, reply)
+
+      expect(mockSetTag).toHaveBeenCalledWith('method', 'GET')
+    })
+
+    it('logs a validation failure with a describable message', async () => {
+      const schema = z.object({ name: z.string() })
+      const parsed = schema.safeParse({ name: 123 })
+
+      await handler(parsed.error as ZodError, request, reply)
+
+      expect(mockLogger.debug).toHaveBeenCalledWith(expect.anything(), expect.stringContaining('validação'))
+    })
+
+    it('logs invalid JSON with a describable message', async () => {
+      await handler(new SyntaxError('Unexpected token'), request, reply)
+
+      expect(mockLogger.error).toHaveBeenCalledWith(expect.anything(), expect.stringContaining('JSON'))
+    })
+
+    it('logs an infrastructure failure with both the error and its cause', async () => {
+      const cause = new Error('socket hang up')
+      const infraError = new DatabaseQueryError(cause)
+
+      await handler(infraError, request, reply)
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ err: infraError, cause }),
+        expect.stringContaining('infraestrutura'),
+      )
+    })
+
+    it('logs a cancelled request with a describable message', async () => {
+      await handler(new DeadlineExceededError('DEADLINE_EXPIRED'), request, reply)
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(expect.anything(), expect.stringContaining('cancelada'))
+    })
+
+    it('logs an unhandled Error with a describable message', async () => {
+      await handler(new Error('boom'), request, reply)
+
+      expect(mockLogger.error).toHaveBeenCalledWith(expect.anything(), expect.stringContaining('não tratado'))
+    })
+
+    describe('non-Error values thrown by a handler', () => {
+      it('logs a describable message rather than an empty one', async () => {
+        await handler('just a string' as never, request, reply)
+
+        expect(mockLogger.error).toHaveBeenCalledWith(expect.stringContaining('não é uma instância de Error'))
+      })
+
+      it('captures a synthesized Error carrying a describable message', async () => {
+        await handler('just a string' as never, request, reply)
+
+        expect(mockCaptureException).toHaveBeenCalledWith(
+          expect.objectContaining({ message: expect.stringContaining('não-Error') }),
+        )
+      })
+
+      it('still answers the client with a sanitized 500', async () => {
+        await handler({ weird: true } as never, request, reply)
+
+        expect(reply.code).toHaveBeenCalledWith(500)
+        expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ code: 'INTERNAL_SERVER_ERROR' }))
+      })
     })
   })
 })

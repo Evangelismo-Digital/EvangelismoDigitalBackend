@@ -4,14 +4,11 @@ import {
   IGeoSearchOptions,
 } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IRawGeocodingProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
-import { Result, ok, err } from 'core/shared/result'
+import { Deadline } from 'core/shared/deadline'
+import { Result, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
-import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
-import { logger } from '@lib/logger'
+import { runWithRetries } from 'providers/helpers/deadline-retry'
+import { checkAdmission } from 'providers/helpers/provider-admission'
 import Redis from 'ioredis'
 
 export class ResilientGeocodingProviderDecorator implements IGeocodingProvider {
@@ -24,82 +21,49 @@ export class ResilientGeocodingProviderDecorator implements IGeocodingProvider {
     this.providerName = rawProvider.providerName
   }
 
-  async search(query: string, signal?: AbortSignal): Promise<Result<IGeoCoordinates | null, AppError>> {
-    return this.executeResiliently((sig) => this.rawProvider.searchRaw(query, sig), { query }, signal)
+  async search(query: string, deadline: Deadline = Deadline.none()): Promise<Result<IGeoCoordinates | null, AppError>> {
+    return await this.executeResiliently(
+      (attempt) => this.rawProvider.searchRaw(query, attempt.signal),
+      { query },
+      deadline,
+    )
   }
 
   async searchStructured(
     options: IGeoSearchOptions,
-    signal?: AbortSignal,
+    deadline: Deadline = Deadline.none(),
   ): Promise<Result<IGeoCoordinates | null, AppError>> {
-    return this.executeResiliently((sig) => this.rawProvider.searchStructuredRaw(options, sig), { options }, signal)
+    return await this.executeResiliently(
+      (attempt) => this.rawProvider.searchStructuredRaw(options, attempt.signal),
+      { options },
+      deadline,
+    )
   }
 
   private async executeResiliently(
-    action: (signal?: AbortSignal) => Promise<IGeoCoordinates | null>,
+    action: (attemptDeadline: Deadline) => Promise<IGeoCoordinates | null>,
     logContext: Record<string, unknown>,
-    signal?: AbortSignal,
+    deadline: Deadline,
   ): Promise<Result<IGeoCoordinates | null, AppError>> {
-    // 1. Rate Limit check
-    const rateLimiter = RedisRateLimiter.getInstance(this.redisRateLimiterConnection)
-    const allowed = await rateLimiter.tryConsume(this.rawProvider.rateLimitConfig)
+    const admission = await checkAdmission({
+      deadline,
+      providerName: this.providerName,
+      rateLimitConfig: this.rawProvider.rateLimitConfig,
+      redis: this.redisRateLimiterConnection,
+    })
 
-    if (!allowed) {
-      return err(new ServiceBusyError(this.rawProvider.providerName))
+    if (isErr(admission)) {
+      return admission
     }
 
-    // 2. Retry Loop
-    for (let attempt = 1; attempt <= this.rawProvider.maxRetries; attempt++) {
-      if (signal?.aborted) {
-        return err(new TimeoutExceededError(signal.reason))
-      }
-
-      try {
-        const data = await action(signal)
-        return ok(data)
-      } catch (error) {
-        const appError = FindNearestChurchesErrorMapper.map(error)
-        const isRetryable = appError.failureMode === FailureMode.RETRYABLE
-
-        if (!isRetryable || attempt === this.rawProvider.maxRetries) {
-          logger.error(
-            {
-              ...logContext,
-              attempt,
-              error: appError,
-            },
-            `Falha ao buscar coordenadas geográficas ${this.rawProvider.providerName} após tentativas`,
-          )
-          return err(appError)
-        }
-
-        const delay = this.rawProvider.backoffMs * Math.pow(2, attempt - 1)
-        logger.warn({ ...logContext, attempt, delay }, `Repetindo solicitação para ${this.rawProvider.providerName}`)
-        await this.sleep(delay, signal)
-      }
-    }
-
-    logger.error(logContext, `${this.rawProvider.providerName} - todas as tentativas esgotadas sem sucesso`)
-    return err(new ServiceBusyError(this.rawProvider.providerName))
-  }
-
-  private sleep(ms: number, signal?: AbortSignal): Promise<void> {
-    return new Promise((resolve) => {
-      if (signal?.aborted) {
-        return resolve()
-      }
-
-      const timer = setTimeout(() => {
-        signal?.removeEventListener('abort', onAbort)
-        resolve()
-      }, ms)
-
-      function onAbort() {
-        clearTimeout(timer)
-        resolve()
-      }
-
-      signal?.addEventListener('abort', onAbort, { once: true })
+    return await runWithRetries({
+      deadline,
+      providerName: this.providerName,
+      maxAttempts: this.rawProvider.maxRetries,
+      backoffMs: this.rawProvider.backoffMs,
+      attemptTimeoutMs: this.rawProvider.timeoutMs,
+      logContext,
+      action,
     })
   }
 }

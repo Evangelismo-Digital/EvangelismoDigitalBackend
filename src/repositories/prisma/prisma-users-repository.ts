@@ -38,14 +38,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
   async findBy(where: UserWhereUniqueInput): Promise<Result<User | null, AppError>> {
     try {
-      const conditions: Prisma.UserWhereInput[] = []
-
-      if (where.id !== undefined) conditions.push({ id: where.id })
-      if (where.publicId !== undefined) conditions.push({ publicId: where.publicId })
-      if (where.email !== undefined) conditions.push({ email: where.email })
-      if (where.username !== undefined) conditions.push({ username: where.username })
-      if (where.cpf !== undefined) conditions.push({ cpf: where.cpf })
-      if (where.token !== undefined) conditions.push({ token: where.token })
+      const conditions = buildLookupConditions(where)
 
       if (conditions.length === 0) {
         return ok(null)
@@ -140,4 +133,17 @@ export class PrismaUsersRepository implements UsersRepository {
       return err(this.errorMapper.mapToKnownError(error))
     }
   }
+}
+
+/**
+ * Every unique column is looked up the same way, so the fields are listed once
+ * instead of as six near-identical branches. An absent field contributes no
+ * condition; no conditions at all means "nothing was asked for".
+ */
+const USER_LOOKUP_FIELDS = ['id', 'publicId', 'email', 'username', 'cpf', 'token'] as const
+
+function buildLookupConditions(where: UserWhereUniqueInput): Prisma.UserWhereInput[] {
+  return USER_LOOKUP_FIELDS.filter((field) => where[field] !== undefined).map(
+    (field) => ({ [field]: where[field] }) as Prisma.UserWhereInput,
+  )
 }

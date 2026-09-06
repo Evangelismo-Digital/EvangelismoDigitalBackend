@@ -1,5 +1,12 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
+vi.mock('@lib/metrics/provider-metrics', () => ({
+  collectMetricsProviderLatency: { startTimer: vi.fn(() => vi.fn()) },
+  collectMetricsProviderFallback: { inc: vi.fn() },
+  collectMetricsProviderChainExhausted: { inc: vi.fn() },
+  recordProviderRequest: vi.fn(),
+}))
+
 vi.mock('@lib/logger', () => ({
   logger: {
     info: vi.fn(),
@@ -21,7 +28,21 @@ import { ProviderFailureError } from 'errors/infrastructure/provider-failure-err
 import { NoGeoProviderError } from './error/no-geo-provider-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
+import { Deadline } from 'core/shared/deadline'
+import { logger } from '@lib/logger'
 import { ok, err, isOk, isErr } from 'core/shared/result'
+import {
+  collectMetricsProviderLatency as latencyMetric,
+  collectMetricsProviderFallback as fallbackMetric,
+  collectMetricsProviderChainExhausted as exhaustedMetric,
+} from '@lib/metrics/provider-metrics'
+
+// These exports are nullable in production (null when METRICS_ENABLED=false),
+// but this file always mocks them — narrow once here rather than at every call.
+const collectMetricsProviderLatency = latencyMetric!
+const collectMetricsProviderFallback = fallbackMetric!
+const collectMetricsProviderChainExhausted = exhaustedMetric!
 
 const mockCoords: IGeoCoordinates = {
   lat: -23.55052,
@@ -75,7 +96,7 @@ describe('ResilientGeoProvider Unit Tests', () => {
       if (isOk(result)) {
         expect(result.value).toEqual(mockCoords)
       }
-      expect(provider1.search).toHaveBeenCalledWith('Av Paulista', expect.any(AbortSignal))
+      expect(provider1.search).toHaveBeenCalledWith('Av Paulista', expect.any(Deadline))
     })
   })
 
@@ -91,7 +112,7 @@ describe('ResilientGeoProvider Unit Tests', () => {
       if (isOk(result)) {
         expect(result.value).toEqual(mockCoords)
       }
-      expect(provider1.searchStructured).toHaveBeenCalledWith(mockSearchOptions, expect.any(AbortSignal))
+      expect(provider1.searchStructured).toHaveBeenCalledWith(mockSearchOptions, expect.any(Deadline))
     })
   })
 
@@ -249,18 +270,193 @@ describe('ResilientGeoProvider Unit Tests', () => {
       }
     })
 
-    it('should stop immediately and return TimeoutExceededError if signal is aborted', async () => {
+    it('bails on an ABORTED failure without asking the next provider', async () => {
+      // A spent request budget is terminal: every remaining provider would
+      // fail identically and instantly, so the chain must not walk them.
+      const aborted = new DeadlineExceededError('DEADLINE_EXPIRED')
+      vi.mocked(provider1.search).mockResolvedValue(err(aborted))
+      vi.mocked(provider2.search).mockResolvedValue(ok(mockCoords))
+
+      const result = await createProvider().search('query')
+
+      expect(isErr(result)).toBe(true)
+      if (isErr(result)) {
+        expect(result.error).toBe(aborted)
+      }
+      expect(provider2.search).not.toHaveBeenCalled()
+    })
+
+    it('contrasts with RETRYABLE, which does advance to the next provider', async () => {
+      vi.mocked(provider1.search).mockResolvedValue(err(new ServiceBusyError('LocationIQ')))
+      vi.mocked(provider2.search).mockResolvedValue(ok(mockCoords))
+
+      const result = await createProvider().search('query')
+
+      expect(isOk(result)).toBe(true)
+      expect(provider2.search).toHaveBeenCalledOnce()
+    })
+
+    // Behaviour change (D8): an exhausted budget is ABORTED and terminal, not a
+    // RETRYABLE timeout — the chain must not walk the remaining providers.
+    it('should stop immediately and report the spent budget if the deadline is already expired', async () => {
       const provider = createProvider()
       const controller = new AbortController()
       controller.abort(new Error('Timeout'))
 
-      const result = await provider.search('Query', controller.signal)
+      const result = await provider.search('Query', Deadline.in(Infinity, { linkedTo: controller.signal }))
       expect(isErr(result)).toBe(true)
       if (isErr(result)) {
-        expect(result.error).toBeInstanceOf(TimeoutExceededError)
+        expect(result.error).toBeInstanceOf(DeadlineExceededError)
       }
 
       expect(provider1.search).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('observability contracts', () => {
+    it('times every provider attempt under its own name and the geocoding layer', async () => {
+      vi.mocked(provider1.search).mockResolvedValue(err(new ServiceBusyError('LocationIQ')))
+      vi.mocked(provider2.search).mockResolvedValue(ok(mockCoords))
+      const named1 = Object.assign(provider1, { providerName: 'LocationIQ' })
+      const named2 = Object.assign(provider2, { providerName: 'Nominatim' })
+
+      await new ResilientGeoProvider([named1, named2]).search('Av Paulista')
+
+      expect(collectMetricsProviderLatency.startTimer).toHaveBeenCalledWith({
+        provider: 'LocationIQ',
+        layer: 'geocoding',
+      })
+      expect(collectMetricsProviderLatency.startTimer).toHaveBeenCalledWith({
+        provider: 'Nominatim',
+        layer: 'geocoding',
+      })
+    })
+
+    it('records the fallback transition with both provider names', async () => {
+      const named1 = Object.assign(provider1, { providerName: 'LocationIQ' })
+      const named2 = Object.assign(provider2, { providerName: 'Nominatim' })
+      vi.mocked(named1.search).mockResolvedValue(err(new ServiceBusyError('LocationIQ')))
+      vi.mocked(named2.search).mockResolvedValue(ok(mockCoords))
+
+      await new ResilientGeoProvider([named1, named2]).search('Av Paulista')
+
+      expect(collectMetricsProviderFallback.inc).toHaveBeenCalledWith({
+        layer: 'geocoding',
+        from_provider: 'LocationIQ',
+        to_provider: 'Nominatim',
+      })
+    })
+
+    it('records no fallback when the last provider is the one that failed', async () => {
+      const named1 = Object.assign(provider1, { providerName: 'LocationIQ' })
+      vi.mocked(named1.search).mockResolvedValue(err(new ServiceBusyError('LocationIQ')))
+
+      await new ResilientGeoProvider([named1]).search('Av Paulista')
+
+      // There is no next provider to fall back to.
+      expect(collectMetricsProviderFallback.inc).not.toHaveBeenCalled()
+      expect(collectMetricsProviderChainExhausted.inc).toHaveBeenCalledWith({ layer: 'geocoding' })
+    })
+
+    it('does not count a chain as exhausted when a provider answered', async () => {
+      vi.mocked(provider1.search).mockResolvedValue(ok(mockCoords))
+
+      await createProvider().search('Av Paulista')
+
+      expect(collectMetricsProviderChainExhausted.inc).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('diagnostic log contract', () => {
+    // These logs are how a provider degradation is diagnosed in production, so
+    // both the message and the context they carry are part of the contract.
+    it('names the provider that answered', async () => {
+      const named = Object.assign(provider1, { providerName: 'LocationIQ' })
+      vi.mocked(named.search).mockResolvedValue(ok(mockCoords))
+
+      await new ResilientGeoProvider([named]).search('Av Paulista')
+
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'LocationIQ' }),
+        expect.stringContaining('sucesso'),
+      )
+    })
+
+    it('names the provider that returned nothing', async () => {
+      const named = Object.assign(provider1, { providerName: 'LocationIQ' })
+      vi.mocked(named.search).mockResolvedValue(ok(null))
+
+      await new ResilientGeoProvider([named]).search('Av Paulista')
+
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'LocationIQ' }),
+        expect.stringContaining('não encontrado'),
+      )
+    })
+
+    it('names the provider that reported NOT_FOUND', async () => {
+      const named = Object.assign(provider1, { providerName: 'LocationIQ' })
+      vi.mocked(named.search).mockResolvedValue(err(new CoordinatesNotFoundError()))
+
+      await new ResilientGeoProvider([named]).search('Av Paulista')
+
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'LocationIQ' }),
+        expect.stringContaining('não encontradas'),
+      )
+    })
+
+    it('warns with the provider, attempt number and error when falling back', async () => {
+      const named1 = Object.assign(provider1, { providerName: 'LocationIQ' })
+      const named2 = Object.assign(provider2, { providerName: 'Nominatim' })
+      const busy = new ServiceBusyError('LocationIQ')
+      vi.mocked(named1.search).mockResolvedValue(err(busy))
+      vi.mocked(named2.search).mockResolvedValue(ok(mockCoords))
+
+      await new ResilientGeoProvider([named1, named2]).search('Av Paulista')
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'LocationIQ', attempt: 1, error: busy }),
+        expect.stringContaining('recuperável'),
+      )
+    })
+
+    it('logs the fatal error that aborted the chain', async () => {
+      const named = Object.assign(provider1, { providerName: 'LocationIQ' })
+      const fatal = new DeadlineExceededError('DEADLINE_EXPIRED')
+      vi.mocked(named.search).mockResolvedValue(err(fatal))
+
+      await new ResilientGeoProvider([named, provider2]).search('Av Paulista')
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'LocationIQ', error: fatal }),
+        expect.stringContaining('Abortando'),
+      )
+    })
+
+    it('reports how many providers found nothing when all of them did', async () => {
+      vi.mocked(provider1.search).mockResolvedValue(ok(null))
+      vi.mocked(provider2.search).mockResolvedValue(ok(null))
+
+      await createProvider().search('Av Paulista')
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ notFoundCount: 2, totalProviders: 2 }),
+        expect.stringContaining('Nenhum provedor'),
+      )
+    })
+
+    it('reports the provider and error when the chain is exhausted by failures', async () => {
+      const named = Object.assign(provider1, { providerName: 'LocationIQ' })
+      const busy = new ServiceBusyError('LocationIQ')
+      vi.mocked(named.search).mockResolvedValue(err(busy))
+
+      await new ResilientGeoProvider([named]).search('Av Paulista')
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'LocationIQ', error: busy }),
+        expect.stringContaining('erros de sistema'),
+      )
     })
   })
 })

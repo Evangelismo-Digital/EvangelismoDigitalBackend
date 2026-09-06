@@ -209,7 +209,13 @@ describe('Find Nearby Churches Knn Use Case Spec', () => {
     expect(isOk(resultEast)).toBe(true)
   })
 
-  it('should filter out churches beyond maxRadiusMeters (50km)', async () => {
+  // This test previously asserted a 50km radius cut-off. That cut-off existed
+  // only in the in-memory double — the Prisma query applies no radius filter at
+  // all — so it was passing against a fiction and would never have caught the
+  // production behaviour changing. It now pins what the system actually does:
+  // nearest-first, no distance cap. See D19 in
+  // docs/timeout-and-cancellation-model.md for the open product question.
+  it('returns the nearest churches with no distance cut-off, far ones included', async () => {
     // Create a church very close
     await createChurchUseCase.execute({
       name: 'Igreja Próxima',
@@ -234,10 +240,15 @@ describe('Find Nearby Churches Knn Use Case Spec', () => {
     expect(isOk(result)).toBe(true)
     if (isOk(result)) {
       const { churches, totalFound } = result.value
-      // Should only return churches within 50km radius
-      expect(totalFound).toBe(1)
+
+      // Both are returned: the far one is >50km away and still comes back.
+      expect(totalFound).toBe(2)
       expect(churches[0].name).toBe('Igreja Próxima')
-      expect(churches[0].distanceMeters).toBeLessThan(50000)
+      expect(churches[1].name).toBe('Igreja Muito Distante')
+      expect(churches[1].distanceMeters).toBeGreaterThan(50_000)
+
+      // ...and they are ordered nearest-first, which is the real guarantee.
+      expect(churches[0].distanceMeters).toBeLessThan(churches[1].distanceMeters)
     }
   })
 

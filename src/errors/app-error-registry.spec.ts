@@ -5,10 +5,14 @@ import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
 import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
 import { CepToLatLonError } from '@use-cases/errors/cep-to-lat-lon-error'
+import { EmptyChurchListError } from '@use-cases/errors/empty-church-list-error'
 import { ServiceBusyError } from './infrastructure/service-busy-error'
 import { ServiceOverloadError } from './infrastructure/service-overload-error'
 import { TimeoutExceededError } from './infrastructure/timeout-exceeded-error'
+import { DeadlineExceededError } from './infrastructure/deadline-exceeded-error'
 import { ProviderFailureError } from './infrastructure/provider-failure-error'
+import { CircuitOpenError } from './infrastructure/circuit-open-error'
+import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 describe('serializeAppError', () => {
   it('captures the constructor name and message', () => {
@@ -86,6 +90,47 @@ describe('deserializeAppError', () => {
     expect(deserializeAppError('NoNearbyChurchesFoundError', 'x')).toBeInstanceOf(NoNearbyChurchesFoundError)
     expect(deserializeAppError('ServiceOverloadError', 'x')).toBeInstanceOf(ServiceOverloadError)
     expect(deserializeAppError('TimeoutExceededError', 'slow')).toBeInstanceOf(TimeoutExceededError)
+    expect(deserializeAppError('DeadlineExceededError', 'sem tempo')).toBeInstanceOf(DeadlineExceededError)
+  })
+
+  it('round-trips a DeadlineExceededError without downgrading it to a retryable timeout', () => {
+    const serialized = serializeAppError(new DeadlineExceededError('DEADLINE_EXPIRED'))
+    const restored = deserializeAppError(serialized.type, serialized.message, serialized.data as undefined)
+
+    expect(serialized.type).toBe('DeadlineExceededError')
+    expect(restored).toBeInstanceOf(DeadlineExceededError)
+    expect(restored).not.toBeInstanceOf(TimeoutExceededError)
+    expect(restored.failureMode).toBe('ABORTED')
+  })
+
+  it('reconstructs EmptyChurchListError as a real instance, not undefined', () => {
+    // A registry factory that returns nothing would fall through to the unknown
+    // fallback and lose the error's identity, failureMode and HTTP status.
+    const restored = deserializeAppError('EmptyChurchListError', 'lista vazia')
+
+    expect(restored).toBeInstanceOf(EmptyChurchListError)
+    expect(restored.body.code).not.toBe('UNKNOWN_DESERIALIZATION_ERROR')
+  })
+
+  it('round-trips every registered error type back to its own class', () => {
+    // Guards the registry as a whole: a factory that stops returning its error
+    // silently degrades that error to an opaque 500 on a cache read.
+    const samples: AppError[] = [
+      new CoordinatesNotFoundError(),
+      new NoNearbyChurchesFoundError(),
+      new EmptyChurchListError(),
+      new ServiceOverloadError(),
+      new TimeoutExceededError('slow'),
+      new DeadlineExceededError('DEADLINE_EXPIRED'),
+    ]
+
+    for (const original of samples) {
+      const serialized = serializeAppError(original)
+      const restored = deserializeAppError(serialized.type, serialized.message, serialized.data as undefined)
+
+      expect(restored.constructor.name).toBe(original.constructor.name)
+      expect(restored.body.code).toBe(original.body.code)
+    }
   })
 
   it('derives ServiceBusyError provider from the message when no structured data is given', () => {
@@ -133,5 +178,28 @@ describe('deserializeAppError', () => {
     } finally {
       AppErrorRegistry.CoordinatesNotFoundError = original
     }
+  })
+  describe('CircuitOpenError', () => {
+    it('survives a serialize/deserialize round trip', () => {
+      const serialized = serializeAppError(new CircuitOpenError('Stadia Maps'))
+      const restored = deserializeAppError(serialized.type, serialized.message, serialized.data)
+
+      expect(restored).toBeInstanceOf(CircuitOpenError)
+    })
+
+    it('keeps the provider across the round trip', () => {
+      // The cache stores serialized errors; losing the provider here would make
+      // a restored error name the wrong upstream in logs and metrics.
+      const serialized = serializeAppError(new CircuitOpenError('Stadia Maps'))
+      const restored = deserializeAppError(serialized.type, serialized.message, serialized.data)
+
+      expect((restored as CircuitOpenError).provider).toBe('Stadia Maps')
+    })
+
+    it('keeps its RETRYABLE routing after deserialization', () => {
+      const restored = deserializeAppError('CircuitOpenError', 'Stadia Maps')
+
+      expect(restored.failureMode).toBe(FailureMode.RETRYABLE)
+    })
   })
 })

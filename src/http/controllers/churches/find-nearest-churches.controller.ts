@@ -18,7 +18,7 @@ export async function findNearestChurches(
 
   const findNearestChurchesUseCase = makeFindNearestChurchesUseCase()
 
-  const result = await findNearestChurchesUseCase.execute({ cep })
+  const result = await findNearestChurchesUseCase.execute({ cep, deadline: request.deadline })
 
   if (isErr(result)) {
     return HttpErrorMapper.map(result.error, reply)

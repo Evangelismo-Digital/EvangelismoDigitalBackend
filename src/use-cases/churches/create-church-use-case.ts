@@ -36,24 +36,10 @@ export class CreateChurchUseCase {
       return err(new NoAddressError())
     }
 
-    const nameResult = await this.churchesRepository.findByName(name)
-    if (isErr(nameResult)) {
-      return nameResult
-    }
-    if (nameResult.value !== null) {
-      return err(new ChurchAlreadyExistsError())
-    }
+    const duplicate = await this.findDuplicate({ name, lat, lon })
 
-    const paramsResult = await this.churchesRepository.findByParams({
-      name,
-      lat,
-      lon,
-    })
-    if (isErr(paramsResult)) {
-      return paramsResult
-    }
-    if (paramsResult.value !== null) {
-      return err(new ChurchAlreadyExistsError())
+    if (duplicate) {
+      return duplicate
     }
 
     const createResult = await this.churchesRepository.createChurch({
@@ -68,5 +54,34 @@ export class CreateChurchUseCase {
     }
 
     return ok(createResult.value)
+  }
+
+  /**
+   * A church is a duplicate if the name is taken, or if the name-and-coordinates
+   * pair already exists. Both checks answer with the same error, so they are
+   * asked in one place.
+   */
+  private async findDuplicate(params: {
+    name: string
+    lat: number
+    lon: number
+  }): Promise<Result<CreateChurchUseCaseResponse, AppError> | null> {
+    const nameResult = await this.churchesRepository.findByName(params.name)
+
+    if (isErr(nameResult)) {
+      return nameResult
+    }
+
+    if (nameResult.value !== null) {
+      return err(new ChurchAlreadyExistsError())
+    }
+
+    const paramsResult = await this.churchesRepository.findByParams(params)
+
+    if (isErr(paramsResult)) {
+      return paramsResult
+    }
+
+    return paramsResult.value !== null ? err(new ChurchAlreadyExistsError()) : null
   }
 }

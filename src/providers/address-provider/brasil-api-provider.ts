@@ -27,6 +27,7 @@ export class BrasilApiProvider implements IRawAddressProvider {
   readonly rateLimitConfig = EnumProviderConfig.BRASIL_API_ADDRESS
   readonly maxRetries = BRASIL_API_CONFIG.MAX_RETRIES
   readonly backoffMs = BRASIL_API_CONFIG.BACKOFF_MS
+  readonly timeoutMs = BRASIL_API_CONFIG.TIMEOUT_MS
 
   constructor(private readonly config: BrasilApiConfig) {
     this.api = createHttpClient({

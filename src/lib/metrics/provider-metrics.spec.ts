@@ -32,6 +32,7 @@ import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
 import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { getRegistry } from '@lib/metrics'
 import {
@@ -120,6 +121,30 @@ describe('Provider metrics instrumentation', () => {
       expect(
         await metricValue(collectMetricsProviderRequest, { provider: 'ViaCEP', layer: 'address', result: 'timeout' }),
       ).toBe(1)
+    })
+
+    it('records deadline_exceeded for a DeadlineExceededError, not timeout', async () => {
+      // The whole point of the separate error: a spent request budget and a
+      // slow single attempt must not collapse into one metric label.
+      const chain = new ResilientAddressProvider([
+        fakeAddressProvider('AwesomeAPI', err(new DeadlineExceededError('DEADLINE_EXPIRED'))),
+      ])
+      await chain.fetchAddress('01001000')
+
+      expect(
+        await metricValue(collectMetricsProviderRequest, {
+          provider: 'AwesomeAPI',
+          layer: 'address',
+          result: 'deadline_exceeded',
+        }),
+      ).toBe(1)
+      expect(
+        await metricValue(collectMetricsProviderRequest, {
+          provider: 'AwesomeAPI',
+          layer: 'address',
+          result: 'timeout',
+        }),
+      ).toBe(0)
     })
 
     it('records provider_error for a ProviderFailureError', async () => {
@@ -229,7 +254,8 @@ describe('Provider metrics instrumentation', () => {
         providerName: 'Stadia Maps',
         rateLimitConfig: 'stadiaRoutingProvider',
         timeoutMs: 1000,
-        fetchRawDistance: vi.fn(),
+        maxRetries: 2,
+        backoffMs: 10,
         fetchRawDistances: vi.fn().mockResolvedValue([{ distance: 100 }]),
       } as unknown as IRawChurchRoutingProvider
     }

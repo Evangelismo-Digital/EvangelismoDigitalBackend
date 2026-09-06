@@ -14,7 +14,13 @@ import { searchUsersController } from './search-users.controller'
 import { HTTP_RATE_LIMIT_POLICIES } from '@http/policies/rate-limit'
 
 export async function usersRoutes(app: FastifyInstance) {
-  // Register routes:
+  registerAuthRoutes(app)
+  registerProfileRoutes(app)
+  registerAdminRoutes(app)
+}
+
+/** Registration and session handling — the only routes open to anonymous callers. */
+function registerAuthRoutes(app: FastifyInstance) {
   app.post(
     '/register/admin',
     {
@@ -24,61 +30,29 @@ export async function usersRoutes(app: FastifyInstance) {
     registerAdmin,
   )
   app.post('/register', { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.register } }, register)
-
-  // Authentication routes:
-  app.post(
-    '/sessions',
-    {
-      config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.session },
-    },
-    authenticateUser,
-  )
+  app.post('/sessions', { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.session } }, authenticateUser)
   app.post('/forgot-password', { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.forgotPassword } }, forgotPassword)
   app.patch('/reset-password', { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.auth.resetPassword } }, resetPassword)
+}
 
-  // User profile routes
-  app.patch(
-    '/me',
-    {
-      onRequest: [verifyJwt],
-    },
-    updateUser,
-  )
-  app.get(
-    '/me',
-    {
-      onRequest: [verifyJwt],
-    },
-    getUserProfile,
-  )
-  app.delete(
-    '/me',
-    {
-      onRequest: [verifyJwt],
-    },
-    deleteUser,
-  )
+/** The caller acting on their own account; authentication is all that is needed. */
+function registerProfileRoutes(app: FastifyInstance) {
+  app.patch('/me', { onRequest: [verifyJwt] }, updateUser)
+  app.get('/me', { onRequest: [verifyJwt] }, getUserProfile)
+  app.delete('/me', { onRequest: [verifyJwt] }, deleteUser)
+}
 
-  // List users route:
-  app.get(
-    '/',
-    {
-      onRequest: [verifyJwt, verifyUserRole([UserRole.ADMIN])],
-      config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.users.list },
-    },
-    listUsers,
-  )
-  app.get('/search', { onRequest: [verifyJwt, verifyUserRole([UserRole.ADMIN])] }, searchUsersController)
+/** Everything acting on *other* accounts, so every route also requires ADMIN. */
+function registerAdminRoutes(app: FastifyInstance) {
+  const adminOnly = [verifyJwt, verifyUserRole([UserRole.ADMIN])]
 
-  // Users administration routes:
-  app.patch('/:publicId', { onRequest: [verifyJwt, verifyUserRole([UserRole.ADMIN])] }, updateUser)
+  app.get('/', { onRequest: adminOnly, config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.users.list } }, listUsers)
+  app.get('/search', { onRequest: adminOnly }, searchUsersController)
+  app.patch('/:publicId', { onRequest: adminOnly }, updateUser)
   app.delete(
     '/:publicId',
-    {
-      onRequest: [verifyJwt, verifyUserRole([UserRole.ADMIN])],
-      config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.users.delete },
-    },
+    { onRequest: adminOnly, config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.users.delete } },
     deleteUserByPublicId,
   )
-  app.get('/:publicId', { onRequest: [verifyJwt, verifyUserRole([UserRole.ADMIN])] }, getUserByPublicId)
+  app.get('/:publicId', { onRequest: adminOnly }, getUserByPublicId)
 }

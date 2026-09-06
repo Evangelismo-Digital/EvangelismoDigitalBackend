@@ -7,6 +7,22 @@
 # Escape hatch: git push --no-verify.
 set -euo pipefail
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Suite lock — shared with .claude/hooks/gate.sh.
+#
+# Both this script and the Stop hook run the e2e suite against the SAME Postgres
+# and Redis. Overlapping runs corrupt each other: truncations race, and the
+# IP-keyed rate-limit test sees state it did not create. Whoever holds this lock
+# owns the shared services for the duration.
+SUITE_LOCK=/tmp/evangelismo-suite.lock
+exec 9>"$SUITE_LOCK"
+if ! flock -n 9; then
+  echo 'ERRO: outra execução da suíte (ci:local ou o Stop hook) já está em andamento.' >&2
+  echo 'Elas compartilham Postgres e Redis; rode uma de cada vez.' >&2
+  exit 1
+fi
+
+
 cd "$(dirname "$0")/.."
 
 # .env.test is docker --env-file format: unquoted, values may contain spaces

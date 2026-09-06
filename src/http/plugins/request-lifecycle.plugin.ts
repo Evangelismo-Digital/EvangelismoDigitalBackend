@@ -1,24 +1,31 @@
-import { FastifyPluginAsync } from 'fastify'
+import { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import fp from 'fastify-plugin'
 import { logger, setUserId } from '@lib/logger'
+import { clientIpOf } from '@http/client-ip'
+
+/**
+ * Puts the caller's id in the request context when a valid JWT is present. An
+ * unauthenticated request is not an error here — the route's own guard decides
+ * whether credentials were required; this hook only enriches the logs.
+ */
+async function populateUserId(request: FastifyRequest): Promise<void> {
+  try {
+    const decoded = await request.jwtVerify<{ sub: string }>()
+    setUserId(decoded.sub)
+  } catch {
+    // Unauthenticated request — userId remains undefined
+  }
+}
 
 const requestLifecyclePlugin: FastifyPluginAsync = async (app) => {
   app.addHook('onRequest', async (request) => {
-    const xff = request.headers['x-forwarded-for']
-    const clientIp = Array.isArray(xff) ? xff[0] : xff?.split(',')[0].trim() || request.ip
-
-    try {
-      const decoded = await request.jwtVerify<{ sub: string }>()
-      setUserId(decoded.sub)
-    } catch {
-      // Unauthenticated request — userId remains undefined
-    }
+    await populateUserId(request)
 
     logger.info(
       {
         method: request.method,
         url: request.url,
-        ip: clientIp,
+        ip: clientIpOf(request),
         remotePort: request.socket.remotePort,
         userAgent: request.headers['user-agent'],
       },

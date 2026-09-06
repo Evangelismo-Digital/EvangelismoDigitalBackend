@@ -22,7 +22,14 @@ export interface FindNearbyParams {
   userLat: number
   userLon: number
   limit?: number
-  maxRadiusMeters?: number
+  /**
+   * Ceiling for the query itself, in milliseconds.
+   *
+   * Deliberately a number rather than a `Deadline`: this contract is consumed
+   * by adapters that have no business knowing about the request budget, and the
+   * caller has already reduced its remaining time to a single figure.
+   */
+  timeoutMs?: number
 }
 
 export interface Church {

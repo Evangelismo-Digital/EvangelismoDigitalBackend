@@ -8,6 +8,7 @@ import {
   EnumGeoPrecision,
 } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
+import { Deadline } from 'core/shared/deadline'
 import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
@@ -16,11 +17,11 @@ import { CHURCH_CONSTANTS } from 'messages/constants/churches/churches'
 interface CepToLatLonRequest {
   cep: string
   /**
-   * Abort signal owned by the caller. This use-case holds no cache and
-   * therefore no timeout budget of its own — it inherits the one enforced by
-   * the single cache layer in FindNearestChurchesUseCase.
+   * Budget owned by the caller. This use-case holds no cache and therefore no
+   * budget of its own — it inherits the one enforced by the single cache layer
+   * in FindNearestChurchesUseCase, and every provider call below derives from it.
    */
-  signal?: AbortSignal
+  deadline?: Deadline
 }
 
 interface CepToLatLonResponse {
@@ -43,13 +44,13 @@ export class CepToLatLonUseCase {
     private addressProvider: IAddressProvider,
   ) {}
 
-  async execute({ cep, signal }: CepToLatLonRequest): Promise<Result<CepToLatLonResponse, AppError>> {
-    return await this.processCep(cep.replace(/\D/g, ''), signal)
+  async execute({ cep, deadline }: CepToLatLonRequest): Promise<Result<CepToLatLonResponse, AppError>> {
+    return await this.processCep(cep.replace(/\D/g, ''), deadline)
   }
 
-  private async processCep(cleanCep: string, signal?: AbortSignal): Promise<Result<CepToLatLonResponse, AppError>> {
+  private async processCep(cleanCep: string, deadline?: Deadline): Promise<Result<CepToLatLonResponse, AppError>> {
     // 1. Fetch Address (ViaCEP / AwesomeAPI / BrasilAPI)
-    const addrResult = await this.addressProvider.fetchAddress(cleanCep, signal)
+    const addrResult = await this.addressProvider.fetchAddress(cleanCep, deadline)
 
     if (isErr(addrResult)) {
       return err(addrResult.error)
@@ -69,7 +70,7 @@ export class CepToLatLonUseCase {
     }
 
     // 3. Geocoding Fallback Strategies, most precise first.
-    return await this.geocodeAddress(cleanCep, address, signal)
+    return await this.geocodeAddress(cleanCep, address, deadline)
   }
 
   /**
@@ -92,12 +93,12 @@ export class CepToLatLonUseCase {
   private async geocodeAddress(
     cleanCep: string,
     address: IAddressData,
-    signal?: AbortSignal,
+    deadline?: Deadline,
   ): Promise<Result<CepToLatLonResponse, AppError>> {
     const strategies = [
-      () => this.searchByStreet(address, signal),
-      () => this.searchByNeighborhood(address, signal),
-      () => this.searchByCity(address, signal),
+      () => this.searchByStreet(address, deadline),
+      () => this.searchByNeighborhood(address, deadline),
+      () => this.searchByCity(address, deadline),
     ]
 
     for (const runStrategy of strategies) {
@@ -116,7 +117,7 @@ export class CepToLatLonUseCase {
   }
 
   /** Strategy A: Exact Match (Street) */
-  private async searchByStreet(address: IAddressData, signal?: AbortSignal): Promise<StrategyOutcome> {
+  private async searchByStreet(address: IAddressData, deadline?: Deadline): Promise<StrategyOutcome> {
     const { logradouro, localidade, uf } = address
 
     if (!logradouro) {
@@ -125,14 +126,14 @@ export class CepToLatLonUseCase {
 
     const result = await this.geocodingProvider.search(
       `${logradouro}, ${localidade} - ${uf}, ${CHURCH_CONSTANTS.GEOCODING_COUNTRY}`,
-      signal,
+      deadline,
     )
 
     return this.interpretSearch(result)
   }
 
   /** Strategy B: Approximate Match (Neighborhood) */
-  private async searchByNeighborhood(address: IAddressData, signal?: AbortSignal): Promise<StrategyOutcome> {
+  private async searchByNeighborhood(address: IAddressData, deadline?: Deadline): Promise<StrategyOutcome> {
     const { bairro, localidade, uf } = address
 
     if (!bairro) {
@@ -141,7 +142,7 @@ export class CepToLatLonUseCase {
 
     const result = await this.geocodingProvider.search(
       `${bairro}, ${localidade} - ${uf}, ${CHURCH_CONSTANTS.GEOCODING_COUNTRY}`,
-      signal,
+      deadline,
     )
 
     return this.interpretSearch(result)
@@ -152,7 +153,7 @@ export class CepToLatLonUseCase {
    * empty result is a definitive CoordinatesNotFoundError rather than a
    * fall-through.
    */
-  private async searchByCity(address: IAddressData, signal?: AbortSignal): Promise<StrategyOutcome> {
+  private async searchByCity(address: IAddressData, deadline?: Deadline): Promise<StrategyOutcome> {
     const { localidade, uf } = address
 
     if (!localidade) {
@@ -165,7 +166,7 @@ export class CepToLatLonUseCase {
         state: uf,
         country: CHURCH_CONSTANTS.GEOCODING_COUNTRY,
       },
-      signal,
+      deadline,
     )
 
     if (isErr(result)) {

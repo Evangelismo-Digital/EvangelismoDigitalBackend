@@ -32,6 +32,8 @@ import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { ServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import { Deadline } from 'core/shared/deadline'
+import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
 
 class TestAppError extends AppError {
   constructor(failureMode: FailureMode = FailureMode.NOT_FOUND) {
@@ -124,6 +126,7 @@ describe('ResilientCache with Prometheus metrics disabled', () => {
       prefix: 'nometrics:',
       defaultTtlSeconds: 60,
       negativeTtlSeconds: 30,
+      fetchTimeoutMs: 5_000,
       maxPendingFetches: 1,
     })
 
@@ -164,7 +167,7 @@ describe('ResilientCache with Prometheus metrics disabled', () => {
       const result = await pending
 
       expect(isErr(result)).toBe(true)
-      if (isErr(result)) expect(result.error).toBeInstanceOf(TimeoutExceededError)
+      if (isErr(result)) expect(result.error).toBeInstanceOf(DeadlineExceededError)
     } finally {
       vi.useRealTimers()
     }
@@ -175,7 +178,7 @@ describe('ResilientCache with Prometheus metrics disabled', () => {
     controller.abort('gone')
 
     const fetcher = vi.fn()
-    const result = await cache.getOrFetch('k', fetcher, controller.signal)
+    const result = await cache.getOrFetch('k', fetcher, Deadline.in(Infinity, { linkedTo: controller.signal }))
 
     expect(isErr(result)).toBe(true)
     expect(fetcher).not.toHaveBeenCalled()

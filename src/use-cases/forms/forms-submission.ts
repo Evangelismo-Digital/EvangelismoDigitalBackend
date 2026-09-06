@@ -47,22 +47,20 @@ export class FormsSubmissionUseCase {
       return formSubmissionResult
     }
 
-    const formSubmission = formSubmissionResult.value
+    // Sanitização: remove campos sensíveis ou desnecessários para a notificação
+    const sanitizedFormSubmission = sanitize(formSubmissionResult.value)
 
-    // Sanitização: Remove campos sensíveis ou desnecessários para a notificação
+    return await this.registerNotification(sanitizedFormSubmission)
+  }
 
-    const sanitizedFormSubmission = {
-      name: formSubmission.name,
-      lastName: formSubmission.lastName,
-      email: formSubmission.email,
-      decisaoPorCristo: formSubmission.decisaoPorCristo,
-      location: formSubmission.location ?? null,
-      ipAddress: formSubmission.ipAddress ?? null,
-    }
-
-    // 3. Side-Effect Seguro (Outbox Pattern)
-    // Salva o evento na tabela 'outbox_events' NA MESMA TRANSAÇÃO do formulário.
-    // O ipAddress fica fora do payload persistido (dado sensível, desnecessário para o e-mail).
+  /**
+   * 3. Side-effect seguro (Outbox Pattern)
+   *
+   * Grava o evento em 'outbox_events' NA MESMA TRANSAÇÃO do formulário. O
+   * ipAddress fica fora do payload persistido: é dado sensível e desnecessário
+   * para o e-mail.
+   */
+  private async registerNotification(sanitizedFormSubmission: SanitizedFormSubmission): Promise<Response> {
     const outboxEvent = await this.eventRegistration.register({
       type: OUTBOX_EVENT_TYPES.FORM_SUBMISSION_CREATED,
       payload: {
@@ -78,10 +76,36 @@ export class FormsSubmissionUseCase {
       return outboxEvent
     }
 
-    // 4. Retorno de Sucesso
     return ok({
       sanitizedFormSubmission,
       outboxEvent: outboxEvent.value,
     })
+  }
+}
+
+type SanitizedFormSubmission = {
+  name: string
+  lastName: string
+  email: string
+  decisaoPorCristo: boolean
+  location: string | null
+  ipAddress: string | null
+}
+
+function sanitize(formSubmission: {
+  name: string
+  lastName: string
+  email: string
+  decisaoPorCristo: boolean
+  location?: string | null
+  ipAddress?: string | null
+}): SanitizedFormSubmission {
+  return {
+    name: formSubmission.name,
+    lastName: formSubmission.lastName,
+    email: formSubmission.email,
+    decisaoPorCristo: formSubmission.decisaoPorCristo,
+    location: formSubmission.location ?? null,
+    ipAddress: formSubmission.ipAddress ?? null,
   }
 }

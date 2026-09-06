@@ -1,7 +1,7 @@
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 import { AppError } from 'errors/app-error'
 import { serializeAppError, deserializeAppError } from 'errors/app-error-registry'
-import { ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
+import { CacheCircuitBreakerOptions, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
 import { CACHE_CONFIG } from 'messages/constants/cache/cache'
 
 /**
@@ -46,8 +46,13 @@ export function negativeTtlForChurchLookup(error: AppError): number {
  * Built here rather than in the factory so the policy and its wiring can be
  * asserted together in a unit test.
  */
-export function makeNearestChurchesCacheOptions(): ResilientCacheOptions<AppError> {
+export function makeNearestChurchesCacheOptions(
+  circuitBreaker?: CacheCircuitBreakerOptions,
+): ResilientCacheOptions<AppError> {
   return {
+    // Passed in rather than read here: this module stays free of env so it can
+    // be exercised without dragging the provider graph into a unit test.
+    circuitBreaker,
     prefix: CACHE_CONFIG.NEAREST_CHURCHES.PREFIX,
     defaultTtlSeconds: CACHE_CONFIG.NEAREST_CHURCHES.DEFAULT_TTL_SECONDS,
     negativeTtlSeconds: CACHE_CONFIG.NEAREST_CHURCHES.NEGATIVE_TTL_SECONDS,

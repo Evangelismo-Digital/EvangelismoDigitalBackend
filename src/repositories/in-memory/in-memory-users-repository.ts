@@ -20,14 +20,7 @@ export class InMemoryUsersRepository implements UsersRepository {
   }
 
   async findBy(where: UserWhereUniqueInput): Promise<Result<User | null, AppError>> {
-    const user = this.items.find(
-      (item) =>
-        (where.id !== undefined && item.id === where.id) ||
-        (where.publicId !== undefined && item.publicId === where.publicId) ||
-        (where.email !== undefined && item.email === where.email) ||
-        (where.username !== undefined && item.username === where.username) ||
-        (where.cpf !== undefined && item.cpf === where.cpf),
-    )
+    const user = this.items.find((item) => matchesAnyLookupField(item, where))
 
     return ok(user ?? null)
   }
@@ -45,41 +38,10 @@ export class InMemoryUsersRepository implements UsersRepository {
   }
 
   async create(data: CreateUser): Promise<Result<User, AppError>> {
-    const now = new Date()
-
-    const userData = data as unknown as {
-      publicId?: string
-      name: string
-      email: string
-      username: string
-      passwordHash: string
-      cpf: string
-      loginAttempts?: number
-      lastLogin?: Date | string | null
-      role?: 'DEFAULT' | 'ADMIN'
-      tokenExpiresAt?: Date | string | null
-      passwordChangedAt?: Date | string | null
-    }
-
-    const user: User = {
-      id: this.items.length + 1,
-      publicId: userData.publicId || crypto.randomUUID(),
-      name: userData.name,
-      email: userData.email,
-      username: userData.username,
-      passwordHash: userData.passwordHash,
-      cpf: userData.cpf,
-      loginAttempts: userData.loginAttempts ?? 0,
-      lastLogin: userData.lastLogin ? new Date(userData.lastLogin as string | Date) : null,
-      role: (userData.role as 'DEFAULT' | 'ADMIN') ?? 'DEFAULT',
-      token: null,
-      tokenExpiresAt: userData.tokenExpiresAt ? new Date(userData.tokenExpiresAt as string | Date) : null,
-      createdAt: now,
-      updatedAt: now,
-      passwordChangedAt: userData.passwordChangedAt ? new Date(userData.passwordChangedAt as string | Date) : null,
-    }
+    const user = buildUser(data, this.items.length + 1)
 
     this.items.push(user)
+
     return ok(user)
   }
 
@@ -126,5 +88,58 @@ export class InMemoryUsersRepository implements UsersRepository {
     }
     this.items[userIndex] = updatedUser
     return ok(updatedUser)
+  }
+}
+
+/**
+ * Matches the Prisma repository's OR semantics: any single supplied field that
+ * matches identifies the user. Listed once so the double and production cannot
+ * disagree about which columns are unique.
+ */
+const USER_LOOKUP_FIELDS = ['id', 'publicId', 'email', 'username', 'cpf'] as const
+
+function matchesAnyLookupField(item: User, where: UserWhereUniqueInput): boolean {
+  return USER_LOOKUP_FIELDS.some((field) => where[field] !== undefined && item[field] === where[field])
+}
+
+type SeedUser = {
+  publicId?: string
+  name: string
+  email: string
+  username: string
+  passwordHash: string
+  cpf: string
+  loginAttempts?: number
+  lastLogin?: Date | string | null
+  role?: 'DEFAULT' | 'ADMIN'
+  tokenExpiresAt?: Date | string | null
+  passwordChangedAt?: Date | string | null
+}
+
+/** Optional dates arrive as strings from fixtures, so each is normalised once. */
+function toDate(value: Date | string | null | undefined): Date | null {
+  return value ? new Date(value) : null
+}
+
+function buildUser(data: CreateUser, id: number): User {
+  const seed = data as unknown as SeedUser
+  const now = new Date()
+
+  return {
+    id,
+    publicId: seed.publicId || crypto.randomUUID(),
+    name: seed.name,
+    email: seed.email,
+    username: seed.username,
+    passwordHash: seed.passwordHash,
+    cpf: seed.cpf,
+    loginAttempts: seed.loginAttempts ?? 0,
+    lastLogin: toDate(seed.lastLogin),
+    role: seed.role ?? 'DEFAULT',
+    token: null,
+    tokenExpiresAt: toDate(seed.tokenExpiresAt),
+    createdAt: now,
+    updatedAt: now,
+    passwordChangedAt: toDate(seed.passwordChangedAt),
   }
 }

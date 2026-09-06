@@ -12,9 +12,10 @@ class RollbackTransactionError<IResponse> extends Error {
   }
 }
 
-export class TransactionalUseCaseDecorator<IRequest, IResponse extends Result<unknown, unknown>>
-  implements IUseCase<IRequest, IResponse>
-{
+export class TransactionalUseCaseDecorator<IRequest, IResponse extends Result<unknown, unknown>> implements IUseCase<
+  IRequest,
+  IResponse
+> {
   constructor(
     private useCase: IUseCase<IRequest, IResponse>,
     private dbContext: DatabaseContext,

@@ -90,7 +90,12 @@ describe('Create Church Use Case', () => {
     expect(churchesRepository.items).toHaveLength(1)
   })
 
-  it('should allow creating churches with different names at same location', async () => {
+  // This test asserted that two differently-named churches could share exact
+  // coordinates. That was only ever true of the in-memory double, which required
+  // name AND lat AND lon to match; the Prisma duplicate check is
+  // `name OR (lat AND lon)`, so production rejects the second one. The double
+  // has been corrected, and this now pins the real rule. See D19.
+  it('rejects a second church at identical coordinates, even under a different name', async () => {
     const church1 = {
       name: 'Igreja Batista',
       address: 'Rua Central, 100',
@@ -109,15 +114,27 @@ describe('Create Church Use Case', () => {
     const result2 = await createChurchUseCase.execute(church2)
 
     expect(isOk(result1)).toBe(true)
-    expect(isOk(result2)).toBe(true)
+    expect(isErr(result2)).toBe(true)
+    expect(churchesRepository.items).toHaveLength(1)
+  })
 
-    if (isOk(result1) && isOk(result2)) {
-      const firstChurch = result1.value
-      const secondChurch = result2.value
-      expect(firstChurch.name).toBe(church1.name)
-      expect(secondChurch.name).toBe(church2.name)
-      expect(firstChurch.id).not.toBe(secondChurch.id)
-    }
+  it('allows a second church once the coordinates differ', async () => {
+    // The counterweight: the duplicate rule must not reject everything.
+    const first = await createChurchUseCase.execute({
+      name: 'Igreja Batista',
+      address: 'Rua Central, 100',
+      lat: -23.5505,
+      lon: -46.6333,
+    })
+    const second = await createChurchUseCase.execute({
+      name: 'Igreja Metodista',
+      address: 'Rua Central, 200',
+      lat: -23.5605,
+      lon: -46.6433,
+    })
+
+    expect(isOk(first)).toBe(true)
+    expect(isOk(second)).toBe(true)
     expect(churchesRepository.items).toHaveLength(2)
   })
 

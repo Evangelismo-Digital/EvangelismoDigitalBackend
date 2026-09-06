@@ -10,6 +10,7 @@ import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches
 import { EmptyChurchListError } from '@use-cases/errors/empty-church-list-error'
 import { CepToLatLonError } from '@use-cases/errors/cep-to-lat-lon-error'
 import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
 import { ResilientCache } from '@lib/infra/cache/resilient-cache'
 import { CACHE_CONFIG } from 'messages/constants/cache/cache'
 import { err, isErr } from 'core/shared/result'
@@ -51,6 +52,15 @@ describe('CEP negative cache policy', () => {
 
       expect(isRetryableChurchLookupError(uncacheable)).toBe(true)
       expect(negativeTtlForChurchLookup(uncacheable)).toBe(PERMANENT_TTL_SECONDS)
+    })
+
+    it('refuses to cache a spent request budget — ABORTED says nothing about the CEP', () => {
+      const aborted = new DeadlineExceededError('DEADLINE_EXPIRED')
+
+      // Terminal for a fallback chain, but not knowledge about the input:
+      // caching it would pin a 503 to a perfectly valid CEP for 30 minutes.
+      expect(aborted.failureMode).toBe('ABORTED')
+      expect(isRetryableChurchLookupError(aborted)).toBe(true)
     })
 
     it('holds a bad CEP strictly longer than a no-church result', () => {
@@ -103,6 +113,11 @@ describe('CEP negative cache policy', () => {
 
     it('writes nothing at all for a retryable infrastructure failure', async () => {
       expect(await ttlWrittenFor(new ServiceBusyError('LocationIQ'))).toBeUndefined()
+      expect(redis.set).not.toHaveBeenCalled()
+    })
+
+    it('writes nothing at all when the request budget was spent', async () => {
+      expect(await ttlWrittenFor(new DeadlineExceededError('DEADLINE_EXPIRED'))).toBeUndefined()
       expect(redis.set).not.toHaveBeenCalled()
     })
 

@@ -32,6 +32,7 @@ export class ViaCepProvider implements IRawAddressProvider {
   readonly rateLimitConfig = EnumProviderConfig.VIACEP_ADDRESS
   readonly maxRetries = VIACEP_CONFIG.MAX_RETRIES
   readonly backoffMs = VIACEP_CONFIG.BACKOFF_MS
+  readonly timeoutMs = VIACEP_CONFIG.TIMEOUT_MS
 
   constructor(private readonly config: ViaCepConfig) {
     this.api = createHttpClient({

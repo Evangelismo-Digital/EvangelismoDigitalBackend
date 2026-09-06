@@ -35,13 +35,7 @@ export class AuthenticateUserUseCase {
     password,
     auditContext,
   }: AuthenticateUserUseCaseRequest): Promise<Result<AuthenticateUserUseCaseResponse, AppError>> {
-    let userResult: Result<User | null, AppError>
-
-    if (emailSchema.safeParse(login).success) {
-      userResult = await this.usersRepository.findBy({ email: login })
-    } else {
-      userResult = await this.usersRepository.findBy({ username: login })
-    }
+    const userResult = await this.findByLogin(login)
 
     if (isErr(userResult)) {
       return userResult
@@ -50,26 +44,17 @@ export class AuthenticateUserUseCase {
     const user = userResult.value
 
     if (!user) {
-      await this.authenticationAuditUseCase.execute({
-        ...auditContext,
-        status: AuthenticationStatus.USER_NOT_EXISTS,
-      })
-
-      return err(new InvalidCredentialsError())
+      return await this.auditAndReject({ ...auditContext, status: AuthenticationStatus.USER_NOT_EXISTS })
     }
 
-    const hashToCompare = user.passwordHash
-
-    const doesPasswordMatch = await compare(password, hashToCompare)
+    const doesPasswordMatch = await compare(password, user.passwordHash)
 
     if (!doesPasswordMatch) {
-      await this.authenticationAuditUseCase.execute({
+      return await this.auditAndReject({
         ...auditContext,
         status: AuthenticationStatus.INCORRECT_PASSWORD,
         userId: user.id,
       })
-
-      return err(new InvalidCredentialsError())
     }
 
     await this.authenticationAuditUseCase.execute({
@@ -79,5 +64,24 @@ export class AuthenticateUserUseCase {
     })
 
     return ok({ user })
+  }
+
+  /** The login field is either an email or a username; nothing else differs. */
+  private async findByLogin(login: string): Promise<Result<User | null, AppError>> {
+    return emailSchema.safeParse(login).success
+      ? await this.usersRepository.findBy({ email: login })
+      : await this.usersRepository.findBy({ username: login })
+  }
+
+  /**
+   * Every rejection is audited and then reported identically — deliberately, so
+   * a wrong password and an unknown user are indistinguishable to the caller.
+   */
+  private async auditAndReject(
+    audit: Parameters<AuthenticationAuditUseCase['execute']>[0],
+  ): Promise<Result<AuthenticateUserUseCaseResponse, AppError>> {
+    await this.authenticationAuditUseCase.execute(audit)
+
+    return err(new InvalidCredentialsError())
   }
 }

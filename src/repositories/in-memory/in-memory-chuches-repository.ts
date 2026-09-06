@@ -10,11 +10,21 @@ import { AppError } from 'errors/app-error'
 import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
 import { randomUUID } from 'node:crypto'
 
+/** `lower(trim(...))` in the SQL. */
+function normalizeName(name: string): string {
+  return name.trim().toLowerCase()
+}
+
+/** `round(...::numeric, 6)` in the SQL. */
+function roundCoordinate(value: number): number {
+  return Number(value.toFixed(6))
+}
+
 export class InMemoryChurchesRepository implements ChurchesRepository {
   public items: Church[] = []
 
   async findNearest(params: FindNearbyParams): Promise<Result<NearbyChurch[], AppError>> {
-    const { userLat, userLon, limit = 10, maxRadiusMeters = 50000 } = params
+    const { userLat, userLon, limit = 10 } = params
 
     // Calculate distance using Haversine formula
     const churchesWithDistance = this.items.map((church) => {
@@ -42,25 +52,34 @@ export class InMemoryChurchesRepository implements ChurchesRepository {
       }
     })
 
-    // Filter by max radius and sort by distance
-    const filtered = churchesWithDistance
-      .filter((church) => church.distanceMeters <= maxRadiusMeters)
-      .sort((a, b) => a.distanceMeters - b.distanceMeters)
-      .slice(0, limit)
+    // Nearest first, capped at `limit` — matching the Prisma implementation,
+    // which applies no radius cut-off of its own.
+    const nearest = churchesWithDistance.sort((a, b) => a.distanceMeters - b.distanceMeters).slice(0, limit)
 
-    return ok(filtered)
+    return ok(nearest)
   }
 
+  /**
+   * Mirrors the Prisma predicate: the same *name* OR the same *coordinates*
+   * makes a church a duplicate — not both together. The double previously
+   * required all three to match, making it strictly more permissive than
+   * production, so a duplicate that the real database rejects would have been
+   * accepted here. Names are compared trimmed and case-insensitively, and
+   * coordinates rounded to six decimals, exactly as the SQL does.
+   */
   async findByParams(params: ChurchAlreadyExists): Promise<Result<Church | null, AppError>> {
     const church = this.items.find(
-      (item) => item.name === params.name && item.lat === params.lat && item.lon === params.lon,
+      (item) =>
+        normalizeName(item.name) === normalizeName(params.name) ||
+        (roundCoordinate(item.lat) === roundCoordinate(params.lat) &&
+          roundCoordinate(item.lon) === roundCoordinate(params.lon)),
     )
 
     return ok(church ?? null)
   }
 
   async findByName(name: string): Promise<Result<Church | null, AppError>> {
-    const church = this.items.find((item) => item.name === name)
+    const church = this.items.find((item) => normalizeName(item.name) === normalizeName(name))
 
     return ok(church ?? null)
   }

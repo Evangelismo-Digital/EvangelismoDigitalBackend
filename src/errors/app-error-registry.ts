@@ -8,13 +8,28 @@ import { CepToLatLonError } from '@use-cases/errors/cep-to-lat-lon-error'
 import { ServiceBusyError } from './infrastructure/service-busy-error'
 import { ServiceOverloadError as InfraServiceOverloadError } from './infrastructure/service-overload-error'
 import { TimeoutExceededError } from './infrastructure/timeout-exceeded-error'
+import { DeadlineExceededError } from './infrastructure/deadline-exceeded-error'
 import { ProviderFailureError } from './infrastructure/provider-failure-error'
+import { CircuitOpenError } from './infrastructure/circuit-open-error'
 
 export interface SerializedErrorData {
+  /**
+   * Top-level fields, as produced by {@link serializeAppError}, which stores the
+   * error instance itself — so a provider name lands here, not under `body`.
+   */
+  provider?: string
+  /** Explicitly structured form, used by callers that build the payload by hand. */
   body?: {
     provider?: string
   }
   originalError?: unknown
+}
+
+/** Neutral label for metrics when a round trip carried no provider name. */
+const UNKNOWN_PROVIDER = 'Unknown Provider'
+
+function readProvider(data: SerializedErrorData | undefined): string | undefined {
+  return data?.provider || data?.body?.provider
 }
 
 export const AppErrorRegistry: Record<string, (message: string, data?: SerializedErrorData) => AppError> = {
@@ -35,13 +50,19 @@ export const AppErrorRegistry: Record<string, (message: string, data?: Serialize
   },
 
   ServiceBusyError: (msg, data) => {
-    const provider = data?.body?.provider || msg.replace('Serviço temporariamente indisponível: ', '')
+    const provider = readProvider(data) || msg.replace('Serviço temporariamente indisponível: ', '')
     return new ServiceBusyError(provider)
   },
 
   ServiceOverloadError: () => new InfraServiceOverloadError(),
 
   TimeoutExceededError: (msg) => new TimeoutExceededError(msg),
+
+  DeadlineExceededError: (msg) => new DeadlineExceededError(msg),
+
+  CircuitOpenError: (msg, data) => {
+    return new CircuitOpenError(readProvider(data) || UNKNOWN_PROVIDER)
+  },
 
   ProviderFailureError: (msg, data) => new ProviderFailureError(data?.originalError),
 }
