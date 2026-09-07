@@ -255,6 +255,8 @@ Use-cases are hand-wired via `make*` factory functions in `src/use-cases/factori
 
 `src/app.ts` registers plugins in a deliberate order (each documented inline): async-context (ALS with per-request `requestId` via uuidv7) → CORS → rate-limit → cookie → analytics → JWT → request-lifecycle (JWT extraction, `userId` population, logging) → error-handler → routes. Routes are grouped in `src/http/routes.ts` by prefix (`/users`, `/health`, `/forms`, `/churches`, `/analytics`).
 
+The rate-limit plugin uses `ResilientRateLimitStore` (`src/lib/infra/rate-limiter/resilient-rate-limit-store.ts`), **not** `@fastify/rate-limit`'s `redis:` option. That option's store hands Redis failures to the request, so with `skipOnError: false` a 100 ms Redis timeout returned HTTP 500 for every caller; `skipOnError: true` would have removed the limit instead. The store counts in Redis and falls back to an in-process fixed window, so the limiter degrades to per-instance instead of taking the API down — counted in `http_rate_limit_infra_degraded_total` and logged on a throttled schedule via the shared `OutageReporter`. Note the opposite decision in `RedisRateLimiter`, which fails **closed** for outbound provider quotas: the reasoning for each is in the two files.
+
 Request context (`requestId`, `userId`) flows through `AsyncLocalStorage` (`src/lib/async-local-storage`, exposed via `getRequestId()`/`getUserId()` from `@lib/logger`), so logging and Sentry scoping stay request-isolated without threading params.
 
 ### Resilient providers (geo / address / church-routing)

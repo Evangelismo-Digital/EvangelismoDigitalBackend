@@ -38,3 +38,28 @@ export const collectMetricsRateLimiterInfraRecovered = registry
       registers: [registry],
     })
   : null
+
+/**
+ * HTTP ingress limiting, which degrades rather than failing (see
+ * `resilient-rate-limit-store.ts`). `degraded` counts every request served from
+ * the in-process fallback — i.e. every request the cluster-wide limit did not
+ * see — and `recovered` fires once per outage episode, so the two together give
+ * both the blast radius and the episode count.
+ */
+export const collectMetricsHttpRateLimitDegraded = registry
+  ? new Counter({
+      name: 'http_rate_limit_infra_degraded_total',
+      help: 'HTTP requests counted by the in-process fallback because Redis was unavailable',
+      labelNames: ['route'],
+      registers: [registry],
+    })
+  : null
+
+export const collectMetricsHttpRateLimitRecovered = registry
+  ? new Counter({
+      name: 'http_rate_limit_infra_recovered_total',
+      help: 'Transitions of the HTTP rate limiter back to Redis-backed counting',
+      labelNames: ['route'],
+      registers: [registry],
+    })
+  : null

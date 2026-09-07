@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
-const { mockRateLimit, mockRedisConnection, mockGetRedisRateLimit } = vi.hoisted(() => {
+const { mockRateLimit, mockRedisConnection, mockGetRedisRateLimit, mockResilientStoreFor } = vi.hoisted(() => {
   const mockRateLimit = vi.fn()
   const mockRedisConnection = { connection: 'redis-rate-limit' }
   const mockGetRedisRateLimit = vi.fn(() => mockRedisConnection)
+  const mockResilientStoreFor = vi.fn(() => class StubStore {})
 
-  return { mockRateLimit, mockRedisConnection, mockGetRedisRateLimit }
+  return { mockRateLimit, mockRedisConnection, mockGetRedisRateLimit, mockResilientStoreFor }
 })
 
 vi.mock('@fastify/rate-limit', () => ({
@@ -16,11 +17,15 @@ vi.mock('@lib/redis/clients/clients', () => ({
   getRedisRateLimit: mockGetRedisRateLimit,
 }))
 
+vi.mock('@lib/infra/rate-limiter/resilient-rate-limit-store', () => ({
+  resilientRateLimitStoreFor: mockResilientStoreFor,
+}))
+
 import { httpRateLimitPlugin } from './rate-limit.plugin'
 import { HTTP_RATE_LIMIT_POLICIES } from '@http/policies/rate-limit'
 
 describe('httpRateLimitPlugin', () => {
-  it('registers a global Redis-backed IP rate limiter with skipOnError: false', async () => {
+  it('registers a global IP rate limiter backed by the resilient store', async () => {
     const register = vi.fn().mockResolvedValue(undefined)
     const addHook = vi.fn()
     const app = { register, addHook }
@@ -36,9 +41,15 @@ describe('httpRateLimitPlugin', () => {
         max: 300,
         skipOnError: false,
         timeWindow: '1 minute',
-        redis: mockRedisConnection,
+        store: expect.any(Function),
       }),
     )
+
+    // `redis` would install the plugin's own store, whose Redis failures reach
+    // the request; the store option is the whole point of the change.
+    const registered = register.mock.calls[0][1] as Record<string, unknown>
+    expect(registered.redis).toBeUndefined()
+    expect(mockResilientStoreFor).toHaveBeenCalledWith(mockRedisConnection)
 
     const options = register.mock.calls[0][1] as { keyGenerator: (request: { ip: string }) => string }
     expect(options.keyGenerator({ ip: '203.0.113.10' })).toBe('203.0.113.10')
