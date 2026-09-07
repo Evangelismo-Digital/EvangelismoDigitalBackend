@@ -15,3 +15,19 @@ title = "Evangelismo Digital gitleaks config"
 
 [extend]
 useDefault = true
+
+# The single allowlisted finding below is not a credential. `scripts/sonar.sh`
+# bootstraps a fresh SonarQube container, whose documented factory login is
+# `admin/admin` — the script uses it exactly once, to POST a generated 28-char
+# password to /api/users/change_password and store it in `.sonar/` (gitignored,
+# 0600). The literal is the *default it removes*, published by SonarSource, not a
+# secret of this project. Writing it through a variable to dodge the scanner would
+# hide the same string while losing the explanation, so it stays inline and
+# allowlisted by rule + path + exact text: any other credential shape in that file,
+# and this shape in any other file, still fails the scan.
+[[allowlists]]
+description = "SonarQube factory default admin:admin, rotated on first boot (scripts/sonar.sh)"
+condition = "AND"
+targetRules = ["curl-auth-user"]
+paths = ['''^scripts/sonar\.sh$''']
+regexes = ['''^admin:admin$''']

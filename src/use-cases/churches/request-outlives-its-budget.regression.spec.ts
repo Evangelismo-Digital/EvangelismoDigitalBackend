@@ -54,7 +54,10 @@ function makeUseCase(redis: { get: unknown; set: unknown }) {
   const knn = { execute: neverReturns() } as unknown as FindNearbyChurchesKnnUseCase
   const routing = { findNearest: neverReturns() } as unknown as CalculateChurchRouteDistancesUseCase
 
-  return new FindNearestChurchesUseCase(cepToLatLon, knn, routing, redis as never, makeNearestChurchesCacheOptions())
+  return new FindNearestChurchesUseCase(cepToLatLon, knn, routing, {
+    redis: redis as never,
+    options: makeNearestChurchesCacheOptions(),
+  })
 }
 
 describe('regression: a request must not outlive the budget it was given', () => {

@@ -4,6 +4,7 @@ import '@fastify/cookie'
 import { randomUUID } from 'node:crypto'
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
+import { DAYS_PER_YEAR, SECONDS_PER_DAY } from 'core/constants/time'
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -13,7 +14,7 @@ declare module 'fastify' {
 }
 
 /** One year, in seconds — the visitor cookie outlives the browser session. */
-const VISITOR_COOKIE_MAX_AGE = 365 * 24 * 60 * 60
+const VISITOR_COOKIE_MAX_AGE = SECONDS_PER_DAY * DAYS_PER_YEAR
 
 const TRACKING_COOKIE_OPTIONS = {
   path: '/',

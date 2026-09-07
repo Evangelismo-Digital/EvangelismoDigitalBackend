@@ -9,6 +9,8 @@ import {
 import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
+import { randomUUID } from 'node:crypto'
+import { USERS_PAGE_SIZE } from 'core/constants/pagination'
 
 export class InMemoryUsersRepository implements UsersRepository {
   public items: User[] = []
@@ -32,7 +34,7 @@ export class InMemoryUsersRepository implements UsersRepository {
           item.name.toLowerCase().includes(query.toLowerCase()) ||
           item.email.toLowerCase().includes(query.toLowerCase()),
       )
-      .slice((page - 1) * 20, page * 20)
+      .slice((page - 1) * USERS_PAGE_SIZE, page * USERS_PAGE_SIZE)
 
     return ok(users)
   }
@@ -127,7 +129,7 @@ function buildUser(data: CreateUser, id: number): User {
 
   return {
     id,
-    publicId: seed.publicId || crypto.randomUUID(),
+    publicId: seed.publicId || randomUUID(),
     name: seed.name,
     email: seed.email,
     username: seed.username,

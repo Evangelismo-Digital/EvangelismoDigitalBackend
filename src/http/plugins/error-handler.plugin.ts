@@ -1,7 +1,7 @@
 import { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify'
 import fp from 'fastify-plugin'
 import z, { ZodError } from 'zod'
-import * as Sentry from '@sentry/node'
+import { captureException, withScope } from '@sentry/node'
 import { env } from '@env/index'
 import { logger, getRequestId, getUserId } from '@lib/logger'
 import { HTTP_ERRORS } from 'messages/errors/http'
@@ -11,17 +11,18 @@ import { ErrorType } from 'core/types/error-type/error-type'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 import { toHttpStatus } from 'errors/http-errors/http-error-status.mapper'
 import { ZodValidationError } from 'errors/http-errors/zod-validation-error'
+import { HTTP_STATUS } from '@http/http-status'
 
 /**
  * Captures an exception in Sentry with full request context isolation.
- * Uses Sentry.withScope() to prevent context bleed between concurrent requests.
+ * Uses withScope() to prevent context bleed between concurrent requests.
  */
 function captureWithRequestContext(error: Error, request: FastifyRequest): void {
   if (!env.SENTRY_DSN) {
     return
   }
 
-  Sentry.withScope((scope) => {
+  withScope((scope) => {
     const requestId = getRequestId()
     const userId = getUserId()
 
@@ -37,11 +38,13 @@ function captureWithRequestContext(error: Error, request: FastifyRequest): void 
       userAgent: request.headers['user-agent'],
     })
 
+    // See deadline.plugin.ts: an unmatched request carries no routeOptions.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     scope.setTag('route', request.routeOptions?.url ?? request.url)
     scope.setTag('method', request.method)
     scope.setTag('errorType', error.constructor.name)
 
-    Sentry.captureException(error)
+    captureException(error)
   })
 }
 
@@ -62,7 +65,7 @@ function respondZodError(error: unknown, _request: FastifyRequest, reply: Fastif
 function respondSyntaxError(error: unknown, _request: FastifyRequest, reply: FastifyReply) {
   logger.error(error, 'JSON inválido recebido')
 
-  return reply.code(400).send({
+  return reply.code(HTTP_STATUS.BAD_REQUEST).send({
     message: HTTP_ERRORS.INVALID_JSON.message,
     code: HTTP_ERRORS.INVALID_JSON.code,
   })
@@ -131,7 +134,7 @@ function respondUnknownError(error: unknown, request: FastifyRequest, reply: Fas
     captureWithRequestContext(new Error('Valor não-Error lançado no handler de requisição'), request)
   }
 
-  return reply.code(500).send({
+  return reply.code(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({
     message: HTTP_ERRORS.INTERNAL_SERVER.message,
     code: HTTP_ERRORS.INTERNAL_SERVER.code,
   })
@@ -169,10 +172,17 @@ const errorHandlerPlugin: FastifyPluginAsync = async (app) => {
     } catch (handlerError) {
       // Safety net: if anything inside the error handler itself throws
       // (e.g. Sentry SDK failure, logger crash), still give the client a clean 500.
-      console.error('O handler de erro lançou uma exceção:', handlerError)
+      // `process.stderr` rather than the logger, and rather than `console`:
+      // this branch exists precisely for the case where the logger is what
+      // failed, so it must not go back through it.
+      process.stderr.write(`O handler de erro lançou uma exceção: ${String(handlerError)}\n`)
 
+      // Fastify types `sent` as a plain boolean but narrows it to `false` in
+      // this position; the check is what stops a double send when the failure
+      // happened after the response was already flushed.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!reply.sent) {
-        return reply.code(500).send({
+        return reply.code(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({
           message: HTTP_ERRORS.INTERNAL_SERVER.message,
           code: HTTP_ERRORS.INTERNAL_SERVER.code,
         })

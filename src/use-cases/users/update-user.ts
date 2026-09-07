@@ -17,7 +17,7 @@ type UpdateUserUseCaseResponse = {
 }
 
 export class UpdateUserUseCase {
-  constructor(private usersRepository: UsersRepository) {}
+  constructor(private readonly usersRepository: UsersRepository) {}
 
   async execute({
     publicId,
@@ -64,11 +64,18 @@ export class UpdateUserUseCase {
     fields: { email?: string; username?: string },
     currentPublicId: string,
   ): Promise<Result<UpdateUserUseCaseResponse, AppError> | null> {
-    for (const [field, value] of Object.entries(fields)) {
-      if (value === undefined) {
-        continue
-      }
+    // Filtered up front rather than skipped with `continue`: a caller that
+    // spreads a partial DTO can hand us `undefined` or `null`, and neither is a
+    // value to check for uniqueness.
+    // The cast is the honest one: `Object.entries` on a type whose properties
+    // are all optional resolves its element type to `string`, dropping the
+    // `undefined` that a caller spreading a partial DTO genuinely produces.
+    // Without it the filter below reads as comparing types with no overlap —
+    // and deleting it would let `undefined` through to a uniqueness query.
+    const entries = Object.entries(fields) as [string, string | undefined][]
+    const provided = entries.filter(([, value]) => value != null)
 
+    for (const [field, value] of provided) {
       const result = await this.usersRepository.findBy({ [field]: value })
 
       if (isErr(result)) {

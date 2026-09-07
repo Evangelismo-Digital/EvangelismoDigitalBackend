@@ -11,6 +11,7 @@ import {
 import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
+import { USERS_PAGE_SIZE } from 'core/constants/pagination'
 
 export class PrismaUsersRepository implements UsersRepository {
   constructor(
@@ -85,8 +86,8 @@ export class PrismaUsersRepository implements UsersRepository {
             mode: 'insensitive',
           },
         },
-        skip: (page - 1) * 20,
-        take: 20,
+        skip: (page - 1) * USERS_PAGE_SIZE,
+        take: USERS_PAGE_SIZE,
       })
 
       return ok(users)
@@ -96,19 +97,24 @@ export class PrismaUsersRepository implements UsersRepository {
   }
 
   async update(publicId: string, data: UserUpdateInput): Promise<Result<User, AppError>> {
-    try {
-      const user = await this.dbContext.client.user.update({
-        where: { publicId },
-        data,
-      })
-
-      return ok(user)
-    } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
-    }
+    return await this.applyUpdate(publicId, data)
   }
 
   async updatePassword(publicId: string, data: UserPasswordUpdateInput): Promise<Result<User, AppError>> {
+    return await this.applyUpdate(publicId, data)
+  }
+
+  /**
+   * The two public methods stay separate because the CONTRACTS differ — one
+   * accepts profile fields, the other only a password hash and its reset token,
+   * and that distinction is what stops a caller from clearing a password
+   * through the profile route. The write itself is the same statement, and
+   * having written it twice is how the two drift apart.
+   */
+  private async applyUpdate(
+    publicId: string,
+    data: UserUpdateInput | UserPasswordUpdateInput,
+  ): Promise<Result<User, AppError>> {
     try {
       const user = await this.dbContext.client.user.update({
         where: { publicId },
@@ -143,7 +149,5 @@ export class PrismaUsersRepository implements UsersRepository {
 const USER_LOOKUP_FIELDS = ['id', 'publicId', 'email', 'username', 'cpf', 'token'] as const
 
 function buildLookupConditions(where: UserWhereUniqueInput): Prisma.UserWhereInput[] {
-  return USER_LOOKUP_FIELDS.filter((field) => where[field] !== undefined).map(
-    (field) => ({ [field]: where[field] }) as Prisma.UserWhereInput,
-  )
+  return USER_LOOKUP_FIELDS.filter((field) => where[field] !== undefined).map((field) => ({ [field]: where[field] }))
 }

@@ -1,11 +1,10 @@
-import crypto from 'crypto'
+import crypto from 'node:crypto'
 import { Redis } from 'ioredis'
 import { logger } from '@lib/logger'
 import { CACHE_LOGS } from 'messages/constants/logs/cache'
 import { CACHE_CONFIG } from 'messages/constants/cache/cache'
 import { Deadline } from 'core/shared/deadline'
 import { Result, ok, err, isErr } from 'core/shared/result'
-import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 import { AppError } from 'errors/app-error'
 import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
@@ -20,7 +19,6 @@ import {
   BrokenCircuitError,
   BulkheadPolicy,
   IPolicy,
-  IDefaultPolicyContext,
 } from 'cockatiel'
 import {
   collectMetricsCacheHits,
@@ -30,6 +28,14 @@ import {
   collectMetricsCacheFetchDuration,
   collectMetricsCacheCircuitBreakerTrips,
 } from '@lib/metrics/cache-metrics'
+import { byCodeUnit } from 'core/shared/stable-order'
+import { CacheFailurePolicy, SerializedError } from './cache-failure-policy'
+
+/** Concurrent shared fetches allowed before the bulkhead starts rejecting. */
+const DEFAULT_MAX_PENDING_FETCHES = 1_000
+
+/** +/- 5 % on every TTL, so a batch written together does not expire together. */
+const DEFAULT_TTL_JITTER_PERCENTAGE = 0.05
 
 /**
  * Circuit-breaker settings for the shared fetch.
@@ -78,15 +84,9 @@ export interface ResilientCacheOptions<E = unknown> {
 export interface CacheEnvelope<T> {
   s: boolean // state: true (Success), false (Failure)
   v?: T // value: Exists only if s=true
-  e?: {
-    // error: Exists only if s=false
-    type: string // Error class name (e.g., 'InvalidCepError')
-    message: string
-    data?: unknown // Additional error data
-  }
+  /** error: Exists only if s=false. See {@link SerializedError}. */
+  e?: SerializedError
 }
-
-type SerializedError = NonNullable<CacheEnvelope<unknown>['e']>
 
 /**
  * One in-flight fetch, shared by every caller asking for the same key.
@@ -116,7 +116,9 @@ function whenExpired(deadline: Deadline): { promise: Promise<void>; cleanup: () 
       return
     }
 
-    onAbort = () => resolve()
+    onAbort = () => {
+      resolve()
+    }
     deadline.signal.addEventListener('abort', onAbort, { once: true })
   })
 
@@ -154,16 +156,19 @@ export class ResilientCache<E = unknown> {
   private readonly JITTER_PERCENTAGE: number
 
   /** Concurrency limit on *shared fetches*, not on callers. */
+  /** What a failure means, whether it is worth caching, and for how long. */
+  private readonly failures: CacheFailurePolicy<E>
   private readonly limiter: BulkheadPolicy
-  private readonly fetchPolicy: IPolicy<IDefaultPolicyContext, never>
+  private readonly fetchPolicy: IPolicy
 
   constructor(
     private readonly redis: Redis,
     private readonly options: ResilientCacheOptions<E>,
   ) {
-    this.MAX_PENDING = options.maxPendingFetches ?? 1_000
+    this.failures = new CacheFailurePolicy<E>(options)
+    this.MAX_PENDING = options.maxPendingFetches ?? DEFAULT_MAX_PENDING_FETCHES
     this.FETCH_TIMEOUT = options.fetchTimeoutMs
-    this.JITTER_PERCENTAGE = options.ttlJitterPercentage ?? 0.05
+    this.JITTER_PERCENTAGE = options.ttlJitterPercentage ?? DEFAULT_TTL_JITTER_PERCENTAGE
 
     this.limiter = bulkhead(this.MAX_PENDING)
     this.fetchPolicy = this.composeFetchPolicy()
@@ -180,7 +185,7 @@ export class ResilientCache<E = unknown> {
    * pipeline. A bulkhead rejection cannot trip it either: cockatiel rethrows
    * errors its filter does not handle, so they never reach the breaker's tally.
    */
-  private composeFetchPolicy(): IPolicy<IDefaultPolicyContext, never> {
+  private composeFetchPolicy(): IPolicy {
     const settings = this.options.circuitBreaker
 
     if (!settings) {
@@ -203,13 +208,13 @@ export class ResilientCache<E = unknown> {
   }
 
   private countsAsBreakerFailure(result: Result<unknown, E>): boolean {
-    return isErr(result) && this.isRetryable(result.error)
+    return isErr(result) && this.failures.isRetryable(result.error)
   }
 
   generateKey(params: Record<string, unknown>): string {
     const stableString = Object.keys(params)
-      .filter((k) => params[k] !== undefined && params[k] !== null && params[k] !== '')
-      .sort()
+      .filter((k) => params[k] != null && params[k] !== '')
+      .sort(byCodeUnit)
       .map((k) => `${k}:${String(params[k])}`)
       .join('|')
 
@@ -299,7 +304,7 @@ export class ResilientCache<E = unknown> {
     const fetchDeadline = Deadline.in(this.FETCH_TIMEOUT)
     const shared = this.guardedFetch<T>(key, fetcher, fetchDeadline)
 
-    this.pendingFetches.set(key, { promise: shared as Promise<Result<unknown, unknown>>, deadline: fetchDeadline })
+    this.pendingFetches.set(key, { promise: shared, deadline: fetchDeadline })
     this.reportPendingSize()
 
     void shared
@@ -454,10 +459,14 @@ export class ResilientCache<E = unknown> {
 
     try {
       return JSON.parse(cached) as CacheEnvelope<T>
-    } catch (err) {
+    } catch (error) {
+      // Named `error`, not `err`: this module imports `err` from
+      // core/shared/result, and a `catch (err)` shadows it — a later
+      // `return err(...)` inside one of these blocks would call the caught
+      // Error object instead of the Result constructor.
       // Corrupted payload — proceed to fetch
       collectMetricsCacheErrors?.inc({ prefix: this.options.prefix, error_type: 'corrupted' })
-      logger.warn({ err, key }, CACHE_LOGS.READ_ERROR)
+      logger.warn({ err: error, key }, CACHE_LOGS.READ_ERROR)
       return null
     }
   }
@@ -468,10 +477,10 @@ export class ResilientCache<E = unknown> {
 
     try {
       return await withinBudget(this.redis.get(key), readDeadline)
-    } catch (err) {
+    } catch (error) {
       // Swallow Redis connection errors and proceed to fetch
       collectMetricsCacheErrors?.inc({ prefix: this.options.prefix, error_type: 'read' })
-      logger.warn({ err, key }, CACHE_LOGS.READ_ERROR)
+      logger.warn({ err: error, key }, CACHE_LOGS.READ_ERROR)
       return null
     } finally {
       readDeadline.dispose()
@@ -489,7 +498,7 @@ export class ResilientCache<E = unknown> {
     }
 
     collectMetricsCacheHits?.inc({ prefix: this.options.prefix })
-    return err(this.reconstructError(envelope.e))
+    return err(this.failures.reconstruct(envelope.e))
   }
 
   private unwrapSuccess<T>(key: string, envelope: CacheEnvelope<T>): Result<T, AppError> {
@@ -505,24 +514,13 @@ export class ResilientCache<E = unknown> {
     return ok(envelope.v as T)
   }
 
-  private reconstructError(cached: SerializedError): E | AppError {
-    const deserialized = this.options.deserializeError?.(cached.type, cached.message, cached.data)
-
-    if (deserialized) {
-      return deserialized
-    }
-
-    // Fallback reconstruction
-    return new ProviderFailureError(new Error(`Cached Error: ${cached.type} - ${cached.message}`))
-  }
-
   private async cacheAndReturn<T>(key: string, result: Result<T, E>): Promise<Result<T, E | AppError>> {
     if (isErr(result)) {
       const error = result.error
 
       // Negative Cache (do not cache transient/retryable failures)
-      if (!this.isRetryable(error)) {
-        await this.setResult(key, { s: false, e: this.serializeError(error) }, this.resolveNegativeTtl(error))
+      if (!this.failures.isRetryable(error)) {
+        await this.setResult(key, { s: false, e: this.failures.serialize(error) }, this.failures.negativeTtlFor(error))
       }
 
       return err(error)
@@ -531,47 +529,6 @@ export class ResilientCache<E = unknown> {
     // SUCCESS: Cache as success envelope
     await this.setResult(key, { s: true, v: result.value }, this.options.defaultTtlSeconds)
     return ok(result.value)
-  }
-
-  /**
-   * Whether a failure is too transient to be worth remembering.
-   *
-   * The default answers "anything that is not a deterministic statement about
-   * this key". Only NOT_FOUND ("the resource does not exist") and PERMANENT
-   * ("candidates existed, none qualify") will still be true in an hour. A
-   * RETRYABLE blip, an ABORTED clock event, and — crucially — an untagged
-   * SystemError or InfrastructureError all say something about *us* rather
-   * than about the input, so caching them would pin an unrelated failure to a
-   * perfectly good key for the whole negative TTL.
-   *
-   * Callers may still override via `options.isRetryable`;
-   * {@link isRetryableChurchLookupError} states this same rule explicitly for
-   * the nearest-church cache.
-   */
-  private isRetryable(error: E): boolean {
-    if (this.options.isRetryable) {
-      return this.options.isRetryable(error)
-    }
-
-    const failureMode = (error as { failureMode?: string })?.failureMode
-
-    return failureMode !== FailureMode.NOT_FOUND && failureMode !== FailureMode.PERMANENT
-  }
-
-  private serializeError(error: E): SerializedError {
-    if (this.options.serializeError) {
-      return this.options.serializeError(error)
-    }
-
-    return {
-      type: (error as { constructor?: { name?: string } }).constructor?.name || 'Error',
-      message: (error as { message?: string }).message || String(error),
-      data: error,
-    }
-  }
-
-  private resolveNegativeTtl(error: E): number {
-    return this.options.negativeTtlFor?.(error) ?? this.options.negativeTtlSeconds
   }
 
   private async setResult<T>(key: string, envelope: CacheEnvelope<T>, baseTtl: number): Promise<void> {
@@ -588,13 +545,19 @@ export class ResilientCache<E = unknown> {
 
     try {
       const jitterAmount = Math.floor(baseTtl * this.JITTER_PERCENTAGE)
-      const randomOffset = Math.floor(Math.random() * (jitterAmount * 2 + 1)) - jitterAmount
+      // `crypto.randomInt`, not `Math.random`: same uniform distribution over
+      // the same inclusive range, but it does not put a predictable PRNG on a
+      // path that decides when cache entries expire — an attacker who can
+      // predict the jitter can line requests up with the expiry and walk the
+      // whole cache into a stampede. The cost is irrelevant next to the Redis
+      // round trip this jitter is computed for.
+      const randomOffset = crypto.randomInt(-jitterAmount, jitterAmount + 1)
       const finalTtl = Math.max(1, baseTtl + randomOffset)
 
       await withinBudget(this.redis.set(key, JSON.stringify(envelope), 'EX', finalTtl), writeDeadline)
-    } catch (err) {
+    } catch (error) {
       collectMetricsCacheErrors?.inc({ prefix: this.options.prefix, error_type: 'write' })
-      logger.warn({ err, key }, CACHE_LOGS.WRITE_ERROR)
+      logger.warn({ err: error, key }, CACHE_LOGS.WRITE_ERROR)
     } finally {
       writeDeadline.dispose()
     }

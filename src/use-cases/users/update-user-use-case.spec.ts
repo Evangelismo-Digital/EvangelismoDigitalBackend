@@ -375,3 +375,71 @@ describe('Update Use Case', () => {
     }
   })
 })
+
+/**
+ * The uniqueness pre-check only queries fields the caller actually supplied.
+ *
+ * A caller spreading a partial DTO produces `{ email: undefined }` rather than
+ * `{}`, and `Object.entries` reports that key. Without the filter, the use-case
+ * asks the repository "is any user's email equal to undefined?" — a query that
+ * on a real repository matches nothing, and on a double could match the first
+ * user with a null email and reject a legitimate rename.
+ *
+ * Mutation testing found this filter unguarded: removing it, or replacing its
+ * predicate with `true`, left the whole suite green.
+ */
+describe('Update Use Case — fields the caller did not supply', () => {
+  async function seedUser() {
+    const usersRepository = new InMemoryUsersRepository()
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
+
+    const registerResult = await registerUseCase.execute({
+      name: 'John Doe',
+      email: `johndoe${Date.now()}@gmail.com`,
+      cpf: cpfValidator.generate(),
+      password: 'Teste123!!',
+      username: `johndoe${Date.now()}`,
+      role: UserRole.DEFAULT,
+    })
+
+    expect(isOk(registerResult)).toBe(true)
+    const user = (registerResult as any).value.user
+
+    return { usersRepository, user }
+  }
+
+  it('does not query for a field passed explicitly as undefined', async () => {
+    const { usersRepository, user } = await seedUser()
+    const findBySpy = vi.spyOn(usersRepository, 'findBy')
+    const updateUserUseCase = new UpdateUserUseCase(usersRepository)
+
+    const result = await updateUserUseCase.execute({
+      publicId: user.publicId,
+      name: 'John Doe Updated',
+      email: undefined,
+      username: undefined,
+    })
+
+    expect(isOk(result)).toBe(true)
+
+    // Exactly one lookup: the publicId one that loads the user being updated.
+    // Any `email`/`username` lookup here means the filter let undefined through.
+    const lookedUpFields = findBySpy.mock.calls.map(([where]) => Object.keys(where ?? {}).join(','))
+    expect(lookedUpFields).toEqual(['publicId'])
+  })
+
+  it('still queries for a field the caller did supply', async () => {
+    // Counterweight: the filter must not have been tightened into a wall.
+    const { usersRepository, user } = await seedUser()
+    const findBySpy = vi.spyOn(usersRepository, 'findBy')
+    const updateUserUseCase = new UpdateUserUseCase(usersRepository)
+
+    await updateUserUseCase.execute({
+      publicId: user.publicId,
+      email: `renamed${Date.now()}@gmail.com`,
+    })
+
+    const lookedUpFields = findBySpy.mock.calls.map(([where]) => Object.keys(where ?? {}).join(','))
+    expect(lookedUpFields).toContain('email')
+  })
+})

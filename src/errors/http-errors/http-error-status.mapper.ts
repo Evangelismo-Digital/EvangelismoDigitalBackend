@@ -1,18 +1,24 @@
 import { ErrorType } from 'core/types/error-type/error-type'
+import { safeLookup } from 'core/shared/safe-lookup'
+import { HTTP_STATUS } from '@http/http-status'
 
 const STATUS_MAP: Record<ErrorType, number> = {
-  [ErrorType.OK]: 200,
-  [ErrorType.BAD_REQUEST]: 400,
-  [ErrorType.UNAUTHORIZED]: 401,
-  [ErrorType.FORBIDDEN]: 403,
-  [ErrorType.NOT_FOUND]: 404,
-  [ErrorType.CONFLICT]: 409,
-  [ErrorType.UNPROCESSABLE_ENTITY]: 422,
-  [ErrorType.INTERNAL_SERVER_ERROR]: 500,
-  [ErrorType.TOO_MANY_REQUESTS]: 429,
-  [ErrorType.SERVICE_UNAVAILABLE]: 503,
+  [ErrorType.OK]: HTTP_STATUS.OK,
+  [ErrorType.BAD_REQUEST]: HTTP_STATUS.BAD_REQUEST,
+  [ErrorType.UNAUTHORIZED]: HTTP_STATUS.UNAUTHORIZED,
+  [ErrorType.FORBIDDEN]: HTTP_STATUS.FORBIDDEN,
+  [ErrorType.NOT_FOUND]: HTTP_STATUS.NOT_FOUND,
+  [ErrorType.CONFLICT]: HTTP_STATUS.CONFLICT,
+  [ErrorType.UNPROCESSABLE_ENTITY]: HTTP_STATUS.UNPROCESSABLE_ENTITY,
+  [ErrorType.INTERNAL_SERVER_ERROR]: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+  [ErrorType.TOO_MANY_REQUESTS]: HTTP_STATUS.TOO_MANY_REQUESTS,
+  [ErrorType.SERVICE_UNAVAILABLE]: HTTP_STATUS.SERVICE_UNAVAILABLE,
 }
 
 export function toHttpStatus(type: ErrorType): number {
-  return STATUS_MAP[type] ?? 500
+  // `?? 500` looks like it covers the unknown case and does not: an error
+  // rebuilt from a cache envelope can carry any string as its `type`, and
+  // `STATUS_MAP['constructor']` returns a function — non-null, so the fallback
+  // never fires and `reply.code(fn)` throws inside the error handler itself.
+  return safeLookup(STATUS_MAP, type) ?? HTTP_STATUS.INTERNAL_SERVER_ERROR
 }

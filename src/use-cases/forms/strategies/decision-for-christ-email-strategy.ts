@@ -7,21 +7,22 @@ import { decisionForChristStaffTextTemplate } from '@templates/decision-for-chri
 import { decisionForChristStaffHtmlTemplate } from '@templates/decision-for-christ-staff/decision-for-christ-staff-html'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 import { IMailJobData } from 'core/contracts/lib/queue/mail-job-data.interface'
-import { Result, ok, err, isErr } from 'core/shared/result'
+import { Result, ok, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { InvalidFormPayloadError } from '@use-cases/errors/forms/invalid-form-payload-error'
 import { env } from '@env/index'
+import {
+  optionalIpAddress,
+  optionalStringField,
+  requireStringField,
+  requireSubmitterIdentity,
+} from './form-payload-fields'
 
 export class DecisionForChristEmailStrategy implements IFormEmailStrategy {
   buildUserEmail(form: FormPayload): Result<IMailJobData, AppError> {
-    const emailResult = this.getStringField(form.email, 'form.email')
-    if (isErr(emailResult)) return emailResult
+    const identityResult = requireSubmitterIdentity(form)
+    if (isErr(identityResult)) return identityResult
 
-    const nameResult = this.getStringField(form.name, 'form.name')
-    if (isErr(nameResult)) return nameResult
-
-    const email = emailResult.value
-    const name = nameResult.value
+    const { email, name } = identityResult.value
 
     return ok({
       to: email,
@@ -33,23 +34,21 @@ export class DecisionForChristEmailStrategy implements IFormEmailStrategy {
   }
 
   buildStaffEmail(form: FormPayload): Result<IMailJobData, AppError> {
-    const emailResult = this.getStringField(form.email, 'form.email')
-    if (isErr(emailResult)) return emailResult
+    const identityResult = requireSubmitterIdentity(form)
+    if (isErr(identityResult)) return identityResult
 
-    const nameResult = this.getStringField(form.name, 'form.name')
-    if (isErr(nameResult)) return nameResult
-
-    const lastNameResult = this.getStringField(form.lastName, 'form.lastName')
+    // Required here, unlike the contact form: the staff notification for a
+    // decision names the person in full.
+    const lastNameResult = requireStringField(form.lastName, 'form.lastName')
     if (isErr(lastNameResult)) return lastNameResult
 
-    const locationResult = this.getOptionalStringField(form.location, 'form.location')
+    const locationResult = optionalStringField(form.location, 'form.location')
     if (isErr(locationResult)) return locationResult
 
-    const email = emailResult.value
-    const name = nameResult.value
+    const { email, name } = identityResult.value
     const lastName = lastNameResult.value
     const location = locationResult.value
-    const ipAddress = typeof form.ipAddress === 'string' ? form.ipAddress : undefined
+    const ipAddress = optionalIpAddress(form)
 
     return ok({
       to: env.ADMIN_EMAIL,
@@ -58,19 +57,5 @@ export class DecisionForChristEmailStrategy implements IFormEmailStrategy {
       html: decisionForChristStaffHtmlTemplate(name, lastName, email, location, ipAddress),
       context: { type: 'decision-for-Christ', recipient: 'internal' },
     })
-  }
-
-  private getStringField(value: unknown, fieldName: string): Result<string, AppError> {
-    if (typeof value === 'string') {
-      return ok(value)
-    }
-    return err(new InvalidFormPayloadError(fieldName))
-  }
-
-  private getOptionalStringField(value: unknown, fieldName: string): Result<string, AppError> {
-    if (value === undefined || typeof value === 'string') {
-      return ok((value as string) || '')
-    }
-    return err(new InvalidFormPayloadError(fieldName))
   }
 }

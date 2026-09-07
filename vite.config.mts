@@ -12,6 +12,32 @@ export default defineConfig(({ mode }) => {
       dir: 'src',
       environment: 'node',
       env: env,
+      coverage: {
+        provider: 'v8',
+        reportsDirectory: 'coverage',
+        // `lcov` is what SonarQube reads (scripts/sonar.sh); the JSON reporters
+        // are what scripts/ci-local.sh and the CI summary read. Listing them
+        // here rather than only on the command line means a plain
+        // `npm run test:coverage` produces a report Sonar can ingest too.
+        reporter: ['text', 'json', 'json-summary', 'lcov'],
+        // Coverage of a file nobody imported is 0 %, and that is the honest
+        // number: without this a module that lost its last test silently drops
+        // out of the denominator instead of showing up as uncovered.
+        all: true,
+        include: ['src/**/*.ts'],
+        exclude: [
+          'src/**/*.spec.ts',
+          'src/**/*.spec.mts',
+          'src/**/*.contract.ts',
+          'src/generated/**',
+          'src/load-test/**',
+          'src/@types/**',
+          // Type-only modules compile to nothing, so V8 reports them as 0 %
+          // of 0 lines and they distort the average without carrying logic.
+          'src/core/contracts/**',
+          'src/core/types/**',
+        ],
+      },
       projects: [
         {
           extends: true,
@@ -152,6 +178,12 @@ export default defineConfig(({ mode }) => {
             name: 'unit-repositories',
             dir: 'src/repositories',
             include: ['**/*.spec.ts'],
+            // Without this, `prisma-churches-repository.integration.spec.ts` is
+            // collected here — a "unit" project that needs Docker Postgres, and
+            // the reason `npm run test:unit:all` (which the pre-commit hook runs
+            // and documents as Docker-free) failed the moment the DB container
+            // stopped. Its own `integration` project still runs it.
+            exclude: ['**/*.integration.spec.ts'],
           },
         },
         {
@@ -217,6 +249,27 @@ export default defineConfig(({ mode }) => {
             dir: 'src/lib/infra/cache',
             include: ['**/*.redis-integration.spec.ts'],
             // One shared Redis keyspace; parallel files would collide.
+            fileParallelism: false,
+            hookTimeout: 30_000,
+            testTimeout: 20_000,
+          },
+        },
+        {
+          extends: true,
+          test: {
+            // Postgres-only integration suite for the repositories. Split out of
+            // `unit-repositories` — where it had been running as if it were a
+            // unit test — but kept in the CI allowlist, because dropping it there
+            // would have traded real coverage of the PostGIS queries for local
+            // ergonomics. Cheap enough for CI for the same reason
+            // `integration-cache` is: no Redis, no BullMQ singletons, no HTTP.
+            // Listed in BOTH the ci.yml and scripts/ci-local.sh allowlists —
+            // keep them in lockstep.
+            name: 'integration-repositories',
+            dir: 'src/repositories',
+            include: ['**/*.integration.spec.ts'],
+            environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
+            // One shared schema; parallel files would truncate each other.
             fileParallelism: false,
             hookTimeout: 30_000,
             testTimeout: 20_000,

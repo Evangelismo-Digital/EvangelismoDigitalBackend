@@ -12,7 +12,7 @@ interface FindChurchPublicIdByNameUseCaseResponse {
 }
 
 export class FindChurchPublicIdByNameUseCase {
-  constructor(private churchesRepository: ChurchesRepository) {}
+  constructor(private readonly churchesRepository: ChurchesRepository) {}
 
   async execute({
     name,

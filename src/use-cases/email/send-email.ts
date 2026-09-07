@@ -1,5 +1,5 @@
 import { Attachment } from 'nodemailer/lib/mailer'
-import { SentMessageInfo } from 'nodemailer'
+import type { SentMessageInfo } from 'core/contracts/lib/mail/mail-sender.interface'
 import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { SmtpDispatchError } from '@lib/errors/queue/smtp-dispatch-error'

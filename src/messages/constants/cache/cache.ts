@@ -1,3 +1,8 @@
+import { DAYS_PER_WEEK, SECONDS_PER_DAY, SECONDS_PER_MINUTE } from 'core/constants/time'
+
+/** Half an hour — short because it depends on our own database, not an API. */
+const PERMANENT_TTL_MINUTES = 30
+const NEGATIVE_TTL_MINUTES = 30
 export const CACHE_CONFIG = {
   /**
    * Ceiling for a single Redis round-trip inside a cached lookup.
@@ -16,7 +21,7 @@ export const CACHE_CONFIG = {
    */
   NEAREST_CHURCHES: {
     PREFIX: 'cache:nearest-churches:',
-    DEFAULT_TTL_SECONDS: 60 * 60 * 24 * 7, // 7 days
+    DEFAULT_TTL_SECONDS: SECONDS_PER_DAY * DAYS_PER_WEEK,
 
     /**
      * The CEP could not be resolved to coordinates (NOT_FOUND). This is the
@@ -25,17 +30,17 @@ export const CACHE_CONFIG = {
      * a CEP that does not exist. A nonexistent CEP stays nonexistent, so this
      * is deliberately long; a day still lets a newly registered CEP through.
      */
-    NOT_FOUND_TTL_SECONDS: 60 * 60 * 24, // 24 hours
+    NOT_FOUND_TTL_SECONDS: SECONDS_PER_DAY,
 
     /**
      * Coordinates resolved fine, but no church qualifies (PERMANENT). This
      * depends on our own database rather than a third-party API, so it is kept
      * short: a newly registered church shows up within half an hour.
      */
-    PERMANENT_TTL_SECONDS: 60 * 30, // 30 min
+    PERMANENT_TTL_SECONDS: SECONDS_PER_MINUTE * PERMANENT_TTL_MINUTES,
 
     /** Fallback for any other cacheable failure. */
-    NEGATIVE_TTL_SECONDS: 60 * 30, // 30 min
+    NEGATIVE_TTL_SECONDS: SECONDS_PER_MINUTE * NEGATIVE_TTL_MINUTES,
 
     MAX_PENDING_FETCHES: 500,
 

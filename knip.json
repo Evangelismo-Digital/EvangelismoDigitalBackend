@@ -1,7 +1,16 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["prisma/vitest-environment-prisma/*.ts"],
-  "project": ["src/**/*.ts"],
-  "ignore": ["src/load-test/**"],
-  "ignoreDependencies": ["pino-pretty"]
+  "entry": [
+    "prisma/vitest-environment-prisma/*.ts"
+  ],
+  "project": [
+    "src/**/*.ts"
+  ],
+  "ignore": [
+    "src/load-test/**"
+  ],
+  "ignoreDependencies": [
+    "pino-pretty",
+    "snyk"
+  ]
 }

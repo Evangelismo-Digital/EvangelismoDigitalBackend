@@ -1,0 +1,96 @@
+# SonarQube — static analysis server (Layer 4b of the quality gauntlet).
+#
+# Deliberately a SEPARATE compose file and project from docker-compose.yml: the
+# app stack is torn up and down by the e2e suite and by scripts/ci-local.sh,
+# while SonarQube is expensive to start (Elasticsearch) and holds the issue
+# history that makes "new code" conditions meaningful. Mixing them would either
+# wipe that history or make every test run wait ~60 s for Elasticsearch.
+#
+# Start with: npm run sonar:up   (scripts/sonar.sh handles bootstrap + scan)
+name: evangelismo-sonar
+
+services:
+  sonar-db:
+    image: postgres:16-alpine
+    container_name: evangelismo_sonar_db
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar
+      POSTGRES_DB: sonar
+    volumes:
+      - sonar_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sonar -d sonar']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sonar-network
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  sonarqube:
+    image: sonarqube:26.9.0.129388-community
+    container_name: evangelismo_sonarqube
+    depends_on:
+      sonar-db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonar-db:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar
+      # Local analysis only — the instance is not reachable from outside this
+      # machine, and telemetry would phone home on every scan.
+      SONAR_TELEMETRY_ENABLE: 'false'
+      # Elasticsearch and the web server both default to 512 MB heaps that are
+      # generous for a 13 kLOC project; capping them keeps the stack inside a
+      # developer laptop's memory alongside Postgres, Redis and the test suite.
+      SONAR_WEB_JAVAOPTS: '-Xmx768m -Xms256m'
+      SONAR_CE_JAVAOPTS: '-Xmx768m -Xms256m'
+      SONAR_SEARCH_JAVAOPTS: '-Xmx768m -Xms768m'
+    ports:
+      - '9000:9000'
+    volumes:
+      - sonar_data:/opt/sonarqube/data
+      - sonar_logs:/opt/sonarqube/logs
+      - sonar_extensions:/opt/sonarqube/extensions
+    # Elasticsearch mmaps its indices and needs a high map count; WSL2 and most
+    # Linux hosts already provide it, so this is asserted rather than set (the
+    # container cannot raise it itself without --privileged).
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      # /api/system/status returns UP only once the web server AND the compute
+      # engine are ready; a plain TCP check would let a scan start too early.
+      test:
+        [
+          'CMD-SHELL',
+          'wget --no-verbose --tries=1 --spider -o /dev/null http://localhost:9000/api/system/status && wget -qO- http://localhost:9000/api/system/status | grep -q ''"status":"UP"''',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    networks:
+      - sonar-network
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+volumes:
+  sonar_db_data:
+  sonar_data:
+  sonar_logs:
+  sonar_extensions:
+
+networks:
+  sonar-network:
+    driver: bridge
+    name: evangelismo-sonar-network

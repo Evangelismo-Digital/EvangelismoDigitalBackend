@@ -1,4 +1,5 @@
 import { AppError } from './app-error'
+import { safeLookup } from 'core/shared/safe-lookup'
 import { InfrastructureError } from './infrastructure-error'
 import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
@@ -34,7 +35,7 @@ function readProvider(data: SerializedErrorData | undefined): string | undefined
 
 export const AppErrorRegistry: Record<string, (message: string, data?: SerializedErrorData) => AppError> = {
   InvalidCepError: (msg) => {
-    const cep = msg.match(/\b\d{8}\b/)?.[0] || msg.match(/\d{8}/)?.[0]
+    const cep = /\b\d{8}\b/.exec(msg)?.[0] || /\d{8}/.exec(msg)?.[0]
     return new InvalidCepError(cep)
   },
 
@@ -45,7 +46,7 @@ export const AppErrorRegistry: Record<string, (message: string, data?: Serialize
   EmptyChurchListError: () => new EmptyChurchListError(),
 
   CepToLatLonError: (msg) => {
-    const cep = msg.match(/\d+/)?.[0] || ''
+    const cep = /\d+/.exec(msg)?.[0] || ''
     return new CepToLatLonError(cep)
   },
 
@@ -60,11 +61,11 @@ export const AppErrorRegistry: Record<string, (message: string, data?: Serialize
 
   DeadlineExceededError: (msg) => new DeadlineExceededError(msg),
 
-  CircuitOpenError: (msg, data) => {
+  CircuitOpenError: (_msg, data) => {
     return new CircuitOpenError(readProvider(data) || UNKNOWN_PROVIDER)
   },
 
-  ProviderFailureError: (msg, data) => new ProviderFailureError(data?.originalError),
+  ProviderFailureError: (_msg, data) => new ProviderFailureError(data?.originalError),
 }
 
 export function serializeAppError(err: AppError): { type: string; message: string; data?: unknown } {
@@ -85,7 +86,10 @@ class UnknownDeserializationError extends InfrastructureError {
 }
 
 export function deserializeAppError(type: string, message: string, data?: unknown): AppError {
-  const factory = AppErrorRegistry[type]
+  // `type` arrives from a JSON envelope read back out of Redis, so it is
+  // untrusted input; a plain `AppErrorRegistry[type]` would answer
+  // `type === 'constructor'` with `Object` and then call it.
+  const factory = safeLookup(AppErrorRegistry, type)
   if (factory) {
     try {
       return factory(message, data as SerializedErrorData)

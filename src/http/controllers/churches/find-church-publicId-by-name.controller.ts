@@ -3,6 +3,7 @@ import { makeFindChurchPublicIdByNameUseCase } from '@use-cases/factories/make-f
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
+import { HTTP_STATUS } from '@http/http-status'
 
 export async function findChurchPublicIdByName(request: FastifyRequest, reply: FastifyReply) {
   const { name } = findChurchByNameSchema.parse(request.body)
@@ -15,5 +16,5 @@ export async function findChurchPublicIdByName(request: FastifyRequest, reply: F
     return HttpErrorMapper.map(result.error, reply)
   }
 
-  return reply.code(200).send({ publicId: result.value.publicId })
+  return reply.code(HTTP_STATUS.OK).send({ publicId: result.value.publicId })
 }

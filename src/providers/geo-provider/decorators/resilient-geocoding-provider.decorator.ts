@@ -5,10 +5,9 @@ import {
 } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IRawGeocodingProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
 import { Deadline } from 'core/shared/deadline'
-import { Result, isErr } from 'core/shared/result'
+import { Result } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { runWithRetries } from 'providers/helpers/deadline-retry'
-import { checkAdmission } from 'providers/helpers/provider-admission'
+import { runGuardedAttempt } from 'providers/helpers/guarded-attempt'
 import Redis from 'ioredis'
 
 export class ResilientGeocodingProviderDecorator implements IGeocodingProvider {
@@ -23,7 +22,7 @@ export class ResilientGeocodingProviderDecorator implements IGeocodingProvider {
 
   async search(query: string, deadline: Deadline = Deadline.none()): Promise<Result<IGeoCoordinates | null, AppError>> {
     return await this.executeResiliently(
-      (attempt) => this.rawProvider.searchRaw(query, attempt.signal),
+      async (attempt) => await this.rawProvider.searchRaw(query, attempt.signal),
       { query },
       deadline,
     )
@@ -34,34 +33,22 @@ export class ResilientGeocodingProviderDecorator implements IGeocodingProvider {
     deadline: Deadline = Deadline.none(),
   ): Promise<Result<IGeoCoordinates | null, AppError>> {
     return await this.executeResiliently(
-      (attempt) => this.rawProvider.searchStructuredRaw(options, attempt.signal),
+      async (attempt) => await this.rawProvider.searchStructuredRaw(options, attempt.signal),
       { options },
       deadline,
     )
   }
 
+  // No `metricsLayer`: ResilientGeoProvider records them while walking the chain.
   private async executeResiliently(
     action: (attemptDeadline: Deadline) => Promise<IGeoCoordinates | null>,
     logContext: Record<string, unknown>,
     deadline: Deadline,
   ): Promise<Result<IGeoCoordinates | null, AppError>> {
-    const admission = await checkAdmission({
-      deadline,
-      providerName: this.providerName,
-      rateLimitConfig: this.rawProvider.rateLimitConfig,
+    return await runGuardedAttempt({
+      rawProvider: this.rawProvider,
       redis: this.redisRateLimiterConnection,
-    })
-
-    if (isErr(admission)) {
-      return admission
-    }
-
-    return await runWithRetries({
       deadline,
-      providerName: this.providerName,
-      maxAttempts: this.rawProvider.maxRetries,
-      backoffMs: this.rawProvider.backoffMs,
-      attemptTimeoutMs: this.rawProvider.timeoutMs,
       logContext,
       action,
     })

@@ -5,6 +5,7 @@ import { logger } from '@lib/logger'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { AUTH_CONSTANTS } from 'messages/constants/auth/auth'
+import { HTTP_STATUS } from '@http/http-status'
 
 export async function resetPassword(request: FastifyRequest, reply: FastifyReply) {
   const { password, token } = resetPasswordSchema.parse(request.body)
@@ -21,5 +22,5 @@ export async function resetPassword(request: FastifyRequest, reply: FastifyReply
 
   logger.info({ userId: user.publicId }, AUTH_CONSTANTS.PASSWORD_CHANGED_SUCCESS)
 
-  return reply.code(200).send({ message: AUTH_CONSTANTS.PASSWORD_CHANGED_SUCCESS })
+  return reply.code(HTTP_STATUS.OK).send({ message: AUTH_CONSTANTS.PASSWORD_CHANGED_SUCCESS })
 }

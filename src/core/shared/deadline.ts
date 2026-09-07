@@ -83,14 +83,18 @@ export class Deadline {
 
     const controller = new AbortController()
     const delay = Math.min(Math.max(0, expiresAt - Date.now()), MAX_TIMER_DELAY_MS)
-    const timer = setTimeout(() => controller.abort(DEADLINE_EXPIRED_REASON), delay)
+    const timer = setTimeout(() => {
+      controller.abort(DEADLINE_EXPIRED_REASON)
+    }, delay)
 
     // Never let a pending budget be the reason the process stays alive.
     timer.unref()
 
     const signal = linkedTo ? AbortSignal.any([controller.signal, linkedTo]) : controller.signal
 
-    return new Deadline(expiresAt, signal, () => clearTimeout(timer))
+    return new Deadline(expiresAt, signal, () => {
+      clearTimeout(timer)
+    })
   }
 
   /** Milliseconds left, floored at 0. `Infinity` for an unbounded deadline. */

@@ -5,6 +5,7 @@ import { logger } from '@lib/logger'
 import { OutboxSignal } from '@lib/infra/events/outbox-signal'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
+import { HTTP_STATUS } from '@http/http-status'
 
 export async function formSubmission(request: FastifyRequest, reply: FastifyReply) {
   // 1. Validação de Entrada (Zod)
@@ -32,7 +33,7 @@ export async function formSubmission(request: FastifyRequest, reply: FastifyRepl
 
   logger.info({ sanitizedFormSubmission }, 'Formulário recebido com sucesso')
 
-  return reply.code(201).send({
+  return reply.code(HTTP_STATUS.CREATED).send({
     sanitizedFormSubmission,
   })
 }

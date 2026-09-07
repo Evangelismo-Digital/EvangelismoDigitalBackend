@@ -1,6 +1,7 @@
 // src/lib/redis/helper/resilient-cache.spec.ts
 
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
+import crypto from 'node:crypto'
 
 // 1. Mock environment variables FIRST
 vi.mock('@lib/env', () => ({
@@ -716,22 +717,29 @@ describe('ResilientCache Unit Tests', () => {
     })
 
     it('hands the fetcher a live budget of its own', async () => {
+      // Liveness is sampled *inside* the fetcher, at the instant the budget is
+      // handed over — that is the claim. Reading `seen.expired` after the call
+      // returned would instead measure how long the assertions took to reach,
+      // and fail on a loaded machine rather than on logic.
       const controller = new AbortController()
+      const cache = new ResilientCache<AppError | null>(redisClient, { ...defaultOptions, fetchTimeoutMs: 5_000 })
       mockRedisGet.mockResolvedValue(null)
       mockRedisSet.mockResolvedValue('OK')
 
       let seen: Deadline | undefined
-      await resilientCache.getOrFetch(
+      let liveOnHandover: boolean | undefined
+      await cache.getOrFetch(
         'k',
         async (deadline: Deadline) => {
           seen = deadline
+          liveOnHandover = !deadline.expired
           return ok('fine')
         },
         Deadline.in(Infinity, { linkedTo: controller.signal }),
       )
 
       expect(seen).toBeInstanceOf(Deadline)
-      expect(seen?.expired).toBe(false)
+      expect(liveOnHandover).toBe(true)
     })
   })
 
@@ -1397,8 +1405,15 @@ describe('ResilientCache Unit Tests', () => {
   })
 
   describe('TTL jitter maths', () => {
-    async function ttlWithRandom(random: number, baseTtl: number, jitter: number) {
-      const spy = vi.spyOn(Math, 'random').mockReturnValue(random)
+    /**
+     * The offset is stubbed directly rather than through the generator's
+     * internals: the contract is "an integer uniformly drawn from
+     * [-amount, +amount], added to the base TTL and clamped at 1", and a test
+     * that reconstructed the arithmetic would pass just as happily against a
+     * generator asked for the wrong range.
+     */
+    async function ttlWithOffset(offset: number, baseTtl: number, jitter: number) {
+      const spy = vi.spyOn(crypto, 'randomInt').mockReturnValue(offset as never)
       try {
         const cache = new ResilientCache<AppError | null>(redisClient, {
           ...defaultOptions,
@@ -1408,34 +1423,59 @@ describe('ResilientCache Unit Tests', () => {
         mockRedisGet.mockResolvedValue(null)
         mockRedisSet.mockResolvedValue('OK')
         await cache.getOrFetch('k', async () => ok('v'))
-        return mockRedisSet.mock.calls.at(-1)?.[3] as number
+        // The calls are copied out here, not read from `spy` by the caller:
+        // `finally` runs mockRestore() before the caller sees the result, and
+        // that wipes the recorded calls.
+        return {
+          ttl: mockRedisSet.mock.calls.at(-1)?.[3] as number,
+          randomIntCalls: spy.mock.calls.map((call) => [...call]),
+        }
       } finally {
         spy.mockRestore()
       }
     }
 
+    it('draws the offset from the inclusive range [-amount, +amount]', async () => {
+      // base 1000, jitter 10% -> amount 100. randomInt's upper bound is
+      // exclusive, so +100 is only reachable if the call asks for 101.
+      const { randomIntCalls } = await ttlWithOffset(0, 1000, 0.1)
+
+      expect(randomIntCalls).toEqual([[-100, 101]])
+    })
+
     it('subtracts the full jitter at the bottom of the range', async () => {
-      // base 1000, jitter 10% -> amount 100; random 0 -> offset -100
-      expect(await ttlWithRandom(0, 1000, 0.1)).toBe(900)
+      expect((await ttlWithOffset(-100, 1000, 0.1)).ttl).toBe(900)
     })
 
     it('lands on the base TTL in the middle of the range', async () => {
-      // random 0.5 -> floor(0.5 * 201) = 100 -> offset 0
-      expect(await ttlWithRandom(0.5, 1000, 0.1)).toBe(1000)
+      expect((await ttlWithOffset(0, 1000, 0.1)).ttl).toBe(1000)
     })
 
     it('adds the full jitter at the top of the range', async () => {
-      // random ~1 -> floor(0.999 * 201) = 200 -> offset +100
-      expect(await ttlWithRandom(0.999, 1000, 0.1)).toBe(1100)
+      expect((await ttlWithOffset(100, 1000, 0.1)).ttl).toBe(1100)
     })
 
     it('writes the exact base TTL when jitter is disabled', async () => {
-      expect(await ttlWithRandom(0.999, 1000, 0)).toBe(1000)
+      expect((await ttlWithOffset(0, 1000, 0)).ttl).toBe(1000)
     })
 
     it('clamps to at least one second when jitter would drive the TTL to zero', async () => {
-      // base 1, jitter 200% -> amount 2; random 0 -> offset -2 -> clamped to 1
-      expect(await ttlWithRandom(0, 1, 2)).toBe(1)
+      // base 1, jitter 200% -> amount 2; offset -2 would give -1 seconds, and
+      // Redis rejects a non-positive EX.
+      expect((await ttlWithOffset(-2, 1, 2)).ttl).toBe(1)
+    })
+
+    it('uses a cryptographic generator rather than Math.random', async () => {
+      // The security finding this replaced (S2245): a predictable expiry lets
+      // an attacker line requests up with it and force a stampede.
+      const mathRandom = vi.spyOn(Math, 'random')
+      try {
+        await ttlWithOffset(0, 1000, 0.1)
+
+        expect(mathRandom).not.toHaveBeenCalled()
+      } finally {
+        mathRandom.mockRestore()
+      }
     })
   })
 
@@ -1695,6 +1735,11 @@ describe('ResilientCache Unit Tests', () => {
       mockRedisGet.mockResolvedValue(null)
       mockRedisSet.mockResolvedValue('OK')
 
+      // A 5 s shared budget, not the 100 ms default: this test is about who owns
+      // the in-flight promise, and the fetcher is released by hand. On the default
+      // budget the shared deadline expires on wall-clock time under load and the
+      // second caller fails for a reason the test is not asking about.
+      const cache = new ResilientCache<AppError | null>(redisClient, { ...defaultOptions, fetchTimeoutMs: 5_000 })
       const firstCaller = new AbortController()
       let release: (value: Result<string, AppError>) => void = () => {}
       const fetcher = vi.fn(
@@ -1704,9 +1749,9 @@ describe('ResilientCache Unit Tests', () => {
           }),
       )
 
-      const first = resilientCache.getOrFetch('k', fetcher, Deadline.in(Infinity, { linkedTo: firstCaller.signal }))
+      const first = cache.getOrFetch('k', fetcher, Deadline.in(Infinity, { linkedTo: firstCaller.signal }))
       await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce())
-      const second = resilientCache.getOrFetch('k', fetcher, Deadline.in(30_000))
+      const second = cache.getOrFetch('k', fetcher, Deadline.in(30_000))
 
       firstCaller.abort('first caller went away')
       release(ok('answer'))

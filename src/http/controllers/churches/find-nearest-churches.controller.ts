@@ -4,6 +4,7 @@ import { makeFindNearestChurchesUseCase } from '@use-cases/factories/make-find-n
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
+import { HTTP_STATUS } from '@http/http-status'
 
 export async function findNearestChurches(
   request: FastifyRequest<{ Querystring: { cep: string } }>,
@@ -31,5 +32,5 @@ export async function findNearestChurches(
     nearestChurchesInfo: response.nearestChurchesInfo,
   })
 
-  return reply.code(200).send(response)
+  return reply.code(HTTP_STATUS.OK).send(response)
 }

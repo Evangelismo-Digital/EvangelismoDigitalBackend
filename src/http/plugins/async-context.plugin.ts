@@ -3,8 +3,8 @@ import { FastifyPluginAsync } from 'fastify'
 import fp from 'fastify-plugin'
 
 const asyncContextPlugin: FastifyPluginAsync = async (app) => {
-  app.addHook('onRequest', (request, reply, done) => {
-    const requestId = request.id as string
+  app.addHook('onRequest', (request, _reply, done) => {
+    const requestId = request.id
 
     const requestInfo = {
       host: request.host,

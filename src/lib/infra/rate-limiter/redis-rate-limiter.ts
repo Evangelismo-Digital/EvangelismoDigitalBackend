@@ -3,6 +3,8 @@ import { RateLimiterRedis } from 'rate-limiter-flexible' // Lib utilizada para i
 import { logger } from '@lib/logger'
 import { REDIS_CONSTANTS } from 'messages/constants/redis/redis'
 import { RATE_LIMITER_LOGS } from 'messages/constants/logs/rate-limiter'
+import { safeLookup } from 'core/shared/safe-lookup'
+import { asLoggableError, DEFAULT_OUTAGE_WARN_INTERVAL_MS, OutageReporter } from './outage-reporter'
 import {
   collectMetricsRateLimiterConsumed,
   collectMetricsRateLimiterRejected,
@@ -10,7 +12,19 @@ import {
   collectMetricsRateLimiterInfraRecovered,
 } from '@lib/metrics/rate-limiter-metrics'
 
-const RATE_LIMITER_OUTAGE_WARN_INTERVAL_MS = Number(process.env.REDIS_LOG_OUTAGE_INTERVAL_MS ?? 30000)
+/**
+ * Providers are a fixed set of literals in the code, so the map should settle
+ * at a handful of entries. Passing this means something is keying limiters by
+ * something dynamic — a leak that grows with traffic.
+ */
+const LIMITER_COUNT_WARN_THRESHOLD = 50
+
+/** Applied to a provider with no entry in the table: deliberately restrictive. */
+const DEFAULT_PROVIDER_LIMIT = { points: 10, windowSeconds: 1 }
+
+const RATE_LIMITER_OUTAGE_WARN_INTERVAL_MS = Number(
+  process.env.REDIS_LOG_OUTAGE_INTERVAL_MS ?? DEFAULT_OUTAGE_WARN_INTERVAL_MS,
+)
 
 /**
  * DESIGN DECISION — Rate Limiting Strategy
@@ -80,16 +94,23 @@ function isRateLimitRejection(error: unknown): boolean {
   )
 }
 
-/** Narrows an unknown rejection to something loggable. */
-function asDetails(error: unknown): Record<string, unknown> {
-  return typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {}
-}
-
 export class RedisRateLimiter {
   private static instance: RedisRateLimiter | null
-  private static infraOutageStartedAt: number | null = null
-  private static infraLastWarnAt = 0
-  private static infraSuppressedLogs = 0
+
+  /**
+   * One episode across every provider: a Redis outage is an outage, and six
+   * providers noticing it separately would be six alarms for one fact.
+   */
+  private static readonly outage = new OutageReporter({
+    messages: {
+      degraded: RATE_LIMITER_LOGS.INFRA_DEGRADED,
+      stillDegraded: RATE_LIMITER_LOGS.INFRA_STILL_DEGRADED,
+      recovered: RATE_LIMITER_LOGS.INFRA_RECOVERED,
+    },
+    warnIntervalMs: RATE_LIMITER_OUTAGE_WARN_INTERVAL_MS,
+    onDegraded: ({ provider }) => collectMetricsRateLimiterInfraDegraded?.inc({ provider: String(provider) }),
+    onRecovered: ({ provider }) => collectMetricsRateLimiterInfraRecovered?.inc({ provider: String(provider) }),
+  })
 
   private readonly redis: Redis
 
@@ -132,9 +153,7 @@ export class RedisRateLimiter {
 
   static getInstance(redis: Redis): RedisRateLimiter {
     // Singleton com Redis injetado externamente através da lib RedisRateLimiter
-    if (!this.instance) {
-      this.instance = new RedisRateLimiter(redis)
-    }
+    this.instance ??= new RedisRateLimiter(redis)
 
     return this.instance
   }
@@ -144,7 +163,11 @@ export class RedisRateLimiter {
    * ❗ Provider PRECISA existir em providerConfigs.
    */
   private getLimiter(provider: EnumProviderConfig): RateLimiterRedis {
-    const config = this.providerConfigs[provider] || { points: 10, windowSeconds: 1 }
+    // safeLookup, not `this.providerConfigs[provider]`: a Record's index
+    // signature promises a value for every key, so the `||` fallback read as
+    // dead code while being the only thing standing between an unconfigured
+    // provider and `undefined.points`.
+    const config = safeLookup(this.providerConfigs, provider) ?? DEFAULT_PROVIDER_LIMIT
 
     const existingLimiter = this.limiters.get(provider)
     if (existingLimiter) {
@@ -163,7 +186,7 @@ export class RedisRateLimiter {
     this.limiters.set(provider, limiter)
 
     // Observabilidade defensiva
-    if (this.limiters.size > 50) {
+    if (this.limiters.size > LIMITER_COUNT_WARN_THRESHOLD) {
       logger.warn(
         { size: this.limiters.size },
         'ALERTA: Muitos RateLimiters instanciados. Verifique se providers estão estáticos.',
@@ -187,7 +210,7 @@ export class RedisRateLimiter {
 
       collectMetricsRateLimiterConsumed?.inc({ provider })
 
-      RedisRateLimiter.logInfraRecoveryIfNeeded(provider)
+      RedisRateLimiter.outage.succeeded({ provider })
 
       return true
     } catch (error) {
@@ -197,99 +220,31 @@ export class RedisRateLimiter {
         return false
       }
 
-      // Conta cada requisição liberada em fail-open (Redis indisponível).
-      // A métrica NÃO é suprimida como o log de logInfraDegraded — cada
-      // requisição permitida representa um evento de fail-open.
-      collectMetricsRateLimiterInfraDegraded?.inc({ provider })
-
-      RedisRateLimiter.logInfraDegraded(provider, asDetails(error))
+      // Conta cada requisição liberada em fail-open (Redis indisponível). A
+      // métrica NÃO é suprimida como o log — cada requisição permitida é um
+      // evento de fail-open. Quem decide isso é o OutageReporter.
+      RedisRateLimiter.outage.failed({ provider }, asLoggableError(error))
 
       return true
     }
   }
 
-  private static logInfraDegraded(provider: EnumProviderConfig, obj: Record<string, unknown>) {
-    const now = Date.now()
+  static destroyInstance() {
+    // Drop the outage episode with the instance. Left open, it would suppress the
+    // *first* warning of the next outage — the one that says an outage started.
+    this.outage.reset()
 
-    if (this.infraOutageStartedAt === null) {
-      this.startOutage(provider, obj, now)
-      return
-    }
-
-    if (now - this.infraLastWarnAt >= RATE_LIMITER_OUTAGE_WARN_INTERVAL_MS) {
-      logger.warn(
-        {
-          provider,
-          mode: 'fail-open',
-          redisOutage: true,
-          outageDurationMs: now - this.infraOutageStartedAt,
-          suppressedLogs: this.infraSuppressedLogs,
-          err: obj,
-        },
-        RATE_LIMITER_LOGS.INFRA_STILL_DEGRADED,
-      )
-
-      this.infraLastWarnAt = now
-      this.infraSuppressedLogs = 0
-      return
-    }
-
-    this.infraSuppressedLogs += 1
-  }
-
-  /** First request to fail open: open the outage window and warn once. */
-  private static startOutage(provider: EnumProviderConfig, obj: Record<string, unknown>, now: number): void {
-    this.infraOutageStartedAt = now
-    this.infraLastWarnAt = now
-    this.infraSuppressedLogs = 0
-
-    logger.warn(
-      {
-        provider,
-        mode: 'fail-open',
-        redisOutage: true,
-        err: obj,
-      },
-      RATE_LIMITER_LOGS.INFRA_DEGRADED,
-    )
-  }
-
-  private static logInfraRecoveryIfNeeded(provider: EnumProviderConfig) {
-    if (this.infraOutageStartedAt === null) {
-      return
-    }
-
-    // Transição degraded -> saudável: dispara uma vez por episódio de outage.
-    collectMetricsRateLimiterInfraRecovered?.inc({ provider })
-
-    const now = Date.now()
-
-    logger.info(
-      {
-        provider,
-        outageDurationMs: now - this.infraOutageStartedAt,
-        suppressedLogs: this.infraSuppressedLogs,
-      },
-      RATE_LIMITER_LOGS.INFRA_RECOVERED,
-    )
-
-    this.infraOutageStartedAt = null
-    this.infraLastWarnAt = 0
-    this.infraSuppressedLogs = 0
-  }
-
-  static async destroyInstance() {
     if (!this.instance) {
       logger.debug(RATE_LIMITER_LOGS.NO_INSTANCE_TO_DESTROY)
       return
     }
 
-    await this.instance.destroyRateLimiterMap()
+    this.instance.destroyRateLimiterMap()
 
     this.instance = null
   }
 
-  private async destroyRateLimiterMap() {
+  private destroyRateLimiterMap() {
     for (const [provider] of this.limiters.entries()) {
       logger.debug({ provider }, 'Limpando RateLimiter do provider.')
     }

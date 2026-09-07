@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/kucherenko/jscpd/master/packages/jscpd/schema.json",
+  "threshold": 3,
+  "minTokens": 40,
+  "reporters": ["console"],
+  "absolute": true,
+  "gitignore": true,
+  "ignore": [
+    "**/*.spec.ts",
+    "**/*.spec.mts",
+    "**/*.contract.ts",
+    "**/load-test/**",
+    "**/generated/**",
+    "**/node_modules/**",
+    "**/.stryker-tmp/**",
+    "**/.ci-local/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "**/reports/**"
+  ]
+}

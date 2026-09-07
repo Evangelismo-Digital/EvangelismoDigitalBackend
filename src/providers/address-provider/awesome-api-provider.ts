@@ -1,11 +1,10 @@
 import { AxiosInstance } from 'axios'
-import { createHttpClient } from '@lib/http/axios'
+import { createProviderHttpClient } from 'providers/helpers/provider-http-client'
 import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
 import { IAddressData } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { IRawAddressProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
 import { AWESOME_API_CONFIG } from 'messages/constants/providers/awesome-api'
-import { SHARED_PROVIDER_DEFAULTS } from 'messages/constants/providers/shared'
 
 export interface AwesomeApiConfig {
   apiUrl: string
@@ -36,29 +35,25 @@ export class AwesomeApiProvider implements IRawAddressProvider {
   readonly timeoutMs = AWESOME_API_CONFIG.TIMEOUT_MS
 
   constructor(private readonly config: AwesomeApiConfig) {
-    this.api = createHttpClient({
+    this.api = createProviderHttpClient({
       baseURL: this.config.apiUrl,
-      timeout: AWESOME_API_CONFIG.TIMEOUT_MS,
-      headers: {
-        'User-Agent': SHARED_PROVIDER_DEFAULTS.USER_AGENT,
-      },
-      agentOptions: {
-        keepAliveMsecs: AWESOME_API_CONFIG.HTTPS_AGENT.KEEP_ALIVE_MSECS,
-        maxSockets: AWESOME_API_CONFIG.HTTPS_AGENT.MAX_SOCKETS,
-        maxFreeSockets: AWESOME_API_CONFIG.HTTPS_AGENT.MAX_FREE_SOCKETS,
-        timeout: AWESOME_API_CONFIG.HTTPS_AGENT.TIMEOUT_MS,
-      },
+      timeoutMs: AWESOME_API_CONFIG.TIMEOUT_MS,
     })
   }
 
   async fetchRawAddress(cep: string, signal?: AbortSignal): Promise<IAddressData | null> {
     const cleanCep = cep.replace(/\D/g, '')
 
-    const { data } = await this.api.get<AwesomeApiResponse>(`/${cleanCep}`, {
+    // The generic carries `| undefined` because that is the truth: axios types
+    // `response.data` as the generic regardless of what the server sent, so a
+    // 204, an empty body or a proxy error page all arrive typed as a valid
+    // payload. Saying so is what makes the guard below necessary instead of
+    // "unnecessary".
+    const { data } = await this.api.get<AwesomeApiResponse | undefined>(`/${cleanCep}`, {
       signal,
     })
 
-    if (!data || !data.cep) {
+    if (!data?.cep) {
       return null
     }
 
@@ -76,10 +71,10 @@ export class AwesomeApiProvider implements IRawAddressProvider {
       bairro: data.district,
       localidade: data.city,
       uf: data.state,
-      lat: parseFloat(data.lat),
-      lon: parseFloat(data.lng),
-      precision: precision,
+      lat: Number.parseFloat(data.lat),
+      lon: Number.parseFloat(data.lng),
       providerName: 'AwesomeAPI',
+      precision,
     }
   }
 }

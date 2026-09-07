@@ -1,4 +1,5 @@
-import https from 'https'
+import https from 'node:https'
+import { byCodeUnit } from 'core/shared/stable-order'
 
 const agents = new Map<string, https.Agent>()
 
@@ -27,7 +28,7 @@ export const getHttpsAgent = (options: https.AgentOptions = {}): https.Agent => 
 
   // Generate a unique key for this configuration to ensure we reuse the agent
   // for identical requirements (Singleton behavior).
-  const key = JSON.stringify(finalConfig, Object.keys(finalConfig).sort())
+  const key = JSON.stringify(finalConfig, Object.keys(finalConfig).sort(byCodeUnit))
 
   if (!agents.has(key)) {
     agents.set(key, new https.Agent(finalConfig))

@@ -1,6 +1,6 @@
 import { OUTBOX_CONSTANTS } from 'messages/constants/outbox/outbox'
 import { logger } from '@lib/logger'
-import { DistributedLock, LockToken } from '@lib/infra/distributed-lock/distributed-lock'
+import { withDistributedLock } from '@lib/infra/distributed-lock/with-distributed-lock'
 import { isErr } from 'core/shared/result'
 import { IOutboxRepository, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
@@ -20,13 +20,14 @@ import { collectMetricsOutboxMaintenanceDeleted } from '@lib/metrics/outbox-metr
 export class OutboxMaintenance {
   private readonly LOCK_TTL_MS = OUTBOX_CONSTANTS.LOCK_TTL_MS.DEFAULT
 
-  constructor(private outboxRepository: IOutboxRepository) {}
+  constructor(private readonly outboxRepository: IOutboxRepository) {}
 
   async sweepExpiredEvents(): Promise<void> {
-    await this.withLock(
-      OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_EXPIRY_SWEEP,
-      OUTBOX_LOGS.EXPIRY_SWEEP_ERROR,
-      async (renew) => {
+    await withDistributedLock({
+      lockKey: OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_EXPIRY_SWEEP,
+      ttlMs: this.LOCK_TTL_MS,
+      errorMessage: OUTBOX_LOGS.EXPIRY_SWEEP_ERROR,
+      work: async (renew) => {
         const totalDeleted = await this.deleteExpiredInBatches(new Date(), renew)
 
         if (totalDeleted > 0) {
@@ -34,60 +35,34 @@ export class OutboxMaintenance {
           logger.info({ deleted: totalDeleted }, OUTBOX_LOGS.EXPIRY_SWEEP_DELETED)
         }
       },
-    )
-  }
-
-  async purgeOldEvents(): Promise<void> {
-    await this.withLock(OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RETENTION, OUTBOX_LOGS.RETENTION_ERROR, async (renew) => {
-      const cutoff = new Date(Date.now() - OUTBOX_CONSTANTS.RETENTION.DAYS * 24 * 60 * 60 * 1000)
-      const { totalDeleted, totalByStatus } = await this.deleteOlderThanInBatches(cutoff, renew)
-
-      if (totalDeleted > 0) {
-        collectMetricsOutboxMaintenanceDeleted?.inc({ operation: 'retention_purge' }, totalDeleted)
-        reportPurge(totalDeleted, totalByStatus)
-      }
     })
   }
 
-  /**
-   * Roda `run` sob o lock distribuído, ou não roda nada se outra instância já o
-   * detém. `renew` é passado adiante para que um lote longo possa estender o
-   * TTL — tabelas grandes após um incidente não podem estourar o lock.
-   */
-  private async withLock(
-    lockKey: string,
-    errorMessage: string,
-    run: (renew: () => Promise<void>) => Promise<void>,
-  ): Promise<void> {
-    let lockToken: LockToken | null = null
+  async purgeOldEvents(): Promise<void> {
+    await withDistributedLock({
+      lockKey: OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RETENTION,
+      ttlMs: this.LOCK_TTL_MS,
+      errorMessage: OUTBOX_LOGS.RETENTION_ERROR,
+      work: async (renew) => {
+        const cutoff = new Date(Date.now() - OUTBOX_CONSTANTS.RETENTION.DAYS * 24 * 60 * 60 * 1000)
+        const { totalDeleted, totalByStatus } = await this.deleteOlderThanInBatches(cutoff, renew)
 
-    try {
-      lockToken = await DistributedLock.acquire(lockKey, this.LOCK_TTL_MS)
-
-      if (!lockToken) return
-
-      const token = lockToken
-
-      await run(async () => {
-        // `renew` reports whether the lock was still ours; the batch loops do
-        // not branch on it, so the boolean is deliberately discarded here.
-        await DistributedLock.renew(lockKey, token, this.LOCK_TTL_MS)
-      })
-    } catch (error) {
-      logger.error({ error }, errorMessage)
-      captureError(error)
-    } finally {
-      if (lockToken) {
-        await DistributedLock.release(lockKey, lockToken)
-      }
-    }
+        if (totalDeleted > 0) {
+          collectMetricsOutboxMaintenanceDeleted?.inc({ operation: 'retention_purge' }, totalDeleted)
+          reportPurge(totalDeleted, totalByStatus)
+        }
+      },
+    })
   }
 
   /** Um lote por iteração, renovando o lock entre lotes. */
   private async deleteExpiredInBatches(now: Date, renew: () => Promise<void>): Promise<number> {
     let totalDeleted = 0
+    // A short batch means the table is drained; the loop condition says so
+    // directly instead of through two `break`s buried in the body.
+    let lastBatchSize: number = OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE
 
-    for (;;) {
+    while (lastBatchSize === OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE) {
       await renew()
 
       const result = await this.outboxRepository.deleteExpired(now, OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE)
@@ -95,12 +70,11 @@ export class OutboxMaintenance {
       if (isErr(result)) {
         logger.error({ error: result.error }, OUTBOX_LOGS.EXPIRY_SWEEP_ERROR)
         captureError(result.error)
-        break
+        return totalDeleted
       }
 
-      totalDeleted += result.value
-
-      if (result.value < OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE) break
+      lastBatchSize = result.value
+      totalDeleted += lastBatchSize
     }
 
     return totalDeleted
@@ -113,7 +87,11 @@ export class OutboxMaintenance {
     let totalDeleted = 0
     const totalByStatus: Partial<Record<IOutboxEventStatus, number>> = {}
 
-    for (;;) {
+    // Same shape as deleteExpiredInBatches: the loop condition carries the
+    // "table is drained" rule, and an error leaves through a single return.
+    let lastBatchSize: number = OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE
+
+    while (lastBatchSize === OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE) {
       await renew()
 
       const batchResult = await this.outboxRepository.deleteOlderThan(cutoff, OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE)
@@ -121,17 +99,16 @@ export class OutboxMaintenance {
       if (isErr(batchResult)) {
         logger.error({ error: batchResult.error }, OUTBOX_LOGS.RETENTION_ERROR)
         captureError(batchResult.error)
-        break
+        return { totalDeleted, totalByStatus }
       }
 
       const { deleted, byStatus } = batchResult.value
+      lastBatchSize = deleted
       totalDeleted += deleted
 
       for (const [status, count] of Object.entries(byStatus) as [IOutboxEventStatus, number][]) {
         totalByStatus[status] = (totalByStatus[status] ?? 0) + count
       }
-
-      if (deleted < OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE) break
     }
 
     return { totalDeleted, totalByStatus }

@@ -13,7 +13,7 @@ type GetUserProfileUseCaseResponse = {
 }
 
 export class GetUserProfileUseCase {
-  constructor(private usersRepository: UsersRepository) {}
+  constructor(private readonly usersRepository: UsersRepository) {}
 
   async execute({ publicId }: GetUserProfileUseCaseRequest): Promise<Result<GetUserProfileUseCaseResponse, AppError>> {
     const userResult = await this.usersRepository.findBy({ publicId })

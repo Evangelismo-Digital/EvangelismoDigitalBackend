@@ -59,9 +59,9 @@ describe('RedisRateLimiter Unit Tests', () => {
     vi.clearAllMocks()
     // Reset do Singleton hackeando a propriedade privada
     ;(RedisRateLimiter as any).instance = undefined
-    ;(RedisRateLimiter as any).infraOutageStartedAt = null
-    ;(RedisRateLimiter as any).infraLastWarnAt = 0
-    ;(RedisRateLimiter as any).infraSuppressedLogs = 0
+    // The outage episode is shared static state; without this, the first test to
+    // trigger a fail-open silences the degraded warning for every later one.
+    ;(RedisRateLimiter as any).outage.reset()
     redisClient = new Redis()
   })
 
@@ -99,6 +99,10 @@ describe('RedisRateLimiter Unit Tests', () => {
       expect(result).toBe(false)
       // Não deve logar erro de infraestrutura neste caso
       expect(logger.error).not.toHaveBeenCalled()
+      // Nem tratar o sucesso como fail-open: as métricas são `null` quando
+      // METRICS_ENABLED está desligado, então um `?.` removido lançaria dentro do
+      // try e esta chamada bem-sucedida viraria uma degradação silenciosa.
+      expect(logger.warn).not.toHaveBeenCalled()
     })
 
     it('should allow request (return true) and log WARN on infrastructure failure (Fail-Open)', async () => {
@@ -259,6 +263,22 @@ describe('RedisRateLimiter Unit Tests', () => {
   })
 
   describe('Defensive Coding (Memory Leak Protection)', () => {
+    it('stays quiet at exactly the threshold', async () => {
+      // Pins `>` against `>=`: 49 planted + the one this call creates is exactly
+      // 50, which is the threshold and not yet over it.
+      const limiter = RedisRateLimiter.getInstance(redisClient) as any
+      mockConsume.mockResolvedValue({})
+
+      for (let i = 0; i < 49; i++) {
+        limiter.limiters.set(`fake-provider-${i}`, {})
+      }
+
+      await limiter.tryConsume(EnumProviderConfig.VIACEP_ADDRESS)
+
+      expect(limiter.limiters.size).toBe(50)
+      expect(logger.warn).not.toHaveBeenCalled()
+    })
+
     it('should log WARN if too many limiters are instantiated', async () => {
       const limiter = RedisRateLimiter.getInstance(redisClient) as any
       mockConsume.mockResolvedValue({})
@@ -303,11 +323,51 @@ describe('RedisRateLimiter Unit Tests', () => {
       )
     })
 
-    it('should not throw error when destroying non-existent instance', async () => {
+    it('clears the outage episode, so the next outage still announces itself', async () => {
+      // Without the reset in destroyInstance the episode outlives the limiter and
+      // the throttle swallows the one warning that says an outage has started.
+      const limiter = RedisRateLimiter.getInstance(redisClient)
+      mockConsume.mockRejectedValue(new Error('Redis down'))
+      await limiter.tryConsume(EnumProviderConfig.VIACEP_ADDRESS)
+
+      RedisRateLimiter.destroyInstance()
+      vi.clearAllMocks()
+
+      await RedisRateLimiter.getInstance(redisClient).tryConsume(EnumProviderConfig.VIACEP_ADDRESS)
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: 'fail-open', redisOutage: true }),
+        'RedisRateLimiter com erro: Redis não disponível, permitindo requisições (fail-open).',
+      )
+    })
+
+    it('recovers silently when metrics are disabled', async () => {
+      // Same reasoning as the success path above, for the recovery branch: the
+      // recovered counter is null here, and reaching it without the optional
+      // chaining would turn a recovery into another fail-open.
+      const limiter = RedisRateLimiter.getInstance(redisClient)
+      mockConsume.mockRejectedValueOnce(new Error('Redis down'))
+      await limiter.tryConsume(EnumProviderConfig.VIACEP_ADDRESS)
+      vi.clearAllMocks()
+
+      mockConsume.mockResolvedValue({})
+      await expect(limiter.tryConsume(EnumProviderConfig.VIACEP_ADDRESS)).resolves.toBe(true)
+
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: EnumProviderConfig.VIACEP_ADDRESS }),
+        'RedisRateLimiter restabelecido: Redis disponível novamente.',
+      )
+      expect(logger.warn).not.toHaveBeenCalled()
+    })
+
+    it('should not throw error when destroying non-existent instance', () => {
       // Garante que não há instância
       ;(RedisRateLimiter as any).instance = null
 
-      await expect(RedisRateLimiter.destroyInstance()).resolves.not.toThrow()
+      // Synchronous: destroyInstance only clears an in-process Map, and
+      // declaring it async made every caller await a promise that resolved on
+      // the next tick for no reason.
+      expect(() => RedisRateLimiter.destroyInstance()).not.toThrow()
 
       expect(logger.debug).toHaveBeenCalledWith('Nenhuma instância de RedisRateLimiter para destruir.')
     })

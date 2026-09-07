@@ -6,9 +6,17 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
     rebase-strategy: "auto"
+    # Wait a week before proposing a newly published version, for the same
+    # reason .npmrc sets min-release-age: a compromised release is usually
+    # found and yanked within days, and a Dependabot PR that lands it on day
+    # zero defeats every scanner in the pipeline.
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7

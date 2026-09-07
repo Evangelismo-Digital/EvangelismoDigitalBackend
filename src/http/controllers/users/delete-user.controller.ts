@@ -4,6 +4,7 @@ import { makeDeleteUserUseCase } from '@use-cases/factories/make-delete-user-use
 import { publicIdSchema } from '@http/schemas/utils/public-id-schema'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
+import { HTTP_STATUS } from '@http/http-status'
 
 export async function deleteUser(request: FastifyRequest, reply: FastifyReply) {
   const deleteUserUseCase = makeDeleteUserUseCase()
@@ -18,7 +19,7 @@ export async function deleteUser(request: FastifyRequest, reply: FastifyReply) {
 
   logger.info('Usuário deletado com sucesso!')
 
-  return reply.code(204).send()
+  return reply.code(HTTP_STATUS.NO_CONTENT).send()
 }
 
 export async function deleteUserByPublicId(request: FastifyRequest, reply: FastifyReply) {
@@ -36,5 +37,5 @@ export async function deleteUserByPublicId(request: FastifyRequest, reply: Fasti
 
   logger.info({ targetId: publicId }, 'Usuário deletado com sucesso!')
 
-  return reply.code(204).send()
+  return reply.code(HTTP_STATUS.NO_CONTENT).send()
 }

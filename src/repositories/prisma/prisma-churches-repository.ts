@@ -11,6 +11,14 @@ import { AppError } from 'errors/app-error'
 import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
 import { CreateChurchError } from '@use-cases/errors/create-church-error'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
+import { DISTANCE_DECIMAL_PLACES, METERS_PER_KILOMETER } from 'core/constants/geo'
+
+/**
+ * KNN over a GiST index is an approximation; over-fetching and re-ranking is
+ * what keeps a genuinely nearer church from being dropped by the index walk.
+ */
+const KNN_MIN_CANDIDATES = 100
+const KNN_CANDIDATE_MULTIPLIER = 5
 
 interface RawChurch {
   id: number
@@ -94,8 +102,8 @@ function insertChurch(data: Omit<Church, 'id' | 'publicId' | 'createdAt' | 'upda
 function toNearbyChurch(church: RawChurch): NearbyChurch {
   return {
     ...church,
-    distanceMeters: parseFloat(Number(church.distanceMeters).toFixed(15)),
-    distanceKm: parseFloat((church.distanceMeters / 1000).toFixed(15)),
+    distanceMeters: Number.parseFloat(church.distanceMeters.toFixed(DISTANCE_DECIMAL_PLACES)),
+    distanceKm: Number.parseFloat((church.distanceMeters / METERS_PER_KILOMETER).toFixed(DISTANCE_DECIMAL_PLACES)),
   }
 }
 
@@ -129,7 +137,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
   private async runKnnQuery(userLat: number, userLon: number, limit: number, timeoutMs?: number): Promise<RawChurch[]> {
     // For small datasets, we use a safety margin of 5x the requested limit.
     // This ensures KNN approximations don't exclude actual nearest churches.
-    const knnCandidates = Math.max(100, limit * 5)
+    const knnCandidates = Math.max(KNN_MIN_CANDIDATES, limit * KNN_CANDIDATE_MULTIPLIER)
 
     if (timeoutMs === undefined) {
       return await prisma.$queryRawUnsafe<RawChurch[]>(KNN_SQL, userLat, userLon, limit, knnCandidates)
@@ -199,7 +207,10 @@ export class PrismaChurchesRepository implements ChurchesRepository {
     data: Omit<Church, 'id' | 'publicId' | 'createdAt' | 'updatedAt' | 'geog'>,
   ): Promise<Result<Church, AppError>> {
     try {
-      const [church] = await insertChurch(data)
+      // `.at(0)` rather than destructuring: it returns `Church | undefined`,
+      // so the guard below is one the type system agrees is needed.
+      const inserted = await insertChurch(data)
+      const church = inserted.at(0)
 
       if (!church) {
         return err(new CreateChurchError())
@@ -227,7 +238,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
           created_at AS "createdAt",
           updated_at AS "updatedAt"
       `
-      const church = rows[0]
+      const church = rows.at(0)
 
       if (!church) {
         return err(new ChurchNotFoundError())

@@ -25,6 +25,11 @@ const envSchema = z.object({
   REDIS_PASSWORD: z.string().optional(),
   REDIS_LOG_OUTAGE_INTERVAL_MS: z.coerce.number().int().positive().default(ms('30s')),
 
+  // Health probe for ingress rate limiting. Bounded on both ends deliberately:
+  // below a second it becomes traffic against Redis for no extra fidelity, and
+  // above five minutes an outage could pass unnoticed between two observations.
+  REDIS_RATE_LIMIT_HEALTH_INTERVAL_MS: z.coerce.number().int().min(ms('1s')).max(ms('5m')).default(ms('15s')),
+
   // Metrics
   METRICS_ENABLED: z
     .enum(['true', 'false'])
@@ -138,7 +143,9 @@ const envSchema = z.object({
 const _env = envSchema.safeParse(process.env)
 
 if (!_env.success) {
-  console.error('Variáveis de ambiente inválidas:', z.treeifyError(_env.error))
+  // `process.stderr`, not `console`: this runs at import time and the logger
+  // itself imports this module, so there is no logger to report through yet.
+  process.stderr.write(`Variáveis de ambiente inválidas: ${JSON.stringify(z.treeifyError(_env.error), null, 2)}\n`)
 
   throw new Error(ENV_CONSTANTS.INVALID_VARIABLES)
 }

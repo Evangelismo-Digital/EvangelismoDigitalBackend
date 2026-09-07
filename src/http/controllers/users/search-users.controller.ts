@@ -4,6 +4,7 @@ import { FastifyReply, FastifyRequest } from 'fastify'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { searchUsersSchema } from '@http/schemas/users/search-users-schema'
+import { HTTP_STATUS } from '@http/http-status'
 
 export async function searchUsersController(request: FastifyRequest, reply: FastifyReply) {
   const { query, page } = searchUsersSchema.parse(request.query)
@@ -23,5 +24,5 @@ export async function searchUsersController(request: FastifyRequest, reply: Fast
 
   logger.info(`Encontrados ${users.length} usuários para a consulta: "${query}" na página ${page}.`)
 
-  return reply.code(200).send({ users })
+  return reply.code(HTTP_STATUS.OK).send({ users })
 }

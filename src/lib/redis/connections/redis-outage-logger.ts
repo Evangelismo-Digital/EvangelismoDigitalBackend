@@ -30,8 +30,22 @@ const CONNECTIVITY_ERROR_CODES = new Set([
 /**
  * Phrases ioredis puts in the message when the code is absent — a disconnect
  * mid-command, a replica rejecting a write, an unauthenticated reconnect.
+ *
+ * The last two are what an impatient connection produces (`commandTimeout`,
+ * `enableOfflineQueue: false`): they were being classified as *unexpected*
+ * errors and logged in full on every occurrence, when they are the ordinary
+ * shape of a Redis that is unreachable or too slow — an outage, and the one that
+ * degraded ingress rate limiting on 2026-09-07.
  */
-const CONNECTIVITY_ERROR_PHRASES = ['ECONNREFUSED', 'CONNECTION IS CLOSED', 'READONLY', 'ETIMEDOUT', 'NOAUTH']
+const CONNECTIVITY_ERROR_PHRASES = [
+  'ECONNREFUSED',
+  'CONNECTION IS CLOSED',
+  'READONLY',
+  'ETIMEDOUT',
+  'NOAUTH',
+  'COMMAND TIMED OUT',
+  "STREAM ISN'T WRITEABLE",
+]
 
 export function isRedisConnectivityError(error: unknown): boolean {
   const err = (error ?? {}) as ErrorLike

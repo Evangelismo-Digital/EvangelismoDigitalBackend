@@ -23,7 +23,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
         data: {
           type: data.type,
           status: data.status,
-          payload: data.payload as Prisma.InputJsonValue,
+          payload: data.payload,
           expiresAt: data.expiresAt ?? null,
         },
       })

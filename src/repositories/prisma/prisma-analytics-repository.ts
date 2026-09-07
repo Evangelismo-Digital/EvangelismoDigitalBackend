@@ -10,6 +10,7 @@ import {
 import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { toSessionAttributes } from 'core/projections/analytics-session-attributes'
 
 export class PrismaAnalyticsRepository implements AnalyticsRepository {
   async upsertSession(data: UpsertSessionInput): Promise<Result<IAnalyticsSession, AppError>> {
@@ -53,29 +54,4 @@ export class PrismaAnalyticsRepository implements AnalyticsRepository {
       return err(new DatabaseQueryError(error))
     }
   }
-}
-
-/**
- * The insert and the update wrote the same eight fields; only `sessionId` is
- * unique to the insert. Listing them once removes the risk of the two halves
- * drifting apart, which would make an upsert store different data depending on
- * whether the row happened to exist.
- */
-const OPTIONAL_SESSION_FIELDS = [
-  'ipAddress',
-  'userAgent',
-  'utmSource',
-  'utmMedium',
-  'utmCampaign',
-  'utmTerm',
-  'utmContent',
-] as const
-
-function toSessionAttributes(data: UpsertSessionInput) {
-  const optional = Object.fromEntries(OPTIONAL_SESSION_FIELDS.map((field) => [field, data[field] ?? null])) as Record<
-    (typeof OPTIONAL_SESSION_FIELDS)[number],
-    string | null
-  >
-
-  return { visitorId: data.visitorId, ...optional }
 }

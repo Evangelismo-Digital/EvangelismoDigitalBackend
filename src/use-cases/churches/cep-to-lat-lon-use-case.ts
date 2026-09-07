@@ -40,8 +40,8 @@ type StrategyOutcome = Result<CepToLatLonResponse, AppError> | null
 
 export class CepToLatLonUseCase {
   constructor(
-    private geocodingProvider: IGeocodingProvider,
-    private addressProvider: IAddressProvider,
+    private readonly geocodingProvider: IGeocodingProvider,
+    private readonly addressProvider: IAddressProvider,
   ) {}
 
   async execute({ cep, deadline }: CepToLatLonRequest): Promise<Result<CepToLatLonResponse, AppError>> {

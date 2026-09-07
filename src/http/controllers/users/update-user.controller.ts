@@ -7,16 +7,18 @@ import { publicIdSchema } from '@http/schemas/utils/public-id-schema'
 import { AUTH_ERRORS } from 'messages/errors/auth'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
+import { HTTP_STATUS } from '@http/http-status'
 
 export async function updateUser(request: FastifyRequest, reply: FastifyReply) {
   const { name, username, email } = updateSchema.parse(request.body)
 
-  const authUser = request.user as { publicId?: string; sub?: string }
+  const authUser = request.user
 
-  const publicId = authUser?.publicId ?? authUser?.sub
+  // `publicId` is the newer claim; `sub` is what older tokens carry.
+  const publicId = authUser.publicId ?? authUser.sub
 
   if (!publicId) {
-    return reply.code(401).send({ message: AUTH_ERRORS.UNAUTHORIZED.message })
+    return reply.code(HTTP_STATUS.UNAUTHORIZED).send({ message: AUTH_ERRORS.UNAUTHORIZED.message })
   }
 
   const { publicId: validatedPublicId } = publicIdSchema.parse({ publicId })
@@ -38,5 +40,5 @@ export async function updateUser(request: FastifyRequest, reply: FastifyReply) {
 
   logger.info('Usuário atualizado com sucesso!')
 
-  return reply.code(200).send(UserPresenter.toHTTP(user))
+  return reply.code(HTTP_STATUS.OK).send(UserPresenter.toHTTP(user))
 }

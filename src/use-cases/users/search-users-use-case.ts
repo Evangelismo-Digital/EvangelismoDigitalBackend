@@ -13,7 +13,7 @@ interface SearchUsersUseCaseResponse {
 }
 
 export class SearchUsersUseCase {
-  constructor(private usersRepository: UsersRepository) {}
+  constructor(private readonly usersRepository: UsersRepository) {}
 
   async execute({ query, page }: SearchUsersUseCaseRequest): Promise<Result<SearchUsersUseCaseResponse, AppError>> {
     const searchResult = await this.usersRepository.search(query, page)
@@ -22,7 +22,7 @@ export class SearchUsersUseCase {
       return searchResult
     }
 
-    const users = searchResult.value || []
+    const users = searchResult.value
 
     return ok({ users })
   }

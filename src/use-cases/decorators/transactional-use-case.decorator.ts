@@ -1,5 +1,5 @@
 import { DatabaseContext } from '@lib/prisma/helpers/database-context'
-import { Result } from 'core/shared/result'
+import { Result, isErr } from 'core/shared/result'
 
 interface IUseCase<IRequest, IResponse> {
   execute(request: IRequest): Promise<IResponse>
@@ -7,7 +7,7 @@ interface IUseCase<IRequest, IResponse> {
 
 // Um erro interno apenas para sinalizar o Rollback
 class RollbackTransactionError<IResponse> extends Error {
-  constructor(public result: IResponse) {
+  constructor(public readonly result: IResponse) {
     super('Rollback requested by domain logic')
   }
 }
@@ -17,8 +17,8 @@ export class TransactionalUseCaseDecorator<IRequest, IResponse extends Result<un
   IResponse
 > {
   constructor(
-    private useCase: IUseCase<IRequest, IResponse>,
-    private dbContext: DatabaseContext,
+    private readonly useCase: IUseCase<IRequest, IResponse>,
+    private readonly dbContext: DatabaseContext,
   ) {}
 
   async execute(request: IRequest): Promise<IResponse> {
@@ -29,8 +29,7 @@ export class TransactionalUseCaseDecorator<IRequest, IResponse extends Result<un
         const result = await this.useCase.execute(request)
 
         // 3. A MÁGICA: Se o resultado for falha, lançamos o erro para o Prisma desfazer tudo
-        if (result.success === false) {
-          // ou result.isFailure
+        if (isErr(result)) {
           throw new RollbackTransactionError(result)
         }
 
@@ -42,7 +41,10 @@ export class TransactionalUseCaseDecorator<IRequest, IResponse extends Result<un
 
       // Se foi o nosso erro de controle, recuperamos o Result original e retornamos como se nada tivesse acontecido
       if (error instanceof RollbackTransactionError) {
-        return error.result
+        // `instanceof` cannot carry the generic, so the narrowing lands on
+        // RollbackTransactionError<unknown>. The value came from `execute`
+        // three lines above, so IResponse is what it is.
+        return error.result as IResponse
       }
 
       // Se for um erro inesperado (bug, crash do banco que o repositório não pegou), relançamos

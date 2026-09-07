@@ -116,16 +116,37 @@ describe('Reset Password Use Case', () => {
   })
 
   it('falha na limpeza do token expirado: ainda retorna InvalidTokenError (best-effort, nunca mascara)', async () => {
-    const { usersRepository, resetPasswordUseCase, rawToken, getUser } = await makeSutWithToken()
-    const user = await getUser()
-    user.tokenExpiresAt = new Date(Date.now() - 1000)
-    vi.spyOn(usersRepository, 'updatePassword').mockResolvedValueOnce(err(new InfraTestError()))
+    // Time is frozen for this one rather than compared against the wall clock.
+    //
+    // The expiry margin here used to be one second, and the branch under test
+    // is `tokenExpiresAt < new Date()` — so the whole assertion depended on the
+    // clock not moving backwards between the two statements. On this WSL2 host
+    // it does, under load: the ci:local run that verified this work printed a
+    // stage duration of `-76s`. A 76-second backwards jump makes a token
+    // expired "one second ago" read as still valid, the expired branch is
+    // skipped, the real updatePassword consumes the injected failure, and the
+    // test fails with InfraTestError instead of InvalidTokenError — which is
+    // exactly how it failed once here.
+    //
+    // `toFake: ['Date']` only: bcrypt's async hashing below schedules real
+    // work, and faking setTimeout with it would hang the test rather than
+    // stabilise it.
+    vi.useFakeTimers({ toFake: ['Date'] })
 
-    const result = await resetPasswordUseCase.execute({ token: rawToken, password: 'newPassword123!' })
+    try {
+      const { usersRepository, resetPasswordUseCase, rawToken, getUser } = await makeSutWithToken()
+      const user = await getUser()
+      user.tokenExpiresAt = new Date(Date.now() - 1000)
+      vi.spyOn(usersRepository, 'updatePassword').mockResolvedValueOnce(err(new InfraTestError()))
 
-    expect(isErr(result)).toBe(true)
-    if (!isErr(result)) return
-    expect(result.error).toBeInstanceOf(InvalidTokenError)
+      const result = await resetPasswordUseCase.execute({ token: rawToken, password: 'newPassword123!' })
+
+      expect(isErr(result)).toBe(true)
+      if (!isErr(result)) return
+      expect(result.error).toBeInstanceOf(InvalidTokenError)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('token válido: redefine a senha, limpa o token e marca passwordChangedAt/updatedAt', async () => {

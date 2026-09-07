@@ -112,7 +112,9 @@ export async function runWithRetries<T>(params: RunWithRetriesParams<T>): Promis
  */
 function settleFirst<T>(work: Promise<T>, deadline: Deadline): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(deadline.asError())
+    const onAbort = () => {
+      reject(deadline.asError())
+    }
 
     deadline.signal.addEventListener('abort', onAbort, { once: true })
 

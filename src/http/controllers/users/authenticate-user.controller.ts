@@ -5,6 +5,7 @@ import { makeAuthenticateUserUseCase } from '@use-cases/factories/make-authentic
 import { UserPresenter } from '@http/presenters/user-presenter'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
+import { HTTP_STATUS } from '@http/http-status'
 
 function getAuthenticationAuditContext(request: FastifyRequest) {
   return {
@@ -39,5 +40,5 @@ export async function authenticateUser(request: FastifyRequest, reply: FastifyRe
 
   const token = await reply.jwtSign({ sub: user.publicId, role: user.role }, { expiresIn: '1d' })
 
-  return reply.code(200).send({ token, user: UserPresenter.toHTTP(user) })
+  return reply.code(HTTP_STATUS.OK).send({ token, user: UserPresenter.toHTTP(user) })
 }

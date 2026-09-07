@@ -1,5 +1,5 @@
 import { AxiosInstance } from 'axios'
-import { createHttpClient } from '@lib/http/axios'
+import { createProviderHttpClient } from 'providers/helpers/provider-http-client'
 import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
 import { IGeoCoordinates, IGeoSearchOptions } from 'core/contracts/use-cases/providers/geo-provider.interface'
@@ -13,6 +13,23 @@ interface NominatimConfig {
 
 type NominatimSearchParams = Record<string, string | number | undefined>
 
+/**
+ * One `/search` result, as Nominatim returns it.
+ *
+ * The request was previously untyped, so `response.data` was `any` and every
+ * field read past it — `.length`, `[0]`, `.lat` — was unchecked. Coordinates
+ * arrive as strings (the API serialises them that way), which is why they are
+ * parsed rather than used directly.
+ */
+interface NominatimSearchResult {
+  lat: string
+  lon: string
+  place_rank?: string | number
+  type?: string
+  class?: string
+  addresstype?: string
+}
+
 export class NominatimGeoProvider implements IRawGeocodingProvider {
   private readonly api: AxiosInstance
 
@@ -23,18 +40,10 @@ export class NominatimGeoProvider implements IRawGeocodingProvider {
   readonly timeoutMs = NOMINATIM_CONFIG.TIMEOUT_MS
 
   constructor(private readonly config: NominatimConfig) {
-    this.api = createHttpClient({
+    this.api = createProviderHttpClient({
       baseURL: this.config.apiUrl,
-      timeout: NOMINATIM_CONFIG.TIMEOUT_MS,
-      headers: {
-        'User-Agent': SHARED_PROVIDER_DEFAULTS.USER_AGENT_WITH_CONTACT,
-      },
-      agentOptions: {
-        keepAliveMsecs: NOMINATIM_CONFIG.HTTPS_AGENT.KEEP_ALIVE_MSECS,
-        maxSockets: NOMINATIM_CONFIG.HTTPS_AGENT.MAX_SOCKETS,
-        maxFreeSockets: NOMINATIM_CONFIG.HTTPS_AGENT.MAX_FREE_SOCKETS,
-        timeout: NOMINATIM_CONFIG.HTTPS_AGENT.TIMEOUT_MS,
-      },
+      timeoutMs: NOMINATIM_CONFIG.TIMEOUT_MS,
+      userAgent: SHARED_PROVIDER_DEFAULTS.USER_AGENT_WITH_CONTACT,
     })
   }
 
@@ -62,19 +71,20 @@ export class NominatimGeoProvider implements IRawGeocodingProvider {
   private async performRequest(params: NominatimSearchParams, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
     const cleanParams = this.cleanParams(params)
 
-    const response = await this.api.get('/search', {
+    const response = await this.api.get<NominatimSearchResult[] | undefined>('/search', {
       params: cleanParams,
       signal,
     })
 
-    if (!response.data || response.data.length === 0) {
+    const bestMatch = response.data?.[0]
+
+    if (!bestMatch) {
       return null
     }
 
-    const bestMatch = response.data[0]
     return {
-      lat: parseFloat(bestMatch.lat),
-      lon: parseFloat(bestMatch.lon),
+      lat: Number.parseFloat(bestMatch.lat),
+      lon: Number.parseFloat(bestMatch.lon),
       precision: PrecisionHelper.fromOsm(bestMatch),
       providerName: 'Nominatim',
     }
@@ -83,7 +93,11 @@ export class NominatimGeoProvider implements IRawGeocodingProvider {
   private cleanParams(params: NominatimSearchParams): Record<string, string | number> {
     const cleaned: Record<string, string | number> = {}
     for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined && value !== null && value !== '') {
+      // `!= null` covers undefined AND null in one check the type system does
+      // not consider redundant; the previous `!== null` was dead by the type
+      // (`string | number | undefined`) while still being the guard that would
+      // matter if a null ever arrived.
+      if (value != null && value !== '') {
         cleaned[key] = value
       }
     }

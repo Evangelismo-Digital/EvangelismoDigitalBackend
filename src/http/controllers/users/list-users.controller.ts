@@ -4,6 +4,7 @@ import { makeListUsersUseCase } from '@use-cases/factories/make-list-users-use-c
 import { UserPresenter } from '@http/presenters/user-presenter'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
+import { HTTP_STATUS } from '@http/http-status'
 
 export async function listUsers(_request: FastifyRequest, reply: FastifyReply) {
   const listUsersUseCase = makeListUsersUseCase()
@@ -18,5 +19,5 @@ export async function listUsers(_request: FastifyRequest, reply: FastifyReply) {
 
   logger.info('Usuários obtidos com sucesso!')
 
-  return reply.code(200).send({ users: UserPresenter.toHTTP(users) })
+  return reply.code(HTTP_STATUS.OK).send({ users: UserPresenter.toHTTP(users) })
 }

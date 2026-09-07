@@ -1,5 +1,5 @@
 import { AxiosInstance } from 'axios'
-import { createHttpClient } from '@lib/http/axios'
+import { createProviderHttpClient } from 'providers/helpers/provider-http-client'
 import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { PrecisionHelper } from 'providers/helpers/precision-helper'
 import { IGeoCoordinates, IGeoSearchOptions } from 'core/contracts/use-cases/providers/geo-provider.interface'
@@ -29,18 +29,14 @@ export class LocationIqProvider implements IRawGeocodingProvider {
   readonly timeoutMs = LOCATION_IQ_CONFIG.TIMEOUT_MS
 
   constructor(private readonly config: LocationIqConfig) {
-    this.api = createHttpClient({
+    this.api = createProviderHttpClient({
       baseURL: this.config.apiUrl,
-      timeout: LOCATION_IQ_CONFIG.TIMEOUT_MS,
-      params: {
-        key: this.config.apiToken,
-        format: LOCATION_IQ_CONFIG.API_PARAMS.FORMAT,
-      },
-      agentOptions: {
-        keepAliveMsecs: LOCATION_IQ_CONFIG.HTTPS_AGENT.KEEP_ALIVE_MSECS,
-        maxSockets: LOCATION_IQ_CONFIG.HTTPS_AGENT.MAX_SOCKETS,
-        maxFreeSockets: LOCATION_IQ_CONFIG.HTTPS_AGENT.MAX_FREE_SOCKETS,
-        timeout: LOCATION_IQ_CONFIG.HTTPS_AGENT.TIMEOUT_MS,
+      timeoutMs: LOCATION_IQ_CONFIG.TIMEOUT_MS,
+      extra: {
+        params: {
+          key: this.config.apiToken,
+          format: LOCATION_IQ_CONFIG.API_PARAMS.FORMAT,
+        },
       },
     })
   }
@@ -71,7 +67,12 @@ export class LocationIqProvider implements IRawGeocodingProvider {
   }
 
   private async performRequest(params: Record<string, unknown>, signal?: AbortSignal): Promise<IGeoCoordinates | null> {
-    const response = await this.api.get<LocationIqResponseItem[]>('/search', {
+    // The generic carries `| undefined` because that is the truth: axios types
+    // `response.data` as the generic regardless of what the server sent, so a
+    // 204, an empty body or a proxy error page all arrive typed as a valid
+    // payload. Saying so is what makes the guard below necessary instead of
+    // "unnecessary".
+    const response = await this.api.get<LocationIqResponseItem[] | undefined>('/search', {
       params,
       signal,
     })
@@ -82,8 +83,8 @@ export class LocationIqProvider implements IRawGeocodingProvider {
 
     const bestMatch = response.data[0]
     return {
-      lat: parseFloat(bestMatch.lat),
-      lon: parseFloat(bestMatch.lon),
+      lat: Number.parseFloat(bestMatch.lat),
+      lon: Number.parseFloat(bestMatch.lon),
       precision: PrecisionHelper.fromOsm(bestMatch),
       providerName: 'LocationIQ',
     }

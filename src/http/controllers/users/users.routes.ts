@@ -45,14 +45,16 @@ function registerProfileRoutes(app: FastifyInstance) {
 /** Everything acting on *other* accounts, so every route also requires ADMIN. */
 function registerAdminRoutes(app: FastifyInstance) {
   const adminOnly = [verifyJwt, verifyUserRole([UserRole.ADMIN])]
+  // Written once so the three routes acting on one account cannot drift apart.
+  const byPublicId = '/:publicId'
 
   app.get('/', { onRequest: adminOnly, config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.users.list } }, listUsers)
   app.get('/search', { onRequest: adminOnly }, searchUsersController)
-  app.patch('/:publicId', { onRequest: adminOnly }, updateUser)
+  app.patch(byPublicId, { onRequest: adminOnly }, updateUser)
   app.delete(
-    '/:publicId',
+    byPublicId,
     { onRequest: adminOnly, config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.users.delete } },
     deleteUserByPublicId,
   )
-  app.get('/:publicId', { onRequest: adminOnly }, getUserByPublicId)
+  app.get(byPublicId, { onRequest: adminOnly }, getUserByPublicId)
 }

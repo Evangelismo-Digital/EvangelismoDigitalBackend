@@ -2,7 +2,7 @@ import { OUTBOX_CONSTANTS, OUTBOX_CONSTANTS as OUTBOX_CFG } from 'messages/const
 import { QUEUE } from 'messages/constants/queue/queue'
 import { logger } from '@lib/logger'
 import { getMailQueue } from '@lib/queue/mail-queue'
-import { DistributedLock, LockToken } from '@lib/infra/distributed-lock/distributed-lock'
+import { withDistributedLock } from '@lib/infra/distributed-lock/with-distributed-lock'
 import { OutboxDispatchStrategyRegistry } from './outbox-dispatch-strategy-registry'
 import { isErr } from 'core/shared/result'
 import {
@@ -26,16 +26,17 @@ export class OutboxProcessor {
   private readonly LOCK_TTL_MS = OUTBOX_CONSTANTS.LOCK_TTL_MS.DEFAULT
 
   constructor(
-    private outboxRepository: IOutboxRepository,
-    private dispatchRegistry: OutboxDispatchStrategyRegistry,
+    private readonly outboxRepository: IOutboxRepository,
+    private readonly dispatchRegistry: OutboxDispatchStrategyRegistry,
   ) {}
 
   async processPendingEvents(): Promise<void> {
-    await this.withLock(
-      this.LOCK_KEY,
-      OUTBOX_LOGS.CRITICAL_LOOP_ERROR,
-      OUTBOX_LOGS.SKIPPED_ANOTHER_RUNNING,
-      async (renew) => {
+    await withDistributedLock({
+      lockKey: this.LOCK_KEY,
+      ttlMs: this.LOCK_TTL_MS,
+      errorMessage: OUTBOX_LOGS.CRITICAL_LOOP_ERROR,
+      skippedMessage: OUTBOX_LOGS.SKIPPED_ANOTHER_RUNNING,
+      work: async (renew) => {
         const pendingEventsResult = await this.outboxRepository.findPending(OUTBOX_CFG.THRESHOLDS.PENDING_FETCH_LIMIT)
 
         if (isErr(pendingEventsResult)) {
@@ -55,15 +56,15 @@ export class OutboxProcessor {
           await this.processSingleEvent(event)
         }
       },
-    )
+    })
   }
 
   async processStuckSendingEvents(): Promise<void> {
-    await this.withLock(
-      OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY,
-      OUTBOX_LOGS.CRITICAL_RECOVERY_ERROR,
-      null,
-      async (renew) => {
+    await withDistributedLock({
+      lockKey: OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_RECOVERY,
+      ttlMs: this.LOCK_TTL_MS,
+      errorMessage: OUTBOX_LOGS.CRITICAL_RECOVERY_ERROR,
+      work: async (renew) => {
         const thresholdDate = new Date(Date.now() - OUTBOX_CFG.THRESHOLDS.STUCK_SENDING_MS)
         const stuckEventsResult = await this.outboxRepository.findStuck(
           thresholdDate,
@@ -88,44 +89,7 @@ export class OutboxProcessor {
           await this.processSingleEvent(event)
         }
       },
-    )
-  }
-
-  /**
-   * Roda `run` sob o lock distribuído, renovando-o entre eventos para que um
-   * lote longo não perca a exclusividade no meio do caminho. Se outra instância
-   * já detém o lock, nada roda — e `skippedMessage`, quando informado, registra
-   * a desistência.
-   */
-  private async withLock(
-    lockKey: string,
-    errorMessage: string,
-    skippedMessage: string | null,
-    run: (renew: () => Promise<void>) => Promise<void>,
-  ): Promise<void> {
-    let lockToken: LockToken | null = null
-
-    try {
-      lockToken = await DistributedLock.acquire(lockKey, this.LOCK_TTL_MS)
-
-      if (!lockToken) {
-        if (skippedMessage) logger.warn(skippedMessage)
-        return
-      }
-
-      const token = lockToken
-
-      await run(async () => {
-        await DistributedLock.renew(lockKey, token, this.LOCK_TTL_MS)
-      })
-    } catch (error) {
-      logger.error({ error }, errorMessage)
-      captureError(error)
-    } finally {
-      if (lockToken) {
-        await DistributedLock.release(lockKey, lockToken)
-      }
-    }
+    })
   }
 
   async processSingleEvent(event: IOutboxEvent): Promise<void> {

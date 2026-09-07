@@ -1,10 +1,9 @@
 import { IAddressProvider, IAddressData } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { IRawAddressProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
 import { Deadline } from 'core/shared/deadline'
-import { Result, isErr } from 'core/shared/result'
+import { Result } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { runWithRetries } from 'providers/helpers/deadline-retry'
-import { checkAdmission } from 'providers/helpers/provider-admission'
+import { runGuardedAttempt } from 'providers/helpers/guarded-attempt'
 import Redis from 'ioredis'
 
 export class ResilientAddressProviderDecorator implements IAddressProvider {
@@ -23,25 +22,14 @@ export class ResilientAddressProviderDecorator implements IAddressProvider {
   ): Promise<Result<IAddressData | null, AppError>> {
     const cleanCep = cep.replace(/\D/g, '')
 
-    const admission = await checkAdmission({
-      deadline,
-      providerName: this.providerName,
-      rateLimitConfig: this.rawProvider.rateLimitConfig,
+    // No `metricsLayer`: ResilientAddressProvider times and counts each provider
+    // as it walks the chain, so recording here as well would double it.
+    return await runGuardedAttempt({
+      rawProvider: this.rawProvider,
       redis: this.redisRateLimiterConnection,
-    })
-
-    if (isErr(admission)) {
-      return admission
-    }
-
-    return await runWithRetries({
-      deadline,
-      providerName: this.providerName,
-      maxAttempts: this.rawProvider.maxRetries,
-      backoffMs: this.rawProvider.backoffMs,
-      attemptTimeoutMs: this.rawProvider.timeoutMs,
       logContext: { cep: cleanCep },
-      action: (attempt) => this.rawProvider.fetchRawAddress(cleanCep, attempt.signal),
+      action: async (attempt) => await this.rawProvider.fetchRawAddress(cleanCep, attempt.signal),
+      deadline,
     })
   }
 }

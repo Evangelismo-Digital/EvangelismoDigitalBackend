@@ -6,6 +6,7 @@ import { UserPresenter } from '@http/presenters/user-presenter'
 import { UserRole } from 'core/contracts/repository/users-repository.interface'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
+import { HTTP_STATUS } from '@http/http-status'
 
 export async function register(request: FastifyRequest, reply: FastifyReply) {
   const { name, email, cpf, username, password } = registerSchema.parse(request.body)
@@ -29,7 +30,7 @@ export async function register(request: FastifyRequest, reply: FastifyReply) {
 
   logger.info({ userId: user.publicId }, 'Usuário comum registrado com sucesso!')
 
-  return reply.code(201).send({ user: UserPresenter.toHTTP(user) })
+  return reply.code(HTTP_STATUS.CREATED).send({ user: UserPresenter.toHTTP(user) })
 }
 
 export async function registerAdmin(request: FastifyRequest, reply: FastifyReply) {
@@ -54,5 +55,5 @@ export async function registerAdmin(request: FastifyRequest, reply: FastifyReply
 
   logger.info({ userId: user.publicId }, 'Usuário administrador registrado com sucesso!')
 
-  return reply.code(201).send({ user: UserPresenter.toHTTP(user) })
+  return reply.code(HTTP_STATUS.CREATED).send({ user: UserPresenter.toHTTP(user) })
 }

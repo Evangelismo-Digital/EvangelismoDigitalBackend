@@ -63,6 +63,12 @@ jobs:
       - name: Prisma schema validate
         run: npx prisma validate
 
+      - name: Code duplication (jscpd)
+        # Catches copy-paste that SonarQube's token-level CPD misses: the two
+        # resilient provider chains were 21 % duplicated and Sonar scored the
+        # project at 0.7 %. Threshold and ignore list live in .jscpd.json.
+        run: npm run check:duplication
+
       - name: Dead code / unused exports (Knip)
         run: npm run knip
 
@@ -132,6 +138,51 @@ jobs:
         with:
           name: semgrep-report
           path: semgrep.sarif
+          if-no-files-found: ignore
+
+  security-code:
+    name: Security findings (njsscan + Semgrep security + ESLint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Reads the SOURCE for vulnerable patterns, which is a different question
+      # from the three scanners above: OSV-Scanner reads the lockfile, gitleaks
+      # reads the diff, and the SAST job runs the language correctness packs.
+      # Mirrors the "Security findings" stage of scripts/ci-local.sh.
+      #
+      # The SonarQube inputs are absent here on purpose — see that script for
+      # why SonarQube itself is a pre-push gate rather than a CI job — so this
+      # consolidates njsscan, Semgrep's security rulesets and ESLint only.
+      - name: Run security scan
+        env:
+          # Optional: Snyk Code is skipped (loudly, and reported as not-run) when
+          # the secret is absent, so a fork's PR does not fail on a credential
+          # it cannot have.
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: bash scripts/security-scan.sh
+
+      - name: Upload security report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: security-report
+          path: reports/security/
           if-no-files-found: ignore
 
   deps:
@@ -275,7 +326,7 @@ jobs:
             --project=unit-geo-provider --project=unit-address-provider --project=unit-http \
             --project=unit-http-users --project=unit-church-routing-provider --project=unit-lib \
             --project=unit-resilient-cache --project=unit-rate-limiter --project=unit-repositories \
-            --project=integration-cache --project=e2e \
+            --project=integration-cache --project=integration-repositories --project=e2e \
             --coverage.reporter=json-summary \
             --coverage.reporter=json \
             --coverage.reporter=text \

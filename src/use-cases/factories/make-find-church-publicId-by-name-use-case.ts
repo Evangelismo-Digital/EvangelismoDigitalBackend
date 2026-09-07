@@ -6,7 +6,5 @@ import { FindChurchPublicIdByNameUseCase } from '@use-cases/churches/find-church
 export function makeFindChurchPublicIdByNameUseCase() {
   const errorMapper = new PrismaErrorMapper(churchPrismaErrorMapping)
   const churchesRepository = new PrismaChurchesRepository(errorMapper)
-  const findChurchPublicIdByNameUseCase = new FindChurchPublicIdByNameUseCase(churchesRepository)
-
-  return findChurchPublicIdByNameUseCase
+  return new FindChurchPublicIdByNameUseCase(churchesRepository)
 }

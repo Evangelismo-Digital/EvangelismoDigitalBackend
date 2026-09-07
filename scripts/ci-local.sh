@@ -38,6 +38,8 @@ export REDIS_PASSWORD="$(env_test REDIS_PASSWORD)"
 # mirrors the `test` job env block in ci.yml.
 export SHADOW_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/prisma_shadow?schema=public'
 
+mkdir -p reports/sonar reports/eslint reports/security
+
 STAGE_TIMES=()
 STAGE_START=0
 
@@ -135,12 +137,42 @@ npx vitest run --coverage \
   --project=unit-geo-provider --project=unit-address-provider --project=unit-http \
   --project=unit-http-users --project=unit-church-routing-provider --project=unit-lib \
   --project=unit-resilient-cache --project=unit-rate-limiter --project=unit-repositories \
-  --project=integration-cache --project=e2e \
+  --project=integration-cache --project=integration-repositories --project=e2e \
   --coverage.reporter=json-summary \
   --coverage.reporter=json \
+  --coverage.reporter=lcov \
   --coverage.reporter=text \
-  --coverage.reportOnFailure=true
+  --coverage.reportOnFailure=true \
+  --reporter=default --reporter=json \
+  --outputFile.json=reports/sonar/vitest-results.json
 stage_done 'Tests + coverage'
+
+# ─────────────────────────────────────────────────────────────────────────────
+stage 'SonarQube — quality gate (local-only stage)'
+# Deliberately NOT mirrored in ci.yml: SonarQube needs its own Postgres and an
+# Elasticsearch heap, takes minutes to boot from a cold volume, and keeps the
+# issue history that makes the "new code" half of the gate mean anything — none
+# of which survives a fresh GitHub runner. It is a pre-push gate instead, and
+# the security stage below (which needs no server) is the part CI does mirror.
+#
+# The scan reuses the coverage produced by the stage above rather than running
+# the suite a second time; it only needs the test-execution XML converted first.
+node scripts/vitest-to-sonar.mjs reports/sonar/vitest-results.json reports/sonar/test-execution.xml
+npx eslint src/ -f json -o reports/eslint/eslint-report.json || true
+
+bash scripts/sonar.sh up
+bash scripts/sonar.sh bootstrap
+bash scripts/sonar.sh scan
+stage_done 'SonarQube'
+
+# ─────────────────────────────────────────────────────────────────────────────
+stage 'Security findings — njsscan + Semgrep + ESLint + Sonar (mirrors job: security-code)'
+# Answers a different question from the three scanners above: OSV-Scanner reads
+# the lockfile, gitleaks reads the diff, Semgrep's language packs read for
+# correctness. This one reads the source for vulnerable PATTERNS and merges
+# every tool's verdict into one deduplicated list.
+SECURITY_REUSE_REPORTS=1 bash scripts/security-scan.sh
+stage_done 'Security findings'
 
 # ─────────────────────────────────────────────────────────────────────────────
 stage 'Build verification — tsup (mirrors job: build)'

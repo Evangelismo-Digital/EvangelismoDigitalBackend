@@ -6,7 +6,5 @@ import { DeleteUserUseCase } from '@use-cases/users/delete-user'
 export function makeDeleteUserUseCase() {
   const errorMapper = new PrismaErrorMapper(userPrismaErrorMapping)
   const usersRepository = new PrismaUsersRepository(errorMapper)
-  const deleteUserUseCase = new DeleteUserUseCase(usersRepository)
-
-  return deleteUserUseCase
+  return new DeleteUserUseCase(usersRepository)
 }

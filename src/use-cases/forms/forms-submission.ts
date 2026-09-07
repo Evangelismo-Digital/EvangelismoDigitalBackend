@@ -17,8 +17,8 @@ type Response = Result<
 
 export class FormsSubmissionUseCase {
   constructor(
-    private formsSubmissionRepository: FormsRepository,
-    private eventRegistration: IOutboxEventRegistration,
+    private readonly formsSubmissionRepository: FormsRepository,
+    private readonly eventRegistration: IOutboxEventRegistration,
   ) {}
 
   async execute(request: IFormSubmissionInputData): Promise<Response> {

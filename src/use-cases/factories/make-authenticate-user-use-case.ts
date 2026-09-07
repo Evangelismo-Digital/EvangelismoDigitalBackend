@@ -8,7 +8,5 @@ export function makeAuthenticateUserUseCase() {
   const errorMapper = new PrismaErrorMapper(userPrismaErrorMapping)
   const usersRepository = new PrismaUsersRepository(errorMapper)
   const authenticationAuditUseCase = makeAuthenticationAuditUseCase()
-  const authenticateUserUseCase = new AuthenticateUserUseCase(usersRepository, authenticationAuditUseCase)
-
-  return authenticateUserUseCase
+  return new AuthenticateUserUseCase(usersRepository, authenticationAuditUseCase)
 }

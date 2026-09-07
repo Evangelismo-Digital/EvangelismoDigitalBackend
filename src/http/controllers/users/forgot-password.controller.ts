@@ -5,12 +5,13 @@ import { OutboxSignal } from '@lib/infra/events/outbox-signal'
 import { EMAIL_CONSTANTS } from 'messages/constants/email/email'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
+import { HTTP_STATUS } from '@http/http-status'
 
 export async function forgotPassword(request: FastifyRequest, reply: FastifyReply) {
   const { email } = forgotPasswordSchema.parse(request.body)
 
   if (!email) {
-    return reply.code(200).send({ message: EMAIL_CONSTANTS.PASSWORD_RESET_GENERIC_MESSAGE })
+    return reply.code(HTTP_STATUS.OK).send({ message: EMAIL_CONSTANTS.PASSWORD_RESET_GENERIC_MESSAGE })
   }
 
   const forgotPasswordUseCase = makeForgotPasswordUseCase()
@@ -27,5 +28,5 @@ export async function forgotPassword(request: FastifyRequest, reply: FastifyRepl
     void OutboxSignal.publishNewItem(outboxEvent.publicId, outboxEvent)
   }
 
-  return reply.code(200).send({ message: EMAIL_CONSTANTS.PASSWORD_RESET_GENERIC_MESSAGE })
+  return reply.code(HTTP_STATUS.OK).send({ message: EMAIL_CONSTANTS.PASSWORD_RESET_GENERIC_MESSAGE })
 }

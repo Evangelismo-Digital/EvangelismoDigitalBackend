@@ -8,25 +8,20 @@
 # prisma 7.9.1 removed that transitive dependency entirely.)
 
 [[IgnoredVulns]]
-id = "GHSA-c7w3-x93f-qmm8"
-reason = "nodemailer SMTP/CRLF injection advisories. Fixed versions require a v7 -> v9 major bump with no @types/nodemailer release yet matching v9, and no verified migration test pass in this session. Needs a dedicated, tested migration rather than a security-triage side effect."
+id = "GHSA-c2qf-rxjj-qqgw"
+reason = """
+ReDoS in semver <7.5.2, reached only through snyk's BUNDLED copy at
+node_modules/snyk/node_modules/global-agent/node_modules/semver (the lockfile
+entry carries inBundle: true). npm `overrides` cannot rewrite a bundled
+dependency — verified: a top-level override, a nested one, and deleting the lock
+entry all re-resolve to 7.3.8, because the version ships inside snyk's own
+tarball. Only Snyk can fix it upstream.
 
-[[IgnoredVulns]]
-id = "GHSA-vvjj-xcjg-gr5g"
-reason = "See GHSA-c7w3-x93f-qmm8 — same nodemailer v9 migration blocker."
+Accepted because the exposure is nil in practice: snyk is a devDependency, is
+never installed into the production image (the Dockerfile installs with --omit=dev
+and the runner stage copies only @prisma/client), and the vulnerable code path is
+semver range parsing on input that only ever comes from our own package.json.
 
-[[IgnoredVulns]]
-id = "GHSA-268h-hp4c-crq3"
-reason = "See GHSA-c7w3-x93f-qmm8 — same nodemailer v9 migration blocker."
-
-[[IgnoredVulns]]
-id = "GHSA-wqvq-jvpq-h66f"
-reason = "See GHSA-c7w3-x93f-qmm8 — same nodemailer v9 migration blocker."
-
-[[IgnoredVulns]]
-id = "GHSA-r7g4-qg5f-qqm2"
-reason = "See GHSA-c7w3-x93f-qmm8 — same nodemailer v9 migration blocker."
-
-[[IgnoredVulns]]
-id = "GHSA-p6gq-j5cr-w38f"
-reason = "See GHSA-c7w3-x93f-qmm8 — same nodemailer v9 migration blocker."
+Revisit when snyk publishes a build with global-agent updated; check with
+`npm ls semver` after a snyk bump.
+"""

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { emailSchema } from '@http/schemas/utils/email'
+import { emailSchema } from 'core/validation/email'
 import { UsersRepository } from 'core/contracts/repository/users-repository.interface'
 import { IOutboxEventRegistration } from 'core/contracts/use-cases/outbox-event/outbox-event.interface'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
@@ -19,8 +19,8 @@ type ForgotPasswordUseCaseResponse = {
 
 export class ForgotPasswordUseCase {
   constructor(
-    private usersRepository: UsersRepository,
-    private eventRegistration: IOutboxEventRegistration,
+    private readonly usersRepository: UsersRepository,
+    private readonly eventRegistration: IOutboxEventRegistration,
   ) {}
 
   async execute({ email }: ForgotPasswordUseCaseRequest): Promise<Result<ForgotPasswordUseCaseResponse, AppError>> {

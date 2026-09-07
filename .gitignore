@@ -3,6 +3,11 @@ coverage
 build
 /src/generated/prisma
 .env
+# Local, per-machine env overrides. `.env.test.local` is where the real
+# geocoding tokens for the e2e-api-providers-fallback-strategy project go —
+# see the note in the tracked `.env.test`. Never commit these.
+.env.local
+.env.*.local
 .ci-local
 
 # Mutation testing (Layer 5)
@@ -13,3 +18,13 @@ build
 # No project-level settings file may exist — it would override the global one.
 .claude/settings.json
 .claude/settings.local.json
+# SonarQube local state (admin password + analysis token, 0600)
+.sonar/
+
+# Generated analysis / security reports
+/reports/sonar
+/reports/eslint
+/reports/security
+
+# Local security scanner credentials (SNYK_TOKEN), 0600
+.env.security

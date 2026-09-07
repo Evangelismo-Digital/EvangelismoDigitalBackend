@@ -6,7 +6,5 @@ import { SearchUsersUseCase } from '@use-cases/users/search-users-use-case'
 export function makeSearchUsersUseCase() {
   const errorMapper = new PrismaErrorMapper(userPrismaErrorMapping)
   const usersRepository = new PrismaUsersRepository(errorMapper)
-  const searchUsersUseCase = new SearchUsersUseCase(usersRepository)
-
-  return searchUsersUseCase
+  return new SearchUsersUseCase(usersRepository)
 }
