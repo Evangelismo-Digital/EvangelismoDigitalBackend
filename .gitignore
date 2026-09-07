@@ -3,6 +3,11 @@ coverage
 build
 /src/generated/prisma
 .env
+# Local, per-machine env overrides. `.env.test.local` is where the real
+# geocoding tokens for the e2e-api-providers-fallback-strategy project go —
+# see the note in the tracked `.env.test`. Never commit these.
+.env.local
+.env.*.local
 .ci-local
 
 # Mutation testing (Layer 5)

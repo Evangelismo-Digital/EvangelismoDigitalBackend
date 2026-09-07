@@ -17,6 +17,19 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 
 const SONAR_URL = process.env.SONAR_URL ?? 'http://localhost:9000'
 const PROJECT_KEY = 'evangelismo-digital-backend'
+
+/**
+ * How long to wait for the Compute Engine to finish processing an upload.
+ *
+ * This was 4 minutes and it was not enough: on a cold or loaded host (WSL2,
+ * a CI runner sharing a box) the CE routinely takes longer, and the script then
+ * failed the whole `npm run sonar` run with "não terminou de ser processada a
+ * tempo" for an analysis that was perfectly healthy and readable a minute
+ * later. A timeout that fires on a slow machine rather than on a broken one
+ * teaches people to re-run the gate instead of trusting it.
+ */
+const ANALYSIS_WAIT_MS = Number(process.env.SONAR_ANALYSIS_TIMEOUT_MS ?? 15 * 60 * 1000)
+const ANALYSIS_POLL_MS = 2_000
 const OUT_DIR = 'reports/sonar'
 const HOTSPOT_DECISIONS_FILE = 'sonar-hotspot-decisions.json'
 
@@ -112,7 +125,10 @@ async function api(path, { method = 'GET', form } = {}) {
  * like it did nothing, or a regression looks clean.
  */
 async function waitForAnalysis() {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
+  const deadline = Date.now() + ANALYSIS_WAIT_MS
+  let announced = false
+
+  for (;;) {
     const { queue = [], current } = await api(`/api/ce/component?component=${PROJECT_KEY}`)
 
     if (queue.length === 0) {
@@ -122,10 +138,22 @@ async function waitForAnalysis() {
       return current
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 2_000))
-  }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `a análise não terminou de ser processada em ${Math.round(ANALYSIS_WAIT_MS / 1000)}s ` +
+          `(${queue.length} tarefa(s) ainda na fila do Compute Engine). ` +
+          'Aumente SONAR_ANALYSIS_TIMEOUT_MS ou releia com "npm run sonar:report".',
+      )
+    }
 
-  throw new Error('a análise não terminou de ser processada a tempo')
+    // Silence for minutes looks like a hang; say once that we are waiting.
+    if (!announced) {
+      console.log('[sonar] aguardando o Compute Engine processar a análise...')
+      announced = true
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, ANALYSIS_POLL_MS))
+  }
 }
 
 async function fetchAllPages(path, key) {

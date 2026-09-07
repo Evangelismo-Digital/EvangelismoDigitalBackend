@@ -14,13 +14,24 @@ import { ok } from 'core/shared/result'
 const redisConnection = createRedisCacheConnection()
 
 // ATENÇÃO: esta suíte faz chamadas REAIS às APIs de geocodificação/endereço
-// (LocationIQ, Nominatim, ViaCEP, BrasilAPI). O plano gratuito do LocationIQ
-// limita a ~2 req/s e retorna HTTP 429 quando os cenários rodam em sequência.
-// Um 429 é RETRYABLE, então a cadeia resiliente cai para o Nominatim — o que faz
-// o Cenário 4 e o Cenário 7 (`expect(spyNominatim).not.toHaveBeenCalled()`)
-// falharem localmente por cota, e não por lógica. Este projeto é intencionalmente
-// excluído do CI (allowlist em .github/workflows/ci.yml); para rodá-lo verde
-// localmente, execute-o isolado e espace as execuções para respeitar o limite.
+// (LocationIQ, Nominatim, ViaCEP, BrasilAPI). Este projeto é intencionalmente
+// excluído do CI (allowlist em .github/workflows/ci.yml).
+//
+// PRÉ-REQUISITOS para rodá-la verde localmente:
+//
+// 1. Um token REAL do LocationIQ em `.env.test.local` (gitignored). O
+//    `.env.test` versionado carrega um token FALSO de propósito, e ele vence
+//    `.env.local` na ordem de precedência do Vite — só `.env.test.local` o
+//    sobrescreve. Sem isso a LocationIQ responde 401 `Invalid key`, que é
+//    RETRYABLE: a cadeia resiliente cai para o Nominatim e os Cenários 4 e 7
+//    (`expect(spyNominatim).not.toHaveBeenCalled()`) falham — indistinguível,
+//    à primeira vista, da flakiness de cota descrita no item 2.
+// 2. O banco precisa estar semeado (`npm run db:seed`). A suíte usa o schema
+//    `public` compartilhado, que as outras suítes e2e truncam; sem igrejas na
+//    tabela todo cenário de sucesso responde 404 em vez de 200.
+// 3. O plano gratuito do LocationIQ limita a ~2 req/s e retorna HTTP 429 quando
+//    os cenários rodam em sequência — execute o projeto isolado e espace as
+//    execuções para respeitar o limite.
 describe('Real Geocoding Fallback Scenarios (e2e)', () => {
   beforeAll(async () => {
     await app.ready()

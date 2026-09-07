@@ -68,7 +68,11 @@ E2E projects use a custom Vitest environment (`prisma/vitest-environment-prisma/
 
 `unit-repositories` deliberately excludes `*.integration.spec.ts`: the Prisma/PostGIS contract suite used to be collected there, which made `npm run test:unit:all` — the Docker-free gate the pre-commit hook runs — fail the moment the database container stopped. It now runs as its own `integration-repositories` project, which **is** in both CI allowlists, so the coverage did not move, only the label.
 
-The CI coverage step uses an explicit project **allowlist** that omits `e2e-api-providers-fallback-strategy` and `e2e-users`, so those two projects do not run in CI. `e2e-api-providers-fallback-strategy` calls **live** geocoding APIs (LocationIQ, Nominatim, ViaCEP, BrasilAPI); LocationIQ's free tier limits to ~2 req/s, so running its scenarios back-to-back can return HTTP 429 and make the resilient chain fall through to Nominatim — Scenarios 4 and 7 (`expect(spyNominatim).not.toHaveBeenCalled()`) may fail locally on quota rather than logic. Run it in isolation and space executions out if you need it green locally.
+The CI coverage step uses an explicit project **allowlist** that omits `e2e-api-providers-fallback-strategy` and `e2e-users`, so those two projects do not run in CI. `e2e-api-providers-fallback-strategy` calls **live** geocoding APIs (LocationIQ, Nominatim, ViaCEP, BrasilAPI) and needs two things set up before it can be green locally:
+
+1. **A real LocationIQ token in `.env.test.local`** (gitignored). The tracked `.env.test` carries a deliberately fake token, and `.env.test` **beats `.env.local`** in Vite's `loadEnv` order (`.env` → `.env.local` → `.env.<mode>` → `.env.<mode>.local`, later wins) — so only `.env.test.local` overrides it. With the fake token LocationIQ answers `401 Invalid key`, which is RETRYABLE, so the chain falls through to Nominatim and Scenarios 4 and 7 (`expect(spyNominatim).not.toHaveBeenCalled()`) fail. That is visually identical to the quota flakiness in point 3, which is exactly why it went undiagnosed: the symptom was attributed to the rate limit and the token was never checked.
+2. **A seeded database** (`npm run db:seed`). This project runs against the shared `public` schema, which the other e2e suites truncate; with an empty `churches` table every success scenario answers 404 instead of 200.
+3. Only then does the genuine flakiness apply: LocationIQ's free tier limits to ~2 req/s, so running the scenarios back-to-back can return HTTP 429 and fall through to Nominatim. Run the project in isolation and space executions out.
 
 ## Agent Quality & Mutation Testing Gauntlet
 
@@ -85,7 +89,7 @@ This is **non-negotiable** for any change to a controller, use-case/service, rep
 | 4 — Structural & complexity | `eslint` (`complexity`, `sonarjs/cognitive-complexity`, `max-lines-per-function`, `max-depth`, `max-params`, `import/no-cycle`), `npm run check:cycles` | no monolithic / tangled generated code | Cyclomatic ≤ 6; cognitive ≤ 10; function ≤ 30 lines; `max-depth` ≤ 3; ≤ 5 params; no new circular deps |
 | 4b — SonarQube | `npm run sonar` (server in `docker-compose.sonar.yml`) | the checks ESLint has no equivalent for: cognitive complexity on the dashboard, duplication, coverage and test-execution history, "new code" tracking | quality gate `Evangelismo Strict` = OK; **0 open issues**; 0 unreviewed hotspots |
 | 4c — Security findings | `npm run security:scan` — njsscan + Semgrep security rulesets + ESLint security rules + Sonar's security findings, merged | vulnerable *patterns* in the source (a different question from OSV's lockfile and gitleaks' diff) | 0 blocking findings; anything else justified in `security-suppressions.json` |
-| 5 — Mutation gauntlet | Stryker — `npm run test:mutation -- --mutate "<changed globs>"` | kill deliberate bugs planted in the AST | mutation score ≥ 85 % on the changed diff |
+| 5 — Mutation gauntlet | Stryker — `npm run test:mutation:scoped -- "<changed globs>"` | kill deliberate bugs planted in the AST | mutation score ≥ 85 % on the changed diff |
 | 6 — CI parity | `npm run ci:local` (`scripts/ci-local.sh`) | prove the change survives every gate CI applies, not just the ones you thought to run | exit 0, all stages green — **mandatory, run serially** |
 
 The Layer 4 rules are `error` repo-wide — the legacy backlog was cleared, so a new violation fails `npm run lint`, `ci:static` and the `PostToolUse` hook alike. `npm run lint` already runs with `--max-warnings 0`; `npm run lint:complexity` is the same check under a name that says what it is for.
@@ -152,10 +156,23 @@ is worth least exactly where you were most confident. Run all of it:
 7. `npm run security:scan` — zero blocking findings in `reports/security/SECURITY-REPORT.md`. Fix
    them; if one is genuinely a false positive, record it in `security-suppressions.json` with a
    justification that explains *why that point is safe*. Never silence the tool
-8. `npm run test:mutation -- --mutate "<changed src globs>"` — kill every survivor (boolean flip,
-   boundary operator, deleted return) with a targeted test. Note: repeating `--mutate` **overrides**
-   rather than appends; pass one comma-separated list. `--incremental false` is parsed as a config
-   filename — use `--incrementalFile <path>` to scope a run instead
+8. `npm run test:mutation:scoped -- "<changed src globs>"` — kill every survivor (boolean flip,
+   boundary operator, deleted return) with a targeted test.
+   **Use the `:scoped` script, not `test:mutation -- --mutate`.** Stryker's CLI `--mutate`
+   *replaces* the `mutate` array from `stryker.conf.mjs` instead of intersecting with it, and that
+   array is where the exclusions live (`!src/**/*.spec.ts` and friends). Passing `--mutate` by hand
+   therefore starts planting mutants in the **spec files themselves**; nothing asserts on a test's
+   own source, so those mutants survive and drag the score under the gate for a reason unrelated to
+   your change. Measured here: the provider chain scored **45.68 %** that way and **97.07 %** with
+   the exclusions restored — same code, same tests. `scripts/stryker-scoped.mjs` re-appends them
+   straight from the config so the two cannot drift.
+   Other flags still apply: repeating `--mutate` **overrides** rather than appends (pass one
+   comma-separated list), and `--incremental false` is parsed as a config filename — use
+   `--incrementalFile <path>` to scope a run. Forward extra Stryker flags after a bare `--`:
+   `npm run test:mutation:scoped -- "src/x/**/*.ts" -- --incrementalFile /tmp/run.json`.
+   A full unscoped `npm run test:mutation` is a **report, not a gate** (stryker.conf.mjs says so):
+   it legitimately sits below 85 % because untested wiring like the `make*` factories, `app.ts` and
+   `metrics-server.ts` is in the denominator with no unit tests behind it
 9. **`npm run ci:local`** — the final gate. Mirrors every CI job (security scanners, coverage, tsup
    build, Docker image + smoke test) **and runs steps 6 and 7 itself**, so it is the one command that
    proves the whole set. Must exit 0. It catches what the `PostToolUse` hook cannot: the hook only

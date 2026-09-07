@@ -49,6 +49,7 @@
     "test:integration:cache": "vitest run --project integration-cache",
     "test:integration:full": "vitest run --project integration",
     "test:mutation": "stryker run",
+    "test:mutation:scoped": "node scripts/stryker-scoped.mjs",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
     "lint:complexity": "eslint src/ --max-warnings 0",
