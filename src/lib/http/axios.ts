@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, CreateAxiosDefaults } from 'axios'
-import https from 'https'
+import https from 'node:https'
 import { getHttpsAgent, sharedHttpsAgent } from './https-agent'
 
 const AXIOS_DEFAULT_TIMEOUT_MS = 60000

@@ -4,6 +4,10 @@ import { getRegistry } from '@lib/metrics'
 import { collectBullMQMetrics } from '@lib/metrics/bullmq-metrics'
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
+import { HTTP_STATUS } from '@http/http-status'
+
+/** A scrape that cannot answer in time is more useful late than never. */
+const METRICS_COLLECTION_TIMEOUT_MS = 2_000
 
 let metricsServer: FastifyInstance | null = null
 
@@ -45,18 +49,20 @@ export async function startMetricsServer(options: StartOptions): Promise<void> {
   metricsServer.get('/metrics', async (_request, reply) => {
     const currentRegistry = getRegistry()
     if (!currentRegistry) {
-      return reply.code(503).send('Metrics disabled')
+      return reply.code(HTTP_STATUS.SERVICE_UNAVAILABLE).send('Metrics disabled')
     }
 
     // Lazy BullMQ collection: pull job counts from Redis just before serializing,
     // so bullmq_jobs is fresh in this scrape. No-op on the API process (no queues).
     try {
-      await withTimeout(collectBullMQMetrics(), 2000, 'bullmq')
+      await withTimeout(collectBullMQMetrics(), METRICS_COLLECTION_TIMEOUT_MS, 'bullmq')
     } catch (err) {
       logger.warn({ err }, 'Falha na coleta de métricas do BullMQ')
     }
 
-    const results = await Promise.allSettled([withTimeout(currentRegistry.metrics(), 2000, 'prom-client')])
+    const results = await Promise.allSettled([
+      withTimeout(currentRegistry.metrics(), METRICS_COLLECTION_TIMEOUT_MS, 'prom-client'),
+    ])
 
     const output = results
       .filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled')
@@ -67,16 +73,20 @@ export async function startMetricsServer(options: StartOptions): Promise<void> {
     return output
   })
 
-  metricsServer.get('/health', async () => ({ status: 'ok' }))
+  metricsServer.get('/health', () => ({ status: 'ok' }))
 
   await metricsServer.listen({ host: '0.0.0.0', port: options.port })
   logger.info({ port: options.port }, 'Servidor de métricas iniciado')
 }
 
 export async function stopMetricsServer(): Promise<void> {
-  if (metricsServer) {
-    await metricsServer.close()
-    metricsServer = null
-    logger.info('Servidor de métricas parado')
-  }
+  const server = metricsServer
+  if (!server) return
+
+  // Cleared before the await so a startMetricsServer() racing the shutdown is
+  // not silently discarded by the assignment that used to follow close().
+  metricsServer = null
+
+  await server.close()
+  logger.info('Servidor de métricas parado')
 }

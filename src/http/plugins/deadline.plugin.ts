@@ -54,6 +54,11 @@ const deadlinePlugin: FastifyPluginAsync = async (app) => {
 
   // `onRequest` runs after routing, so the route's config is already resolved.
   app.addHook('onRequest', (request, reply, done) => {
+    // Fastify types `routeOptions` as always present; it is not. A request that
+    // matched no route — a 404, or the unit tests that model one — never gets
+    // one, and the plugin runs for those too. The optional chain is load-bearing
+    // (deadline.plugin.spec.ts and error-handler.plugin.spec.ts both cover it).
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     const budgetMs = request.routeOptions?.config?.deadlineMs
 
     request.deadline = budgetMs ? startRequestDeadline(budgetMs, request, reply) : Deadline.none()
@@ -64,6 +69,10 @@ const deadlinePlugin: FastifyPluginAsync = async (app) => {
   // Release the timer as soon as the answer is out, rather than waiting for the
   // budget to elapse on a request that is already finished.
   app.addHook('onResponse', (request, _reply, done) => {
+    // `decorateRequest('deadline')` leaves it undefined until the onRequest
+    // hook sets it, and onResponse also fires for requests that never got one
+    // (a 404 short-circuits before routing).
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     request.deadline?.dispose()
     done()
   })

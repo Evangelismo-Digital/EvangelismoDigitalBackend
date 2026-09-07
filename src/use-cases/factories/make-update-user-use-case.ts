@@ -6,7 +6,5 @@ import { UpdateUserUseCase } from '@use-cases/users/update-user'
 export function makeUpdateUserUseCase() {
   const errorMapper = new PrismaErrorMapper(userPrismaErrorMapping)
   const usersRepository = new PrismaUsersRepository(errorMapper)
-  const updateUserUseCase = new UpdateUserUseCase(usersRepository)
-
-  return updateUserUseCase
+  return new UpdateUserUseCase(usersRepository)
 }

@@ -6,7 +6,5 @@ import { CreateChurchUseCase } from '@use-cases/churches/create-church-use-case'
 export function makeCreateChurchUseCase() {
   const errorMapper = new PrismaErrorMapper(churchPrismaErrorMapping)
   const churchesRepository = new PrismaChurchesRepository(errorMapper)
-  const createChurchUseCase = new CreateChurchUseCase(churchesRepository)
-
-  return createChurchUseCase
+  return new CreateChurchUseCase(churchesRepository)
 }

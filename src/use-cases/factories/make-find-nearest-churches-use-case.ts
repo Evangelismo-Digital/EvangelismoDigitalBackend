@@ -124,9 +124,11 @@ export function makeFindNearestChurchesUseCase(
     cepToLatLonUseCase,
     findNearbyChurchesKnnUseCase,
     makeCalculateChurchRouteDistancesUseCase(redisRateLimitConnection),
-    redisCacheConnection,
-    makeNearestChurchesCacheOptions(cacheCircuitBreakerSettings()),
-    RoutingProfile.PEDESTRIAN,
+    {
+      redis: redisCacheConnection,
+      options: makeNearestChurchesCacheOptions(cacheCircuitBreakerSettings()),
+      defaultProfile: RoutingProfile.PEDESTRIAN,
+    },
   )
 
   return cachedUseCase

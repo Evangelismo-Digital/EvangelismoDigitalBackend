@@ -7,25 +7,19 @@ let redisRateLimitInstance: ReturnType<typeof createRedisRateLimiterConnection> 
 let redisForQueueInstance: ReturnType<typeof createRedisBullMQConnection> | null = null
 
 export function getRedisCache() {
-  if (!redisCacheInstance) {
-    redisCacheInstance = createRedisCacheConnection()
-  }
+  redisCacheInstance ??= createRedisCacheConnection()
 
   return redisCacheInstance
 }
 
 export function getRedisRateLimit() {
-  if (!redisRateLimitInstance) {
-    redisRateLimitInstance = createRedisRateLimiterConnection()
-  }
+  redisRateLimitInstance ??= createRedisRateLimiterConnection()
 
   return redisRateLimitInstance
 }
 
 export function getRedisForQueue() {
-  if (!redisForQueueInstance) {
-    redisForQueueInstance = createRedisBullMQConnection()
-  }
+  redisForQueueInstance ??= createRedisBullMQConnection()
 
   return redisForQueueInstance
 }
@@ -39,11 +33,15 @@ export async function closeAllRedisConnections() {
     (connection): connection is NonNullable<typeof connection> => connection !== null,
   )
 
-  await Promise.allSettled(
-    targets.map((connection) => (connection.status !== 'end' ? connection.quit() : Promise.resolve())),
-  )
-
+  // Detach BEFORE awaiting the quits, not after. A `getRedisCache()` arriving
+  // while they are in flight would otherwise build a fresh connection that the
+  // assignments then orphan: never quit, not in `targets`, and invisible to the
+  // next shutdown — a leaked socket that keeps the process alive.
   redisCacheInstance = null
   redisRateLimitInstance = null
   redisForQueueInstance = null
+
+  await Promise.allSettled(
+    targets.map((connection) => (connection.status === 'end' ? Promise.resolve() : connection.quit())),
+  )
 }

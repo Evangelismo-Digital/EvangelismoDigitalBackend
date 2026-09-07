@@ -2,6 +2,9 @@ import pino, { multistream, StreamEntry, type LoggerOptions } from 'pino'
 import { env } from '@env/index'
 import { asyncLocalStorage } from '@lib/async-local-storage'
 
+/** Lines of stack kept outside dev — enough to locate the throw, cheap to store. */
+const ERROR_STACK_BREADCRUMB_LINES = 6
+
 export function getRequestId() {
   return asyncLocalStorage.getStore()?.requestId
 }
@@ -44,12 +47,12 @@ export function errSerializer(err: unknown) {
     code: error.body?.code ?? error.code,
     type: error.type,
     failureMode: error.failureMode,
-    stack: error.stack?.split('\n').slice(0, 6).join('\n'),
+    stack: error.stack?.split('\n').slice(0, ERROR_STACK_BREADCRUMB_LINES).join('\n'),
   }
 }
 
 const baseConfig: LoggerOptions = {
-  level: env.LOG_LEVEL || 'info',
+  level: env.LOG_LEVEL,
   formatters: {
     level(label) {
       return { level: label }

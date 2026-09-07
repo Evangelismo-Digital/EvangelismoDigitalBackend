@@ -6,7 +6,5 @@ import { ResetPasswordUseCase } from '@use-cases/users/reset-password'
 export function makeResetPasswordUseCase() {
   const errorMapper = new PrismaErrorMapper(userPrismaErrorMapping)
   const usersRepository = new PrismaUsersRepository(errorMapper)
-  const resetPasswordUseCase = new ResetPasswordUseCase(usersRepository)
-
-  return resetPasswordUseCase
+  return new ResetPasswordUseCase(usersRepository)
 }

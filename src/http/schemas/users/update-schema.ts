@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { emailSchema } from '@schemas/utils/email'
+import { emailSchema } from 'core/validation/email'
 import { usernameSchema } from '../utils/username'
 
 export const updateSchema = z.object({

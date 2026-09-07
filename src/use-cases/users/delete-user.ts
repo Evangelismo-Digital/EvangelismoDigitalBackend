@@ -8,7 +8,7 @@ interface DeleteUserUseCaseRequest {
 }
 
 export class DeleteUserUseCase {
-  constructor(private usersRepository: UsersRepository) {}
+  constructor(private readonly usersRepository: UsersRepository) {}
 
   async execute({ publicId }: DeleteUserUseCaseRequest): Promise<Result<void, AppError>> {
     const userResult = await this.usersRepository.findBy({ publicId })

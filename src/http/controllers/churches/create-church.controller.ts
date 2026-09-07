@@ -5,6 +5,7 @@ import { makeCreateChurchUseCase } from '@use-cases/factories/make-create-church
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
+import { HTTP_STATUS } from '@http/http-status'
 
 export async function createChurch(request: FastifyRequest, reply: FastifyReply) {
   const { name, address, lat, lon } = createChurchBodySchema.parse(request.body)
@@ -33,5 +34,5 @@ export async function createChurch(request: FastifyRequest, reply: FastifyReply)
     church: sanitizedChurch,
   })
 
-  return reply.code(201).send({ church: sanitizedChurch })
+  return reply.code(HTTP_STATUS.CREATED).send({ church: sanitizedChurch })
 }

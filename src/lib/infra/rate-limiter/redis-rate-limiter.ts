@@ -3,6 +3,7 @@ import { RateLimiterRedis } from 'rate-limiter-flexible' // Lib utilizada para i
 import { logger } from '@lib/logger'
 import { REDIS_CONSTANTS } from 'messages/constants/redis/redis'
 import { RATE_LIMITER_LOGS } from 'messages/constants/logs/rate-limiter'
+import { safeLookup } from 'core/shared/safe-lookup'
 import {
   collectMetricsRateLimiterConsumed,
   collectMetricsRateLimiterRejected,
@@ -10,7 +11,22 @@ import {
   collectMetricsRateLimiterInfraRecovered,
 } from '@lib/metrics/rate-limiter-metrics'
 
-const RATE_LIMITER_OUTAGE_WARN_INTERVAL_MS = Number(process.env.REDIS_LOG_OUTAGE_INTERVAL_MS ?? 30000)
+/** How often a continuing Redis outage is re-logged, so it does not flood. */
+const DEFAULT_OUTAGE_WARN_INTERVAL_MS = 30_000
+
+/**
+ * Providers are a fixed set of literals in the code, so the map should settle
+ * at a handful of entries. Passing this means something is keying limiters by
+ * something dynamic — a leak that grows with traffic.
+ */
+const LIMITER_COUNT_WARN_THRESHOLD = 50
+
+/** Applied to a provider with no entry in the table: deliberately restrictive. */
+const DEFAULT_PROVIDER_LIMIT = { points: 10, windowSeconds: 1 }
+
+const RATE_LIMITER_OUTAGE_WARN_INTERVAL_MS = Number(
+  process.env.REDIS_LOG_OUTAGE_INTERVAL_MS ?? DEFAULT_OUTAGE_WARN_INTERVAL_MS,
+)
 
 /**
  * DESIGN DECISION — Rate Limiting Strategy
@@ -132,9 +148,7 @@ export class RedisRateLimiter {
 
   static getInstance(redis: Redis): RedisRateLimiter {
     // Singleton com Redis injetado externamente através da lib RedisRateLimiter
-    if (!this.instance) {
-      this.instance = new RedisRateLimiter(redis)
-    }
+    this.instance ??= new RedisRateLimiter(redis)
 
     return this.instance
   }
@@ -144,7 +158,11 @@ export class RedisRateLimiter {
    * ❗ Provider PRECISA existir em providerConfigs.
    */
   private getLimiter(provider: EnumProviderConfig): RateLimiterRedis {
-    const config = this.providerConfigs[provider] || { points: 10, windowSeconds: 1 }
+    // safeLookup, not `this.providerConfigs[provider]`: a Record's index
+    // signature promises a value for every key, so the `||` fallback read as
+    // dead code while being the only thing standing between an unconfigured
+    // provider and `undefined.points`.
+    const config = safeLookup(this.providerConfigs, provider) ?? DEFAULT_PROVIDER_LIMIT
 
     const existingLimiter = this.limiters.get(provider)
     if (existingLimiter) {
@@ -163,7 +181,7 @@ export class RedisRateLimiter {
     this.limiters.set(provider, limiter)
 
     // Observabilidade defensiva
-    if (this.limiters.size > 50) {
+    if (this.limiters.size > LIMITER_COUNT_WARN_THRESHOLD) {
       logger.warn(
         { size: this.limiters.size },
         'ALERTA: Muitos RateLimiters instanciados. Verifique se providers estão estáticos.',
@@ -278,18 +296,18 @@ export class RedisRateLimiter {
     this.infraSuppressedLogs = 0
   }
 
-  static async destroyInstance() {
+  static destroyInstance() {
     if (!this.instance) {
       logger.debug(RATE_LIMITER_LOGS.NO_INSTANCE_TO_DESTROY)
       return
     }
 
-    await this.instance.destroyRateLimiterMap()
+    this.instance.destroyRateLimiterMap()
 
     this.instance = null
   }
 
-  private async destroyRateLimiterMap() {
+  private destroyRateLimiterMap() {
     for (const [provider] of this.limiters.entries()) {
       logger.debug({ provider }, 'Limpando RateLimiter do provider.')
     }

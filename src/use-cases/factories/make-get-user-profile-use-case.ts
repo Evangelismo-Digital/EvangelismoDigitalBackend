@@ -6,7 +6,5 @@ import { GetUserProfileUseCase } from '@use-cases/users/get-user-profile'
 export function makeGetUserProfileUseCase() {
   const errorMapper = new PrismaErrorMapper(userPrismaErrorMapping)
   const usersRepository = new PrismaUsersRepository(errorMapper)
-  const getUserProfileUseCase = new GetUserProfileUseCase(usersRepository)
-
-  return getUserProfileUseCase
+  return new GetUserProfileUseCase(usersRepository)
 }

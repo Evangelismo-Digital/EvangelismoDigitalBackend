@@ -1,4 +1,4 @@
-import { emailSchema } from '@http/schemas/utils/email'
+import { emailSchema } from 'core/validation/email'
 import { User, AuthenticationStatus } from '@prisma/client'
 import { UsersRepository } from 'core/contracts/repository/users-repository.interface'
 import { InvalidCredentialsError } from '@use-cases/errors/invalid-credentials-error'
@@ -26,8 +26,8 @@ type AuthenticateUserUseCaseResponse = {
 
 export class AuthenticateUserUseCase {
   constructor(
-    private usersRepository: UsersRepository,
-    private authenticationAuditUseCase: AuthenticationAuditUseCase,
+    private readonly usersRepository: UsersRepository,
+    private readonly authenticationAuditUseCase: AuthenticationAuditUseCase,
   ) {}
 
   async execute({

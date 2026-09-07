@@ -1,4 +1,4 @@
-import * as Sentry from '@sentry/node'
+import { init } from '@sentry/node'
 import { nodeProfilingIntegration } from '@sentry/profiling-node'
 import { env } from '@env/index'
 
@@ -7,7 +7,7 @@ export function initSentry(): void {
     return
   }
 
-  Sentry.init({
+  init({
     dsn: env.SENTRY_DSN,
     environment: env.NODE_ENV,
     integrations: [nodeProfilingIntegration()],

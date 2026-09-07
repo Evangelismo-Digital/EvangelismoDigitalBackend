@@ -18,13 +18,13 @@ interface CreateChurchUseCaseResponse {
   address: string
   lat: number
   lon: number
-  geog?: unknown | null
+  geog?: unknown
   createdAt: Date
   updatedAt: Date
 }
 
 export class CreateChurchUseCase {
-  constructor(private churchesRepository: ChurchesRepository) {}
+  constructor(private readonly churchesRepository: ChurchesRepository) {}
 
   async execute({
     name,
@@ -82,6 +82,6 @@ export class CreateChurchUseCase {
       return paramsResult
     }
 
-    return paramsResult.value !== null ? err(new ChurchAlreadyExistsError()) : null
+    return paramsResult.value === null ? null : err(new ChurchAlreadyExistsError())
   }
 }

@@ -54,12 +54,14 @@ describe('FindNearestChurchesUseCase orchestration', () => {
       cepToLatLonUseCase as unknown as CepToLatLonUseCase,
       findNearbyChurchesKnnUseCase as unknown as FindNearbyChurchesKnnUseCase,
       calculateChurchRouteDistancesUseCase as unknown as CalculateChurchRouteDistancesUseCase,
-      {} as never,
       {
-        prefix: 'nearest:',
-        defaultTtlSeconds: 60,
-        negativeTtlSeconds: 10,
-      } as never,
+        redis: {} as never,
+        options: {
+          prefix: 'nearest:',
+          defaultTtlSeconds: 60,
+          negativeTtlSeconds: 10,
+        } as never,
+      },
     )
   })
 

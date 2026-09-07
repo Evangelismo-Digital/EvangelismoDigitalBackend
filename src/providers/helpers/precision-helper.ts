@@ -53,15 +53,17 @@ export class PrecisionHelper {
 const ROOFTOP_MIN_RANK = 26
 const NEIGHBORHOOD_MIN_RANK = 16
 
-const ROOFTOP_TYPES = ['house', 'building', 'residential', 'apartments', 'commercial']
+// Sets, not arrays: these are membership tests on every geocode result, and
+// a Set says so in the type as well as in the lookup cost.
+const ROOFTOP_TYPES = new Set(['house', 'building', 'residential', 'apartments', 'commercial'])
 /** `class` in the OSM payload generally maps to the category. */
-const ROOFTOP_CATEGORIES = ['highway', 'secondary', 'primary', 'road']
-const NEIGHBORHOOD_TYPES = ['neighbourhood', 'suburb', 'quarter', 'hamlet', 'district']
+const ROOFTOP_CATEGORIES = new Set(['highway', 'secondary', 'primary', 'road'])
+const NEIGHBORHOOD_TYPES = new Set(['neighbourhood', 'suburb', 'quarter', 'hamlet', 'district'])
 
 function isRooftopPlace(data: OsmRawData): boolean {
-  return ROOFTOP_TYPES.includes(data.type || '') || ROOFTOP_CATEGORIES.includes(data.class || '')
+  return ROOFTOP_TYPES.has(data.type || '') || ROOFTOP_CATEGORIES.has(data.class || '')
 }
 
 function isNeighborhoodPlace(data: OsmRawData): boolean {
-  return NEIGHBORHOOD_TYPES.includes(data.type || '') || data.addresstype === 'suburb'
+  return NEIGHBORHOOD_TYPES.has(data.type || '') || data.addresstype === 'suburb'
 }

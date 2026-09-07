@@ -11,6 +11,7 @@ import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-foun
 import { CircuitOpenError } from 'errors/infrastructure/circuit-open-error'
 import { ServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { BrokenCircuitError, BulkheadRejectedError } from 'cockatiel'
+import { UPSTREAM_STATUS } from 'core/constants/upstream-http-status'
 
 /** URL fragment -> human-readable provider name, most specific first. */
 const PROVIDER_BY_URL_FRAGMENT: ReadonlyArray<readonly [string, string]> = [
@@ -25,7 +26,7 @@ const PROVIDER_BY_URL_FRAGMENT: ReadonlyArray<readonly [string, string]> = [
 /** Providers that resolve a CEP, so a 404 from them means the CEP is invalid. */
 const ADDRESS_URL_FRAGMENTS = ['viacep', 'awesomeapi', 'brasilapi']
 
-const TIMEOUT_CODES = ['ERR_CANCELED', 'ECONNABORTED']
+const TIMEOUT_CODES = new Set(['ERR_CANCELED', 'ECONNABORTED'])
 
 export class FindNearestChurchesErrorMapper {
   private static readonly PROVIDER_UNKNOWN = 'Unknown Provider'
@@ -80,7 +81,7 @@ export class FindNearestChurchesErrorMapper {
   private static mapAxiosError(error: AxiosError): AppError {
     const status = error.response?.status
 
-    if (status === 429) {
+    if (status === UPSTREAM_STATUS.TOO_MANY_REQUESTS) {
       return new ServiceBusyError(FindNearestChurchesErrorMapper.detectProvider(error))
     }
 
@@ -88,7 +89,7 @@ export class FindNearestChurchesErrorMapper {
       return new TimeoutExceededError(error.message)
     }
 
-    if (status === 404) {
+    if (status === UPSTREAM_STATUS.NOT_FOUND) {
       return FindNearestChurchesErrorMapper.mapNotFound(error)
     }
 
@@ -114,7 +115,7 @@ export class FindNearestChurchesErrorMapper {
   }
 
   private static isTimeout(error: AxiosError): boolean {
-    return TIMEOUT_CODES.includes(error.code ?? '') || error.message.toLowerCase().includes('timeout')
+    return TIMEOUT_CODES.has(error.code ?? '') || error.message.toLowerCase().includes('timeout')
   }
 
   private static detectProvider(error: AxiosError): string {
@@ -125,7 +126,7 @@ export class FindNearestChurchesErrorMapper {
   }
 
   private static extractCep(url: string): string | undefined {
-    const match = url.match(/\b\d{8}\b/) || url.match(/\d{8}/)
+    const match = /\b\d{8}\b/.exec(url) || /\d{8}/.exec(url)
     return match ? match[0] : undefined
   }
 }

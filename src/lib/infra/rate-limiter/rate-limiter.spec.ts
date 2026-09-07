@@ -303,11 +303,14 @@ describe('RedisRateLimiter Unit Tests', () => {
       )
     })
 
-    it('should not throw error when destroying non-existent instance', async () => {
+    it('should not throw error when destroying non-existent instance', () => {
       // Garante que não há instância
       ;(RedisRateLimiter as any).instance = null
 
-      await expect(RedisRateLimiter.destroyInstance()).resolves.not.toThrow()
+      // Synchronous: destroyInstance only clears an in-process Map, and
+      // declaring it async made every caller await a promise that resolved on
+      // the next tick for no reason.
+      expect(() => RedisRateLimiter.destroyInstance()).not.toThrow()
 
       expect(logger.debug).toHaveBeenCalledWith('Nenhuma instância de RedisRateLimiter para destruir.')
     })

@@ -5,6 +5,7 @@ import { makeDeleteChurchUseCase } from '@use-cases/factories/make-delete-church
 import { FastifyReply, FastifyRequest } from 'fastify'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
+import { HTTP_STATUS } from '@http/http-status'
 
 export async function deleteChurch(request: FastifyRequest, reply: FastifyReply) {
   const { publicId } = deleteChurchBodySchema.parse(request.body)
@@ -30,5 +31,5 @@ export async function deleteChurch(request: FastifyRequest, reply: FastifyReply)
     church: sanitizedChurch,
   })
 
-  return reply.code(200).send({ church: sanitizedChurch })
+  return reply.code(HTTP_STATUS.OK).send({ church: sanitizedChurch })
 }

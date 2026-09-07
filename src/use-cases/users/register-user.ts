@@ -21,7 +21,7 @@ type RegisterUserUseCaseResponse = {
 }
 
 export class RegisterUserUseCase {
-  constructor(private usersRepository: UsersRepository) {}
+  constructor(private readonly usersRepository: UsersRepository) {}
 
   async execute({
     name,
@@ -54,6 +54,12 @@ export class RegisterUserUseCase {
 
     const user = createResult.value
 
+    // The repository interface promises a User on `ok`, so the type system
+    // calls this dead. It is not: this is the use-case/repository boundary, the
+    // guard is what turns a contract violation by an adapter into a domain
+    // error instead of a null dereference three frames later, and
+    // register-use-case.spec.ts exercises exactly that path.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!user) {
       return err(new UserNotCreatedError())
     }

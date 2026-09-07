@@ -52,8 +52,12 @@ function rankByDistance(
   maxDistanceKm: number,
 ): NearbyChurch[] {
   return results
-    .map((result: RouteDistanceResult, index) => {
-      if (!result || result.distance == null || (result.status != null && result.status !== 0)) {
+    .map((_result: RouteDistanceResult, index) => {
+      // Read through `.at()` so "no row for this destination" is a case the
+      // type system knows about; `results[index]` claims one always exists.
+      const result = results.at(index)
+
+      if (result?.distance == null || (result.status != null && result.status !== 0)) {
         return null
       }
 

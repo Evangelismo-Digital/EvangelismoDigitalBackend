@@ -1,14 +1,15 @@
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
-import nodemailer, { SentMessageInfo, Transporter } from 'nodemailer'
+import nodemailer, { Transporter } from 'nodemailer'
+import type { SentMessageInfo } from 'core/contracts/lib/mail/mail-sender.interface'
 import { MailSender, SendMailRequest } from 'core/contracts/lib/mail/mail-sender.interface'
 import { EMAIL_CONSTANTS } from 'messages/constants/email/email'
 
 export class NodemailerMailSender implements MailSender {
-  private transporter: Transporter | null = null
+  private transporter: Transporter<SentMessageInfo> | null = null
   private consecutiveFailures = 0
 
-  private async getTransporter(): Promise<Transporter> {
+  private async getTransporter(): Promise<Transporter<SentMessageInfo>> {
     if (this.transporter) {
       return this.transporter
     }

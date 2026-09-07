@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { AppError } from 'errors/app-error'
 import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
 import { IErrorMapper } from 'core/contracts/errors/error-mapper.interface'
+import { safeLookup } from 'core/shared/safe-lookup'
 
 export type PrismaErrorMappingConfig<E extends AppError> = {
   P2000?: (error: Prisma.PrismaClientKnownRequestError) => E // Value too long for column
@@ -17,7 +18,7 @@ export type PrismaErrorMappingConfig<E extends AppError> = {
   [key: string]: ((error: Prisma.PrismaClientKnownRequestError) => E) | undefined
 }
 
-export class PrismaErrorMapper<E extends AppError> implements IErrorMapper<AppError> {
+export class PrismaErrorMapper<E extends AppError> implements IErrorMapper {
   constructor(private readonly errorMapping: PrismaErrorMappingConfig<E>) {}
 
   mapToKnownError(error: unknown): AppError {
@@ -26,10 +27,9 @@ export class PrismaErrorMapper<E extends AppError> implements IErrorMapper<AppEr
     }
 
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      const prismaError = error as Prisma.PrismaClientKnownRequestError
-      const errorFactory = this.errorMapping[prismaError.code]
+      const errorFactory = safeLookup(this.errorMapping, error.code)
       if (errorFactory) {
-        return errorFactory(prismaError)
+        return errorFactory(error)
       }
     }
 

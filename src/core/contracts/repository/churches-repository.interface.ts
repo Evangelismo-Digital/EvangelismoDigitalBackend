@@ -39,7 +39,7 @@ export interface Church {
   address: string
   lat: number
   lon: number
-  geog?: unknown | null
+  geog?: unknown
   createdAt: Date
   updatedAt: Date
 }

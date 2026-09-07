@@ -4,6 +4,7 @@ import { makeTrackAnalyticsUseCase } from '@use-cases/factories/make-track-analy
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { clientIpOf } from '@http/client-ip'
+import { HTTP_STATUS } from '@http/http-status'
 
 export async function trackEvent(request: FastifyRequest, reply: FastifyReply) {
   const { eventType, path, payload } = trackEventSchema.parse(request.body)
@@ -25,7 +26,7 @@ export async function trackEvent(request: FastifyRequest, reply: FastifyReply) {
     return HttpErrorMapper.map(result.error, reply)
   }
 
-  return reply.code(201).send()
+  return reply.code(HTTP_STATUS.CREATED).send()
 }
 
 /** Campaign parameters are all optional and all normalised to null. */
@@ -39,6 +40,6 @@ const UTM_PARAMS = {
 
 function utmParams(query: Record<string, string | undefined>): Record<keyof typeof UTM_PARAMS, string | null> {
   return Object.fromEntries(
-    Object.entries(UTM_PARAMS).map(([field, param]) => [field, query?.[param] || null]),
+    Object.entries(UTM_PARAMS).map(([field, param]) => [field, query[param] || null]),
   ) as Record<keyof typeof UTM_PARAMS, string | null>
 }

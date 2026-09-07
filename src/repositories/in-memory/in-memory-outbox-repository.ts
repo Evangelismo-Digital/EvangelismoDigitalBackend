@@ -44,8 +44,11 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
       return err(new InMemoryOutboxError('Falha injetada em create'))
     }
 
+    const id = this.nextId
+    this.nextId += 1
+
     const event: IOutboxEvent = {
-      id: this.nextId++,
+      id,
       publicId: randomUUID(),
       type: data.type,
       status: data.status,

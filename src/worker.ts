@@ -39,7 +39,7 @@ async function bootstrap() {
     const outboxInfraMapper = new PrismaErrorMapper(outboxInfraPrismaErrorMapping)
     const outboxRepository = new PrismaOutboxRepository(dbContext, outboxHttpMapper, outboxInfraMapper)
 
-    worker = await startMailWorker(outboxRepository)
+    worker = startMailWorker(outboxRepository)
     logger.info('Mail worker iniciado')
 
     // Register the producer queue so /metrics can report its job counts on scrape.
@@ -47,12 +47,14 @@ async function bootstrap() {
 
     const outboxProcessor = new OutboxProcessor(outboxRepository, makeOutboxDispatchStrategyRegistry())
 
-    await OutboxSignal.subscribe(async (publicId: string, event: IOutboxEvent) => {
+    await OutboxSignal.subscribe(async (_publicId: string, event: IOutboxEvent) => {
       await outboxProcessor.processSingleEvent(event)
     })
 
     // ============================================================================
-    // @TODO: [ALERTA DE ESCALABILIDADE HORIZONTAL]
+    // NOTA: [ALERTA DE ESCALABILIDADE HORIZONTAL]
+    // Limitação conhecida e aceita da topologia atual (um único worker), não uma
+    // tarefa pendente — o dia em que houver um segundo pod, comece por aqui.
     // Se a infraestrutura for escalada para mais de um worker/pod, TODOS os pods
     // rodarão este cron simultaneamente. Embora a classe OutboxProcessor já utilize
     // um DistributedLock para evitar processamento duplicado, ter múltiplos crons
@@ -135,18 +137,28 @@ async function gracefulShutdown(signal: string) {
 }
 
 // Signal handling
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
-process.on('SIGINT', () => gracefulShutdown('SIGINT'))
-process.on('SIGUSR2', () => gracefulShutdown('SIGUSR2'))
+//
+// The arrow bodies are braced so the promise is discarded explicitly: passing
+// `() => gracefulShutdown(...)` hands Node a promise-returning listener where
+// it expects void, and Node neither awaits it nor reports its rejection.
+process.on('SIGTERM', () => {
+  void gracefulShutdown('SIGTERM')
+})
+process.on('SIGINT', () => {
+  void gracefulShutdown('SIGINT')
+})
+process.on('SIGUSR2', () => {
+  void gracefulShutdown('SIGUSR2')
+})
 
-// Process-level error handling
+// Process-level error handling — see the note in server.ts on the `void`.
 process.on('unhandledRejection', (reason) => {
-  crashShutdown(reason, cleanup)
+  void crashShutdown(reason, cleanup)
 })
 
 process.on('uncaughtException', (error) => {
-  crashShutdown(error, cleanup)
+  void crashShutdown(error, cleanup)
 })
 
 // Start
-bootstrap()
+void bootstrap()

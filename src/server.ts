@@ -25,7 +25,9 @@ closeWithGrace({ delay: 10000 }, async ({ signal, err }) => {
   if (err) {
     await crashShutdown(err, shutdown)
   } else {
-    logger.info({ signal }, `Sinal ${signal} recebido. Encerrando o servidor graciosamente...`)
+    // `signal` is undefined when the shutdown was triggered programmatically
+    // rather than by a signal, and `${undefined}` would print the word.
+    logger.info({ signal }, `Sinal ${signal ?? 'desconhecido'} recebido. Encerrando o servidor graciosamente...`)
     await shutdown()
     logger.info('Servidor encerrado graciosamente.')
     process.exit(0)
@@ -33,12 +35,17 @@ closeWithGrace({ delay: 10000 }, async ({ signal, err }) => {
 })
 
 // Unhandled Promise Rejections & Uncaught Exceptions
+//
+// `void` rather than `await`: these handlers are synchronous by contract, and
+// crashShutdown never rejects — it swallows both cleanup and Sentry failures
+// and always ends in process.exit(1). Marking the discard explicit is the point;
+// a bare call reads as an oversight.
 process.on('unhandledRejection', (reason) => {
-  crashShutdown(reason, shutdown)
+  void crashShutdown(reason, shutdown)
 })
 
 process.on('uncaughtException', (error) => {
-  crashShutdown(error, shutdown)
+  void crashShutdown(error, shutdown)
 })
 
 async function start() {
@@ -58,4 +65,4 @@ async function start() {
   }
 }
 
-start()
+void start()

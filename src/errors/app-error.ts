@@ -47,9 +47,10 @@ export abstract class AppError extends Error implements IAppError {
       ...(detail.issues && { issues: detail.issues }),
     }
 
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor)
-    }
+    // No `if` guard: captureStackTrace is a V8 API, this service runs only on
+    // Node, and @types/node declares it as always present — the guard was dead
+    // on every runtime this code will ever see.
+    Error.captureStackTrace(this, this.constructor)
 
     Object.setPrototypeOf(this, new.target.prototype)
   }

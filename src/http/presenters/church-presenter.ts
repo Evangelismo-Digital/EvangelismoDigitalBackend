@@ -1,4 +1,5 @@
 import { Church, NearbyChurch } from 'core/contracts/repository/churches-repository.interface'
+import { PublicNearbyChurch, toPublicNearbyChurch } from 'core/projections/public-church'
 
 type HTTPChurch = {
   publicId: string
@@ -6,20 +7,17 @@ type HTTPChurch = {
   address: string
   lat: number
   lon: number
-  geog: unknown | null
+  geog: unknown
   createdAt: Date
   updatedAt: Date
 }
 
-type HTTPNearbyChurch = {
-  publicId: string
-  name: string
-  address: string | null
-  lat: number
-  lon: number
-  distanceKm: number
-  distanceMeters: number
-}
+/**
+ * Identical to the domain projection, by definition: what this API exposes for
+ * a nearby church IS what the domain permits to be disclosed. Aliased rather
+ * than restated so the two cannot drift.
+ */
+type HTTPNearbyChurch = PublicNearbyChurch
 
 export class ChurchPresenter {
   static toHTTP(church: Church): HTTPChurch
@@ -42,17 +40,7 @@ function isNearby(input: Church | NearbyChurch): input is NearbyChurch {
   return 'distanceKm' in input && 'distanceMeters' in input
 }
 
-function toHTTPNearby(input: NearbyChurch): HTTPNearbyChurch {
-  return {
-    publicId: input.publicId,
-    name: input.name,
-    address: input.address,
-    lat: input.lat,
-    lon: input.lon,
-    distanceKm: input.distanceKm,
-    distanceMeters: input.distanceMeters,
-  }
-}
+const toHTTPNearby = toPublicNearbyChurch
 
 function toHTTPChurch(input: Church): HTTPChurch {
   return {

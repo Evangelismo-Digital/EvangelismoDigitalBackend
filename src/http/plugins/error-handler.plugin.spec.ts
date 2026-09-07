@@ -413,12 +413,13 @@ describe('errorHandlerPlugin', () => {
         throw new Error('Logger exploded')
       })
 
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      // process.stderr, not console: this branch exists for the case where the
+      // logger is what failed, so the fallback must not go back through it.
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
 
       await handler(new Error('trigger unknown branch'), request, reply)
 
-      // Should have used console.error as fallback
-      expect(consoleSpy).toHaveBeenCalledWith('O handler de erro lançou uma exceção:', expect.any(Error))
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('O handler de erro lançou uma exceção:'))
 
       // Should still send a clean 500
       expect(reply.code).toHaveBeenCalledWith(500)
@@ -428,7 +429,7 @@ describe('errorHandlerPlugin', () => {
         }),
       )
 
-      consoleSpy.mockRestore()
+      stderrSpy.mockRestore()
     })
 
     it('does not attempt to send when reply is already sent inside catch block', async () => {
@@ -439,17 +440,16 @@ describe('errorHandlerPlugin', () => {
         throw new Error('Logger exploded')
       })
 
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
 
       await handler(new Error('trigger unknown branch'), request, reply)
 
-      // console.error should fire
-      expect(consoleSpy).toHaveBeenCalled()
+      expect(stderrSpy).toHaveBeenCalled()
 
       // reply.code should NOT have been called (reply.sent was true in catch)
       expect(reply.code).not.toHaveBeenCalled()
 
-      consoleSpy.mockRestore()
+      stderrSpy.mockRestore()
     })
   })
 

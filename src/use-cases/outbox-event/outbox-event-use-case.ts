@@ -14,7 +14,7 @@ import { AppError } from 'errors/app-error'
  * discriminada OutboxEventInput garante o formato correto por tipo.
  */
 export class OutboxEventUseCase implements IOutboxEventRegistration {
-  constructor(private outboxRepository: IOutboxRepository) {}
+  constructor(private readonly outboxRepository: IOutboxRepository) {}
 
   async register(input: OutboxEventInput): Promise<Result<IOutboxEvent, AppError>> {
     return this.outboxRepository.create({

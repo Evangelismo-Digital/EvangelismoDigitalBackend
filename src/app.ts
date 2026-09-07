@@ -93,7 +93,7 @@ app.addHook('onClose', async () => {
   logger.info('Finalizando as conexões do RateLimiter e Redis...')
 
   try {
-    await RedisRateLimiter.destroyInstance()
+    RedisRateLimiter.destroyInstance()
     logger.info('RateLimiter finalizado com sucesso')
   } catch (error) {
     logger.error(error, 'Erro ao finalizar o RateLimiter')

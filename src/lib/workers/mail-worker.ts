@@ -273,7 +273,7 @@ export function createJobFailureHandler(outboxRepository: IOutboxRepository) {
 
 /** Identificadores do job, resolvidos uma vez — o job pode não existir. */
 function jobContext(job: MailJob | undefined): { jobId: string | undefined; publicId: string | undefined } {
-  return { jobId: job?.id, publicId: job?.data?.publicId }
+  return { jobId: job?.id, publicId: job?.data.publicId }
 }
 
 async function handleJobFailure(
@@ -365,7 +365,9 @@ async function revertForRedispatch(
   logger.warn({ jobId, publicId }, WORKER_LOGS.OUTBOX_REVERTED_AFTER_FINAL_FAILURE)
 }
 
-export async function startMailWorker(outboxRepository: IOutboxRepository) {
+// Not async: it builds a Worker and returns it. `await startMailWorker(...)`
+// at the call site still reads fine and costs one tick.
+export function startMailWorker(outboxRepository: IOutboxRepository) {
   const workerConnection = createWorkerConnection()
   attachRedisLogger(workerConnection, 'MailWorker')
 
@@ -376,10 +378,13 @@ export async function startMailWorker(outboxRepository: IOutboxRepository) {
     stalledInterval: WORKER_CONSTANTS.MAIL.STALLED_INTERVAL_MS,
   })
 
-  const handleJobFailure = createJobFailureHandler(outboxRepository)
+  // Named `onJobFailed`, not `handleJobFailure`: the module already declares a
+  // function by that name, and shadowing it here made the two indistinguishable
+  // at a glance in stack traces and in review.
+  const onJobFailed = createJobFailureHandler(outboxRepository)
 
   worker.on('failed', (job, err) => {
-    void handleJobFailure(job, err)
+    void onJobFailed(job, err)
   })
 
   return worker

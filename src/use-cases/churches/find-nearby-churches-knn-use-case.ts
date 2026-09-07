@@ -5,6 +5,7 @@ import { Deadline } from 'core/shared/deadline'
 import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { CHURCH_CONSTANTS } from 'messages/constants/churches/churches'
+import { MAX_LATITUDE, MAX_LONGITUDE, MIN_LATITUDE, MIN_LONGITUDE } from 'core/constants/geo'
 
 interface FindNearbyChurchesKnnRequest {
   userLat: number
@@ -23,11 +24,11 @@ interface FindNearbyChurchesKnnResponse {
 
 /** Rejects out-of-range coordinates before they reach PostGIS. */
 function validateCoordinates(userLat: number, userLon: number): Result<never, AppError> | null {
-  if (userLat < -90 || userLat > 90) {
+  if (userLat < MIN_LATITUDE || userLat > MAX_LATITUDE) {
     return err(new LatitudeRangeError())
   }
 
-  if (userLon < -180 || userLon > 180) {
+  if (userLon < MIN_LONGITUDE || userLon > MAX_LONGITUDE) {
     return err(new LongitudeRangeError())
   }
 
@@ -46,7 +47,7 @@ function knnTimeoutMs(deadline: Deadline): number | undefined {
 }
 
 export class FindNearbyChurchesKnnUseCase {
-  constructor(private churchesRepository: ChurchesRepository) {}
+  constructor(private readonly churchesRepository: ChurchesRepository) {}
 
   async execute({
     userLat,

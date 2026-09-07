@@ -46,7 +46,7 @@ export class ResetPasswordUseCase {
     const passwordHash = await hash(password, env.HASH_SALT_ROUNDS)
 
     const updateResult = await this.usersRepository.updatePassword(userExists.publicId, {
-      passwordHash: passwordHash,
+      passwordHash,
       passwordChangedAt: new Date(),
       token: null,
       tokenExpiresAt: null,

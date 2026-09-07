@@ -1,16 +1,27 @@
 import z from 'zod'
+import { MAX_LATITUDE, MAX_LONGITUDE, MIN_LATITUDE, MIN_LONGITUDE } from 'core/constants/geo'
+import { VALIDATION_LIMITS } from '@schemas/validation-limits'
 
 export const createChurchBodySchema = z.object({
   name: z
     .string()
-    .min(3, 'O nome deve ter no mínimo 3 caracteres')
+    .min(VALIDATION_LIMITS.CHURCH_NAME_MIN, `O nome deve ter no mínimo ${VALIDATION_LIMITS.CHURCH_NAME_MIN} caracteres`)
     .transform((val) => val.toLowerCase()),
   address: z
     .string()
-    .min(5, 'O endereço deve ter no mínimo 5 caracteres')
+    .min(
+      VALIDATION_LIMITS.CHURCH_ADDRESS_MIN,
+      `O endereço deve ter no mínimo ${VALIDATION_LIMITS.CHURCH_ADDRESS_MIN} caracteres`,
+    )
     .transform((val) => val.toLowerCase()),
-  lat: z.coerce.number().min(-90, 'Latitude deve ser >= -90').max(90, 'Latitude deve ser <= 90'),
-  lon: z.coerce.number().min(-180, 'Longitude deve ser >= -180').max(180, 'Longitude deve ser <= 180'),
+  lat: z.coerce
+    .number()
+    .min(MIN_LATITUDE, `Latitude deve ser >= ${MIN_LATITUDE}`)
+    .max(MAX_LATITUDE, `Latitude deve ser <= ${MAX_LATITUDE}`),
+  lon: z.coerce
+    .number()
+    .min(MIN_LONGITUDE, `Longitude deve ser >= ${MIN_LONGITUDE}`)
+    .max(MAX_LONGITUDE, `Longitude deve ser <= ${MAX_LONGITUDE}`),
 })
 
 export type createChurchBodySchema = z.infer<typeof createChurchBodySchema>

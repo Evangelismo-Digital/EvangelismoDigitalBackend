@@ -19,9 +19,7 @@ export const httpRateLimitPlugin: FastifyPluginAsync = async (app) => {
       }
 
       // If route did not set a rateLimit, apply the global default policy
-      if (routeOptions.config.rateLimit == null) {
-        routeOptions.config.rateLimit = HTTP_RATE_LIMIT_POLICIES.global
-      }
+      routeOptions.config.rateLimit ??= HTTP_RATE_LIMIT_POLICIES.global
     } catch {
       // Defensive: do not throw during route registration
     }

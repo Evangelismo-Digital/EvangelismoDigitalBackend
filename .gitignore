@@ -13,3 +13,13 @@ build
 # No project-level settings file may exist — it would override the global one.
 .claude/settings.json
 .claude/settings.local.json
+# SonarQube local state (admin password + analysis token, 0600)
+.sonar/
+
+# Generated analysis / security reports
+/reports/sonar
+/reports/eslint
+/reports/security
+
+# Local security scanner credentials (SNYK_TOKEN), 0600
+.env.security

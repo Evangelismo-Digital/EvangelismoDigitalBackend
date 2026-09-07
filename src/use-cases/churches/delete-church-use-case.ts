@@ -11,7 +11,7 @@ interface DeleteChurchUseCaseResponse {
 }
 
 export class DeleteChurchUseCase {
-  constructor(private churchesRepository: ChurchesRepository) {}
+  constructor(private readonly churchesRepository: ChurchesRepository) {}
 
   async execute({ publicId }: DeleteChurchUseCaseRequest): Promise<Result<DeleteChurchUseCaseResponse, AppError>> {
     const result = await this.churchesRepository.deleteChurchByPublicId(publicId)

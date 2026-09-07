@@ -1,5 +1,5 @@
 import { ResilientCache, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
-import { ChurchPresenter } from '@http/presenters/church-presenter'
+import { PublicNearbyChurch, toPublicNearbyChurches } from 'core/projections/public-church'
 import { CepToLatLonUseCase } from '@use-cases/churches/cep-to-lat-lon-use-case'
 import { FindNearbyChurchesKnnUseCase } from '@use-cases/churches/find-nearby-churches-knn-use-case'
 import { CalculateChurchRouteDistancesUseCase } from '@use-cases/churches/calculate-church-route-distances-use-case'
@@ -20,7 +20,7 @@ export interface FindNearestChurchesRequest {
 }
 
 export interface FindNearestChurchesResponse {
-  nearestChurchesInfo: ReturnType<typeof ChurchPresenter.toHTTP>
+  nearestChurchesInfo: PublicNearbyChurch[]
   totalFound: number
   precision: string
   coordinatesProviderName?: string
@@ -33,6 +33,22 @@ export interface FindNearestChurchesResponse {
  * values (coordinates, KNN candidates), so every collaborator below runs only
  * on a miss and inherits this layer's budget as a {@link Deadline}.
  */
+/**
+ * How this use-case's cache is wired.
+ *
+ * The Redis client, the cache options and the routing profile were three
+ * separate constructor parameters, which pushed the signature to six and made
+ * every call site a row of positional arguments whose order only the compiler
+ * could check. They are one concern — "which cache, configured how" — so they
+ * travel together and are named at the call site.
+ */
+export interface NearestChurchesCacheWiring {
+  redis: Redis
+  options: ResilientCacheOptions<AppError>
+  /** Defaults to PEDESTRIAN, the profile the public endpoint uses. */
+  defaultProfile?: RoutingProfile
+}
+
 export class FindNearestChurchesUseCase {
   private readonly cacheManager: ResilientCache<AppError>
   private readonly defaultProfile: RoutingProfile
@@ -41,12 +57,10 @@ export class FindNearestChurchesUseCase {
     private readonly cepToLatLonUseCase: CepToLatLonUseCase,
     private readonly findNearbyChurchesKnnUseCase: FindNearbyChurchesKnnUseCase,
     private readonly calculateChurchRouteDistancesUseCase: CalculateChurchRouteDistancesUseCase,
-    redis: Redis,
-    optionsOverride: ResilientCacheOptions<AppError>,
-    defaultProfile: RoutingProfile = RoutingProfile.PEDESTRIAN,
+    cache: NearestChurchesCacheWiring,
   ) {
-    this.cacheManager = new ResilientCache<AppError>(redis, optionsOverride)
-    this.defaultProfile = defaultProfile
+    this.cacheManager = new ResilientCache<AppError>(cache.redis, cache.options)
+    this.defaultProfile = cache.defaultProfile ?? RoutingProfile.PEDESTRIAN
   }
 
   async execute({
@@ -96,7 +110,7 @@ export class FindNearestChurchesUseCase {
     }
 
     return ok({
-      nearestChurchesInfo: ChurchPresenter.toHTTP(nearestChurchesResult.value),
+      nearestChurchesInfo: toPublicNearbyChurches(nearestChurchesResult.value),
       totalFound,
       precision,
       coordinatesProviderName,

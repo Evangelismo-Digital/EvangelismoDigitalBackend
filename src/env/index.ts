@@ -138,7 +138,9 @@ const envSchema = z.object({
 const _env = envSchema.safeParse(process.env)
 
 if (!_env.success) {
-  console.error('Variáveis de ambiente inválidas:', z.treeifyError(_env.error))
+  // `process.stderr`, not `console`: this runs at import time and the logger
+  // itself imports this module, so there is no logger to report through yet.
+  process.stderr.write(`Variáveis de ambiente inválidas: ${JSON.stringify(z.treeifyError(_env.error), null, 2)}\n`)
 
   throw new Error(ENV_CONSTANTS.INVALID_VARIABLES)
 }
