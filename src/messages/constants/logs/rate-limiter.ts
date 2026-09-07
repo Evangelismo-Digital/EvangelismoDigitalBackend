@@ -5,8 +5,8 @@ export const RATE_LIMITER_LOGS = {
   TOO_MANY_LIMITERS: 'ALERTA: Muitos RateLimiters instanciados. Verifique se providers estão estáticos.',
   NO_INSTANCE_TO_DESTROY: 'Nenhuma instância de RedisRateLimiter para destruir.',
   HTTP_INFRA_DEGRADED:
-    'Rate limit HTTP degradado: Redis indisponível, aplicando o limite em memória apenas nesta instância.',
+    'Rate limit HTTP degradado: Redis indisponível, o limite de entrada está sendo IGNORADO (fail-open).',
   HTTP_INFRA_STILL_DEGRADED:
-    'Rate limit HTTP continua degradado: Redis indisponível, limite ainda aplicado apenas nesta instância.',
-  HTTP_INFRA_RECOVERED: 'Rate limit HTTP restabelecido: contagem voltou a ser compartilhada via Redis.',
+    'Rate limit HTTP continua degradado: Redis indisponível, o limite de entrada segue sendo IGNORADO (fail-open).',
+  HTTP_INFRA_RECOVERED: 'Rate limit HTTP restabelecido: Redis disponível, o limite de entrada voltou a ser aplicado.',
 } as const

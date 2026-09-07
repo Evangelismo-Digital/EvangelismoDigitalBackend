@@ -68,6 +68,9 @@ describe('RedisOutageLogger', () => {
       expect.objectContaining({
         subsystem: 'cache',
         suppressedEvents: 1,
+        // How long the outage has run, not the wall clock: an operator reads this
+        // to size the incident, so `now + start` would be worse than no field.
+        outageDurationMs: 30000,
       }),
       REDIS_LOGS.CONNECTION_STILL_DEGRADED,
     )
@@ -101,6 +104,16 @@ describe('isRedisConnectivityError', () => {
   it('returns true for connectivity errors', () => {
     expect(isRedisConnectivityError({ code: 'ECONNREFUSED' })).toBe(true)
     expect(isRedisConnectivityError({ message: 'Connection is closed.' })).toBe(true)
+  })
+
+  it.each([
+    ['a command timeout', 'Command timed out'],
+    ['a write with the offline queue disabled', "Stream isn't writeable and enableOfflineQueue options is false"],
+  ])('treats %s as an outage, not an unexpected error', (_label, message) => {
+    // These are what the impatient rate-limiter connection produces. Classified
+    // as "unexpected" they were logged in full on every occurrence and never
+    // opened an outage episode, so a degraded Redis read as application noise.
+    expect(isRedisConnectivityError({ message })).toBe(true)
   })
 
   it('returns false for non-connectivity errors', () => {

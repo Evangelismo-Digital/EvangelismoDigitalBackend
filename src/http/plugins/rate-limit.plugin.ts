@@ -1,7 +1,7 @@
 import rateLimit from '@fastify/rate-limit'
 import { HTTP_RATE_LIMIT_POLICIES } from '@http/policies/rate-limit'
 import { getRedisRateLimit } from '@lib/redis/clients/clients'
-import { resilientRateLimitStoreFor } from '@lib/infra/rate-limiter/resilient-rate-limit-store'
+import { rateLimitHealthProbeFor } from '@lib/infra/rate-limiter/rate-limit-health-probe'
 import { FastifyPluginAsync } from 'fastify'
 import fp from 'fastify-plugin'
 
@@ -31,17 +31,28 @@ export const httpRateLimitPlugin: FastifyPluginAsync = async (app) => {
     hook: 'onRequest',
     keyGenerator: (request) => request.ip,
 
-    // Not `redis:`. That option installs the plugin's own Redis store, which
-    // hands Redis failures straight to the request — and with `skipOnError: false`
-    // a 100 ms Redis timeout became an HTTP 500 for every caller. This store
-    // falls back to counting in-process instead, so the limiter degrades where it
-    // used to take the API down with it.
-    store: resilientRateLimitStoreFor(getRedisRateLimit()),
+    // Redis is the single source of truth for the limit. No local fallback and no
+    // second counting algorithm: one limiter, one store.
+    redis: getRedisRateLimit(),
 
-    // Kept false deliberately. The store above resolves rather than rejects, so
-    // nothing routine reaches this switch any more; if something ever does, it is
-    // a bug in the store and must be loud rather than silently unlimited.
-    skipOnError: false,
+    // Fail OPEN. The rate-limiter connection is deliberately impatient
+    // (commandTimeout 100 ms, no offline queue, no retries), so `false` here made
+    // a merely slow Redis return HTTP 500 to every caller — the limiter becoming
+    // the outage it exists to prevent. Skipping the limit is the lesser harm; the
+    // greater one would be doing it quietly, which is what the health probe below
+    // is for.
+    skipOnError: true,
+  })
+
+  // `skipOnError` is silent by design — the plugin swallows the store error and
+  // offers no hook on it. The probe is what turns that silence into
+  // `http_rate_limit_redis_up`, an alert, and a line in the log.
+  const healthProbe = rateLimitHealthProbeFor(getRedisRateLimit())
+
+  healthProbe.start()
+
+  app.addHook('onClose', () => {
+    healthProbe.stop()
   })
 }
 

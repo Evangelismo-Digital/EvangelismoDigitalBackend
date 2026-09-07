@@ -190,6 +190,72 @@
           "legendFormat": "fallback/{{layer}}"
         }
       ]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Ingress Rate Limit — Enforced or Skipped",
+      "description": "1 = Redis answering, the limit is enforced. 0 = Redis unavailable and the limit is being SKIPPED (skipOnError: true), so traffic is unlimited. Alert: HttpRateLimitSkippedRedisDown.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 40 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "SKIPPED — Redis down", "color": "red", "index": 0 },
+                "1": { "text": "Enforced", "color": "green", "index": 1 }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "min(http_rate_limit_redis_up)",
+          "legendFormat": "rate limit"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Ingress Rate Limit — Degradation & Recovery (rate)",
+      "description": "How often the health probe observes a Redis that cannot serve ingress rate limiting, and how often enforcement resumes. Frequent recoveries mean a flapping Redis: alert HttpRateLimitFlapping.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 40 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(http_rate_limit_infra_degraded_total[5m]))",
+          "legendFormat": "degraded (limit skipped)"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(http_rate_limit_infra_recovered_total[5m]))",
+          "legendFormat": "recovered (limit enforced)"
+        }
+      ]
     }
   ]
 }

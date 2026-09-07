@@ -141,6 +141,38 @@ groups:
           summary: 'Redis inacessível'
           description: 'O redis-exporter não consegue conectar ao Redis há mais de 2 minutos; cache, rate-limiting e locks estão degradados.'
 
+      # O rate limit de ENTRADA (HTTP) roda com skipOnError: true — se o Redis não
+      # responde, o limite é IGNORADO em vez de virar 500 para todo mundo. Este
+      # alerta é o contrapeso desse trade: sem ele, a degradação seria silenciosa.
+      # Problema de infraestrutura/operação, não de requisição da aplicação.
+      - alert: HttpRateLimitSkippedRedisDown
+        expr: http_rate_limit_redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Redis indisponível — o rate limit de entrada está sendo IGNORADO'
+          description: >-
+            O health probe do rate limit de entrada não consegue falar com o Redis
+            ({{ $labels.job }}). Com skipOnError: true as requisições continuam sendo
+            atendidas, porém SEM limite de taxa — a API está exposta a abuso e a
+            bursts enquanto isto durar. Verifique o Redis (disponibilidade e latência:
+            o commandTimeout do rate limiter é de 100ms, então um Redis lento derruba
+            o probe do mesmo jeito que derrubaria o limite).
+
+      # Complementa o alerta acima: pega a instabilidade intermitente, em que o
+      # probe alterna entre OK e degradado rápido demais para segurar `for: 1m`.
+      - alert: HttpRateLimitFlapping
+        expr: increase(http_rate_limit_infra_recovered_total[30m]) > 3
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Rate limit de entrada oscilando entre aplicado e ignorado'
+          description: >-
+            O rate limit de entrada se recuperou mais de 3 vezes em 30 minutos, ou
+            seja, o Redis está instável e o limite vem sendo ignorado de forma
+            intermitente. Investigue latência/saturação do Redis.
+
       - alert: RateLimiterFailOpen
         expr: increase(rate_limiter_infra_degraded_total[5m]) > 0
         for: 2m
