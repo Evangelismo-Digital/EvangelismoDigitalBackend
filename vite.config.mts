@@ -122,8 +122,10 @@ export default defineConfig(({ mode }) => {
               'plugins/**/*.spec.ts',
               'presenters/**/*.spec.ts',
               'middlewares/**/*.spec.ts',
+              'cookies/**/*.spec.ts',
               // Church controllers: the users ones have their own project.
               'controllers/churches/**/*.spec.ts',
+              'controllers/analytics/**/*.spec.ts',
             ],
             exclude: ['**/*.e2e.spec.ts', '**/*.acceptance.spec.mts'],
           },

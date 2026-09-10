@@ -25,3 +25,20 @@ semver range parsing on input that only ever comes from our own package.json.
 Revisit when snyk publishes a build with global-agent updated; check with
 `npm ls semver` after a snyk bump.
 """
+
+[[IgnoredVulns]]
+id = "GHSA-6w3j-5fw6-r9vr"
+reason = """Prototype pollution in @hapi/joi via a `__proto__` language key in
+CUSTOM MESSAGES. Reached only through cpf-cnpj-validator@1.0.3 -> @hapi/joi@17.1.1,
+which this project calls in exactly one place: src/http/schemas/utils/cpf.ts, as
+`cpf.isValid` and `cpf.format` on a value Zod has already narrowed to 11 digits
+(`.length(CPF_DIGITS)` runs before the `.refine`). No custom message object is
+passed to Joi anywhere in the codebase, so the polluting sink is never fed — the
+library is used purely as a checksum validator over a digit string.
+
+No fixed version exists: @hapi/joi is end-of-life, and the advisory's remedy is
+cpf-cnpj-validator@2.1.2, a semver-MAJOR bump to CPF validation used across
+registration, authentication, password reset and update.
+
+Revisit if cpf-cnpj-validator ships a 1.x patch that moves off @hapi/joi, or when
+the major upgrade is scheduled on its own. Re-check with `npm ls @hapi/joi`."""

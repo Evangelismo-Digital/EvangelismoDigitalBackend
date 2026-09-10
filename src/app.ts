@@ -14,7 +14,7 @@ import { httpRateLimit } from '@http/plugins/rate-limit.plugin'
 import { errorHandler } from '@http/plugins/error-handler.plugin'
 import { requestLifecycle } from '@http/plugins/request-lifecycle.plugin'
 import { requestDeadline } from '@http/plugins/deadline.plugin'
-import { analytics } from '@http/plugins/analytics.plugin'
+import { cookieSigningSecrets } from '@http/cookies/cookie-secrets'
 import metricsPlugin from 'fastify-metrics'
 import promClient from 'prom-client'
 import { getRegistry } from '@lib/metrics'
@@ -61,13 +61,17 @@ app.register(fastifyCors, {
 // 3. Rate limiting — drops abusive traffic before any crypto/cookie work
 app.register(httpRateLimit)
 
-// Cookies parser & signer
+// Cookies parser & signer. The secret is an array so a key can be rotated
+// without invalidating cookies already issued — see cookie-secrets.ts.
 app.register(fastifyCookie, {
-  secret: env.COOKIE_SECRET,
+  secret: cookieSigningSecrets(env.COOKIE_SECRET, env.COOKIE_SECRET_PREVIOUS),
 })
 
-// Analytics sessions and events tracking
-app.register(analytics)
+// Analytics identity is deliberately NOT registered here. It is encapsulated
+// inside `analyticsRoutes`, so cookie reading applies only to /analytics/*.
+// Registered globally, it answered every route — including /health — with
+// Set-Cookie, which made health responses uncacheable and had the load
+// balancer's probe minting a throwaway visitor on every check. See §3.3.
 
 // 4. JWT — decorates app with jwtVerify (no interception)
 app.register(fastifyJwt, {

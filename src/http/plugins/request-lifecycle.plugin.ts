@@ -1,7 +1,6 @@
 import { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import fp from 'fastify-plugin'
 import { logger, setUserId } from '@lib/logger'
-import { clientIpOf } from '@http/client-ip'
 
 /**
  * Puts the caller's id in the request context when a valid JWT is present. An
@@ -25,7 +24,7 @@ const requestLifecyclePlugin: FastifyPluginAsync = async (app) => {
       {
         method: request.method,
         url: request.url,
-        ip: clientIpOf(request),
+        ip: request.ip,
         remotePort: request.socket.remotePort,
         userAgent: request.headers['user-agent'],
       },

@@ -58,11 +58,38 @@ describe('startOutboxCron', () => {
     startOutboxCron(processor, maintenance)
   })
 
-  it('registra os três agendadores (5 min, meia-noite e retenção 03:00) e loga a configuração', () => {
+  /**
+   * Passou de TRÊS para QUATRO agendadores — mudança deliberada, não um ajuste
+   * para o teste passar: a retenção de analytics (§5.3) entrou às 04:00, uma
+   * hora depois da purga da outbox, porque as duas são deleções em lote no mesmo
+   * banco e sobrepô-las colocaria dois loops longos disputando a mesma I/O na
+   * única janela em que qualquer uma delas pode se dar ao luxo de ser lenta.
+   *
+   * A asserção continua sendo a lista COMPLETA, e não um `toContain`: o valor
+   * dela está em falhar quando alguém adiciona um cron sem pensar no horário.
+   */
+  it('registra os quatro agendadores (5 min, meia-noite, retenção 03:00 e analytics 04:00) e loga a configuração', () => {
     expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.SCHEDULER_CONFIGURED)
     expect([...scheduledTasks.keys()].sort()).toEqual(
-      [CRON_SCHEDULES.EVERY_FIVE_MINUTES, CRON_SCHEDULES.MIDNIGHT_DAILY, CRON_SCHEDULES.DAILY_3AM].sort(),
+      [
+        CRON_SCHEDULES.EVERY_FIVE_MINUTES,
+        CRON_SCHEDULES.MIDNIGHT_DAILY,
+        CRON_SCHEDULES.DAILY_3AM,
+        CRON_SCHEDULES.DAILY_4AM,
+      ].sort(),
     )
+  })
+
+  it('agenda a retenção de analytics separadamente da purga da outbox', async () => {
+    const analyticsRetention = { purgeExpiredData: vi.fn().mockResolvedValue(undefined) }
+    scheduledTasks.clear()
+    startOutboxCron(processor, maintenance, analyticsRetention as never)
+
+    await scheduledTasks.get(CRON_SCHEDULES.DAILY_4AM)!()
+
+    expect(analyticsRetention.purgeExpiredData).toHaveBeenCalledOnce()
+    // 03:00 continua sendo só da outbox.
+    expect(maintenance.purgeOldEvents).not.toHaveBeenCalled()
   })
 
   describe('varredura de 5 minutos', () => {

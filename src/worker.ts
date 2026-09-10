@@ -6,6 +6,8 @@ initSentry()
 import { startOutboxCron } from '@lib/infra/jobs/outbox-cron'
 import { OutboxProcessor } from '@lib/infra/jobs/outbox-processor'
 import { OutboxMaintenance } from '@lib/infra/jobs/outbox-maintenance'
+import { AnalyticsRetention } from '@lib/infra/jobs/analytics-retention'
+import { PrismaAnalyticsRepository } from '@repositories/prisma/prisma-analytics-repository'
 import { makeOutboxDispatchStrategyRegistry } from '@lib/infra/jobs/make-outbox-dispatch-registry'
 import { logger } from '@lib/logger'
 import { captureError } from '@lib/sentry/capture'
@@ -72,7 +74,8 @@ async function bootstrap() {
     // no BullMQ (dedup) e do updateStatus idempotente — não de um lock.
     // ============================================================================
     const outboxMaintenance = new OutboxMaintenance(outboxRepository)
-    startOutboxCron(outboxProcessor, outboxMaintenance)
+    const analyticsRetention = new AnalyticsRetention(new PrismaAnalyticsRepository())
+    startOutboxCron(outboxProcessor, outboxMaintenance, analyticsRetention)
 
     // Metrics server is auxiliary: a bind failure must not take down the worker.
     try {

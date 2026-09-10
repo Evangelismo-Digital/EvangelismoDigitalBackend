@@ -1,45 +1,72 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { trackEventSchema } from '@schemas/analytics/track-event-schema'
+import { SESSION_COOKIE, SESSION_MAX_AGE, trackingCookieOptions } from '@http/cookies/options'
+import { hasAnalyticsConsent } from '@http/cookies/consent'
+import { HTTP_STATUS } from '@http/http-status'
+import { getUserId } from '@lib/logger'
+import { trackEventsBatchSchema } from '@schemas/analytics/track-event-schema'
 import { makeTrackAnalyticsUseCase } from '@use-cases/factories/make-track-analytics-use-case'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
-import { clientIpOf } from '@http/client-ip'
-import { HTTP_STATUS } from '@http/http-status'
+import { analyticsResponseHeaders, sessionContext } from './session-context'
 
-export async function trackEvent(request: FastifyRequest, reply: FastifyReply) {
-  const { eventType, path, payload } = trackEventSchema.parse(request.body)
+/**
+ * The identity this batch may be written under, or null to discard it.
+ *
+ * Returned as a narrowed pair rather than checked inline so the controller has
+ * one decision ("may we ingest?") instead of three, and so the non-null
+ * narrowing survives into the write without an assertion.
+ */
+function ingestibleIdentity(request: FastifyRequest): { visitorId: string; sessionId: string } | null {
+  const { visitorId, sessionId } = request
 
-  const trackAnalyticsUseCase = makeTrackAnalyticsUseCase()
-
-  const result = await trackAnalyticsUseCase.execute({
-    visitorId: request.visitorId,
-    sessionId: request.sessionId,
-    eventType,
-    path,
-    ipAddress: clientIpOf(request),
-    userAgent: request.headers['user-agent'] || null,
-    ...utmParams(request.query as Record<string, string | undefined>),
-    payload,
-  })
-
-  if (isErr(result)) {
-    return HttpErrorMapper.map(result.error, reply)
+  if (visitorId === null || sessionId === null || !hasAnalyticsConsent(request)) {
+    return null
   }
 
-  return reply.code(HTTP_STATUS.CREATED).send()
+  return { visitorId, sessionId }
 }
 
-/** Campaign parameters are all optional and all normalised to null. */
-const UTM_PARAMS = {
-  utmSource: 'utm_source',
-  utmMedium: 'utm_medium',
-  utmCampaign: 'utm_campaign',
-  utmTerm: 'utm_term',
-  utmContent: 'utm_content',
-} as const
+/**
+ * Ingests a batch of events for an ALREADY-ESTABLISHED identity.
+ *
+ * This route never creates identity. Without a valid signed visitor and session
+ * cookie the batch is discarded and answered `204` — silently, because a `400`
+ * would teach a probing caller exactly what to correct, and the frontend has
+ * nothing useful to do with the failure either way (§3.2).
+ */
+export async function trackEvent(request: FastifyRequest, reply: FastifyReply) {
+  analyticsResponseHeaders(reply)
 
-function utmParams(query: Record<string, string | undefined>): Record<keyof typeof UTM_PARAMS, string | null> {
-  return Object.fromEntries(
-    Object.entries(UTM_PARAMS).map(([field, param]) => [field, query[param] || null]),
-  ) as Record<keyof typeof UTM_PARAMS, string | null>
+  const identity = ingestibleIdentity(request)
+
+  if (identity === null) {
+    return reply.code(HTTP_STATUS.NO_CONTENT).send()
+  }
+
+  const { events } = trackEventsBatchSchema.parse(request.body)
+
+  // Renewing, not minting: the SAME session id is re-sent with a fresh 30-minute
+  // window, which is what makes the window slide from last activity rather than
+  // from bootstrap. A visitor reading one long post for 40 minutes would
+  // otherwise silently stop being recorded mid-read (§3.4).
+  reply.setCookie(SESSION_COOKIE, identity.sessionId, { ...trackingCookieOptions, maxAge: SESSION_MAX_AGE })
+
+  const context = sessionContext(request)
+  const userId = getUserId() ?? null
+  const trackAnalyticsUseCase = makeTrackAnalyticsUseCase()
+
+  for (const event of events) {
+    const result = await trackAnalyticsUseCase.execute({
+      ...identity,
+      userId,
+      ...context,
+      ...event,
+    })
+
+    if (isErr(result)) {
+      return HttpErrorMapper.map(result.error, reply)
+    }
+  }
+
+  return reply.code(HTTP_STATUS.NO_CONTENT).send()
 }

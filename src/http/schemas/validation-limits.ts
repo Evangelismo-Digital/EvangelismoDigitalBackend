@@ -26,4 +26,30 @@ export const VALIDATION_LIMITS = {
 
   /** A CPF is always eleven digits once punctuation is stripped. */
   CPF_DIGITS: 11,
+
+  /**
+   * Analytics ingestion ceilings (§4.2).
+   *
+   * The previous schema had none — `eventType` and `path` were `z.string()` and
+   * `payload` was `z.record(z.any())`. With Fastify's default 1 MiB body limit
+   * and 300 req/min/IP that is roughly 300 MB/min/IP of arbitrary JSON going
+   * straight into Postgres, without forging anything.
+   */
+  ANALYTICS_PATH_MAX: 2048,
+  ANALYTICS_TITLE_MAX: 512,
+  ANALYTICS_REFERRER_MAX: 2048,
+  ANALYTICS_LANGUAGE_MAX: 35,
+  ANALYTICS_PAYLOAD_VALUE_MAX: 512,
+  ANALYTICS_PAYLOAD_KEYS_MAX: 20,
+  ANALYTICS_EVENTS_PER_BATCH_MAX: 50,
+  /** A day in milliseconds: anything longer is a clock problem, not a reading. */
+  ANALYTICS_DURATION_MS_MAX: 86_400_000,
+  ANALYTICS_SCROLL_DEPTH_MAX: 100,
+
+  /** A UUIDv7 with room to spare; the value is opaque and always ours. */
+  ANALYTICS_VISITOR_ID_MAX: 64,
+  ANALYTICS_READ_PAGE_DEFAULT: 50,
+  ANALYTICS_READ_PAGE_MAX: 200,
+  /** Visits shown alongside a visitor profile, newest first. */
+  ANALYTICS_READ_VISITS_LIMIT: 100,
 } as const

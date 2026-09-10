@@ -14,16 +14,42 @@ import { CRON_SCHEDULES } from 'messages/constants/cron/cron'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 import { captureError } from '@lib/sentry/capture'
 import { collectMetricsOutboxCronRuns } from '@lib/metrics/outbox-metrics'
+import { AnalyticsRetention } from './analytics-retention'
+import { PrismaAnalyticsRepository } from '@repositories/prisma/prisma-analytics-repository'
+import { ANALYTICS_LOGS } from 'messages/constants/analytics/analytics'
 
-export function startOutboxCron(existingProcessor?: OutboxProcessor, existingMaintenance?: OutboxMaintenance) {
+export function startOutboxCron(
+  existingProcessor?: OutboxProcessor,
+  existingMaintenance?: OutboxMaintenance,
+  existingAnalyticsRetention?: AnalyticsRetention,
+) {
   const processor = existingProcessor ?? buildProcessor()
   const maintenance = existingMaintenance ?? buildMaintenance()
+  const analyticsRetention = existingAnalyticsRetention ?? buildAnalyticsRetention()
 
   scheduleFiveMinuteSweep(processor, maintenance)
   scheduleMidnightScan(processor)
   scheduleRetentionPurge(maintenance)
+  scheduleAnalyticsRetention(analyticsRetention)
 
   logger.info(OUTBOX_LOGS.SCHEDULER_CONFIGURED)
+}
+
+/**
+ * Analytics retention (04:00), deliberately an hour after the outbox purge.
+ *
+ * Both are bulk deletes against the same database, and overlapping them would
+ * have two long-running delete loops competing for the same I/O at the quietest
+ * hour of the night — the one window where either can afford to be slow.
+ */
+function scheduleAnalyticsRetention(analyticsRetention: AnalyticsRetention) {
+  cron.schedule(CRON_SCHEDULES.DAILY_4AM, async () => {
+    await runPhase('analytics_retention', () => analyticsRetention.purgeExpiredData(), ANALYTICS_LOGS.RETENTION_ERROR)
+  })
+}
+
+function buildAnalyticsRetention(): AnalyticsRetention {
+  return new AnalyticsRetention(new PrismaAnalyticsRepository())
 }
 
 /**
