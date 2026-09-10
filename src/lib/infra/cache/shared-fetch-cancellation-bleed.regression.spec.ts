@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 /**
  * Regression: **one caller's cancellation killed everybody else's fetch.**
@@ -52,6 +52,29 @@ describe('regression: a caller leaving must not cancel the shared fetch', () => 
   let cache: ResilientCache<AppError>
 
   beforeEach(() => {
+    /**
+     * FAKE TIMERS, and only the two primitives `Deadline` actually uses.
+     *
+     * Every caller below is given `Deadline.in(30_000)` — a REAL thirty-second
+     * budget until this was added. Nothing in these tests wants that clock to
+     * advance; the budget exists only so the caller has one. But `ci:local`
+     * runs every project in parallel, and a worker starved for thirty seconds
+     * let a patient caller's deadline expire, failing
+     * `expect(isOk(secondResult)).toBe(true)` for reasons that have nothing to
+     * do with cancellation bleed. Observed once in CI, not reproducible in
+     * isolation or across two further full-load runs — the worst shape of
+     * failure to diagnose from a red pipeline.
+     *
+     * CLAUDE.md states the rule this violated: a test that waits on a real
+     * timer fails under load rather than on logic. With the clock frozen the
+     * budget cannot expire by accident, and the one test that *wants* time to
+     * pass advances it explicitly.
+     *
+     * `toFake` is narrowed deliberately: `Deadline` uses `setTimeout` and
+     * `Date`, nothing else, and faking primitives the code never calls only
+     * creates new ways for a test to hang.
+     */
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     vi.clearAllMocks()
     mockRedisGet.mockResolvedValue(null)
     mockRedisSet.mockResolvedValue('OK')
@@ -61,6 +84,10 @@ describe('regression: a caller leaving must not cancel the shared fetch', () => 
       negativeTtlSeconds: 30,
       fetchTimeoutMs: 30_000,
     })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   function suspendedFetcher() {
@@ -120,6 +147,30 @@ describe('regression: a caller leaving must not cancel the shared fetch', () => 
 
     expect(isOk(await later)).toBe(true)
     expect(fetcher).toHaveBeenCalledOnce()
+  })
+
+  /**
+   * COUNTERWEIGHT to freezing the clock.
+   *
+   * Stopping time is a blunt instrument: it would equally hide a deadline that
+   * had stopped working altogether, and every assertion above would still pass.
+   * This one advances the clock past the budget on purpose and requires the
+   * caller to give up — so the tests above prove "the budget does not expire by
+   * accident" rather than "the budget does not exist".
+   */
+  it('still expires a caller whose budget genuinely runs out', async () => {
+    const { fetcher } = suspendedFetcher()
+
+    const impatient = cache.getOrFetch('key', fetcher, Deadline.in(30_000))
+    await drainMicrotasks()
+
+    await vi.advanceTimersByTimeAsync(31_000)
+
+    const result = await impatient
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(DeadlineExceededError)
+    }
   })
 
   it('never lets a caller inherit a budget it did not ask for', async () => {

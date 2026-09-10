@@ -21,7 +21,11 @@ export default {
     '!src/**/*.d.ts',
     '!src/server.ts',
     '!src/worker.ts',
-    '!src/env/**',
+    // Narrowed from `!src/env/**`: `index.ts` validates and THROWS at import, so
+    // mutating it breaks every run before a test executes. That does not apply
+    // to the pure helpers beside it, and excluding the whole directory left the
+    // blank-variable normalisation ungated.
+    '!src/env/index.ts',
     '!src/@types/**',
     '!src/templates/**',
   ],

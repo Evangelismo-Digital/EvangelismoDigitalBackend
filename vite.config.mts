@@ -58,6 +58,19 @@ export default defineConfig(({ mode }) => {
         {
           extends: true,
           test: {
+            // Environment parsing had NO project at all, so `src/env` was
+            // unreachable by any suite — which is how a blank optional variable
+            // came to crash the boot with nothing to catch it. Listed in BOTH
+            // the ci.yml and scripts/ci-local.sh allowlists — keep them in
+            // lockstep.
+            name: 'unit-env',
+            dir: 'src/env',
+            include: ['**/*.spec.ts'],
+          },
+        },
+        {
+          extends: true,
+          test: {
             name: 'unit-errors',
             dir: 'src/errors',
           },

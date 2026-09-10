@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 /**
  * Regression: **single-flight leaked across a microtask boundary.**
@@ -53,6 +53,26 @@ describe('regression: concurrent callers must produce exactly one upstream call'
   let cache: ResilientCache<AppError>
 
   beforeEach(() => {
+    /**
+     * FAKE TIMERS — same reason as the sibling regression beside this one.
+     *
+     * Every caller here is handed `Deadline.in(30_000)` purely so it HAS a
+     * budget; nothing in this file asserts anything about deadlines, and the
+     * clock is never meant to advance. But it was a real thirty seconds, and
+     * under the parallel load of `ci:local` a starved worker let those budgets
+     * expire — turning `expect(results.every(isOk)).toBe(true)` red over timing
+     * that has nothing to do with single-flight coalescing. Caught by the Stop
+     * hook on 2026-09-10, having passed the two runs immediately before it.
+     *
+     * Freezing the clock cannot mask a deadline regression here, because no
+     * assertion in this file depends on deadline behaviour at all — that is
+     * covered, with an explicit time-advancing counterweight, in
+     * shared-fetch-cancellation-bleed.regression.spec.ts.
+     *
+     * `toFake` is narrowed to what `Deadline` actually uses; faking primitives
+     * the code never calls only adds ways for a test to hang.
+     */
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     vi.clearAllMocks()
     mockRedisSet.mockResolvedValue('OK')
     cache = new ResilientCache<AppError>({ get: mockRedisGet, set: mockRedisSet } as never, {
@@ -61,6 +81,10 @@ describe('regression: concurrent callers must produce exactly one upstream call'
       negativeTtlSeconds: 30,
       fetchTimeoutMs: 30_000,
     })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('coalesces two callers that arrive in the same tick', async () => {

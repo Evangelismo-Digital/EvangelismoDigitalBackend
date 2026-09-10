@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { z } from 'zod'
 import ms from 'ms'
 import { ENV_CONSTANTS } from '../messages/constants/env/env'
+import { optionalEnv } from './optional-env'
 
 const envSchema = z.object({
   // Environment
@@ -10,10 +11,10 @@ const envSchema = z.object({
 
   // Database
   DATABASE_URL: z.url(),
-  DATABASE_URL_LOCAL: z.url().optional(),
+  DATABASE_URL_LOCAL: optionalEnv(z.url()),
   // Only used by `prisma migrate diff`/`migrate dev` (prisma.config.ts); Prisma 7
   // dropped the --shadow-database-url CLI flag, so this must come from config.
-  SHADOW_DATABASE_URL: z.url().optional(),
+  SHADOW_DATABASE_URL: optionalEnv(z.url()),
   DB_POOL_MAX: z.coerce.number().int().positive().default(10),
   DB_POOL_MIN: z.coerce.number().int().positive().default(2),
   DB_CONNECTION_TIMEOUT: z.coerce.number().int().positive().default(ms('10s')),
@@ -22,7 +23,7 @@ const envSchema = z.object({
   // Redis
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().default(6379),
-  REDIS_PASSWORD: z.string().optional(),
+  REDIS_PASSWORD: optionalEnv(z.string()),
   REDIS_LOG_OUTAGE_INTERVAL_MS: z.coerce.number().int().positive().default(ms('30s')),
 
   // Health probe for ingress rate limiting. Bounded on both ends deliberately:
@@ -112,7 +113,7 @@ const envSchema = z.object({
   CIRCUIT_BREAKER_MIN_THROUGHPUT: z.coerce.number().int().positive().default(5),
   CIRCUIT_BREAKER_HALF_OPEN_AFTER_MS: z.coerce.number().int().positive().default(ms('10s')),
 
-  SENTRY_DSN: z.string().optional(),
+  SENTRY_DSN: optionalEnv(z.string()),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.2),
   SENTRY_PROFILE_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
 
@@ -162,11 +163,8 @@ const envSchema = z.object({
   // invalidating the 13-month visitor cookies already in the wild. Promote the
   // current value here, generate a new COOKIE_SECRET, deploy, and drop this one
   // after a window at least as long as the longest-lived cookie.
-  // `preprocess` because dotenv reports a declared-but-blank `FOO=` as an empty
-  // string, not an absent key — and an operator finishing a rotation blanks the
-  // value far more often than they delete the line. Without this, `.min(32)`
-  // would run against `''` and refuse to boot over a variable that is, by
-  // intent, unset.
+  // `optionalEnv` because an operator finishing a rotation blanks the value far
+  // more often than they delete the line, and blank must mean unset.
   // Shared secret proving a request arrived through the Next.js first-party
   // proxy rather than straight off the internet. The proxy is what makes the
   // analytics cookies first-party at all (see docs/analytics-cookie-architecture
@@ -194,10 +192,7 @@ const envSchema = z.object({
     .transform((v) => v === 'true')
     .default(false),
 
-  COOKIE_SECRET_PREVIOUS: z.preprocess(
-    (value) => (value === '' ? undefined : value),
-    z.string().min(32, 'Previous cookie secret must be at least 32 characters long').optional(),
-  ),
+  COOKIE_SECRET_PREVIOUS: optionalEnv(z.string().min(32, 'Previous cookie secret must be at least 32 characters long')),
 })
 
 const _env = envSchema.safeParse(process.env)
