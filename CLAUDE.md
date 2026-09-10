@@ -6,6 +6,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Backend for "Evangelismo Digital" — a Fastify + TypeScript API on Node 20+, using Prisma (PostgreSQL + PostGIS) for persistence, Redis for rate-limiting/caching/distributed-locking, and BullMQ for background jobs. User-facing messages and comments are in Brazilian Portuguese; keep that convention when adding them.
 
+### Prefer Existing Dependencies Over Custom Implementations
+
+When given a task that requires implementing a technical feature, **always evaluate whether an existing solution should be reused before writing custom code**.
+
+Follow this decision process:
+
+1. **Inspect the current dependencies first.**
+   Check the project's existing dependencies and determine whether any of them already provide the required functionality, either directly or through an appropriate API.
+
+2. **If no existing dependency provides the functionality, research established libraries.**
+   Search for well-known, reputable, actively maintained, and trustworthy libraries that can provide the required functionality and are compatible with the project's technology stack.
+
+3. **Prefer established solutions over custom implementations.**
+   If a suitable existing dependency is found, use it rather than implementing the functionality from scratch.
+
+4. **Implement custom code only as a last resort.**
+   Write a custom implementation **only when**:
+
+   * no suitable existing dependency is already installed;
+   * no reputable external library provides the required functionality; or
+   * existing libraries were evaluated but do not satisfy the project's requirements.
+
+5. **Do not add dependencies unnecessarily.**
+   If an existing dependency already solves the problem, do not introduce another library. When considering a new dependency, evaluate its maintenance status, reputation, adoption, compatibility, security, license, and whether it is actively maintained.
+
+The goal is to **reuse reliable existing solutions whenever possible and minimize unnecessary custom code and dependencies**.
+
 ## Commands
 
 ```bash
