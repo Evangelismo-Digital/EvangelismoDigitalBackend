@@ -1,6 +1,5 @@
 import { REDIS_CONSTANTS } from 'messages/constants/redis/redis'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
-import { env } from '@env/index'
 import { logger } from '@lib/logger'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 import Redis from 'ioredis'
@@ -42,69 +41,36 @@ function isOutboxSignalPayload(value: unknown): value is OutboxSignalPayload {
   return typeof candidate.publicId === 'string' && typeof candidate.event === 'object' && candidate.event !== null
 }
 
-/** Exponential reconnect backoff for the pub/sub clients. */
-const RECONNECT_BACKOFF_STEP_MS = 100
-const RECONNECT_BACKOFF_MAX_MS = 5_000
-
-const baseConfig = {
-  host: env.REDIS_HOST,
-  port: env.REDIS_PORT,
-  password: env.REDIS_PASSWORD || undefined,
-  lazyConnect: true,
-}
-
-let publisher: Redis | null = null
-let subscriber: Redis | null = null
+import { getOutboxPublisher, getOutboxSubscriber } from '@lib/redis/clients/clients'
 
 function getPublisher() {
-  if (!publisher) {
-    publisher = new Redis({
-      ...baseConfig,
-      enableOfflineQueue: true,
-      commandTimeout: 2000,
-    })
+  const publisher = getOutboxPublisher()
 
-    publisher.on('connect', () => {
-      logger.info(OUTBOX_LOGS.PUBLISHER_CONNECTED)
-    })
-    publisher.on('error', (err: unknown) => {
-      logger.error({ err }, OUTBOX_LOGS.PUBLISHER_ERROR)
-    })
-    publisher.on('close', () => {
-      logger.warn(OUTBOX_LOGS.PUBLISHER_CLOSED)
-    })
-  }
+  publisher.on('connect', () => {
+    logger.info(OUTBOX_LOGS.PUBLISHER_CONNECTED)
+  })
+  publisher.on('error', (err: unknown) => {
+    logger.error({ err }, OUTBOX_LOGS.PUBLISHER_ERROR)
+  })
+  publisher.on('close', () => {
+    logger.warn(OUTBOX_LOGS.PUBLISHER_CLOSED)
+  })
 
   return publisher
 }
 
 function getSubscriber() {
-  if (!subscriber) {
-    subscriber = new Redis({
-      ...baseConfig,
-      maxRetriesPerRequest: null,
-      enableOfflineQueue: false,
-      retryStrategy: (times) => {
-        const delay = Math.min(Math.pow(2, times) * RECONNECT_BACKOFF_STEP_MS, RECONNECT_BACKOFF_MAX_MS)
-        logger.warn({
-          times,
-          delay,
-        })
+  const subscriber = getOutboxSubscriber()
 
-        return delay
-      },
-    })
-
-    subscriber.on('connect', () => {
-      logger.info(OUTBOX_LOGS.SUBSCRIBER_CONNECTED)
-    })
-    subscriber.on('error', (err: unknown) => {
-      logger.error({ err }, OUTBOX_LOGS.SUBSCRIBER_ERROR)
-    })
-    subscriber.on('close', () => {
-      logger.warn(OUTBOX_LOGS.SUBSCRIBER_CLOSED)
-    })
-  }
+  subscriber.on('connect', () => {
+    logger.info(OUTBOX_LOGS.SUBSCRIBER_CONNECTED)
+  })
+  subscriber.on('error', (err: unknown) => {
+    logger.error({ err }, OUTBOX_LOGS.SUBSCRIBER_ERROR)
+  })
+  subscriber.on('close', () => {
+    logger.warn(OUTBOX_LOGS.SUBSCRIBER_CLOSED)
+  })
 
   return subscriber
 }
@@ -220,23 +186,10 @@ export const OutboxSignal = {
     }
   },
 
-  async disconnect(): Promise<void> {
-    const targets = [publisher, subscriber].filter((client): client is Redis => client !== null)
-
+  disconnect(): void {
     if (activeMessageListener !== null) {
-      if (subscriber !== null) {
-        subscriber.off('message', activeMessageListener)
-      }
-
+      getOutboxSubscriber().off('message', activeMessageListener)
       activeMessageListener = null
     }
-
-    // Same reason as closeAllRedisConnections: clearing the module state before
-    // the await means a connect() that races the shutdown cannot have its new
-    // clients overwritten with null and left open.
-    publisher = null
-    subscriber = null
-
-    await Promise.allSettled(targets.map((client) => (client.status === 'end' ? Promise.resolve() : client.quit())))
   },
 }

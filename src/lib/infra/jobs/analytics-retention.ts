@@ -8,10 +8,8 @@ import {
   collectMetricsAnalyticsRetentionDeleted,
   collectMetricsAnalyticsRetentionRuns,
 } from '@lib/metrics/analytics-metrics'
-import { SECONDS_PER_DAY } from 'core/constants/time'
 import { ANALYTICS_CONSTANTS, ANALYTICS_LOGS } from 'messages/constants/analytics/analytics'
-
-const MS_PER_DAY = SECONDS_PER_DAY * 1000
+import ms from 'ms'
 
 type PurgeStep = (cutoff: Date, batchSize: number) => Promise<Result<number, AppError>>
 
@@ -88,7 +86,7 @@ export class AnalyticsRetention {
    * because one table erred would let the other two grow unbounded.
    */
   private async purgeInBatches(target: RetentionTarget, renew: () => Promise<void>): Promise<number> {
-    const cutoff = new Date(Date.now() - target.days * MS_PER_DAY)
+    const cutoff = new Date(Date.now() - ms(`${target.days}d`))
     let totalDeleted = 0
 
     for (let batch = 0; batch < ANALYTICS_CONSTANTS.RETENTION.MAX_BATCHES_PER_RUN; batch++) {

@@ -102,6 +102,12 @@ const { lowPolicies, mockExecute, mockFactory } = vi.hoisted(() => {
       churches: { nearest: { max: 1000, timeWindow: '1 minute' } },
       forms: { submit: { max: 2, timeWindow: '1 minute' } },
       health: { check: { max: 1000, timeWindow: '1 minute' } },
+      analytics: {
+        session: { max: 1000, timeWindow: '1 minute' },
+        events: { max: 1000, timeWindow: '1 minute' },
+        identify: { max: 1000, timeWindow: '1 minute' },
+        read: { max: 1000, timeWindow: '1 minute' },
+      },
     },
     mockExecute,
     mockFactory: vi.fn(() => ({ execute: mockExecute })),

@@ -53,6 +53,19 @@ export function errSerializer(err: unknown) {
 
 const baseConfig: LoggerOptions = {
   level: env.LOG_LEVEL,
+  redact: {
+    paths: [
+      'req.headers.authorization',
+      'req.headers.cookie',
+      'res.headers["set-cookie"]',
+      '*.password',
+      '*.cpf',
+      '*.token',
+      '*.rawToken',
+      '*.email',
+    ],
+    censor: '[REDACTED]',
+  },
   formatters: {
     level(label) {
       return { level: label }

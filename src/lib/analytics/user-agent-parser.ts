@@ -11,6 +11,9 @@
  * answers `null` for everything else. `null` is a truthful "not recognised" —
  * far better than a library's confident guess at a spoofed string, and every
  * caller already treats these columns as nullable.
+ *
+ * Note (C4): We explicitly avoid `ua-parser-js` because its v1 is licensed under
+ * AGPLv3. Do not add it back as a dependency.
  */
 
 export type DeviceClass = 'mobile' | 'tablet' | 'desktop'

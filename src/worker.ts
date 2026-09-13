@@ -12,6 +12,7 @@ import { makeOutboxDispatchStrategyRegistry } from '@lib/infra/jobs/make-outbox-
 import { logger } from '@lib/logger'
 import { captureError } from '@lib/sentry/capture'
 import { DatabaseContext } from '@lib/prisma/helpers/database-context'
+import { closeAllRedisConnections } from '@lib/redis/clients/clients'
 import { startMailWorker } from '@lib/workers/mail-worker'
 import { OutboxSignal } from '@lib/infra/events/outbox-signal'
 import { PrismaOutboxRepository } from '@repositories/prisma/prisma-outbox-event-repository'
@@ -23,6 +24,7 @@ import {
 import { Worker } from 'bullmq'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 import { crashShutdown } from '@lib/shutdown/crash-shutdown'
+import closeWithGrace from 'close-with-grace'
 import { env } from '@env/index'
 import { getMailQueue } from '@lib/queue/mail-queue'
 import { registerQueue, unregisterQueue } from '@lib/metrics/bullmq-metrics'
@@ -30,7 +32,6 @@ import { QUEUE } from 'messages/constants/queue/queue'
 import { startMetricsServer, stopMetricsServer } from './metrics-server'
 
 let worker: Worker | null = null
-let shuttingDown = false
 
 async function bootstrap() {
   try {
@@ -88,80 +89,67 @@ async function bootstrap() {
       captureError(metricsErr)
     }
   } catch (error) {
-    await crashShutdown(error, cleanup)
+    await crashShutdown(error)
   }
 }
 
-// Cleanup resources
+// eslint-disable-next-line max-lines-per-function
 async function cleanup() {
-  try {
-    await OutboxSignal.disconnect()
-    logger.info('OutboxSignal desconectado com sucesso')
-  } catch (err) {
-    logger.error(err, 'Erro ao desconectar o OutboxSignal')
-  }
-
-  if (worker) {
+  const tasks: (() => Promise<void> | void)[] = [
+    async () => {
+      OutboxSignal.disconnect()
+      logger.info('OutboxSignal desconectado')
+      await Promise.resolve()
+    },
+    async () => {
+      if (worker) {
+        await worker.close()
+        logger.info('Worker finalizado')
+      }
+    },
+    async () => {
+      unregisterQueue(QUEUE.NAMES.MAIL)
+      await getMailQueue().close()
+      logger.info('MailQueue finalizada')
+    },
+    stopMetricsServer,
+    async () => {
+      await closeAllRedisConnections()
+      logger.info('Conexões Redis finalizadas')
+    },
+  ]
+  for (const task of tasks) {
     try {
-      await worker.close()
-      logger.info('Worker finalizado com sucesso')
+      await task()
     } catch (err) {
-      logger.error(err, 'Erro ao finalizar o worker')
+      logger.error(err, 'Erro durante o encerramento do worker')
     }
   }
-
-  // Stop reporting the mail queue and close its producer connection.
-  try {
-    unregisterQueue(QUEUE.NAMES.MAIL)
-    await getMailQueue().close()
-    logger.info('MailQueue finalizada com sucesso')
-  } catch (err) {
-    logger.error(err, 'Erro ao finalizar a MailQueue')
-  }
-
-  // Metrics server closes LAST so telemetry stays scrapeable through shutdown.
-  try {
-    await stopMetricsServer()
-  } catch (err) {
-    logger.error(err, 'Erro ao finalizar o servidor de métricas do worker')
-  }
 }
 
-// Expected/Graceful Signal Shutdown (exit code 0)
-async function gracefulShutdown(signal: string) {
-  if (shuttingDown) {
-    return
-  }
-
-  shuttingDown = true
-  logger.info(`Recebido sinal ${signal}. Iniciando graceful shutdown do worker...`)
-  await cleanup()
-  process.exit(0)
-}
-
-// Signal handling
-//
-// The arrow bodies are braced so the promise is discarded explicitly: passing
-// `() => gracefulShutdown(...)` hands Node a promise-returning listener where
-// it expects void, and Node neither awaits it nor reports its rejection.
-process.on('SIGTERM', () => {
-  void gracefulShutdown('SIGTERM')
-})
-process.on('SIGINT', () => {
-  void gracefulShutdown('SIGINT')
-})
-process.on('SIGUSR2', () => {
-  void gracefulShutdown('SIGUSR2')
-})
-
-// Process-level error handling — see the note in server.ts on the `void`.
-process.on('unhandledRejection', (reason) => {
-  void crashShutdown(reason, cleanup)
-})
-
-process.on('uncaughtException', (error) => {
-  void crashShutdown(error, cleanup)
-})
+closeWithGrace(
+  {
+    delay: 15_000,
+    onTimeout: () => {
+      logger.fatal('O tempo limite de limpeza para encerramento expirou após 15s. Forçando a saída.')
+    },
+  },
+  async ({ signal, err }) => {
+    if (err) {
+      try {
+        await cleanup()
+        logger.info('Limpeza de encerramento por travamento concluída com sucesso.')
+      } catch (cleanupError) {
+        logger.error({ err: cleanupError }, 'Ocorreu um erro durante a limpeza de encerramento por travamento')
+      }
+      await crashShutdown(err)
+    } else {
+      logger.info({ signal }, `Recebido sinal ${signal ?? 'desconhecido'}. Iniciando graceful shutdown do worker...`)
+      await cleanup()
+      logger.info('Worker encerrado graciosamente.')
+    }
+  },
+)
 
 // Start
 void bootstrap()

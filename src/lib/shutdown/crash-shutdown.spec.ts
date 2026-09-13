@@ -12,6 +12,13 @@ vi.mock('@sentry/node', () => ({
   flush: mockFlush,
 }))
 
+const mockLogger = {
+  fatal: vi.fn(),
+  info: vi.fn(),
+  error: vi.fn(),
+}
+vi.mock('@lib/logger', () => ({ logger: mockLogger }))
+
 describe('crashShutdown', () => {
   let exitSpy: any
   let crashShutdown: any
@@ -21,7 +28,6 @@ describe('crashShutdown', () => {
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
     vi.useFakeTimers()
 
-    // Ensure fresh module state for each test by dynamic import
     // @ts-expect-error — Dynamic import after vi.resetModules() is unresolvable by tsc but works at runtime via vite-tsconfig-paths
     const module = await import('@lib/shutdown/crash-shutdown')
     crashShutdown = module.crashShutdown
@@ -33,41 +39,31 @@ describe('crashShutdown', () => {
     vi.resetModules()
   })
 
-  it('runs cleanup, captures exception, flushes Sentry and exits with code 1', async () => {
-    const cleanup = vi.fn().mockResolvedValue(undefined)
+  it('captures exception and flushes Sentry and logs success', async () => {
     const error = new Error('Test error')
 
-    await crashShutdown(error, cleanup)
+    await crashShutdown(error)
 
-    expect(cleanup).toHaveBeenCalledOnce()
     expect(mockCaptureException).toHaveBeenCalledWith(error)
     expect(mockFlush).toHaveBeenCalledWith(2000)
-    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(mockLogger.fatal).toHaveBeenCalledWith(
+      { err: error },
+      'Travamento não tratado detectado, iniciando sequência de encerramento por falha...',
+    )
+    expect(mockLogger.info).toHaveBeenCalledWith('Logs do Sentry enviados com sucesso.')
+    expect(exitSpy).not.toHaveBeenCalled()
   })
 
-  it('guards against double invocation and exits immediately', async () => {
-    const cleanup = vi.fn().mockResolvedValue(undefined)
-    const error1 = new Error('Error 1')
-    const error2 = new Error('Error 2')
-
-    // Call first time
-    const promise1 = crashShutdown(error1, cleanup)
-    // Call second time
-    const promise2 = crashShutdown(error2, cleanup)
-
-    await Promise.all([promise1, promise2])
-
-    expect(cleanup).toHaveBeenCalledOnce() // Cleanup only runs once
-    expect(exitSpy).toHaveBeenCalledTimes(2) // Both invoke exit
-  })
-
-  it('exits even if cleanup throws an error', async () => {
-    const cleanup = vi.fn().mockRejectedValue(new Error('Cleanup failed'))
+  it('logs error if Sentry flush fails', async () => {
     const error = new Error('Test error')
+    const flushError = new Error('Flush failed')
+    mockFlush.mockRejectedValueOnce(flushError)
 
-    await crashShutdown(error, cleanup)
+    await crashShutdown(error)
 
-    expect(cleanup).toHaveBeenCalledOnce()
-    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      { err: flushError },
+      'Erro ao enviar os logs do Sentry durante o encerramento por travamento',
+    )
   })
 })

@@ -88,4 +88,22 @@ describe('DistributedLock (integration, real Redis)', () => {
     expect(b).toBeTypeOf('string')
     expect(a).not.toBe(b)
   })
+
+  it('NOSCRIPT fallback works when scripts are flushed from Redis cache', async () => {
+    const token = await DistributedLock.acquire(KEY, 5_000)
+    expect(token).not.toBeNull()
+
+    // Flush script cache in Redis to simulate NOSCRIPT
+    await redis.script('FLUSH')
+
+    // Renew should fall back to EVAL automatically through ioredis
+    const renewed = await DistributedLock.renew(KEY, token as string, 8_000)
+    expect(renewed).toBe(true)
+
+    // Flush again and test release
+    await redis.script('FLUSH')
+    await DistributedLock.release(KEY, token as string)
+
+    expect(await redis.exists(KEY)).toBe(0)
+  })
 })

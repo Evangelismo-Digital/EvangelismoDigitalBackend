@@ -10,7 +10,7 @@ type ErrorLike = {
 }
 
 /** The connections that report outages; each gets its own log label. */
-export type RedisSubsystem = 'cache' | 'rate-limiter' | 'bullmq'
+export type RedisSubsystem = 'cache' | 'rate-limiter' | 'bullmq' | 'outbox-publisher' | 'outbox-subscriber'
 
 type RedisOutageLoggerConfig = {
   subsystem: RedisSubsystem

@@ -20,12 +20,20 @@ vi.mock('@lib/logger', () => ({
 // 3. Mock the Redis cache client used by DistributedLock
 const mockRedisSet = vi.fn()
 const mockRedisEval = vi.fn()
+const mockDefineCommand = vi.fn()
+const mockRenewLock = vi.fn()
+const mockReleaseLock = vi.fn()
+
+const mockGetRedisCache = vi.fn().mockReturnValue({
+  set: mockRedisSet,
+  eval: mockRedisEval,
+  defineCommand: mockDefineCommand,
+  renewLock: mockRenewLock,
+  releaseLock: mockReleaseLock,
+})
 
 vi.mock('@lib/redis/clients/clients', () => ({
-  getRedisCache: () => ({
-    set: mockRedisSet,
-    eval: mockRedisEval,
-  }),
+  getRedisCache: () => mockGetRedisCache(),
 }))
 
 import type { Metric } from 'prom-client'
@@ -99,9 +107,35 @@ describe('DistributedLock metrics instrumentation', () => {
     })
   })
 
+  describe('commands initialization', () => {
+    it('defines commands only if releaseLock is not a function', async () => {
+      // It is already mocked as a function, so defineCommand is NOT called
+      await DistributedLock.renew(KEY, 'token', 10_000)
+      expect(mockDefineCommand).not.toHaveBeenCalled()
+
+      // Let's force it to not be a function
+      mockGetRedisCache.mockReturnValueOnce({
+        set: mockRedisSet,
+        defineCommand: mockDefineCommand,
+        renewLock: mockRenewLock,
+      })
+
+      await DistributedLock.renew(KEY, 'token', 10_000)
+      expect(mockDefineCommand).toHaveBeenCalledTimes(2)
+      expect(mockDefineCommand).toHaveBeenCalledWith('releaseLock', {
+        numberOfKeys: 1,
+        lua: expect.stringContaining('return redis.call("del", KEYS[1])'),
+      })
+      expect(mockDefineCommand).toHaveBeenCalledWith('renewLock', {
+        numberOfKeys: 1,
+        lua: expect.stringContaining('return redis.call("pexpire", KEYS[1], ARGV[2])'),
+      })
+    })
+  })
+
   describe('renew', () => {
     it('returns true and records no expiry on success', async () => {
-      mockRedisEval.mockResolvedValue(1)
+      mockRenewLock.mockResolvedValue(1)
 
       const renewed = await DistributedLock.renew(KEY, 'token', 10_000)
 
@@ -110,7 +144,7 @@ describe('DistributedLock metrics instrumentation', () => {
     })
 
     it('counts an expiry and returns false when the lock is no longer owned', async () => {
-      mockRedisEval.mockResolvedValue(0)
+      mockRenewLock.mockResolvedValue(0)
 
       const renewed = await DistributedLock.renew(KEY, 'token', 10_000)
 
@@ -119,7 +153,7 @@ describe('DistributedLock metrics instrumentation', () => {
     })
 
     it('counts a lock error (operation=renew) and returns false on Redis failure', async () => {
-      mockRedisEval.mockRejectedValue(new Error('redis down'))
+      mockRenewLock.mockRejectedValue(new Error('redis down'))
 
       const renewed = await DistributedLock.renew(KEY, 'token', 10_000)
 
@@ -131,7 +165,7 @@ describe('DistributedLock metrics instrumentation', () => {
 
   describe('release', () => {
     it('counts a release when the lock was still owned', async () => {
-      mockRedisEval.mockResolvedValue(1)
+      mockReleaseLock.mockResolvedValue(1)
 
       await DistributedLock.release(KEY, 'token')
 
@@ -140,7 +174,7 @@ describe('DistributedLock metrics instrumentation', () => {
     })
 
     it('counts an expiry when the lock had already expired', async () => {
-      mockRedisEval.mockResolvedValue(0)
+      mockReleaseLock.mockResolvedValue(0)
 
       await DistributedLock.release(KEY, 'token')
 
@@ -149,7 +183,7 @@ describe('DistributedLock metrics instrumentation', () => {
     })
 
     it('counts a lock error (operation=release) on Redis failure', async () => {
-      mockRedisEval.mockRejectedValue(new Error('redis down'))
+      mockReleaseLock.mockRejectedValue(new Error('redis down'))
 
       await DistributedLock.release(KEY, 'token')
 
@@ -160,7 +194,7 @@ describe('DistributedLock metrics instrumentation', () => {
   describe('hold duration', () => {
     it('observes distributed_lock_duration_seconds across an acquire/release cycle', async () => {
       mockRedisSet.mockResolvedValue('OK')
-      mockRedisEval.mockResolvedValue(1)
+      mockReleaseLock.mockResolvedValue(1)
 
       const token = await DistributedLock.acquire(KEY, 10_000)
       await DistributedLock.release(KEY, token as string)
@@ -169,7 +203,7 @@ describe('DistributedLock metrics instrumentation', () => {
     })
 
     it('does not observe duration when release has no matching acquire token', async () => {
-      mockRedisEval.mockResolvedValue(1)
+      mockReleaseLock.mockResolvedValue(1)
 
       await DistributedLock.release(KEY, 'never-acquired')
 
@@ -227,24 +261,47 @@ describe('DistributedLock behavior', () => {
     })
   })
 
+  describe('commands initialization', () => {
+    it('defines commands only if releaseLock is not a function', async () => {
+      // It is already mocked as a function, so defineCommand is NOT called
+      await DistributedLock.renew(KEY, 'token', 10_000)
+      expect(mockDefineCommand).not.toHaveBeenCalled()
+
+      // Let's force it to not be a function
+      mockGetRedisCache.mockReturnValueOnce({
+        set: mockRedisSet,
+        defineCommand: mockDefineCommand,
+        renewLock: mockRenewLock,
+      })
+
+      await DistributedLock.renew(KEY, 'token', 10_000)
+      expect(mockDefineCommand).toHaveBeenCalledTimes(2)
+      expect(mockDefineCommand).toHaveBeenCalledWith('releaseLock', {
+        numberOfKeys: 1,
+        lua: expect.stringContaining('return redis.call("del", KEYS[1])'),
+      })
+      expect(mockDefineCommand).toHaveBeenCalledWith('renewLock', {
+        numberOfKeys: 1,
+        lua: expect.stringContaining('return redis.call("pexpire", KEYS[1], ARGV[2])'),
+      })
+    })
+  })
+
   describe('renew', () => {
     it('evaluates the renew script (pexpire) with numKeys 1 and a stringified TTL', async () => {
-      mockRedisEval.mockResolvedValue(1)
+      mockRenewLock.mockResolvedValue(1)
 
       await DistributedLock.renew(KEY, 'token-123', TTL_MS)
 
-      expect(mockRedisEval).toHaveBeenCalledTimes(1)
-      const [script, numKeys, key, token, ttlArg] = mockRedisEval.mock.calls[0]
-      expect(script).toContain('pexpire')
-      expect(numKeys).toBe(1)
+      expect(mockRenewLock).toHaveBeenCalledTimes(1)
+      const [key, token, ttlArg] = mockRenewLock.mock.calls[0]
       expect(key).toBe(KEY)
       expect(token).toBe('token-123')
       expect(ttlArg).toBe('10000')
-      expect(typeof ttlArg).toBe('string')
     })
 
     it('returns true and does not warn when the lock is still owned (eval → 1)', async () => {
-      mockRedisEval.mockResolvedValue(1)
+      mockRenewLock.mockResolvedValue(1)
 
       const renewed = await DistributedLock.renew(KEY, 'token', TTL_MS)
 
@@ -253,7 +310,7 @@ describe('DistributedLock behavior', () => {
     })
 
     it('returns false and warns RENEW_EXPIRED when the lock was lost (eval → 0)', async () => {
-      mockRedisEval.mockResolvedValue(0)
+      mockRenewLock.mockResolvedValue(0)
 
       const renewed = await DistributedLock.renew(KEY, 'token', TTL_MS)
 
@@ -262,7 +319,7 @@ describe('DistributedLock behavior', () => {
     })
 
     it('treats any non-1 eval result as not-renewed (edge: null)', async () => {
-      mockRedisEval.mockResolvedValue(null)
+      mockRenewLock.mockResolvedValue(null)
 
       const renewed = await DistributedLock.renew(KEY, 'token', TTL_MS)
 
@@ -272,7 +329,7 @@ describe('DistributedLock behavior', () => {
 
     it('returns false and logs RENEW_FAILED without throwing when Redis rejects', async () => {
       const error = new Error('redis down')
-      mockRedisEval.mockRejectedValue(error)
+      mockRenewLock.mockRejectedValue(error)
 
       const renewed = await DistributedLock.renew(KEY, 'token', TTL_MS)
 
@@ -283,28 +340,25 @@ describe('DistributedLock behavior', () => {
 
   describe('release', () => {
     it('evaluates the release script (del, not pexpire) with numKeys 1', async () => {
-      mockRedisEval.mockResolvedValue(1)
+      mockReleaseLock.mockResolvedValue(1)
 
       await DistributedLock.release(KEY, 'token-123')
 
-      expect(mockRedisEval).toHaveBeenCalledTimes(1)
-      const [script, numKeys, key, token] = mockRedisEval.mock.calls[0]
-      expect(script).toContain('del')
-      expect(script).not.toContain('pexpire')
-      expect(numKeys).toBe(1)
+      expect(mockReleaseLock).toHaveBeenCalledTimes(1)
+      const [key, token] = mockReleaseLock.mock.calls[0]
       expect(key).toBe(KEY)
       expect(token).toBe('token-123')
     })
 
     it('resolves cleanly without warning when the lock was still owned (eval → 1)', async () => {
-      mockRedisEval.mockResolvedValue(1)
+      mockReleaseLock.mockResolvedValue(1)
 
       await expect(DistributedLock.release(KEY, 'token')).resolves.toBeUndefined()
       expect(logger.warn).not.toHaveBeenCalled()
     })
 
     it('warns RELEASE_EXPIRED when the lock had already expired (eval → 0)', async () => {
-      mockRedisEval.mockResolvedValue(0)
+      mockReleaseLock.mockResolvedValue(0)
 
       await DistributedLock.release(KEY, 'token')
 
@@ -313,7 +367,7 @@ describe('DistributedLock behavior', () => {
 
     it('swallows Redis errors, logs RELEASE_FAILED, and never throws', async () => {
       const error = new Error('redis down')
-      mockRedisEval.mockRejectedValue(error)
+      mockReleaseLock.mockRejectedValue(error)
 
       await expect(DistributedLock.release(KEY, 'token')).resolves.toBeUndefined()
       expect(logger.warn).toHaveBeenCalledWith({ error, key: KEY }, LOCK_LOGS.RELEASE_FAILED)
@@ -323,7 +377,8 @@ describe('DistributedLock behavior', () => {
   describe('lock lifecycle (outbox usage patterns)', () => {
     it('threads the same token through acquire → renew → release on the happy path', async () => {
       mockRedisSet.mockResolvedValue('OK')
-      mockRedisEval.mockResolvedValue(1)
+      mockRenewLock.mockResolvedValue(1)
+      mockReleaseLock.mockResolvedValue(1)
 
       const token = await DistributedLock.acquire(KEY, TTL_MS)
       const renewed = await DistributedLock.renew(KEY, token as string, TTL_MS)
@@ -331,12 +386,13 @@ describe('DistributedLock behavior', () => {
 
       expect(renewed).toBe(true)
       expect(mockRedisSet).toHaveBeenCalledTimes(1)
-      expect(mockRedisEval).toHaveBeenCalledTimes(2)
+      expect(mockRenewLock).toHaveBeenCalledTimes(1)
+      expect(mockReleaseLock).toHaveBeenCalledTimes(1)
       // renew then release, both carrying the acquired token
-      expect(mockRedisEval.mock.calls[0][0]).toContain('pexpire')
-      expect(mockRedisEval.mock.calls[0][3]).toBe(token)
-      expect(mockRedisEval.mock.calls[1][0]).toContain('del')
-      expect(mockRedisEval.mock.calls[1][3]).toBe(token)
+      expect(mockRenewLock.mock.calls[0][1]).toBe(token)
+      expect(mockRenewLock.mock.calls[0][1]).toBe(token)
+      expect(mockReleaseLock.mock.calls[0][1]).toBe(token)
+      expect(mockReleaseLock.mock.calls[0][1]).toBe(token)
       expect(logger.warn).not.toHaveBeenCalled()
     })
 
@@ -346,12 +402,14 @@ describe('DistributedLock behavior', () => {
       const token = await DistributedLock.acquire(KEY, TTL_MS)
 
       expect(token).toBeNull()
-      expect(mockRedisEval).not.toHaveBeenCalled()
+      expect(mockRenewLock).not.toHaveBeenCalled()
+      expect(mockReleaseLock).not.toHaveBeenCalled()
     })
 
     it('handles a lock lost mid-run: renew → 0 then release → 0 both report expiry', async () => {
       mockRedisSet.mockResolvedValue('OK')
-      mockRedisEval.mockResolvedValueOnce(0).mockResolvedValueOnce(0)
+      mockRenewLock.mockResolvedValueOnce(0)
+      mockReleaseLock.mockResolvedValueOnce(0)
 
       const token = await DistributedLock.acquire(KEY, TTL_MS)
       const renewed = await DistributedLock.renew(KEY, token as string, TTL_MS)
@@ -364,7 +422,8 @@ describe('DistributedLock behavior', () => {
 
     it('produces a new distinct token when re-acquiring after release', async () => {
       mockRedisSet.mockResolvedValue('OK')
-      mockRedisEval.mockResolvedValue(1)
+      mockRenewLock.mockResolvedValue(1)
+      mockReleaseLock.mockResolvedValue(1)
 
       const first = await DistributedLock.acquire(KEY, TTL_MS)
       await DistributedLock.release(KEY, first as string)
@@ -399,7 +458,8 @@ describe('DistributedLock without metrics (METRICS_ENABLED=false)', () => {
     const { DistributedLock: Lock } = await import('./distributed-lock.js')
 
     mockRedisSet.mockResolvedValue('OK')
-    mockRedisEval.mockResolvedValueOnce(1).mockResolvedValueOnce(1)
+    mockRenewLock.mockResolvedValueOnce(1)
+    mockReleaseLock.mockResolvedValueOnce(1)
 
     const token = await Lock.acquire(KEY, TTL_MS)
     const renewed = await Lock.renew(KEY, token as string, TTL_MS)
@@ -413,7 +473,7 @@ describe('DistributedLock without metrics (METRICS_ENABLED=false)', () => {
     const { DistributedLock: Lock } = await import('./distributed-lock.js')
 
     mockRedisSet.mockResolvedValue(null)
-    mockRedisEval.mockResolvedValue(0)
+    mockRenewLock.mockResolvedValue(0)
 
     expect(await Lock.acquire(KEY, TTL_MS)).toBeNull()
     expect(await Lock.renew(KEY, 'token', TTL_MS)).toBe(false)

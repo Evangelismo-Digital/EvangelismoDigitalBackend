@@ -56,6 +56,30 @@ const RENEW_SCRIPT = `
 
 export type LockToken = string
 
+import type { Redis } from 'ioredis'
+
+interface LockRedis extends Redis {
+  releaseLock(key: string, token: string): Promise<number>
+  renewLock(key: string, token: string, ttl: string): Promise<number>
+}
+
+function getLockRedis(): LockRedis {
+  const redisCache = getRedisCache() as unknown as LockRedis
+
+  if (typeof redisCache.releaseLock !== 'function') {
+    redisCache.defineCommand('releaseLock', {
+      numberOfKeys: 1,
+      lua: RELEASE_SCRIPT,
+    })
+    redisCache.defineCommand('renewLock', {
+      numberOfKeys: 1,
+      lua: RENEW_SCRIPT,
+    })
+  }
+
+  return redisCache
+}
+
 export class DistributedLock {
   /**
    * Tenta adquirir um lock exclusivo via SET NX PX (atômico).
@@ -106,10 +130,10 @@ export class DistributedLock {
    *          false se o lock expirou ou foi assumido por outra instância.
    */
   static async renew(key: string, token: LockToken, ttlMs: number): Promise<boolean> {
-    const redisCache = getRedisCache()
+    const redisCache = getLockRedis()
 
     try {
-      const result = await redisCache.eval(RENEW_SCRIPT, 1, key, token, String(ttlMs))
+      const result = await redisCache.renewLock(key, token, String(ttlMs))
       const renewed = result === 1
 
       if (!renewed) {
@@ -136,10 +160,10 @@ export class DistributedLock {
    * @param token - O token retornado pelo acquire
    */
   static async release(key: string, token: LockToken): Promise<void> {
-    const redisCache = getRedisCache()
+    const redisCache = getLockRedis()
 
     try {
-      const result = await redisCache.eval(RELEASE_SCRIPT, 1, key, token)
+      const result = await redisCache.releaseLock(key, token)
 
       recordReleaseOutcome(key, result === 0)
     } catch (error) {
