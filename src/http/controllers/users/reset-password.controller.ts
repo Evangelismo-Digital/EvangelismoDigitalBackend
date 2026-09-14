@@ -1,4 +1,5 @@
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import { ZodRequest } from '@http/types/zod-request'
+import type { FastifyReply } from 'fastify'
 import { makeResetPasswordUseCase } from '@use-cases/factories/make-reset-password-use-case'
 import { resetPasswordSchema } from '@http/schemas/users/reset-password-schema'
 import { logger } from '@lib/logger'
@@ -7,8 +8,8 @@ import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { AUTH_CONSTANTS } from 'messages/constants/auth/auth'
 import { HTTP_STATUS } from '@http/http-status'
 
-export async function resetPassword(request: FastifyRequest, reply: FastifyReply) {
-  const { password, token } = resetPasswordSchema.parse(request.body)
+export async function resetPassword(request: ZodRequest<{ body: typeof resetPasswordSchema }>, reply: FastifyReply) {
+  const { password, token } = request.body
 
   const resetPasswordUseCase = makeResetPasswordUseCase()
 

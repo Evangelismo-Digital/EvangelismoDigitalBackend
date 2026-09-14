@@ -1,4 +1,5 @@
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import { ZodRequest } from '@http/types/zod-request'
+import type { FastifyReply } from 'fastify'
 import { forgotPasswordSchema } from '@http/schemas/users/forgot-password-schema'
 import { makeForgotPasswordUseCase } from '@use-cases/factories/make-forgot-password-use-case'
 import { OutboxSignal } from '@lib/infra/events/outbox-signal'
@@ -7,8 +8,8 @@ import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { HTTP_STATUS } from '@http/http-status'
 
-export async function forgotPassword(request: FastifyRequest, reply: FastifyReply) {
-  const { email } = forgotPasswordSchema.parse(request.body)
+export async function forgotPassword(request: ZodRequest<{ body: typeof forgotPasswordSchema }>, reply: FastifyReply) {
+  const { email } = request.body
 
   if (!email) {
     return reply.code(HTTP_STATUS.OK).send({ message: EMAIL_CONSTANTS.PASSWORD_RESET_GENERIC_MESSAGE })

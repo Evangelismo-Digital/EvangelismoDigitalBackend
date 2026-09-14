@@ -1,4 +1,5 @@
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import { ZodRequest } from '@http/types/zod-request'
+import type { FastifyReply } from 'fastify'
 import { AnalyticsPresenter } from '@http/presenters/analytics-presenter'
 import { HTTP_STATUS } from '@http/http-status'
 import { visitorsByUserQuerySchema } from '@schemas/analytics/visitor-analytics-schema'
@@ -13,8 +14,11 @@ import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
  * no user at all. It exists to get from an account to a `visitorId`, which is
  * the key the profile endpoint actually takes.
  */
-export async function listVisitorsByUser(request: FastifyRequest, reply: FastifyReply) {
-  const { userId, limit } = visitorsByUserQuerySchema.parse(request.query)
+export async function listVisitorsByUser(
+  request: ZodRequest<{ querystring: typeof visitorsByUserQuerySchema }>,
+  reply: FastifyReply,
+) {
+  const { userId, limit } = request.query
 
   const result = await makeGetVisitorAnalyticsUseCase().byUser(userId, limit)
 

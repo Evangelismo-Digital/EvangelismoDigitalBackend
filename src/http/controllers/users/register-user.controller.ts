@@ -1,4 +1,5 @@
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import { ZodRequest } from '@http/types/zod-request'
+import type { FastifyReply } from 'fastify'
 import { logger } from '@lib/logger'
 import { registerSchema } from '@http/schemas/users/register-schema'
 import { makeRegisterUserUseCase } from '@use-cases/factories/make-register-user-use-case'
@@ -8,8 +9,8 @@ import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { HTTP_STATUS } from '@http/http-status'
 
-export async function register(request: FastifyRequest, reply: FastifyReply) {
-  const { name, email, cpf, username, password } = registerSchema.parse(request.body)
+export async function register(request: ZodRequest<{ body: typeof registerSchema }>, reply: FastifyReply) {
+  const { name, email, cpf, username, password } = request.body
 
   const registerUseCase = makeRegisterUserUseCase()
 
@@ -33,8 +34,8 @@ export async function register(request: FastifyRequest, reply: FastifyReply) {
   return reply.code(HTTP_STATUS.CREATED).send({ user: UserPresenter.toHTTP(user) })
 }
 
-export async function registerAdmin(request: FastifyRequest, reply: FastifyReply) {
-  const { name, email, cpf, username, password } = registerSchema.parse(request.body)
+export async function registerAdmin(request: ZodRequest<{ body: typeof registerSchema }>, reply: FastifyReply) {
+  const { name, email, cpf, username, password } = request.body
 
   const registerUseCase = makeRegisterUserUseCase()
 

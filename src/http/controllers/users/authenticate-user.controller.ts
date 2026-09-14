@@ -1,4 +1,5 @@
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import { ZodRequest } from '@http/types/zod-request'
+import type { FastifyReply } from 'fastify'
 import { logger } from '@lib/logger'
 import { authenticateSchema } from '@http/schemas/users/authenticate-schema'
 import { makeAuthenticateUserUseCase } from '@use-cases/factories/make-authenticate-user-use-case'
@@ -7,7 +8,7 @@ import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { HTTP_STATUS } from '@http/http-status'
 
-function getAuthenticationAuditContext(request: FastifyRequest) {
+function getAuthenticationAuditContext(request: ZodRequest<{ body: typeof authenticateSchema }>) {
   return {
     ipAddress: request.ip,
     remotePort: request.socket.remotePort?.toString() ?? null,
@@ -16,8 +17,8 @@ function getAuthenticationAuditContext(request: FastifyRequest) {
   }
 }
 
-export async function authenticateUser(request: FastifyRequest, reply: FastifyReply) {
-  const { login, password } = authenticateSchema.parse(request.body)
+export async function authenticateUser(request: ZodRequest<{ body: typeof authenticateSchema }>, reply: FastifyReply) {
+  const { login, password } = request.body
 
   const auditContext = getAuthenticationAuditContext(request)
 

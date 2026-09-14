@@ -24,9 +24,9 @@ Follow this decision process:
 4. **Implement custom code only as a last resort.**
    Write a custom implementation **only when**:
 
-   * no suitable existing dependency is already installed;
-   * no reputable external library provides the required functionality; or
-   * existing libraries were evaluated but do not satisfy the project's requirements.
+   - no suitable existing dependency is already installed;
+   - no reputable external library provides the required functionality; or
+   - existing libraries were evaluated but do not satisfy the project's requirements.
 
 5. **Do not add dependencies unnecessarily.**
    If an existing dependency already solves the problem, do not introduce another library. When considering a new dependency, evaluate its maintenance status, reputation, adoption, compatibility, security, license, and whether it is actively maintained.
@@ -107,17 +107,17 @@ This is **non-negotiable** for any change to a controller, use-case/service, rep
 
 ### Layers
 
-| Layer | Tooling here | Objective | Gate |
-|---|---|---|---|
-| 0 — Static & types | `npm run typecheck`, `npm run lint` | no hallucinated syntax / API calls | 0 type errors; 0 lint **errors** (see Layer 4 note) |
-| 1 — Acceptance (Gherkin) | `@amiceli/vitest-cucumber` + `supertest` — `npm run test:acceptance` | business intent from `features/*.feature` over the HTTP boundary | 100 % green steps; no pending/undefined step |
-| 2 — Unit & domain invariants | Vitest `unit-*` projects, in-memory doubles — `npm run test:unit` | boundaries, calculations, **every `err(...)` branch**, state machines | zero-I/O, < ~1 ms/test, 100 % pass |
-| 3 — Property-based | `fast-check` inside `*.spec.ts` | thousands of randomised inputs at pure functions (Result helpers, geo math, validators, template rendering) | no falsifying case |
-| 4 — Structural & complexity | `eslint` (`complexity`, `sonarjs/cognitive-complexity`, `max-lines-per-function`, `max-depth`, `max-params`, `import/no-cycle`), `npm run check:cycles` | no monolithic / tangled generated code | Cyclomatic ≤ 6; cognitive ≤ 10; function ≤ 30 lines; `max-depth` ≤ 3; ≤ 5 params; no new circular deps |
-| 4b — SonarQube | `npm run sonar` (server in `docker-compose.sonar.yml`) | the checks ESLint has no equivalent for: cognitive complexity on the dashboard, duplication, coverage and test-execution history, "new code" tracking | quality gate `Evangelismo Strict` = OK; **0 open issues**; 0 unreviewed hotspots |
-| 4c — Security findings | `npm run security:scan` — njsscan + Semgrep security rulesets + ESLint security rules + Sonar's security findings, merged | vulnerable *patterns* in the source (a different question from OSV's lockfile and gitleaks' diff) | 0 blocking findings; anything else justified in `security-suppressions.json` |
-| 5 — Mutation gauntlet | Stryker — `npm run test:mutation:scoped -- "<changed globs>"` | kill deliberate bugs planted in the AST | mutation score ≥ 85 % on the changed diff |
-| 6 — CI parity | `npm run ci:local` (`scripts/ci-local.sh`) | prove the change survives every gate CI applies, not just the ones you thought to run | exit 0, all stages green — **mandatory, run serially** |
+| Layer                        | Tooling here                                                                                                                                            | Objective                                                                                                                                             | Gate                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 0 — Static & types           | `npm run typecheck`, `npm run lint`                                                                                                                     | no hallucinated syntax / API calls                                                                                                                    | 0 type errors; 0 lint **errors** (see Layer 4 note)                                                    |
+| 1 — Acceptance (Gherkin)     | `@amiceli/vitest-cucumber` + `supertest` — `npm run test:acceptance`                                                                                    | business intent from `features/*.feature` over the HTTP boundary                                                                                      | 100 % green steps; no pending/undefined step                                                           |
+| 2 — Unit & domain invariants | Vitest `unit-*` projects, in-memory doubles — `npm run test:unit`                                                                                       | boundaries, calculations, **every `err(...)` branch**, state machines                                                                                 | zero-I/O, < ~1 ms/test, 100 % pass                                                                     |
+| 3 — Property-based           | `fast-check` inside `*.spec.ts`                                                                                                                         | thousands of randomised inputs at pure functions (Result helpers, geo math, validators, template rendering)                                           | no falsifying case                                                                                     |
+| 4 — Structural & complexity  | `eslint` (`complexity`, `sonarjs/cognitive-complexity`, `max-lines-per-function`, `max-depth`, `max-params`, `import/no-cycle`), `npm run check:cycles` | no monolithic / tangled generated code                                                                                                                | Cyclomatic ≤ 6; cognitive ≤ 10; function ≤ 30 lines; `max-depth` ≤ 3; ≤ 5 params; no new circular deps |
+| 4b — SonarQube               | `npm run sonar` (server in `docker-compose.sonar.yml`)                                                                                                  | the checks ESLint has no equivalent for: cognitive complexity on the dashboard, duplication, coverage and test-execution history, "new code" tracking | quality gate `Evangelismo Strict` = OK; **0 open issues**; 0 unreviewed hotspots                       |
+| 4c — Security findings       | `npm run security:scan` — njsscan + Semgrep security rulesets + ESLint security rules + Sonar's security findings, merged                               | vulnerable _patterns_ in the source (a different question from OSV's lockfile and gitleaks' diff)                                                     | 0 blocking findings; anything else justified in `security-suppressions.json`                           |
+| 5 — Mutation gauntlet        | Stryker — `npm run test:mutation:scoped -- "<changed globs>"`                                                                                           | kill deliberate bugs planted in the AST                                                                                                               | mutation score ≥ 85 % on the changed diff                                                              |
+| 6 — CI parity                | `npm run ci:local` (`scripts/ci-local.sh`)                                                                                                              | prove the change survives every gate CI applies, not just the ones you thought to run                                                                 | exit 0, all stages green — **mandatory, run serially**                                                 |
 
 The Layer 4 rules are `error` repo-wide — the legacy backlog was cleared, so a new violation fails `npm run lint`, `ci:static` and the `PostToolUse` hook alike. `npm run lint` already runs with `--max-warnings 0`; `npm run lint:complexity` is the same check under a name that says what it is for.
 
@@ -129,10 +129,10 @@ Layer 1 lives in `features/*.feature` (Gherkin) with step definitions colocated 
 
 ### Golden rules
 
-- **Red-Green-Refactor.** Write the failing acceptance + unit tests first, run them, confirm they fail *for the reason you expect*, then write the minimum code to pass. Refactor only with the suite green.
+- **Red-Green-Refactor.** Write the failing acceptance + unit tests first, run them, confirm they fail _for the reason you expect_, then write the minimum code to pass. Refactor only with the suite green.
 - **Assertion rigor.** No hollow/tautological assertions — `expect(result).toBeDefined()` is not acceptable where a specific value or `Result`/state transition is required. A test that still passes when you delete the function body is not a test.
 - **Fast-to-slow.** Never trigger Layer 5 (mutation) before Layers 0–2 are 100 % green. Mutation testing never runs in the inner loop or in the `Stop` gate — it is manual / CI.
-- **Fail-fast.** On any layer failure, stop, fix the root cause, and re-run *that* layer before moving on.
+- **Fail-fast.** On any layer failure, stop, fix the root cause, and re-run _that_ layer before moving on.
 - Never mark a task complete with a failing or skipped test. If a test is genuinely wrong, say so and explain — do **not** silently delete it, weaken its assertion, or add `.skip`.
 
 ### Per-artefact requirements
@@ -179,14 +179,14 @@ is worth least exactly where you were most confident. Run all of it:
 6. `npm run sonar` — quality gate OK, **zero** open issues, zero unreviewed hotspots. Reads back as
    `reports/sonar/SONAR-REPORT.md`, which lists every finding as `file:line` with its rule, so it is
    worth reading rather than just passing. From a warm server `npm run sonar:reports && npm run
-   sonar:scan` is enough
+sonar:scan` is enough
 7. `npm run security:scan` — zero blocking findings in `reports/security/SECURITY-REPORT.md`. Fix
    them; if one is genuinely a false positive, record it in `security-suppressions.json` with a
-   justification that explains *why that point is safe*. Never silence the tool
+   justification that explains _why that point is safe_. Never silence the tool
 8. `npm run test:mutation:scoped -- "<changed src globs>"` — kill every survivor (boolean flip,
    boundary operator, deleted return) with a targeted test.
    **Use the `:scoped` script, not `test:mutation -- --mutate`.** Stryker's CLI `--mutate`
-   *replaces* the `mutate` array from `stryker.conf.mjs` instead of intersecting with it, and that
+   _replaces_ the `mutate` array from `stryker.conf.mjs` instead of intersecting with it, and that
    array is where the exclusions live (`!src/**/*.spec.ts` and friends). Passing `--mutate` by hand
    therefore starts planting mutants in the **spec files themselves**; nothing asserts on a test's
    own source, so those mutants survive and drag the score under the gate for a reason unrelated to
@@ -238,7 +238,7 @@ The instance is provisioned **from code** (`scripts/sonar-configure.mjs`), idemp
 
 `scripts/sonar-report.mjs` reads the analysis back into `reports/sonar/SONAR-REPORT.md` (plus machine-readable JSON) and exits non-zero on a failing gate — that is what makes it usable as a pipeline stage rather than a dashboard someone remembers to open.
 
-**Snyk** runs in two parts. *Snyk Open Source* (SCA) is active and gating — it uses a different advisory database from OSV-Scanner and caught `fast-uri` CVE-2026-84292/84394 that OSV did not report. *Snyk Code* (SAST/taint) requires the entitlement to be enabled for the organization in the Snyk console; without it the CLI returns `SNYK-CODE-0005`/403 and the stage is reported as **not run** rather than clean. The credential goes in `.env.security` (gitignored, `0600`) — not `~/.bashrc`, whose stock interactivity guard makes exports invisible to every non-interactive shell, hook and CI runner.
+**Snyk** runs in two parts. _Snyk Open Source_ (SCA) is active and gating — it uses a different advisory database from OSV-Scanner and caught `fast-uri` CVE-2026-84292/84394 that OSV did not report. _Snyk Code_ (SAST/taint) requires the entitlement to be enabled for the organization in the Snyk console; without it the CLI returns `SNYK-CODE-0005`/403 and the stage is reported as **not run** rather than clean. The credential goes in `.env.security` (gitignored, `0600`) — not `~/.bashrc`, whose stock interactivity guard makes exports invisible to every non-interactive shell, hook and CI runner.
 
 The scan is deliberately **not** `--all-projects`: that walks the `.stryker-tmp` mutation sandboxes, whose stale lockfiles produced 102 findings against versions the project no longer uses.
 
@@ -299,7 +299,7 @@ Use-cases are hand-wired via `make*` factory functions in `src/use-cases/factori
 
 `src/app.ts` registers plugins in a deliberate order (each documented inline): async-context (ALS with per-request `requestId` via uuidv7) → CORS → rate-limit → cookie → analytics → JWT → request-lifecycle (JWT extraction, `userId` population, logging) → error-handler → routes. Routes are grouped in `src/http/routes.ts` by prefix (`/users`, `/health`, `/forms`, `/churches`, `/analytics`).
 
-The rate-limit plugin keeps **Redis as the single source of truth** — `@fastify/rate-limit` with the built-in `redis:` store, no local fallback and no second counting algorithm — and runs `skipOnError: true`. With `skipOnError: false` a Redis that merely got slow returned HTTP 500 to every caller, because the rate-limiter connection is deliberately impatient (`commandTimeout: 100`, `enableOfflineQueue: false`, `maxRetriesPerRequest: 0`): the limiter became the outage it exists to prevent. Failing open is the accepted trade, and it is only acceptable because it is **loud** — the plugin swallows the store error silently and offers no hook on it, so `RateLimitHealthProbe` (`src/lib/infra/rate-limiter/rate-limit-health-probe.ts`) PINGs that same connection on a bounded interval (`REDIS_RATE_LIMIT_HEALTH_INTERVAL_MS`, 1 s–5 min, default 15 s) and publishes `http_rate_limit_redis_up` plus `http_rate_limit_infra_degraded_total` / `_recovered_total`. It probes on the rate limiter's own connection on purpose: a more forgiving client would report "Redis up" during exactly the slow-Redis incident this exists to catch. Alerts `HttpRateLimitSkippedRedisDown` (gauge at 0) and `HttpRateLimitFlapping` live in `prometheus/alerts.yml`, with two panels on the *Fastify HTTP & BullMQ* dashboard. Note the opposite decision in `RedisRateLimiter`, which fails **closed** for outbound provider quotas: the reasoning for each is in the two files.
+The rate-limit plugin keeps **Redis as the single source of truth** — `@fastify/rate-limit` with the built-in `redis:` store, no local fallback and no second counting algorithm — and runs `skipOnError: true`. With `skipOnError: false` a Redis that merely got slow returned HTTP 500 to every caller, because the rate-limiter connection is deliberately impatient (`commandTimeout: 100`, `enableOfflineQueue: false`, `maxRetriesPerRequest: 0`): the limiter became the outage it exists to prevent. Failing open is the accepted trade, and it is only acceptable because it is **loud** — the plugin swallows the store error silently and offers no hook on it, so `RateLimitHealthProbe` (`src/lib/infra/rate-limiter/rate-limit-health-probe.ts`) PINGs that same connection on a bounded interval (`REDIS_RATE_LIMIT_HEALTH_INTERVAL_MS`, 1 s–5 min, default 15 s) and publishes `http_rate_limit_redis_up` plus `http_rate_limit_infra_degraded_total` / `_recovered_total`. It probes on the rate limiter's own connection on purpose: a more forgiving client would report "Redis up" during exactly the slow-Redis incident this exists to catch. Alerts `HttpRateLimitSkippedRedisDown` (gauge at 0) and `HttpRateLimitFlapping` live in `prometheus/alerts.yml`, with two panels on the _Fastify HTTP & BullMQ_ dashboard. Note the opposite decision in `RedisRateLimiter`, which fails **closed** for outbound provider quotas: the reasoning for each is in the two files.
 
 Request context (`requestId`, `userId`) flows through `AsyncLocalStorage` (`src/lib/async-local-storage`, exposed via `getRequestId()`/`getUserId()` from `@lib/logger`), so logging and Sentry scoping stay request-isolated without threading params.
 

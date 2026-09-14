@@ -1,4 +1,5 @@
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import { ZodRequest } from '@http/types/zod-request'
+import type { FastifyReply } from 'fastify'
 import { SESSION_COOKIE, SESSION_MAX_AGE, trackingCookieOptions } from '@http/cookies/options'
 import { hasAnalyticsConsent } from '@http/cookies/consent'
 import { HTTP_STATUS } from '@http/http-status'
@@ -16,7 +17,9 @@ import { analyticsResponseHeaders, sessionContext } from './session-context'
  * one decision ("may we ingest?") instead of three, and so the non-null
  * narrowing survives into the write without an assertion.
  */
-function ingestibleIdentity(request: FastifyRequest): { visitorId: string; sessionId: string } | null {
+function ingestibleIdentity(
+  request: ZodRequest<{ body: typeof trackEventsBatchSchema }>,
+): { visitorId: string; sessionId: string } | null {
   const { visitorId, sessionId } = request
 
   if (visitorId === null || sessionId === null || !hasAnalyticsConsent(request)) {
@@ -34,7 +37,7 @@ function ingestibleIdentity(request: FastifyRequest): { visitorId: string; sessi
  * would teach a probing caller exactly what to correct, and the frontend has
  * nothing useful to do with the failure either way (§3.2).
  */
-export async function trackEvent(request: FastifyRequest, reply: FastifyReply) {
+export async function trackEvent(request: ZodRequest<{ body: typeof trackEventsBatchSchema }>, reply: FastifyReply) {
   analyticsResponseHeaders(reply)
 
   const identity = ingestibleIdentity(request)
@@ -43,7 +46,7 @@ export async function trackEvent(request: FastifyRequest, reply: FastifyReply) {
     return reply.code(HTTP_STATUS.NO_CONTENT).send()
   }
 
-  const { events } = trackEventsBatchSchema.parse(request.body)
+  const { events } = request.body
 
   // Renewing, not minting: the SAME session id is re-sent with a fresh 30-minute
   // window, which is what makes the window slide from last activity rather than

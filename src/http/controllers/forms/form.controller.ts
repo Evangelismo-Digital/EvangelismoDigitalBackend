@@ -1,4 +1,5 @@
-import { FastifyReply, FastifyRequest } from 'fastify'
+import { ZodRequest } from '@http/types/zod-request'
+import { FastifyReply } from 'fastify'
 import { formsSchema } from '@http/schemas/forms/forms-schema'
 import { makeFormSubmissionUseCase } from '@use-cases/forms/factories/make-form-submission-use-case'
 import { logger } from '@lib/logger'
@@ -7,9 +8,9 @@ import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { HTTP_STATUS } from '@http/http-status'
 
-export async function formSubmission(request: FastifyRequest, reply: FastifyReply) {
+export async function formSubmission(request: ZodRequest<{ body: typeof formsSchema }>, reply: FastifyReply) {
   // 1. Validação de Entrada (Zod)
-  const data = formsSchema.parse(request.body)
+  const data = request.body
 
   // 2. Fábrica (Cria o Use Case com o Decorator Transacional)
   const formSubmissionUseCase = makeFormSubmissionUseCase()

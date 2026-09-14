@@ -1,14 +1,15 @@
+import { ZodRequest } from '@http/types/zod-request'
 import { deleteChurchBodySchema } from '@http/schemas/churches/delete-church-schema'
 import { ChurchPresenter } from '@http/presenters/church-presenter'
 import { logger } from '@lib/logger'
 import { makeDeleteChurchUseCase } from '@use-cases/factories/make-delete-church-use-case'
-import { FastifyReply, FastifyRequest } from 'fastify'
+import { FastifyReply } from 'fastify'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { HTTP_STATUS } from '@http/http-status'
 
-export async function deleteChurch(request: FastifyRequest, reply: FastifyReply) {
-  const { publicId } = deleteChurchBodySchema.parse(request.body)
+export async function deleteChurch(request: ZodRequest<{ body: typeof deleteChurchBodySchema }>, reply: FastifyReply) {
+  const { publicId } = request.body
 
   logger.info({
     msg: 'Deletando uma igreja',

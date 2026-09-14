@@ -6,9 +6,9 @@ is the outermost layer of the pipeline described in
 
 ## Layout
 
-| Thing | Where | Naming |
-|---|---|---|
-| Feature files | `features/` | `<area>.feature` |
+| Thing            | Where                         | Naming                                                   |
+| ---------------- | ----------------------------- | -------------------------------------------------------- |
+| Feature files    | `features/`                   | `<area>.feature`                                         |
 | Step definitions | colocated with the controller | `src/http/controllers/<area>/<area>.acceptance.spec.mts` |
 
 Step-definition files are collected by the `acceptance` Vitest project
@@ -31,8 +31,12 @@ the Docker Postgres/Redis environment — bring the stack up first
    const feature = await loadFeature('features/<area>.feature')
 
    describeFeature(feature, ({ Scenario, BeforeAllScenarios, AfterAllScenarios }) => {
-     BeforeAllScenarios(async () => { await app.ready() })
-     AfterAllScenarios(async () => { await app.close() })
+     BeforeAllScenarios(async () => {
+       await app.ready()
+     })
+     AfterAllScenarios(async () => {
+       await app.close()
+     })
 
      Scenario('<scenario name>', ({ Given, When, Then, And }) => {
        // one callback per step; step text matches the .feature line,

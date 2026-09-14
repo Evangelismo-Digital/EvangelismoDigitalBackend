@@ -1,10 +1,10 @@
 # Dependency-reuse audit & phased refactor plan
 
-Applies the rule added to [`CLAUDE.md`](../CLAUDE.md) — *Prefer Existing Dependencies Over Custom
-Implementations* — retroactively to the code that was written before it existed.
+Applies the rule added to [`CLAUDE.md`](../CLAUDE.md) — _Prefer Existing Dependencies Over Custom
+Implementations_ — retroactively to the code that was written before it existed.
 
 Scope: **technical implementations only.** Business logic (use-cases, domain rules, the Result/error
-hierarchy as a *convention*, PT-BR message catalogues) is deliberately out of scope. Every finding below
+hierarchy as a _convention_, PT-BR message catalogues) is deliberately out of scope. Every finding below
 is about machinery — plumbing that some library, somewhere, already solves.
 
 Audit date: 2026-09-10. Branch `feat/cookies-enhancements` @ `a360d08`.
@@ -20,26 +20,26 @@ not-invented-here problem to unwind, only a specific and finite list of gaps.
 
 The pre-existing evidence of compliance:
 
-| Concern | Library already used | Where |
-|---|---|---|
-| Retry / backoff / circuit breaker / bulkhead | `cockatiel` | `providers/helpers/deadline-retry.ts`, `resilient-cache.ts` |
-| Outbound provider quotas | `rate-limiter-flexible` | `lib/infra/rate-limiter/redis-rate-limiter.ts` |
-| Ingress rate limiting | `@fastify/rate-limit` + Redis store | `http/plugins/rate-limit.plugin.ts` |
-| IP parsing & masking | `ipaddr.js` | `lib/analytics/truncate-ip.ts` |
-| Cookie signing & rotation | `@fastify/cookie` | `http/cookies/cookie-secrets.ts` |
-| Password hashing | `bcryptjs` | — |
-| Queues & jobs | `bullmq` | `lib/workers/`, `lib/queue/` |
-| Structured logging | `pino` | `lib/logger/` |
-| Metrics | `prom-client` + `fastify-metrics` | `lib/metrics/`, `app.ts` |
-| Validation | `zod` | `http/schemas/`, `env/` |
-| CPF validation | `cpf-cnpj-validator` | `http/schemas/utils/cpf.ts` |
+| Concern                                      | Library already used                | Where                                                       |
+| -------------------------------------------- | ----------------------------------- | ----------------------------------------------------------- |
+| Retry / backoff / circuit breaker / bulkhead | `cockatiel`                         | `providers/helpers/deadline-retry.ts`, `resilient-cache.ts` |
+| Outbound provider quotas                     | `rate-limiter-flexible`             | `lib/infra/rate-limiter/redis-rate-limiter.ts`              |
+| Ingress rate limiting                        | `@fastify/rate-limit` + Redis store | `http/plugins/rate-limit.plugin.ts`                         |
+| IP parsing & masking                         | `ipaddr.js`                         | `lib/analytics/truncate-ip.ts`                              |
+| Cookie signing & rotation                    | `@fastify/cookie`                   | `http/cookies/cookie-secrets.ts`                            |
+| Password hashing                             | `bcryptjs`                          | —                                                           |
+| Queues & jobs                                | `bullmq`                            | `lib/workers/`, `lib/queue/`                                |
+| Structured logging                           | `pino`                              | `lib/logger/`                                               |
+| Metrics                                      | `prom-client` + `fastify-metrics`   | `lib/metrics/`, `app.ts`                                    |
+| Validation                                   | `zod`                               | `http/schemas/`, `env/`                                     |
+| CPF validation                               | `cpf-cnpj-validator`                | `http/schemas/utils/cpf.ts`                                 |
 
-Two files deserve specific mention because they already *document* the rule's reasoning, and should be
+Two files deserve specific mention because they already _document_ the rule's reasoning, and should be
 cited as precedent in review:
 
 - **`lib/analytics/truncate-ip.ts`** — its docblock records that a hand-rolled version shipped three
   defects (IPv6 `::` elision rejected, octal/short-form IPv4 producing three buckets for one host,
-  IPv4-in-IPv6 mistaken for IPv4), and that `ipaddr.js` *was already in the lockfile the whole time* via
+  IPv4-in-IPv6 mistaken for IPv4), and that `ipaddr.js` _was already in the lockfile the whole time_ via
   `@fastify/proxy-addr`. This is the rule's argument, written by the codebase about itself.
 - **`lib/infra/rate-limiter/redis-rate-limiter.ts`** — its "🔧 Por que rate-limiter-flexible" block
   chooses the library explicitly and says why, which is exactly what step 5 of the rule asks for.
@@ -72,7 +72,7 @@ One latent defect surfaced during the audit, in Finding A1 — flagged there rat
 `process.on('uncaughtException')` handlers, and `src/lib/shutdown/crash-shutdown.ts` re-implements the
 hard timeout (`CLEANUP_HARD_TIMEOUT_MS`, line 5) and the one-shot guard (`isShuttingDown`, line 11).
 
-**The defect:** on an uncaught exception, *both* paths fire. close-with-grace invokes its callback with
+**The defect:** on an uncaught exception, _both_ paths fire. close-with-grace invokes its callback with
 `err` set (`server.ts:25-26` → `crashShutdown`), and the direct `process.on` at `server.ts:47` calls
 `crashShutdown` again. The second call hits the `isShuttingDown` guard and goes straight to
 `process.exit(1)` — **killing the first call's cleanup mid-flight**, before Redis connections quit, before
@@ -85,7 +85,7 @@ callback, and move the hard timeout to close-with-grace's `delay` + `onTimeout`.
 `src/worker.ts`.
 
 **Regression test (required — this is a bug fix):** `crash-cleanup-interrupted-by-duplicate-handler.regression.spec.ts`.
-Must be seen red against `a360d08`. Counterweight: a genuine *second* crash during shutdown must still
+Must be seen red against `a360d08`. Counterweight: a genuine _second_ crash during shutdown must still
 force-exit — that is `onSecondError`, and it must not be lost.
 
 ---
@@ -98,8 +98,8 @@ fix recorded there is to build leader election.
 
 **Leader election does not need to be built.** BullMQ 5.81.4 — already installed, verified to export
 `upsertJobScheduler` — provides Job Schedulers, which store scheduler metadata in Redis and enqueue one
-delayed job per interval. Only one job instance is produced per scheduled tick *regardless of how many
-processes upsert the same scheduler id*, and the job is then consumed by exactly one worker through the
+delayed job per interval. Only one job instance is produced per scheduled tick _regardless of how many
+processes upsert the same scheduler id_, and the job is then consumed by exactly one worker through the
 queue's normal semantics.
 
 This is Category A at its strongest: an installed dependency solves a problem the codebase has written
@@ -108,13 +108,13 @@ DistributedLock contention on the scheduled paths.
 
 **Action:** convert the four schedules in `src/lib/infra/jobs/outbox-cron.ts` (`EVERY_FIVE_MINUTES`,
 `MIDNIGHT_DAILY`, `DAILY_3AM`, `DAILY_4AM`) to `queue.upsertJobScheduler(<stable id>, { pattern }, ...)`
-with a worker consuming them. Keep the cron *expressions*; they move, they do not change. Remove
+with a worker consuming them. Keep the cron _expressions_; they move, they do not change. Remove
 `node-cron`. Rewrite the `worker.ts` caveat to describe what is now true — the Pub/Sub fan-out in
 `OutboxSignal.subscribe` (`worker.ts:71-74`) remains a genuine multi-pod concern and must stay documented.
 
 > Note: `docs/architecture-assessment-BullMQ-native-jobs-and-routing.md` §1.1 assessed BullMQ native
 > features and marked `QueueScheduler` "N/A — removed in BullMQ v4+". That is correct but refers to a
-> *different, removed* API. Job Schedulers (`upsertJobScheduler`) are its replacement and were not
+> _different, removed_ API. Job Schedulers (`upsertJobScheduler`) are its replacement and were not
 > assessed. This finding complements that document rather than contradicting it.
 
 ---
@@ -162,7 +162,7 @@ every call.
 back to `EVAL` automatically on `NOSCRIPT`. Same semantics, less bandwidth, and the call site becomes
 `redis.releaseLock(key, token)` — which reads as what it does.
 
-The lock's *algorithm* is correct and stays as-is (see Rejection C3).
+The lock's _algorithm_ is correct and stays as-is (see Rejection C3).
 
 ---
 
@@ -182,7 +182,7 @@ those files; do not open a change for it alone.
 
 ### A7. `zod` is installed but not wired to the Fastify boundary
 
-Covered in Finding B1, since the fix requires a new dependency. Recorded here because the *root* issue is
+Covered in Finding B1, since the fix requires a new dependency. Recorded here because the _root_ issue is
 an installed dependency doing less work than it could: 20+ `schema.parse()` calls sit inside controller
 bodies (`http/controllers/*/*.controller.ts`) rather than at the route definition, so validation is
 manual, per-controller, and invisible to route metadata.
@@ -226,7 +226,7 @@ MIT, published ~Aug 2026, now under the `fastify/` GitHub org. Pair with `@fasti
 this relocates them, it does not rewrite them.
 
 **Risk: the highest in this plan.** It touches every controller and every route, and response schemas
-*strip* unlisted fields by default, which can silently shrink a payload the frontend depends on. Mitigate
+_strip_ unlisted fields by default, which can silently shrink a payload the frontend depends on. Mitigate
 by landing it route-group by route-group (`/health` → `/churches` → `/forms` → `/users` → `/analytics`),
 with the acceptance suite (`features/*.feature`) as the contract check at each step. Do not batch.
 
@@ -239,7 +239,7 @@ nothing. `src/app.ts` registers cors, rate-limit, cookie and jwt — no security
 carry no HSTS, no `X-Content-Type-Options: nosniff`, no frame-ancestors policy.
 
 For a codebase with a SonarQube "0 open issues" gate, njsscan, Semgrep and Snyk in CI, this is a
-conspicuous hole — and one no scanner flags, because it is an *absence*.
+conspicuous hole — and one no scanner flags, because it is an _absence_.
 
 **Library.** `@fastify/helmet` — Fastify core org, MIT, tracks Fastify 5, wraps `helmet` (the
 de-facto standard, ~3M weekly downloads).
@@ -282,18 +282,18 @@ copy-pasted across four template families, with the text-only variants duplicati
 
 **Options assessed:**
 
-| Library | Licence | Fit |
-|---|---|---|
-| **`mjml`** | MIT | Industry standard (~18k stars); compiles to Outlook-safe table HTML via `mjml2html()`, provider-agnostic, hands a string to nodemailer. **Recommended** — it solves the client-compatibility problem the hand-written tables are attempting. |
-| `eta` | MIT | Tiny, TS-native, auto-escaping. Solves escaping and duplication but not email-client quirks. Viable if the tables are considered good enough. |
-| `react-email` | MIT | Best DX *if the team writes React*. This is a Fastify backend with no React anywhere — it would introduce a rendering runtime for four emails. Rejected on compatibility. |
-| `maizzle` | MIT | Build-time Tailwind→HTML. Good fit for low-variation transactional mail, but adds a build step to `tsup`. Second choice. |
+| Library       | Licence | Fit                                                                                                                                                                                                                                          |
+| ------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`mjml`**    | MIT     | Industry standard (~18k stars); compiles to Outlook-safe table HTML via `mjml2html()`, provider-agnostic, hands a string to nodemailer. **Recommended** — it solves the client-compatibility problem the hand-written tables are attempting. |
+| `eta`         | MIT     | Tiny, TS-native, auto-escaping. Solves escaping and duplication but not email-client quirks. Viable if the tables are considered good enough.                                                                                                |
+| `react-email` | MIT     | Best DX _if the team writes React_. This is a Fastify backend with no React anywhere — it would introduce a rendering runtime for four emails. Rejected on compatibility.                                                                    |
+| `maizzle`     | MIT     | Build-time Tailwind→HTML. Good fit for low-variation transactional mail, but adds a build step to `tsup`. Second choice.                                                                                                                     |
 
 **Also:** `nodemailer-html-to-text` can derive the plaintext part from the HTML, deleting the
 `*-text.ts` files and the copy duplicated inside them.
 
 **Action.** Adopt MJML with one shared layout; escape every interpolation. Because escaping changes
-output, snapshot the current rendered HTML *before* the change to prove only the escaping differs.
+output, snapshot the current rendered HTML _before_ the change to prove only the escaping differs.
 
 ---
 
@@ -329,7 +329,7 @@ evaluations, recorded so they are not silently redone.
 `neverthrow` is the established Result library for TypeScript. The local implementation is 23 lines
 (`ok`/`err`/`isOk`/`isErr`) and is imported by essentially the whole codebase.
 
-Rejected because: neverthrow's value is its *combinator* API (`.map`, `.andThen`, `ResultAsync`), which
+Rejected because: neverthrow's value is its _combinator_ API (`.map`, `.andThen`, `ResultAsync`), which
 is a different programming style from the `if (isErr(x)) return x` propagation `CLAUDE.md` mandates as
 the house convention. Adopting it means either a mechanical rename that gains nothing, or rewriting
 control flow in ~349 files. The 23 lines being replaced have no defect and no maintenance cost.
@@ -342,7 +342,7 @@ style decision, not a dependency decision.
 `@epic-web/cachified` is actively maintained and does TTL, stale-while-revalidate, and parallel-fetch
 protection over any key/value store.
 
-Rejected because `ResilientCache` (565 lines) is not primarily a cache: it is a cache *fused with* this
+Rejected because `ResilientCache` (565 lines) is not primarily a cache: it is a cache _fused with_ this
 codebase's `Result`/`AppError` vocabulary, `failureMode`-driven negative-TTL policy
 (`cache-failure-policy.ts`), detached-`Deadline` single-flight semantics, and cockatiel breaker/bulkhead
 composition. cachified models none of those. A replacement would keep ~70% of the file as an adapter
@@ -409,7 +409,7 @@ Preparation only, so later phases have something to compare against.
 3. Create `docs/dependency-decisions.md` as an append-only ADR log, seeded with the five Category C
    rejections. This is what step 5 of the rule needs to be auditable later.
 
-**Gate:** everything green *before* any change, so a later red result is attributable.
+**Gate:** everything green _before_ any change, so a later red result is attributable.
 
 ---
 
@@ -418,18 +418,18 @@ Preparation only, so later phases have something to compare against.
 Pure deletion and configuration. No new dependencies. Highest value-to-risk ratio in the plan, and it
 carries the only defect found.
 
-| Step | Finding | Files |
-|---|---|---|
-| 1.1 | **A1** — delete duplicate crash handlers; fix the cleanup-interrupt defect | `server.ts:43-49`, `worker.ts`, `lib/shutdown/crash-shutdown.ts` |
-| 1.2 | **A3** — pino `redact` | `lib/logger/index.ts` |
-| 1.3 | **A5** — `defineCommand` for the lock scripts | `lib/infra/distributed-lock/distributed-lock.ts` |
-| 1.4 | **A8** — route `OutboxSignal` through the connection factories | `lib/infra/events/outbox-signal.ts` |
-| 1.5 | **A6** — `ms()` in the three files above, while they are open | `outbox-maintenance.ts`, `analytics-retention.ts`, `forgot-password.ts` |
-| 1.6 | **C5 addendum** — remove the unreachable branch | `lib/http/https-agent.ts:37-41` |
-| 1.7 | **C4 addendum** — record the AGPL finding in the docblock | `lib/analytics/user-agent-parser.ts` |
+| Step | Finding                                                                    | Files                                                                   |
+| ---- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 1.1  | **A1** — delete duplicate crash handlers; fix the cleanup-interrupt defect | `server.ts:43-49`, `worker.ts`, `lib/shutdown/crash-shutdown.ts`        |
+| 1.2  | **A3** — pino `redact`                                                     | `lib/logger/index.ts`                                                   |
+| 1.3  | **A5** — `defineCommand` for the lock scripts                              | `lib/infra/distributed-lock/distributed-lock.ts`                        |
+| 1.4  | **A8** — route `OutboxSignal` through the connection factories             | `lib/infra/events/outbox-signal.ts`                                     |
+| 1.5  | **A6** — `ms()` in the three files above, while they are open              | `outbox-maintenance.ts`, `analytics-retention.ts`, `forgot-password.ts` |
+| 1.6  | **C5 addendum** — remove the unreachable branch                            | `lib/http/https-agent.ts:37-41`                                         |
+| 1.7  | **C4 addendum** — record the AGPL finding in the docblock                  | `lib/analytics/user-agent-parser.ts`                                    |
 
 **Required tests.** 1.1 ships `crash-cleanup-interrupted-by-duplicate-handler.regression.spec.ts`,
-proven red at `a360d08`, with a counterweight asserting a second crash *during* shutdown still
+proven red at `a360d08`, with a counterweight asserting a second crash _during_ shutdown still
 force-exits. 1.2 ships assertions that each redacted path is censored **and** that a non-PII field
 adjacent to it survives — a redact config that over-matches is as much a defect as one that under-matches.
 1.3 must assert the `NOSCRIPT` fallback path, not just the happy one.
@@ -443,6 +443,7 @@ adjacent to it survives — a redact config that over-matches is as much a defec
 **Split into two independently shippable changes. Do not combine.**
 
 **2a — Security headers and load shedding** (low risk, immediate value):
+
 - **B2** `@fastify/helmet`, registered after cors in `app.ts`. CSP set for a JSON API.
 - **B3** `@fastify/under-pressure`; move `SELECT 1` into its `healthCheck`. Verify first whether the
   memory-report payload is consumed by `scripts/ci-local.sh`'s smoke test before touching the controller.
@@ -450,6 +451,7 @@ adjacent to it survives — a redact config that over-matches is as much a defec
   event-loop pressure.
 
 **2b — Zod type provider + OpenAPI** (highest risk in the plan):
+
 - **B1** `fastify-type-provider-zod@7` + `@fastify/swagger` + `@fastify/scalar`.
 - **Land one route group per change, in this order:** `/health` → `/churches` → `/forms` → `/users` →
   `/analytics`. Five separate changes, five full gates. `/health` first because it is the smallest
@@ -529,13 +531,13 @@ re-run mutation testing on the whole file rather than the diff.
 Not a refactor. `docs/dependency-decisions.md` becomes the durable record, and each rejection gets an
 explicit re-evaluation trigger:
 
-| Decision | Re-evaluate when |
-|---|---|
-| C1 `neverthrow` | The team adopts combinator-style chaining as the house convention |
-| C2 `cachified` | Provider latency makes stale-while-revalidate necessary — implement natively, keep the rejection |
-| C3 `redlock` | Redis becomes a multi-node cluster where the algorithm's guarantees actually apply |
-| C4 `ua-parser-js` | Never on licence grounds; move to UA Client Hints if fidelity must improve |
-| C5 `undici` | axios becomes unmaintained, or the error taxonomy is being rewritten anyway |
+| Decision          | Re-evaluate when                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------ |
+| C1 `neverthrow`   | The team adopts combinator-style chaining as the house convention                                |
+| C2 `cachified`    | Provider latency makes stale-while-revalidate necessary — implement natively, keep the rejection |
+| C3 `redlock`      | Redis becomes a multi-node cluster where the algorithm's guarantees actually apply               |
+| C4 `ua-parser-js` | Never on licence grounds; move to UA Client Hints if fidelity must improve                       |
+| C5 `undici`       | axios becomes unmaintained, or the error taxonomy is being rewritten anyway                      |
 
 Going forward, any new technical implementation records its step-1/step-2 evaluation here before the code
 lands — which is what makes the `CLAUDE.md` rule enforceable rather than aspirational.
@@ -544,21 +546,21 @@ lands — which is what makes the `CLAUDE.md` rule enforceable rather than aspir
 
 ## Summary table
 
-| # | Finding | Category | Phase | Risk | New dep |
-|---|---|---|---|---|---|
-| A1 | Duplicate crash handlers race, interrupting cleanup | A | 1 | Low | — |
-| A3 | No pino `redact` — PII in logs | A | 1 | Low | — |
-| A5 | Lua via `eval` instead of `defineCommand` | A | 1 | Low | — |
-| A8 | `OutboxSignal` bypasses connection factories | A | 1 | Low | — |
-| A6 | Raw ms arithmetic | A | 1 | Trivial | — |
-| B2 | No security headers | B | 2a | Low | `@fastify/helmet` |
-| B3 | Hand-rolled health check; no load shedding | B | 2a | Low | `@fastify/under-pressure` |
-| B1 | No Zod type provider; no OpenAPI | B | 2b | **High** | `fastify-type-provider-zod`, `@fastify/swagger` |
-| A2 | `node-cron` + lock contention vs Job Schedulers | A | 3 | Medium | — (removes `node-cron`) |
-| B4 | Unescaped HTML in email templates | B | 4 | Medium | `mjml`, `nodemailer-html-to-text` |
-| A4 | Hand-rolled SMTP breaker; no pooling | A | 4 | Low | — |
-| B5 | Promise-timeout helper ×3, one leaking a timer | B | 5 | Low | — |
-| A7 | Manual `.parse()` in controllers | A | 2b | (see B1) | — |
+| #   | Finding                                             | Category | Phase | Risk     | New dep                                         |
+| --- | --------------------------------------------------- | -------- | ----- | -------- | ----------------------------------------------- |
+| A1  | Duplicate crash handlers race, interrupting cleanup | A        | 1     | Low      | —                                               |
+| A3  | No pino `redact` — PII in logs                      | A        | 1     | Low      | —                                               |
+| A5  | Lua via `eval` instead of `defineCommand`           | A        | 1     | Low      | —                                               |
+| A8  | `OutboxSignal` bypasses connection factories        | A        | 1     | Low      | —                                               |
+| A6  | Raw ms arithmetic                                   | A        | 1     | Trivial  | —                                               |
+| B2  | No security headers                                 | B        | 2a    | Low      | `@fastify/helmet`                               |
+| B3  | Hand-rolled health check; no load shedding          | B        | 2a    | Low      | `@fastify/under-pressure`                       |
+| B1  | No Zod type provider; no OpenAPI                    | B        | 2b    | **High** | `fastify-type-provider-zod`, `@fastify/swagger` |
+| A2  | `node-cron` + lock contention vs Job Schedulers     | A        | 3     | Medium   | — (removes `node-cron`)                         |
+| B4  | Unescaped HTML in email templates                   | B        | 4     | Medium   | `mjml`, `nodemailer-html-to-text`               |
+| A4  | Hand-rolled SMTP breaker; no pooling                | A        | 4     | Low      | —                                               |
+| B5  | Promise-timeout helper ×3, one leaking a timer      | B        | 5     | Low      | —                                               |
+| A7  | Manual `.parse()` in controllers                    | A        | 2b    | (see B1) | —                                               |
 
 **Net dependency change:** +5 (`@fastify/helmet`, `@fastify/under-pressure`,
 `fastify-type-provider-zod`, `@fastify/swagger`/`@fastify/scalar`, `mjml`+`nodemailer-html-to-text`),

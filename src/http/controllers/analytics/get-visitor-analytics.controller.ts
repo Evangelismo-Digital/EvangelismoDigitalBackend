@@ -1,4 +1,5 @@
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import { ZodRequest } from '@http/types/zod-request'
+import type { FastifyReply } from 'fastify'
 import { AnalyticsPresenter } from '@http/presenters/analytics-presenter'
 import { HTTP_STATUS } from '@http/http-status'
 import { VALIDATION_LIMITS } from '@schemas/validation-limits'
@@ -14,9 +15,12 @@ import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
  * arrived and came back, which pages they actually read, and how their visits
  * are spaced.
  */
-export async function getVisitorAnalytics(request: FastifyRequest, reply: FastifyReply) {
-  const { visitorId } = visitorAnalyticsParamsSchema.parse(request.params)
-  const { limit, cursor } = visitorAnalyticsQuerySchema.parse(request.query)
+export async function getVisitorAnalytics(
+  request: ZodRequest<{ params: typeof visitorAnalyticsParamsSchema; querystring: typeof visitorAnalyticsQuerySchema }>,
+  reply: FastifyReply,
+) {
+  const { visitorId } = request.params
+  const { limit, cursor } = request.query
 
   const result = await makeGetVisitorAnalyticsUseCase().execute({
     pagesLimit: limit,

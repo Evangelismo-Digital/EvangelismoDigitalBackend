@@ -26,9 +26,7 @@ const response = {
 }
 
 function makeRequest(deadline: Deadline, cep = '01310100') {
-  return { query: { cep }, ip: '203.0.113.10', deadline } as unknown as FastifyRequest<{
-    Querystring: { cep: string }
-  }>
+  return { query: { cep }, ip: '203.0.113.10', deadline } as any
 }
 
 function makeReply() {
@@ -108,11 +106,5 @@ describe('findNearestChurches controller', () => {
         }),
       )
     })
-  })
-
-  it('rejects a malformed CEP before reaching the use-case', async () => {
-    await expect(findNearestChurches(makeRequest(Deadline.none(), 'not-a-cep'), makeReply())).rejects.toThrow()
-
-    expect(mockExecute).not.toHaveBeenCalled()
   })
 })

@@ -1,16 +1,19 @@
 import { cepSchema } from '@http/schemas/utils/cep'
 import { logger } from '@lib/logger'
 import { makeFindNearestChurchesUseCase } from '@use-cases/factories/make-find-nearest-churches-use-case'
-import { FastifyReply, FastifyRequest } from 'fastify'
+import { FastifyReply } from 'fastify'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { HTTP_STATUS } from '@http/http-status'
 
+import { ZodRequest } from '@http/types/zod-request'
+import z from 'zod'
+
 export async function findNearestChurches(
-  request: FastifyRequest<{ Querystring: { cep: string } }>,
+  request: ZodRequest<{ querystring: z.ZodObject<{ cep: typeof cepSchema }> }>,
   reply: FastifyReply,
 ) {
-  const cep = cepSchema.parse(request.query.cep)
+  const { cep } = request.query
 
   logger.info({
     msg: 'Cep do usuário recebido para encontrar igrejas próximas',

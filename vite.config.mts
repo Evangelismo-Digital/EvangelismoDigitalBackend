@@ -228,7 +228,7 @@ export default defineConfig(({ mode }) => {
             // step definitions colocated as *.acceptance.spec.ts, driven through
             // Vitest by @amiceli/vitest-cucumber over the HTTP boundary.
             name: 'acceptance',
-            dir: 'src/http/controllers',
+            dir: 'src/http',
             // ESM (.mts) — @amiceli/vitest-cucumber is an ESM-only package.
             include: ['**/*.acceptance.spec.mts'],
             // Uses Docker database with public schema

@@ -16,16 +16,16 @@ O desenho atual trata cookie como detalhe de infraestrutura. O objetivo pedido e
 
 ### Rastreabilidade dos 8 itens
 
-| # | Problema | Onde é resolvido | Severidade |
-|---|---|---|---|
-| 1 | `COOKIE_SECRET` com default versionado, válido em produção | [§4.1](#41-segredos-item-1) | **Alta** |
-| 2 | `SameSite=Lax` quebra tracking cross-site | [§2](#2-decisão-estrutural-proxy-first-party) | **Alta** |
-| 3 | Corrida de emissão → N visitantes por page load | [§3.2](#32-invariante-central-eventos-não-criam-identidade) | Média |
-| 4 | Hook global emite cookie em toda rota | [§3.3](#33-escopo-do-hook-item-4) | Média |
-| 5 | `session_id` sem expiração real | [§3.4](#34-janela-de-sessão-deslizante-item-5) | Média |
-| 6 | Ingestão anônima sem limites de conteúdo | [§4.2](#42-superfície-de-ingestão-item-6) | Média |
-| 7 | LGPD: sem consentimento, retenção ou anonimização | [§5](#5-base-legal-consentimento-e-retenção-item-7) | **Alta** (regulatória) |
-| 8 | `secure` ignora staging, sem `__Host-`, código morto | [§4.3](#43-endurecimento-dos-atributos-item-8) | Baixa |
+| #   | Problema                                                   | Onde é resolvido                                            | Severidade             |
+| --- | ---------------------------------------------------------- | ----------------------------------------------------------- | ---------------------- |
+| 1   | `COOKIE_SECRET` com default versionado, válido em produção | [§4.1](#41-segredos-item-1)                                 | **Alta**               |
+| 2   | `SameSite=Lax` quebra tracking cross-site                  | [§2](#2-decisão-estrutural-proxy-first-party)               | **Alta**               |
+| 3   | Corrida de emissão → N visitantes por page load            | [§3.2](#32-invariante-central-eventos-não-criam-identidade) | Média                  |
+| 4   | Hook global emite cookie em toda rota                      | [§3.3](#33-escopo-do-hook-item-4)                           | Média                  |
+| 5   | `session_id` sem expiração real                            | [§3.4](#34-janela-de-sessão-deslizante-item-5)              | Média                  |
+| 6   | Ingestão anônima sem limites de conteúdo                   | [§4.2](#42-superfície-de-ingestão-item-6)                   | Média                  |
+| 7   | LGPD: sem consentimento, retenção ou anonimização          | [§5](#5-base-legal-consentimento-e-retenção-item-7)         | **Alta** (regulatória) |
+| 8   | `secure` ignora staging, sem `__Host-`, código morto       | [§4.3](#43-endurecimento-dos-atributos-item-8)              | Baixa                  |
 
 ### Nota sobre `userId` e "todos os dados"
 
@@ -44,12 +44,12 @@ Visitor  ──1:N──>  Session  ──1:N──>  Event
    └── userId? ────────┘   vinculado no login (identity stitching)
 ```
 
-| Entidade | Pergunta que responde | Portador |
-|---|---|---|
-| **Visitor** | "Quem é este navegador? Quando entrou pela 1ª vez? Quando voltou?" | cookie `__Host-ed_vid`, 13 meses |
-| **Session** | "Qual foi esta visita? Duração, origem, campanha?" | cookie `__Host-ed_sid`, 30 min deslizantes |
-| **Event** | "O que aconteceu? Qual página, quanto tempo, quanto rolou?" | nenhum — persistido |
-| **Consent** | "O que este visitante autorizou?" | cookie `ed_consent`, legível por JS |
+| Entidade    | Pergunta que responde                                              | Portador                                   |
+| ----------- | ------------------------------------------------------------------ | ------------------------------------------ |
+| **Visitor** | "Quem é este navegador? Quando entrou pela 1ª vez? Quando voltou?" | cookie `__Host-ed_vid`, 13 meses           |
+| **Session** | "Qual foi esta visita? Duração, origem, campanha?"                 | cookie `__Host-ed_sid`, 30 min deslizantes |
+| **Event**   | "O que aconteceu? Qual página, quanto tempo, quanto rolou?"        | nenhum — persistido                        |
+| **Consent** | "O que este visitante autorizou?"                                  | cookie `ed_consent`, legível por JS        |
 
 ---
 
@@ -59,11 +59,11 @@ Visitor  ──1:N──>  Session  ──1:N──>  Event
 
 Front (`https://app.exemplo.com.br`) e API (`https://api.outrodominio.com`) são **sites** diferentes — eTLD+1 distintos. Um `Set-Cookie` da API é, para o browser, cookie de terceiro:
 
-| Browser | Comportamento com `SameSite=None; Secure` |
-|---|---|
-| Safari (ITP) | **Bloqueia.** Cookie nunca é armazenado. |
-| Firefox (TCP) | Particiona por site de topo. Funciona, isolado. |
-| Chrome | Restringe progressivamente; exige `Partitioned` (CHIPS). |
+| Browser       | Comportamento com `SameSite=None; Secure`                |
+| ------------- | -------------------------------------------------------- |
+| Safari (ITP)  | **Bloqueia.** Cookie nunca é armazenado.                 |
+| Firefox (TCP) | Particiona por site de topo. Funciona, isolado.          |
+| Chrome        | Restringe progressivamente; exige `Partitioned` (CHIPS). |
 
 Resultado prático se nada mudar: em Safari, **todo request cunha um visitante novo**. A métrica de "visitantes únicos" vira uma contagem de requisições, e "quando voltou" é impossível de responder.
 
@@ -79,7 +79,7 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
-        source: '/_a/:path*',                       // caminho opaco, resistente a adblock
+        source: '/_a/:path*', // caminho opaco, resistente a adblock
         destination: `${process.env.ANALYTICS_API_ORIGIN}/analytics/:path*`,
       },
     ]
@@ -95,7 +95,7 @@ Ganhos colaterais que justificam a escolha sozinhos:
 
 - **`__Host-` volta a ser possível** — o prefixo exige `Secure`, `Path=/` e ausência de `Domain`; blinda contra fixação de cookie a partir de subdomínio comprometido.
 - **`SameSite=Lax` volta a ser o correto** — sem `None`, sem CHIPS, sem depender de política de terceiros.
-- **`navigator.sendBeacon` funciona.** Beacon não permite headers customizados e é a única forma confiável de enviar evento em `visibilitychange`. Same-origin, ele leva os cookies. Cross-site, é sabotado pelo bloqueio de terceiros. Sem isso não há como medir *tempo de leitura* — o dado mais valioso do pedido.
+- **`navigator.sendBeacon` funciona.** Beacon não permite headers customizados e é a única forma confiável de enviar evento em `visibilitychange`. Same-origin, ele leva os cookies. Cross-site, é sabotado pelo bloqueio de terceiros. Sem isso não há como medir _tempo de leitura_ — o dado mais valioso do pedido.
 - **CORS deixa de existir nessa rota.** Menos superfície.
 
 > **Autenticidade do encaminhamento.** O rewrite roda no servidor do Next, então a API precisa distinguir "veio do proxy" de "veio da internet aberta". Duas medidas combinadas: header compartilhado `X-Analytics-Proxy: <segredo>` validado na API, e `trustProxy` já ativo em `app.ts:26` preservando o IP real via `X-Forwarded-For`. Sem o header, a rota responde `401`.
@@ -108,9 +108,9 @@ Só então, e assumindo perda conhecida de cobertura em Safari:
 const TRACKING_COOKIE_OPTIONS = {
   path: '/',
   httpOnly: true,
-  secure: true,           // obrigatório com SameSite=None
+  secure: true, // obrigatório com SameSite=None
   sameSite: 'none',
-  partitioned: true,      // CHIPS — exigido pelo Chrome
+  partitioned: true, // CHIPS — exigido pelo Chrome
   signed: true,
 } as const
 ```
@@ -123,11 +123,11 @@ E no front, todo `fetch` precisa de `credentials: 'include'`. Documente a lacuna
 
 ### 3.1 Inventário de cookies
 
-| Nome | Vida | Conteúdo | Flags |
-|---|---|---|---|
-| `__Host-ed_vid` | 13 meses | UUIDv7 opaco, assinado | `HttpOnly` `Secure` `SameSite=Lax` `Path=/` |
-| `__Host-ed_sid` | 30 min **deslizantes** | UUIDv7 opaco, assinado | `HttpOnly` `Secure` `SameSite=Lax` `Path=/` |
-| `ed_consent` | 12 meses | `v1:analytics=1,marketing=0` | `Secure` `SameSite=Lax` — **sem** `HttpOnly` |
+| Nome            | Vida                   | Conteúdo                     | Flags                                        |
+| --------------- | ---------------------- | ---------------------------- | -------------------------------------------- |
+| `__Host-ed_vid` | 13 meses               | UUIDv7 opaco, assinado       | `HttpOnly` `Secure` `SameSite=Lax` `Path=/`  |
+| `__Host-ed_sid` | 30 min **deslizantes** | UUIDv7 opaco, assinado       | `HttpOnly` `Secure` `SameSite=Lax` `Path=/`  |
+| `ed_consent`    | 12 meses               | `v1:analytics=1,marketing=0` | `Secure` `SameSite=Lax` — **sem** `HttpOnly` |
 
 Regras invioláveis:
 
@@ -174,10 +174,14 @@ O plugin deixa de ser global. Registrado **dentro** de `analyticsRoutes`, não n
 import { analyticsIdentity } from '@http/plugins/analytics-identity.plugin'
 
 export async function analyticsRoutes(app: FastifyInstance) {
-  await app.register(analyticsIdentity)   // encapsulado: só vale neste escopo
+  await app.register(analyticsIdentity) // encapsulado: só vale neste escopo
 
-  app.post('/session',  { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.analytics.session } }, startSession)
-  app.post('/events',   { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.analytics.events  }, bodyLimit: 16 * 1024 }, trackEvent)
+  app.post('/session', { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.analytics.session } }, startSession)
+  app.post(
+    '/events',
+    { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.analytics.events }, bodyLimit: 16 * 1024 },
+    trackEvent,
+  )
   app.post('/identify', { config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.analytics.identify } }, identifyVisitor)
 }
 ```
@@ -242,7 +246,7 @@ const analyticsIdentityPlugin: FastifyPluginAsync = async (app) => {
   })
 }
 
-export const analyticsIdentity = analyticsIdentityPlugin   // sem fp: encapsulado de propósito
+export const analyticsIdentity = analyticsIdentityPlugin // sem fp: encapsulado de propósito
 ```
 
 ```ts
@@ -250,8 +254,8 @@ export const analyticsIdentity = analyticsIdentityPlugin   // sem fp: encapsulad
 import { env } from '@env/index'
 import { SECONDS_PER_DAY } from 'core/constants/time'
 
-export const VISITOR_MAX_AGE = SECONDS_PER_DAY * 395   // 13 meses — teto documentado
-export const SESSION_MAX_AGE = 60 * 30                 // 30 min, renovado a cada evento
+export const VISITOR_MAX_AGE = SECONDS_PER_DAY * 395 // 13 meses — teto documentado
+export const SESSION_MAX_AGE = 60 * 30 // 30 min, renovado a cada evento
 
 /**
  * `secure` desligado apenas onde não há TLS. A checagem anterior era
@@ -269,13 +273,13 @@ export const cookieOptions = {
 } as const
 ```
 
-> **Atenção ao `__Host-` em desenvolvimento.** O prefixo exige `Secure`, que o browser recusa em `http://localhost`... exceto que `localhost` é tratado como *secure context* e o Chrome/Firefox aceitam `Secure` ali. Se o seu dev roda em `http://` num host que não seja `localhost`, derive o nome do cookie: `const VISITOR_COOKIE = isPlainHttp ? 'ed_vid' : '__Host-ed_vid'`.
+> **Atenção ao `__Host-` em desenvolvimento.** O prefixo exige `Secure`, que o browser recusa em `http://localhost`... exceto que `localhost` é tratado como _secure context_ e o Chrome/Firefox aceitam `Secure` ali. Se o seu dev roda em `http://` num host que não seja `localhost`, derive o nome do cookie: `const VISITOR_COOKIE = isPlainHttp ? 'ed_vid' : '__Host-ed_vid'`.
 
 ```ts
 // src/http/controllers/analytics/start-session.controller.ts
 export async function startSession(request: FastifyRequest, reply: FastifyReply) {
   if (!hasAnalyticsConsent(request)) {
-    return reply.code(HTTP_STATUS.NO_CONTENT).send()   // sem consentimento, sem identidade
+    return reply.code(HTTP_STATUS.NO_CONTENT).send() // sem consentimento, sem identidade
   }
 
   // Visitante recorrente mantém o vid; só a sessão é nova.
@@ -310,7 +314,7 @@ Não é preciso mexer na ordem. Controllers rodam depois de **todos** os `onRequ
 ```ts
 import { getUserId } from '@lib/logger'
 
-const userId = getUserId() ?? null   // User.publicId, ou null se anônimo
+const userId = getUserId() ?? null // User.publicId, ou null se anônimo
 ```
 
 Nenhum decorator novo, nenhuma re-verificação de JWT, nenhuma reordenação. A infraestrutura que já existe responde à pergunta.
@@ -372,18 +376,25 @@ O schema atual não tem teto algum — `eventType` e `path` são `z.string().min
 ```ts
 // src/http/schemas/analytics/track-event-schema.ts
 export const EVENT_TYPES = [
-  'page_view', 'page_exit', 'click', 'form_start',
-  'form_submit', 'scroll_depth', 'search', 'outbound_click',
+  'page_view',
+  'page_exit',
+  'click',
+  'form_start',
+  'form_submit',
+  'scroll_depth',
+  'search',
+  'outbound_click',
 ] as const
 
 export const trackEventSchema = z.object({
-  eventType: z.enum(EVENT_TYPES),                    // allowlist, não string livre
-  path:      z.string().min(1).max(2048),
-  title:     z.string().max(512).optional(),
-  referrer:  z.url().max(2048).optional(),
-  durationMs:  z.number().int().min(0).max(86_400_000).optional(),
+  eventType: z.enum(EVENT_TYPES), // allowlist, não string livre
+  path: z.string().min(1).max(2048),
+  title: z.string().max(512).optional(),
+  referrer: z.url().max(2048).optional(),
+  durationMs: z.number().int().min(0).max(86_400_000).optional(),
   scrollDepth: z.number().int().min(0).max(100).optional(),
-  payload: z.record(z.string(), z.union([z.string().max(512), z.number(), z.boolean(), z.null()]))
+  payload: z
+    .record(z.string(), z.union([z.string().max(512), z.number(), z.boolean(), z.null()]))
     .refine((p) => Object.keys(p).length <= 20, 'payload: máximo de 20 chaves')
     .optional(),
 })
@@ -396,13 +407,13 @@ export const trackEventsBatchSchema = z.object({
 
 Camadas somadas:
 
-| Camada | Controle |
-|---|---|
-| Transporte | `bodyLimit: 16 KiB` na rota (vs. 1 MiB global) |
-| Schema | allowlist de `eventType`, `.max()` em todo string, `payload` sem aninhamento |
-| Identidade | sem cookie assinado válido → `204` sem escrita (§3.2) |
-| Taxa | política dedicada `analytics.*`, mais restrita que a global de 300/min |
-| Proxy | `X-Analytics-Proxy` obrigatório → `401` |
+| Camada     | Controle                                                                     |
+| ---------- | ---------------------------------------------------------------------------- |
+| Transporte | `bodyLimit: 16 KiB` na rota (vs. 1 MiB global)                               |
+| Schema     | allowlist de `eventType`, `.max()` em todo string, `payload` sem aninhamento |
+| Identidade | sem cookie assinado válido → `204` sem escrita (§3.2)                        |
+| Taxa       | política dedicada `analytics.*`, mais restrita que a global de 300/min       |
+| Proxy      | `X-Analytics-Proxy` obrigatório → `401`                                      |
 
 ```ts
 // src/http/policies/rate-limit.ts
@@ -415,12 +426,12 @@ analytics: {
 
 ### 4.3 Endurecimento dos atributos (item 8)
 
-| Correção | Antes | Depois |
-|---|---|---|
-| Prefixo `__Host-` | `visitor_id` | `__Host-ed_vid` — impede fixação via subdomínio |
-| `secure` em staging | `NODE_ENV === 'production'` | `!isPlainHttp` — cobre staging |
-| Código morto | `request.visitorId \|\| randomUUID()` (nunca atribuído antes) | removido com o `try/catch` |
-| Fonte da verdade | opções inline no plugin | `src/http/cookies/options.ts` |
+| Correção            | Antes                                                         | Depois                                          |
+| ------------------- | ------------------------------------------------------------- | ----------------------------------------------- |
+| Prefixo `__Host-`   | `visitor_id`                                                  | `__Host-ed_vid` — impede fixação via subdomínio |
+| `secure` em staging | `NODE_ENV === 'production'`                                   | `!isPlainHttp` — cobre staging                  |
+| Código morto        | `request.visitorId \|\| randomUUID()` (nunca atribuído antes) | removido com o `try/catch`                      |
+| Fonte da verdade    | opções inline no plugin                                       | `src/http/cookies/options.ts`                   |
 
 Sobre o `try/catch` que sumiu: ele existia para degradar em IDs efêmeros quando `unsignCookie` lançasse. Na arquitetura nova isso não faz mais sentido — se a leitura falha, a resposta correta é `visitorId = null` e descarte do evento, não inventar um visitante. Falhar em silêncio para o cliente, alto no log.
 
@@ -428,7 +439,7 @@ Sobre o `try/catch` que sumiu: ele existia para degradar em IDs efêmeros quando
 
 ```ts
 // no reply de toda resposta de analytics
-reply.header('Cache-Control', 'no-store')            // resposta com Set-Cookie nunca entra em cache
+reply.header('Cache-Control', 'no-store') // resposta com Set-Cookie nunca entra em cache
 reply.header('Vary', 'Origin')
 reply.header('X-Content-Type-Options', 'nosniff')
 ```
@@ -443,11 +454,11 @@ Com `userId`, IP e user-agent ligados a um identificador de 13 meses, o dado é 
 
 Cookie `ed_consent`, legível por JS, com versionamento explícito (`v1:`) para que uma mudança de política invalide consentimentos antigos.
 
-| Estado | Comportamento do backend |
-|---|---|
-| Ausente | `/session` responde `204` sem emitir cookie. Front só exibe o banner. |
+| Estado        | Comportamento do backend                                                                 |
+| ------------- | ---------------------------------------------------------------------------------------- |
+| Ausente       | `/session` responde `204` sem emitir cookie. Front só exibe o banner.                    |
 | `analytics=0` | Nenhuma identidade, nenhuma escrita. Opcionalmente, contador agregado sem identificador. |
-| `analytics=1` | Fluxo completo desta especificação. |
+| `analytics=1` | Fluxo completo desta especificação.                                                      |
 
 A revogação apaga: `clearCookie` nos três cookies **e** `DELETE` das linhas do visitante — não basta parar de coletar.
 
@@ -474,11 +485,11 @@ Guarde `userAgent` já parseado (browser, OS, device) e descarte a string crua �
 
 Job BullMQ diário (`bullmq@5.81.4` já está no projeto), com os prazos em env:
 
-| Tabela | Prazo | Ação |
-|---|---|---|
-| `analytics_events` | 14 meses | `DELETE` |
-| `analytics_sessions` | 14 meses | `DELETE` (cascata já existe na FK) |
-| `analytics_visitors` | 13 meses sem atividade | `DELETE` |
+| Tabela               | Prazo                  | Ação                               |
+| -------------------- | ---------------------- | ---------------------------------- |
+| `analytics_events`   | 14 meses               | `DELETE`                           |
+| `analytics_sessions` | 14 meses               | `DELETE` (cascata já existe na FK) |
+| `analytics_visitors` | 13 meses sem atividade | `DELETE`                           |
 
 E um caso de uso `deleteVisitorData(userId)` acionável pelo titular — a LGPD dá esse direito e ele precisa de código, não de política.
 
@@ -625,7 +636,7 @@ Em App Router, navegação client-side **não recarrega a página** — sem inst
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useRef } from 'react'
 
-const ENDPOINT = '/_a'   // proxy first-party — §2
+const ENDPOINT = '/_a' // proxy first-party — §2
 
 export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -638,14 +649,12 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   if (ready.current === null) {
     ready.current = fetch(`${ENDPOINT}/session`, { method: 'POST', keepalive: true })
       .then(() => undefined)
-      .catch(() => undefined)   // analytics nunca quebra a página
+      .catch(() => undefined) // analytics nunca quebra a página
   }
 
   useEffect(() => {
     const onScroll = () => {
-      const pct = Math.round(
-        ((window.scrollY + window.innerHeight) / document.body.scrollHeight) * 100,
-      )
+      const pct = Math.round(((window.scrollY + window.innerHeight) / document.body.scrollHeight) * 100)
       maxScroll.current = Math.max(maxScroll.current, Math.min(pct, 100))
     }
 
@@ -662,12 +671,14 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          events: [{
-            eventType: 'page_view',
-            path: pathname,
-            title: document.title,
-            referrer: document.referrer || undefined,
-          }],
+          events: [
+            {
+              eventType: 'page_view',
+              path: pathname,
+              title: document.title,
+              referrer: document.referrer || undefined,
+            },
+          ],
         }),
       }).catch(() => undefined),
     )
@@ -682,14 +693,21 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
 
       navigator.sendBeacon(
         `${ENDPOINT}/events`,
-        new Blob([JSON.stringify({
-          events: [{
-            eventType: 'page_exit',
-            path: pathname,
-            durationMs: Date.now() - entered.current,
-            scrollDepth: maxScroll.current,
-          }],
-        })], { type: 'application/json' }),
+        new Blob(
+          [
+            JSON.stringify({
+              events: [
+                {
+                  eventType: 'page_exit',
+                  path: pathname,
+                  durationMs: Date.now() - entered.current,
+                  scrollDepth: maxScroll.current,
+                },
+              ],
+            }),
+          ],
+          { type: 'application/json' },
+        ),
       )
     }
 
@@ -711,14 +729,14 @@ Detalhes que costumam ser descobertos tarde:
 
 ## 8. Plano de execução
 
-| Fase | Entrega | Risco |
-|---|---|---|
-| **1. Segredo** | Remover `.default` do `COOKIE_SECRET`; provisionar em todos os ambientes | Baixo — deploy falha ruidosamente se faltar, que é o comportamento desejado |
-| **2. Proxy** | `rewrites` no Next + `ANALYTICS_PROXY_SECRET` na API | Médio — valide o `Set-Cookie` atravessando o rewrite em Chrome **e** Safari antes de seguir |
-| **3. Schema** | Migração: `AnalyticsVisitor`, colunas novas, backfill de `analytics_sessions` → visitantes | Médio — backfill em lotes; dados históricos ficam com `firstSeenAt` aproximado |
-| **4. Backend** | Plugin encapsulado, `/session`, `/identify`, schemas com teto, rate limits | Baixo |
-| **5. Frontend** | `AnalyticsProvider`, banner de consentimento, hooks de login/logout | Baixo |
-| **6. Conformidade** | Job de retenção, `deleteVisitorData`, truncamento de IP | Baixo |
+| Fase                | Entrega                                                                                    | Risco                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| **1. Segredo**      | Remover `.default` do `COOKIE_SECRET`; provisionar em todos os ambientes                   | Baixo — deploy falha ruidosamente se faltar, que é o comportamento desejado                 |
+| **2. Proxy**        | `rewrites` no Next + `ANALYTICS_PROXY_SECRET` na API                                       | Médio — valide o `Set-Cookie` atravessando o rewrite em Chrome **e** Safari antes de seguir |
+| **3. Schema**       | Migração: `AnalyticsVisitor`, colunas novas, backfill de `analytics_sessions` → visitantes | Médio — backfill em lotes; dados históricos ficam com `firstSeenAt` aproximado              |
+| **4. Backend**      | Plugin encapsulado, `/session`, `/identify`, schemas com teto, rate limits                 | Baixo                                                                                       |
+| **5. Frontend**     | `AnalyticsProvider`, banner de consentimento, hooks de login/logout                        | Baixo                                                                                       |
+| **6. Conformidade** | Job de retenção, `deleteVisitorData`, truncamento de IP                                    | Baixo                                                                                       |
 
 Ordem importa: **a fase 1 vai para produção sozinha e imediatamente.** É uma linha, não depende de nada e fecha a única falha com potencial de virar crítica.
 

@@ -20,6 +20,7 @@ export default {
     '!src/**/*.acceptance.spec.mts',
     '!src/**/*.d.ts',
     '!src/server.ts',
+    '!src/app.ts',
     '!src/worker.ts',
     // Narrowed from `!src/env/**`: `index.ts` validates and THROWS at import, so
     // mutating it breaks every run before a test executes. That does not apply

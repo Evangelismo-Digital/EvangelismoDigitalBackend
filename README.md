@@ -64,10 +64,10 @@ Neste repositório está o projeto para ...
 
 <div align="center">
 
-| Tipo de Usuário   |            Permissões Principais            |
-| :---------------: | :-----------------------------------------: |
-|   Admin           |       Gerenciamento global do sistema       |
-|   Default         | Usuário do sistema sem permissões especiais |
+| Tipo de Usuário |            Permissões Principais            |
+| :-------------: | :-----------------------------------------: |
+|      Admin      |       Gerenciamento global do sistema       |
+|     Default     | Usuário do sistema sem permissões especiais |
 
 </div>
 
@@ -79,19 +79,20 @@ Neste repositório está o projeto para ...
 
 ### 📌 Requisito 1 – (Nome do Requisito 1):
 
-* [x] 1.1 Cadastro de usuário
-* [x] 1.2 Redefinição de senha (esqueci a senha)
-* [x] 1.3 Login com email e senha
-* [ ] 1.4 Login com CPF
+- [x] 1.1 Cadastro de usuário
+- [x] 1.2 Redefinição de senha (esqueci a senha)
+- [x] 1.3 Login com email e senha
+- [ ] 1.4 Login com CPF
 
 ### 📌 Requisito 2 – (Nome do Requisito 2):
 
-* [ ] 2.1 ...
-* [ ] 2.2 ...
+- [ ] 2.1 ...
+- [ ] 2.2 ...
 
-  * [ ] 2.2.1 ...
-  * [ ] 2.2.2 ...
-* [ ] 2.3 ...
+  - [ ] 2.2.1 ...
+  - [ ] 2.2.2 ...
+
+- [ ] 2.3 ...
 
 ---
 
@@ -99,9 +100,9 @@ Neste repositório está o projeto para ...
 
 ## 🧪 Requisitos Não Funcionais:
 
-* [x] NF.1 - Segurança: controle de acesso por tipo de usuário
-* [ ] NF.2 - ...
-* [ ] NF.3 - ...
+- [x] NF.1 - Segurança: controle de acesso por tipo de usuário
+- [ ] NF.2 - ...
+- [ ] NF.3 - ...
 
 ---
 
@@ -109,10 +110,10 @@ Neste repositório está o projeto para ...
 
 ## 🛠️ Casos de Uso Principais:
 
-* [x] 1\. Usuário se cadastra no sistema
-* [x] 2\. Administrador gerencia o sistema
-* [ ] 3\. ...
-* [ ] 4\. ...
+- [x] 1\. Usuário se cadastra no sistema
+- [x] 2\. Administrador gerencia o sistema
+- [ ] 3\. ...
+- [ ] 4\. ...
 
 <a name="como-executar-o-servidor"></a>
 
@@ -133,6 +134,7 @@ Neste repositório está o projeto para ...
 Observacao: quando a API roda diretamente na maquina com `npm run start:dev`, o Redis deve estar acessivel em `localhost:6379`. O hostname `redis` so funciona dentro da rede do Docker.
 
 ### Se você já possui o Docker e deseja executar o Servidor em Produção. Faça:
+
 1. Com o projeto aberto no terminal, execute `npm install --save-optional @rollup/rollup-linux-x64-gnu`.
 2. Após a instalação, execute `docker-compose -f docker-compose.prod.yml up -d --build`.
 3. O servidor de api, o database postgres, o redis e os workers devem estar funcionando.
@@ -201,7 +203,7 @@ for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker c
 ```
 
 > \[!TIP]
-> Clique no ícone de "*copy to clipboard*" localizado no canto superior direito dos blocos de código com o estilo similar ao que está presente logo acima desta dica para copiar rapidamente todo o código contido no trecho.
+> Clique no ícone de "_copy to clipboard_" localizado no canto superior direito dos blocos de código com o estilo similar ao que está presente logo acima desta dica para copiar rapidamente todo o código contido no trecho.
 
 Agora, antes de instalar o Docker, é preciso configurar o Docker apt Repository para preparar o ambiente de execução. Para tal, execute sequencialmente os comandos listados abaixo:
 
@@ -249,13 +251,13 @@ Para mais informações detalhadas sobre a instalação do Docker em ambiente Li
 
 ## 🔗 Links Externos:
 
-* **Design Figma do Projeto**: <a href="#" target="_blank">Clique Aqui</a>
-* **Template Backend Utilizado**: <a href="https://github.com/IN-Junior-UFF/backend-template-reborn" target="_blank">Clique Aqui</a>
+- **Design Figma do Projeto**: <a href="#" target="_blank">Clique Aqui</a>
+- **Template Backend Utilizado**: <a href="https://github.com/IN-Junior-UFF/backend-template-reborn" target="_blank">Clique Aqui</a>
 
 <a name="equipe-de-desenvolvimento"></a>
 
 ## 👥 Equipe de Desenvolvimento:
 
-* **Product Owner**: <a href="#" target="_blank">\<Nome 1></a>
-* **Dev Backend**: <a href="#" target="_blank">\<Nome 2></a>
-* **Dev Backend**: <a href="#" target="_blank">\<Nome 3></a>
+- **Product Owner**: <a href="#" target="_blank">\<Nome 1></a>
+- **Dev Backend**: <a href="#" target="_blank">\<Nome 2></a>
+- **Dev Backend**: <a href="#" target="_blank">\<Nome 3></a>

@@ -99,7 +99,9 @@ function warnIfStale(sourceMtime) {
     if (!existsSync(path)) continue
 
     if (statSync(path).mtimeMs < sourceMtime) {
-      console.warn(`[security] AVISO: ${path} (${name}) é mais antigo que o código — pode listar achados já corrigidos.`)
+      console.warn(
+        `[security] AVISO: ${path} (${name}) é mais antigo que o código — pode listar achados já corrigidos.`,
+      )
     }
   }
 }
@@ -370,7 +372,14 @@ mkdirSync(OUT_DIR, { recursive: true })
 writeFileSync(`${OUT_DIR}/findings.json`, JSON.stringify({ blocking, nonShipping, suppressed }, null, 2))
 writeFileSync(`${OUT_DIR}/SECURITY-REPORT.md`, markdown)
 
-console.log(`[security] ferramentas que executaram: ${executionStatus.filter((t) => t.ran).map((t) => t.label).join(', ') || 'nenhuma'}`)
+console.log(
+  `[security] ferramentas que executaram: ${
+    executionStatus
+      .filter((t) => t.ran)
+      .map((t) => t.label)
+      .join(', ') || 'nenhuma'
+  }`,
+)
 for (const tool of toolsSkipped) {
   console.warn(`[security] AVISO: ${tool.label} NÃO executou — a varredura está incompleta.`)
 }
@@ -380,7 +389,9 @@ console.log(`[security] suprimidos com justificativa: ${suppressed.length}`)
 console.log(`[security] relatório: ${OUT_DIR}/SECURITY-REPORT.md`)
 
 for (const finding of blocking) {
-  console.error(`[security] ${finding.severity} ${finding.file}:${finding.line} ${[...new Set(finding.rules)].join(',')}`)
+  console.error(
+    `[security] ${finding.severity} ${finding.file}:${finding.line} ${[...new Set(finding.rules)].join(',')}`,
+  )
 }
 
 if (blocking.length > 0) process.exitCode = 1

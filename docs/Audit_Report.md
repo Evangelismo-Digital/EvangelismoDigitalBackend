@@ -3,18 +3,18 @@
 **Project**: EvangelismoDigitalBackend  
 **Date**: 2026-06-30  
 **Scope**: All production source files (excluding `.spec.ts` tests)  
-**Severity Filter**: Medium-to-Critical only  
+**Severity Filter**: Medium-to-Critical only
 
 ---
 
 ## Summary of Findings
 
-| Severity | Count |
-|----------|-------|
-| 🔴 Critical | 3 |
-| 🟠 High | 7 |
-| 🟡 Medium | 10 |
-| **Total** | **20** |
+| Severity    | Count  |
+| ----------- | ------ |
+| 🔴 Critical | 3      |
+| 🟠 High     | 7      |
+| 🟡 Medium   | 10     |
+| **Total**   | **20** |
 
 ---
 
@@ -23,6 +23,7 @@
 ### C-1: Email Strategies throw raw `Error` — breaks Result Pattern inside Outbox pipeline
 
 **Files**:
+
 - [contact-email-strategy.ts](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/forms/strategies/contact-email-strategy.ts#L40-L52)
 - [decision-for-christ-email-strategy.ts](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/forms/strategies/decision-for-christ-email-strategy.ts#L41-L53)
 
@@ -127,6 +128,7 @@ The Prisma error mapper **does** catch the `P2002` unique constraint violation, 
 
 **Category**: Design Pattern Violation (Open/Closed Principle)  
 **Description**: The logic at L27-33 is:
+
 ```typescript
 if (isOk(findEmailResult)) {
   return err(new FormsAlreadyExistsError())
@@ -135,9 +137,10 @@ if (!(findEmailResult.error instanceof FormsNotFoundError)) {
   return findEmailResult
 }
 ```
+
 This uses `instanceof` to branch on error type, which contradicts the project's own design principle (documented in `AppError`: "callers never need `instanceof` to branch on it"). The correct approach would be to use `failureMode` or the error's `body.code` for routing.
 
-Additionally, the logic is **inverted from expectations**: `findByEmail` returns `err(FormsNotFoundError)` when the email doesn't exist, but this is actually the *happy path* for a new submission. This makes `isOk` mean "email already taken" — which is semantically confusing.
+Additionally, the logic is **inverted from expectations**: `findByEmail` returns `err(FormsNotFoundError)` when the email doesn't exist, but this is actually the _happy path_ for a new submission. This makes `isOk` mean "email already taken" — which is semantically confusing.
 
 **Impact**: Maintenance confusion and fragile coupling. Adding a new error type to the repository would require updating this instanceof check.
 
@@ -187,6 +190,7 @@ Additionally, the logic is **inverted from expectations**: `findByEmail` returns
 ### M-2: `ResilientAddressProvider` and `ResilientGeoProvider` constructors throw exceptions
 
 **Files**:
+
 - [resilient-address-provider.ts](file:///home/amaro/EvangelismoDigitalBackend/src/providers/address-provider/resilient-address-provider.ts#L22-L24)
 - [resilient-geo-provider.ts](file:///home/amaro/EvangelismoDigitalBackend/src/providers/geo-provider/resilient-geo-provider.ts#L25-L28)
 
@@ -221,7 +225,8 @@ Additionally, the logic is **inverted from expectations**: `findByEmail` returns
 
 ### M-5: `FindNearestChurchesUseCase` constructor manually copies every option field from `optionsOverride`
 
-**Files**: 
+**Files**:
+
 - [find-nearest-churches-use-case.ts](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/churches/find-nearest-churches-use-case.ts#L34-L44)
 - [cep-to-lat-lon-use-case.ts](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/churches/cep-to-lat-lon-use-case.ts#L42-L52)
 
@@ -246,6 +251,7 @@ Additionally, the logic is **inverted from expectations**: `findByEmail` returns
 ### M-7: `ListUsersUseCase` and `SearchUsersUseCase` return `UserNotFoundError` for empty results — semantic mismatch
 
 **Files**:
+
 - [list-users.ts](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/users/list-users.ts#L23-L25)
 - [search-users-use-case.ts](file:///home/amaro/EvangelismoDigitalBackend/src/use-cases/users/search-users-use-case.ts#L28-L29)
 
@@ -261,6 +267,7 @@ Additionally, the logic is **inverted from expectations**: `findByEmail` returns
 ### M-8: Provider classes use `static` Axios instances — stale configuration risk
 
 **Files**:
+
 - [viaCep-provider.ts](file:///home/amaro/EvangelismoDigitalBackend/src/providers/address-provider/viaCep-provider.ts#L29)
 - [awesome-api-provider.ts](file:///home/amaro/EvangelismoDigitalBackend/src/providers/address-provider/awesome-api-provider.ts#L28)
 - [brasil-api-provider.ts](file:///home/amaro/EvangelismoDigitalBackend/src/providers/address-provider/brasil-api-provider.ts#L22)
@@ -270,6 +277,7 @@ Additionally, the logic is **inverted from expectations**: `findByEmail` returns
 
 **Category**: Design Pattern / Testability  
 **Description**: Every provider uses a `private static api: AxiosInstance` pattern with a `if (!ProviderClass.api)` guard in the constructor. This has two problems:
+
 1. **First-caller wins**: The first instance's config is used forever. If two tests create the same provider with different configs, the second one silently uses the first one's config.
 2. **No cleanup**: The static instance persists across the entire process lifetime, including across tests. There's no way to reset or replace it.
 
@@ -295,7 +303,7 @@ This isn't currently a production bug, but it makes unit testing fragile and pre
 **File**: [forgot-password.controller.ts](file:///home/amaro/EvangelismoDigitalBackend/src/http/controllers/users/forgot-password.controller.ts#L33-L46)
 
 **Category**: Architectural Violation  
-**Description**: The `forgotPassword` controller directly calls `makeSendEmailUseCase().execute()` to send the password reset email. According to the GEMINI.md rules: *"Never bypass the outbox mechanism for asynchronous notifications."* This means if the email fails to send, the user has a valid reset token in the DB but never received the email. There's no retry mechanism.
+**Description**: The `forgotPassword` controller directly calls `makeSendEmailUseCase().execute()` to send the password reset email. According to the GEMINI.md rules: _"Never bypass the outbox mechanism for asynchronous notifications."_ This means if the email fails to send, the user has a valid reset token in the DB but never received the email. There's no retry mechanism.
 
 The controller does log the failure (L43), but the user has already received a 200 response. There's no way to recover automatically.
 
@@ -307,14 +315,14 @@ The controller does log the failure (L43), but the user has already received a 2
 
 ## 📊 Findings by Category
 
-| Category | Findings |
-|----------|----------|
-| Result Pattern Violations | C-1, C-2, C-3, M-2, M-3 |
+| Category                            | Findings                     |
+| ----------------------------------- | ---------------------------- |
+| Result Pattern Violations           | C-1, C-2, C-3, M-2, M-3      |
 | Design Pattern Issues (GoF / SOLID) | H-5, M-1, M-5, M-6, M-8, M-9 |
-| Potential Bugs / Logic Errors | H-3, H-4, M-4, M-7 |
-| Potential Memory Leaks | H-1, H-2 |
-| Security Concerns | H-6, H-7 |
-| Architectural Violations | M-10 |
+| Potential Bugs / Logic Errors       | H-3, H-4, M-4, M-7           |
+| Potential Memory Leaks              | H-1, H-2                     |
+| Security Concerns                   | H-6, H-7                     |
+| Architectural Violations            | M-10                         |
 
 ---
 
@@ -341,7 +349,7 @@ The controller does log the failure (L43), but the user has already received a 2
 > [!TIP]
 > The codebase demonstrates several excellent patterns worth noting:
 
-- ✅ **Result Pattern adoption** is very thorough — the vast majority of the codebase correctly uses `ok()`, `err()`, `isOk()`, `isErr()` 
+- ✅ **Result Pattern adoption** is very thorough — the vast majority of the codebase correctly uses `ok()`, `err()`, `isOk()`, `isErr()`
 - ✅ **Resilient provider chains** with `failureMode`-based routing are well-designed and avoid `instanceof`
 - ✅ **TransactionalUseCaseDecorator** is a clean GoF Decorator application for transaction management
 - ✅ **Outbox Pattern** implementation with distributed locks, idempotency keys, and recovery is production-grade

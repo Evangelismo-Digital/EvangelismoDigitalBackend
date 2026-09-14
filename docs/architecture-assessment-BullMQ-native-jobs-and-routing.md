@@ -20,14 +20,14 @@ After tracing both paths end to end, the answer splits cleanly:
 
 Decisions taken by the user during planning, recorded here so they aren't relitigated:
 
-| Decision | Choice |
-|---|---|
-| Mail refactor depth | Full BullMQ-native (`FlowProducer`, per-recipient jobs, worker `limiter`) |
-| Bulk email roadmap | Yes, likely within a few months — justifies the above |
-| `cacheSuccessResults=false` on CEP→coords | Not deliberate; re-enable caching |
-| Routing provider failure | **Keep failing hard.** No straight-line degradation, no second provider |
-| Production topology | 1 API + 1 worker today, scale-out planned |
-| `/churches/nearest` contract | Undecided — analysis below, recommendation is to keep it synchronous |
+| Decision                                  | Choice                                                                    |
+| ----------------------------------------- | ------------------------------------------------------------------------- |
+| Mail refactor depth                       | Full BullMQ-native (`FlowProducer`, per-recipient jobs, worker `limiter`) |
+| Bulk email roadmap                        | Yes, likely within a few months — justifies the above                     |
+| `cacheSuccessResults=false` on CEP→coords | Not deliberate; re-enable caching                                         |
+| Routing provider failure                  | **Keep failing hard.** No straight-line degradation, no second provider   |
+| Production topology                       | 1 API + 1 worker today, scale-out planned                                 |
+| `/churches/nearest` contract              | Undecided — analysis below, recommendation is to keep it synchronous      |
 
 ---
 
@@ -35,13 +35,13 @@ Decisions taken by the user during planning, recorded here so they aren't reliti
 
 ### 1.1 BullMQ native features: what actually applies
 
-| Feature | Verdict | Reasoning |
-|---|---|---|
-| Worker `limiter` | **Adopt (mail)** | Real win for SMTP throughput control, and mandatory once bulk sending exists. Note: OSS BullMQ has no `limiter.groupKey` (BullMQ Pro only), so it is one rate per queue. |
-| `FlowProducer` | **Adopt (mail only)** | Mail is a true fan-out/join: N sends, then one "delete the outbox row" step. That is exactly the parent/children model. Church routing is a *linear* 3-step chain — modelling it as a flow buys Redis round-trips and zero parallelism. |
-| `QueueEvents` | **Skip** | Only needed for `job.waitUntilFinished()` (which we don't want) or as a metrics stream. Metrics already work via lazy `getJobCounts()` per Prometheus scrape, which is cheaper than a persistent stream consumer. |
-| BullMQ limiter replacing `RedisRateLimiter` | **Do not** | Different scope. `RedisRateLimiter` is called *inline in the HTTP request* ([resilient-geocoding-provider.decorator.ts:45](src/providers/geo-provider/decorators/resilient-geocoding-provider.decorator.ts#L45)); a queue limiter cannot protect a synchronous path. It also isn't hand-rolled — it's `rate-limiter-flexible`'s `RateLimiterRedis` (atomic Lua, distributed-safe). Replacing it would lose per-provider granularity. |
-| `QueueScheduler` | **N/A** | Removed in BullMQ v4+; delayed jobs are handled by the Worker itself. |
+| Feature                                     | Verdict               | Reasoning                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Worker `limiter`                            | **Adopt (mail)**      | Real win for SMTP throughput control, and mandatory once bulk sending exists. Note: OSS BullMQ has no `limiter.groupKey` (BullMQ Pro only), so it is one rate per queue.                                                                                                                                                                                                                                                             |
+| `FlowProducer`                              | **Adopt (mail only)** | Mail is a true fan-out/join: N sends, then one "delete the outbox row" step. That is exactly the parent/children model. Church routing is a _linear_ 3-step chain — modelling it as a flow buys Redis round-trips and zero parallelism.                                                                                                                                                                                              |
+| `QueueEvents`                               | **Skip**              | Only needed for `job.waitUntilFinished()` (which we don't want) or as a metrics stream. Metrics already work via lazy `getJobCounts()` per Prometheus scrape, which is cheaper than a persistent stream consumer.                                                                                                                                                                                                                    |
+| BullMQ limiter replacing `RedisRateLimiter` | **Do not**            | Different scope. `RedisRateLimiter` is called _inline in the HTTP request_ ([resilient-geocoding-provider.decorator.ts:45](src/providers/geo-provider/decorators/resilient-geocoding-provider.decorator.ts#L45)); a queue limiter cannot protect a synchronous path. It also isn't hand-rolled — it's `rate-limiter-flexible`'s `RateLimiterRedis` (atomic Lua, distributed-safe). Replacing it would lose per-provider granularity. |
+| `QueueScheduler`                            | **N/A**               | Removed in BullMQ v4+; delayed jobs are handled by the Worker itself.                                                                                                                                                                                                                                                                                                                                                                |
 
 ### 1.2 Should church routing move to a worker? (the trade-off analysis requested)
 
@@ -53,26 +53,26 @@ to 15s.
 
 Measured shape of the path ([find-nearest-churches-use-case.ts](src/use-cases/churches/find-nearest-churches-use-case.ts)):
 
-| Scenario | Work |
-|---|---|
-| Cache hit | 1 Redis GET |
-| Cold, happy path | **2** sequential external calls (AwesomeAPI `/cep`, 2s timeout → Stadia matrix, 3s timeout) + 1 PostGIS KNN |
-| Cold, degraded | Up to ~19 sequential HTTP calls (3 address providers × 2 retries, then 3 geocoding strategies × 2 providers × 2 retries, then routing) |
+| Scenario         | Work                                                                                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Cache hit        | 1 Redis GET                                                                                                                            |
+| Cold, happy path | **2** sequential external calls (AwesomeAPI `/cep`, 2s timeout → Stadia matrix, 3s timeout) + 1 PostGIS KNN                            |
+| Cold, degraded   | Up to ~19 sequential HTTP calls (3 address providers × 2 retries, then 3 geocoding strategies × 2 providers × 2 retries, then routing) |
 
 Three options:
 
 **(a) Keep synchronous — recommended.** The happy path is two external calls. Once L1 CEP caching is
 restored (§3.1) the second-and-later request for any CEP skips the address/geocoding leg entirely, and a
-repeat request for the same CEP is a single Redis GET. The cold-miss tail is a *budget* problem, not an
+repeat request for the same CEP is a single Redis GET. The cold-miss tail is a _budget_ problem, not an
 architecture problem.
 
 **(b) Enqueue + `job.waitUntilFinished(queueEvents)`.** Strictly worse on every axis: same wall-clock plus
-`queue.add` RTT, worker pickup latency, and QueueEvents notification; the API process *still* holds the HTTP
+`queue.add` RTT, worker pickup latency, and QueueEvents notification; the API process _still_ holds the HTTP
 connection open, so it does not achieve the stated goal; and it adds a distributed failure mode (worker down
 = request hangs to timeout). **Rejected.**
 
 **(c) 202 Accepted + polling/SSE.** The only variant that genuinely decouples. Costs: frontend rewrite, two
-round-trips minimum, and it penalises the *majority* case — a cache hit that would have returned in
+round-trips minimum, and it penalises the _majority_ case — a cache hit that would have returned in
 single-digit milliseconds now takes at least two requests. Justified only if post-fix p99 cold latency is
 still unacceptable.
 
@@ -85,7 +85,7 @@ to be contract-neutral, so this decision does not block any work.
 
 1. **CEP→coords caching is switched off for successes.** [make-find-nearest-churches-use-case.ts:87](src/use-cases/factories/make-find-nearest-churches-use-case.ts#L87)
    passes `cacheSuccessResults = false`, and [cep-to-lat-lon-use-case.ts:54-56](src/use-cases/churches/cep-to-lat-lon-use-case.ts#L54-L56)
-   then explicitly `DEL`s the key on every OK result. The L1 layer therefore retains only *negative* entries.
+   then explicitly `DEL`s the key on every OK result. The L1 layer therefore retains only _negative_ entries.
    Every miss on the outer key re-runs the full address + geocoding leg for data (CEP → lat/lon) that is
    effectively immutable. Confirmed unintentional.
 2. **Nested timeout budgets don't nest.** Outer cache `fetchTimeoutMs` 15s, inner 10s
@@ -102,7 +102,7 @@ to be contract-neutral, so this decision does not block any work.
 **Mail / outbox**
 
 5. **`attempts` inflates once per pod on the pub/sub path.** `OutboxSignal` is Redis pub/sub, so a published
-   signal fans out to *every* subscribed worker. Each calls `processSingleEvent` with **no lock**
+   signal fans out to _every_ subscribed worker. Each calls `processSingleEvent` with **no lock**
    ([worker.ts:54-71](src/worker.ts#L54-L71) documents this), and each executes
    `updateStatus(publicId, SENDING)` — which increments `attempts`
    ([outbox-processor.ts:148](src/lib/infra/jobs/outbox-processor.ts#L148)). At 5 pods, one signal burns the
@@ -210,7 +210,7 @@ add a `claim(publicId)` method backed by a conditional update:
 ```ts
 updateMany({
   where: { publicId, status: PENDING },
-  data:  { status: SENDING, sendingAt: new Date(), attempts: { increment: 1 } },
+  data: { status: SENDING, sendingAt: new Date(), attempts: { increment: 1 } },
 })
 ```
 

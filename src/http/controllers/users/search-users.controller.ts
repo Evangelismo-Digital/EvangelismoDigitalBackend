@@ -1,13 +1,17 @@
+import { ZodRequest } from '@http/types/zod-request'
 import { logger } from '@lib/logger'
 import { makeSearchUsersUseCase } from '@use-cases/factories/make-search-users-use-case'
-import { FastifyReply, FastifyRequest } from 'fastify'
+import { FastifyReply } from 'fastify'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { searchUsersSchema } from '@http/schemas/users/search-users-schema'
 import { HTTP_STATUS } from '@http/http-status'
 
-export async function searchUsersController(request: FastifyRequest, reply: FastifyReply) {
-  const { query, page } = searchUsersSchema.parse(request.query)
+export async function searchUsersController(
+  request: ZodRequest<{ querystring: typeof searchUsersSchema }>,
+  reply: FastifyReply,
+) {
+  const { query, page } = request.query
 
   const searchUsersUseCase = makeSearchUsersUseCase()
 

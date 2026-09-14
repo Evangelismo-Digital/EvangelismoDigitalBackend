@@ -10,13 +10,5 @@
     "editor.formatOnSave": true,
     "editor.formatOnSaveMode": "file"
   },
-  "cSpell.words": [
-    "ceua",
-    "Ceua",
-    "ceuas",
-    "fiocruz",
-    "Fiocruz",
-    "siape",
-    "treeify"
-  ],
+  "cSpell.words": ["ceua", "Ceua", "ceuas", "fiocruz", "Fiocruz", "siape", "treeify"]
 }

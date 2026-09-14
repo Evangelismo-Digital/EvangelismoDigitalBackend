@@ -9,14 +9,14 @@ someone gave up on.
 
 ## 1. What is now in place
 
-| Piece | Where | Runs |
-| --- | --- | --- |
-| SonarQube 26.9 Community + its Postgres | `docker-compose.sonar.yml` | `npm run sonar:up` |
-| Instance provisioning (profiles, rule params, quality gate) | `scripts/sonar-configure.mjs` | `npm run sonar:bootstrap` |
-| Analysis inputs (coverage, test execution, ESLint) | `scripts/vitest-to-sonar.mjs`, `vite.config.mts` | `npm run sonar:reports` |
-| Scan + gate enforcement + agent-readable report | `scripts/sonar.sh`, `scripts/sonar-report.mjs` | `npm run sonar:scan` |
-| Consolidated security report (njsscan, Semgrep, Snyk Code, ESLint, Sonar) | `scripts/security-scan.sh`, `scripts/security-report.mjs` | `npm run security:scan` |
-| Both wired into the pre-push gate | `scripts/ci-local.sh` | `npm run ci:local` |
+| Piece                                                                     | Where                                                     | Runs                      |
+| ------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------- |
+| SonarQube 26.9 Community + its Postgres                                   | `docker-compose.sonar.yml`                                | `npm run sonar:up`        |
+| Instance provisioning (profiles, rule params, quality gate)               | `scripts/sonar-configure.mjs`                             | `npm run sonar:bootstrap` |
+| Analysis inputs (coverage, test execution, ESLint)                        | `scripts/vitest-to-sonar.mjs`, `vite.config.mts`          | `npm run sonar:reports`   |
+| Scan + gate enforcement + agent-readable report                           | `scripts/sonar.sh`, `scripts/sonar-report.mjs`            | `npm run sonar:scan`      |
+| Consolidated security report (njsscan, Semgrep, Snyk Code, ESLint, Sonar) | `scripts/security-scan.sh`, `scripts/security-report.mjs` | `npm run security:scan`   |
+| Both wired into the pre-push gate                                         | `scripts/ci-local.sh`                                     | `npm run ci:local`        |
 
 `npm run sonar` does the whole sequence from a cold start.
 
@@ -62,21 +62,21 @@ sees the reasoning without going looking for it.
 
 ## 2. Results
 
-| | Before | After |
-| --- | --- | --- |
-| SonarQube issues | 519 | **0** |
-| ESLint findings (hardened config) | 288 | **0** |
-| Reliability rating | D | **A** |
-| Security rating | C | **A** |
-| Maintainability rating | — | **A** |
-| Security hotspots | 0 | 0 |
-| Blocking security findings | 5 | **0** |
-| Coverage (Sonar) | 81.8 % | **86.8 %** |
-| Tests imported | 1300 | **1372** |
-| Duplication (Sonar CPD) | 0.7 % | **0.0 %** |
-| Duplication (jscpd, min-tokens 40) | 2.13 % | **1.25 %** |
-| Technical debt (`sqale_index`) | 126 min | **0** |
-| Technical debt ratio | — | **0.0 %** |
+|                                    | Before  | After      |
+| ---------------------------------- | ------- | ---------- |
+| SonarQube issues                   | 519     | **0**      |
+| ESLint findings (hardened config)  | 288     | **0**      |
+| Reliability rating                 | D       | **A**      |
+| Security rating                    | C       | **A**      |
+| Maintainability rating             | —       | **A**      |
+| Security hotspots                  | 0       | 0          |
+| Blocking security findings         | 5       | **0**      |
+| Coverage (Sonar)                   | 81.8 %  | **86.8 %** |
+| Tests imported                     | 1300    | **1372**   |
+| Duplication (Sonar CPD)            | 0.7 %   | **0.0 %**  |
+| Duplication (jscpd, min-tokens 40) | 2.13 %  | **1.25 %** |
+| Technical debt (`sqale_index`)     | 126 min | **0**      |
+| Technical debt ratio               | —       | **0.0 %**  |
 
 Measured on the `ci:local` run, which analyses the unit, cache-integration,
 repository-integration and e2e projects together — the same allowlist CI uses.
@@ -113,7 +113,7 @@ red against the un-guarded code.
 ### Three lazy singletons cleared their state after awaiting
 
 `closeAllRedisConnections`, `OutboxSignal.disconnect` and `stopMetricsServer`
-all captured their targets, awaited the close, and *then* nulled the module
+all captured their targets, awaited the close, and _then_ nulled the module
 state. A `getRedisCache()` arriving during the await built a connection the
 assignments immediately orphaned: never closed, not in `targets`, invisible to
 the next shutdown. All three now detach before awaiting.
@@ -129,7 +129,7 @@ inside one of them would have called the caught Error object. Renamed to
 
 Predictable expiry lets an attacker line requests up with it and force a
 stampede. Replaced with `crypto.randomInt` over the same inclusive range. The
-tests were rewritten to assert the *range requested* rather than reconstruct the
+tests were rewritten to assert the _range requested_ rather than reconstruct the
 arithmetic, and the new assertion kills an off-by-one mutant the old one missed.
 
 ### Supply-chain exposure window
@@ -195,7 +195,7 @@ is what genuinely differs — CEP normalisation, the error each raises when ever
 provider says "not found", and the wording of the logs, which the specs pin
 exactly. Duplication fell to **0.3 %**.
 
-*Found by reading the two files side by side, not by a script.* A structural
+_Found by reading the two files side by side, not by a script._ A structural
 similarity scan run afterwards reported nothing further, but its sensitivity
 could not be validated, so that "nothing further" is weaker evidence than it
 looks.
@@ -227,8 +227,8 @@ domain objects, and that spec updated in the same commit.
 
 ### The hottest module
 
-`resilient-cache.ts` was 602 lines doing nine jobs. The most separable — *what a
-failure means, whether it is worth remembering, how it is stored and rebuilt* —
+`resilient-cache.ts` was 602 lines doing nine jobs. The most separable — _what a
+failure means, whether it is worth remembering, how it is stored and rebuilt_ —
 became `cache-failure-policy.ts`. It is the part with the sharpest consequences
 (a wrong answer pins an unrelated outage to a good key for the whole negative
 TTL) and the part a reader most often needs in isolation.
@@ -255,10 +255,10 @@ none:
 `snyk@1.1307.0`, credential in `.env.security` (gitignored, 0600). Two products
 were wired; one runs today:
 
-| Product | State | Note |
-| --- | --- | --- |
-| Snyk Open Source (SCA) | **running, gating** | Different advisory DB from OSV-Scanner |
-| Snyk Code (SAST/taint) | **not enabled** | `SNYK-CODE-0005` / 403 — org entitlement |
+| Product                | State               | Note                                     |
+| ---------------------- | ------------------- | ---------------------------------------- |
+| Snyk Open Source (SCA) | **running, gating** | Different advisory DB from OSV-Scanner   |
+| Snyk Code (SAST/taint) | **not enabled**     | `SNYK-CODE-0005` / 403 — org entitlement |
 
 Snyk Code needs enabling in the Snyk web console (Settings → Snyk Code); the v1
 API endpoint for it returns 404 and the CLI cannot toggle it. Until then the
@@ -292,10 +292,10 @@ remedy for a known CVE. Installed with a one-off `--min-release-age=0`, which is
 safe because the lockfile then pins the exact version and `npm ci` never
 re-resolves. The policy stays at 7 for everything else.
 
-*(That same setting had a real bug: it is measured in **days**, not minutes. Set
+_(That same setting had a real bug: it is measured in **days**, not minutes. Set
 to `10080` — 7 days in minutes — it became a 27-year cutoff that silently broke
 `npm install <anything-new>` while every existing command kept working, because
-the lockfile pins resolved versions. Corrected to `7`.)*
+the lockfile pins resolved versions. Corrected to `7`.)_
 
 ### My duplication scan was wrong, and now there is a real one
 
@@ -310,12 +310,12 @@ Two were worth fixing:
 - **The two e-mail strategies** shared 44 lines across three clones, including
   byte-identical `getStringField` / `getOptionalStringField` helpers. Extracted
   to `form-payload-fields.ts`. What remains between them is import lists and the
-  shape of implementing the same interface — extracting *that* would mean a base
+  shape of implementing the same interface — extracting _that_ would mean a base
   class, trading real coupling for a cosmetic metric, so it was left.
 - **`toSessionAttributes` + `OPTIONAL_SESSION_FIELDS`** existed byte-identically
   in the Prisma analytics repository and its in-memory double — and the double's
-  own comment said why that was dangerous: *"A divergence here would make a unit
-  test agree with a production path that does something else."* Now singular in
+  own comment said why that was dangerous: _"A divergence here would make a unit
+  test agree with a production path that does something else."_ Now singular in
   `core/projections/`. The doubles stay independent where it matters (storage
   semantics) while agreeing on the field list by construction.
 
@@ -332,7 +332,7 @@ threshold 3 % in `.jscpd.json`. Proven to bite: at threshold 1 it exits 1.
 
 The six baselined advisories (SSRF, CRLF injection, improper certificate
 validation, missing authorization) are **gone** — not filtered, gone: OSV run
-*without* `--config` reports "No issues found", and Snyk reports
+_without_ `--config` reports "No issues found", and Snyk reports
 `Tested 185 dependencies for known issues, no vulnerable paths found`.
 
 The blocker recorded earlier — "no `@types/nodemailer` release matching v9" —
@@ -361,12 +361,12 @@ vulnerability is worse than none — it trains the next reader to skim the list.
 
 `2.13 % → 1.25 %`, 30 clones → 21, in four extractions:
 
-| Extracted | Removed |
-| --- | --- |
-| `providers/helpers/guarded-attempt.ts` | ~31 lines across the three provider decorators |
-| `providers/helpers/provider-http-client.ts` | ~28 lines across five raw providers |
-| `lib/infra/distributed-lock/with-distributed-lock.ts` | ~25 lines across the two outbox jobs |
-| `use-cases/forms/strategies/form-payload-fields.ts` | ~44 lines across the two e-mail strategies |
+| Extracted                                             | Removed                                        |
+| ----------------------------------------------------- | ---------------------------------------------- |
+| `providers/helpers/guarded-attempt.ts`                | ~31 lines across the three provider decorators |
+| `providers/helpers/provider-http-client.ts`           | ~28 lines across five raw providers            |
+| `lib/infra/distributed-lock/with-distributed-lock.ts` | ~25 lines across the two outbox jobs           |
+| `use-cases/forms/strategies/form-payload-fields.ts`   | ~44 lines across the two e-mail strategies     |
 
 The provider HTTP client is the clearest case of duplication that had stopped
 meaning anything: every provider mapped its own `HTTPS_AGENT` config into axios
@@ -395,19 +395,19 @@ interesting half of this document.
 
 ### Deactivated repo-wide (`scripts/sonar-configure.mjs`)
 
-| Rule | Findings | Why not |
-| --- | --- | --- |
-| `S3524` arrow parens | 100 | Exactly contradicts Prettier's `arrowParens: "always"`. Keeping both makes the formatter undo the fix on every save. |
-| `S1774` no ternaries | 94 | Bans *all* ternaries. Converting one-line `isDev ? a : b` to if/else raises the cyclomatic complexity that `S1541` measures — the two rules contradict each other. |
-| `S121` braces on every `if` | 34 | Conflicts with the Result-pattern guard (`if (isErr(result)) return result`) that CLAUDE.md documents as the core idiom. Braces would double the line count of every guard and clarify none. |
-| `S4326` redundant `await` on return | 27 | Same call as ESLint's `return-await: error-handling-correctness-only`. Removing those awaits moves microtask boundaries in working code, and this repo has already lost single-flight deduplication to exactly that. The real defect — a promise returned from inside `try` — is still caught. |
-| `S2138` prefer `null` over `undefined` | 2 | Contradicts an explicit boundary decision: domain contracts declare `Date \| undefined` and the Prisma repository converts (`raw.sendingAt \|\| undefined`). `null` is the database's vocabulary, `undefined` the domain's. |
-| `S1451` copyright header | — | The project uses a root `LICENSE.txt`. |
-| `S1226` no parameter reassignment | — | Covered, and better calibrated, by ESLint's `no-param-reassign` (which permits property mutation). |
+| Rule                                   | Findings | Why not                                                                                                                                                                                                                                                                                        |
+| -------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `S3524` arrow parens                   | 100      | Exactly contradicts Prettier's `arrowParens: "always"`. Keeping both makes the formatter undo the fix on every save.                                                                                                                                                                           |
+| `S1774` no ternaries                   | 94       | Bans _all_ ternaries. Converting one-line `isDev ? a : b` to if/else raises the cyclomatic complexity that `S1541` measures — the two rules contradict each other.                                                                                                                             |
+| `S121` braces on every `if`            | 34       | Conflicts with the Result-pattern guard (`if (isErr(result)) return result`) that CLAUDE.md documents as the core idiom. Braces would double the line count of every guard and clarify none.                                                                                                   |
+| `S4326` redundant `await` on return    | 27       | Same call as ESLint's `return-await: error-handling-correctness-only`. Removing those awaits moves microtask boundaries in working code, and this repo has already lost single-flight deduplication to exactly that. The real defect — a promise returned from inside `try` — is still caught. |
+| `S2138` prefer `null` over `undefined` | 2        | Contradicts an explicit boundary decision: domain contracts declare `Date \| undefined` and the Prisma repository converts (`raw.sendingAt \|\| undefined`). `null` is the database's vocabulary, `undefined` the domain's.                                                                    |
+| `S1451` copyright header               | —        | The project uses a root `LICENSE.txt`.                                                                                                                                                                                                                                                         |
+| `S1226` no parameter reassignment      | —        | Covered, and better calibrated, by ESLint's `no-param-reassign` (which permits property mutation).                                                                                                                                                                                             |
 
 ### Scoped to a path (`sonar-project.properties`)
 
-- **S109 magic numbers in `src/env/index.ts`** — every literal there *is* the
+- **S109 magic numbers in `src/env/index.ts`** — every literal there _is_ the
   definition of a default (`.default(9091)`, `.default(12)`). Naming them adds a
   constant that says the same word twice.
 - **S109 in `src/lib/metrics/**`** — the numbers are histogram bucket
@@ -424,7 +424,7 @@ interesting half of this document.
   of ownership rather than an identifier, across nine signatures.
 - **S3801 inconsistent returns in `src/http/**`** — `return reply` is Fastify's
   documented way for an async hook to halt the request lifecycle. The
-  inconsistency *is* the framework contract.
+  inconsistency _is_ the framework contract.
 - **S100 function naming in `app-error-registry.ts`** — its keys are the class
   names of the errors they rebuild, because `serializeAppError` writes
   `err.constructor.name` and the registry is looked up by that exact string.
@@ -439,23 +439,23 @@ interesting half of this document.
 
 ### ESLint rules turned off (`eslint.config.mjs`)
 
-| Rule | Findings | Why not |
-| --- | --- | --- |
-| `security/detect-object-injection` | 30 | 28 were provably safe (`params[k]` over `Object.keys(params)`, `logger[level]` over a string-literal union). The two that were real are fixed with `safeLookup` — a better outcome than 28 permanent suppressions. |
-| `sonarjs/todo-tag` | 2 | Comments here are Portuguese, where "todo" means "every". It fires on prose like *"em todo log de erro"*. SonarQube's own S1135 implements the check without that false positive and stays active. |
-| `sonarjs/function-return-type` | 3 | Fires on a TypeScript overload's implementation signature. The rule is written for untyped JavaScript; here the overloads are what makes the union safe. |
-| `promise-function-async` | 26 | Would rewrite pass-through functions (`return this.prisma.user.findUnique(...)`) into async wrappers, each adding a tick for no behavioural gain. |
-| `restrict-template-expressions` `allowNumber` | 20 | `${port}` in a log line is not a defect. The cases the rule exists for — an object stringifying to `[object Object]`, a possibly-undefined value printing as `"undefined"` — are still reported, and one such case was found and fixed in `server.ts`. |
+| Rule                                          | Findings | Why not                                                                                                                                                                                                                                                |
+| --------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `security/detect-object-injection`            | 30       | 28 were provably safe (`params[k]` over `Object.keys(params)`, `logger[level]` over a string-literal union). The two that were real are fixed with `safeLookup` — a better outcome than 28 permanent suppressions.                                     |
+| `sonarjs/todo-tag`                            | 2        | Comments here are Portuguese, where "todo" means "every". It fires on prose like _"em todo log de erro"_. SonarQube's own S1135 implements the check without that false positive and stays active.                                                     |
+| `sonarjs/function-return-type`                | 3        | Fires on a TypeScript overload's implementation signature. The rule is written for untyped JavaScript; here the overloads are what makes the union safe.                                                                                               |
+| `promise-function-async`                      | 26       | Would rewrite pass-through functions (`return this.prisma.user.findUnique(...)`) into async wrappers, each adding a tick for no behavioural gain.                                                                                                      |
+| `restrict-template-expressions` `allowNumber` | 20       | `${port}` in a log line is not a defect. The cases the rule exists for — an object stringifying to `[object Object]`, a possibly-undefined value printing as `"undefined"` — are still reported, and one such case was found and fixed in `server.ts`. |
 
 ### Two places where the advice would have introduced a bug
 
 **`Array.prototype.sort()` without a comparator (S2871).** Both findings sort
-object keys to build a *cache key* — the HTTPS agent pool key and the Redis
+object keys to build a _cache key_ — the HTTPS agent pool key and the Redis
 cache key. Sonar suggests `localeCompare`, which orders by the runtime's
 collation: a container that came up with a different locale would hash the same
 parameters into a different key, silently splitting the cache in half. Fixed
 with an explicit code-unit comparator (`core/shared/stable-order.ts`) whose
-docblock records this, and S3003 is scoped off *for that file* because comparing
+docblock records this, and S3003 is scoped off _for that file_ because comparing
 strings by code unit is the entire point of it.
 
 **`request.routeOptions` is always defined.** Three optional chains looked
@@ -484,8 +484,8 @@ guard, is what turned them into checks the compiler agrees are needed:
 - **axios response generics** now carry `| undefined`. Axios types
   `response.data` as the generic regardless of what the server sent, so a 204,
   an empty body or a proxy error page all arrived typed as a valid payload.
-- **the decoded JWT payload** declares `role?: UserRole`. It is a token *we
-  received*, not a value this process built; declaring `role` as always present
+- **the decoded JWT payload** declares `role?: UserRole`. It is a token _we
+  received_, not a value this process built; declaring `role` as always present
   made the authorisation guard in `verify-user-role.middleware` look redundant
   while being the only thing enforcing it.
 - **`SentMessageInfo`** now resolves to `SMTPTransport.SentMessageInfo` instead
@@ -546,4 +546,4 @@ down rather than that coverage regressed.
 Elasticsearch heap, takes minutes to boot from a cold volume, and keeps the
 issue history that makes the "new code" half of the gate mean anything — none of
 which survives a fresh GitHub runner. The security consolidation, which needs no
-server, *is* mirrored in CI as the `security-code` job.
+server, _is_ mirrored in CI as the `security-code` job.
