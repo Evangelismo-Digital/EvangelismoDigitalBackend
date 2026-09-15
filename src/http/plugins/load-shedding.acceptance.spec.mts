@@ -22,14 +22,14 @@ describeFeature(feature, ({ Scenario, BeforeAllScenarios, AfterAllScenarios }) =
     })
 
     When('the event loop is artificially blocked', async () => {
-      // Artificially block the event loop for longer than test maxEventLoopDelay (100ms)
+      // Artificially block the event loop for longer than sampleInterval (1000ms)
       const start = Date.now()
-      while (Date.now() - start < 500) {
+      while (Date.now() - start < 1500) {
         // Block
       }
 
-      // We must wait a tiny bit to allow under-pressure to sample the event loop delay.
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      // Allow under-pressure to process the expired interval and update metrics
+      await new Promise((resolve) => setTimeout(resolve, 100))
     })
 
     And('the client sends a GET request to {string}', async (_ctx: TestContext, path: string) => {

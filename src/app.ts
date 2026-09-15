@@ -27,6 +27,9 @@ z.config(z.locales.pt())
 export const app = fastify({
   logger: false,
   trustProxy: true,
+  routerOptions: {
+    ignoreTrailingSlash: true,
+  },
   genReqId: () => uuidv7(),
 }).withTypeProvider<ZodTypeProvider>()
 
@@ -104,7 +107,7 @@ import fastifyUnderPressure from '@fastify/under-pressure'
 import { prisma } from '@lib/prisma'
 import { HTTP_RATE_LIMIT_POLICIES } from '@http/policies/rate-limit'
 
-const MAX_EVENT_LOOP_DELAY_TEST = 5
+const MAX_EVENT_LOOP_DELAY_TEST = 50
 const MAX_EVENT_LOOP_DELAY_DEFAULT = 1000
 
 app.register(fastifyUnderPressure, {
@@ -123,6 +126,7 @@ app.register(fastifyUnderPressure, {
       },
     },
     routeResponseSchemaOpts: {
+      status: { type: 'string' },
       uptime: { type: 'number' },
       timestamp: { type: 'string' },
       memory: {
@@ -135,7 +139,7 @@ app.register(fastifyUnderPressure, {
         },
       },
     },
-    url: '/health/',
+    url: '/health',
   },
   healthCheck: async () => {
     // Moved from health-check.controller.ts
@@ -143,6 +147,7 @@ app.register(fastifyUnderPressure, {
     await prisma.$queryRaw`SELECT 1`
 
     return {
+      status: 'ok',
       memory: {
         rss: `${Math.round(memoryUsage.rss / 1024 / 1024)}MB`,
         heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`,

@@ -1,58 +1,52 @@
-'use strict'
-var __create = Object.create
-var __defProp = Object.defineProperty
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor
-var __getOwnPropNames = Object.getOwnPropertyNames
-var __getProtoOf = Object.getPrototypeOf
-var __hasOwnProp = Object.prototype.hasOwnProperty
+"use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __copyProps = (to, from, except, desc) => {
-  if ((from && typeof from === 'object') || typeof from === 'function') {
+  if (from && typeof from === "object" || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
       if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, {
-          get: () => from[key],
-          enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable,
-        })
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
   }
-  return to
-}
-var __toESM = (mod, isNodeMode, target) => (
-  (target = mod != null ? __create(__getProtoOf(mod)) : {}),
-  __copyProps(
-    // If the importer is in node compatibility mode or this is not an ESM
-    // file that has been converted to a CommonJS file using a Babel-
-    // compatible transform (i.e. "__esModule" has not been set), then set
-    // "default" to the CommonJS "module.exports" for node compatibility.
-    isNodeMode || !mod || !mod.__esModule ? __defProp(target, 'default', { value: mod, enumerable: true }) : target,
-    mod,
-  )
-)
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
 
 // src/lib/sentry/init.ts
-var import_node = require('@sentry/node')
-var import_profiling_node = require('@sentry/profiling-node')
+var import_node = require("@sentry/node");
+var import_profiling_node = require("@sentry/profiling-node");
 
 // src/env/index.ts
-var import_config = require('dotenv/config')
-var import_zod2 = require('zod')
-var import_ms = __toESM(require('ms'))
+var import_config = require("dotenv/config");
+var import_zod2 = require("zod");
+var import_ms = __toESM(require("ms"));
 
 // src/messages/constants/env/env.ts
 var ENV_CONSTANTS = {
-  INVALID_VARIABLES: 'Invalid environment variables. Please check your .env file or environment configuration.',
-}
+  INVALID_VARIABLES: "Invalid environment variables. Please check your .env file or environment configuration."
+};
 
 // src/env/optional-env.ts
-var import_zod = require('zod')
+var import_zod = require("zod");
 function optionalEnv(schema) {
-  return import_zod.z.preprocess((value) => (value === '' ? void 0 : value), schema.optional())
+  return import_zod.z.preprocess((value) => value === "" ? void 0 : value, schema.optional());
 }
 
 // src/env/index.ts
 var envSchema = import_zod2.z.object({
   // Environment
-  NODE_ENV: import_zod2.z.enum(['development', 'staging', 'production', 'test']).default('development'),
-  LOG_LEVEL: import_zod2.z.enum(['info', 'debug', 'warn', 'error', 'trace']).default('info'),
+  NODE_ENV: import_zod2.z.enum(["development", "staging", "production", "test"]).default("development"),
+  LOG_LEVEL: import_zod2.z.enum(["info", "debug", "warn", "error", "trace"]).default("info"),
   // Database
   DATABASE_URL: import_zod2.z.url(),
   DATABASE_URL_LOCAL: optionalEnv(import_zod2.z.url()),
@@ -61,106 +55,75 @@ var envSchema = import_zod2.z.object({
   SHADOW_DATABASE_URL: optionalEnv(import_zod2.z.url()),
   DB_POOL_MAX: import_zod2.z.coerce.number().int().positive().default(10),
   DB_POOL_MIN: import_zod2.z.coerce.number().int().positive().default(2),
-  DB_CONNECTION_TIMEOUT: import_zod2.z.coerce
-    .number()
-    .int()
-    .positive()
-    .default((0, import_ms.default)('10s')),
-  DB_IDLE_TIMEOUT: import_zod2.z.coerce
-    .number()
-    .int()
-    .positive()
-    .default((0, import_ms.default)('30s')),
+  DB_CONNECTION_TIMEOUT: import_zod2.z.coerce.number().int().positive().default((0, import_ms.default)("10s")),
+  DB_IDLE_TIMEOUT: import_zod2.z.coerce.number().int().positive().default((0, import_ms.default)("30s")),
   // Redis
-  REDIS_HOST: import_zod2.z.string().default('localhost'),
+  REDIS_HOST: import_zod2.z.string().default("localhost"),
   REDIS_PORT: import_zod2.z.coerce.number().default(6379),
   REDIS_PASSWORD: optionalEnv(import_zod2.z.string()),
-  REDIS_LOG_OUTAGE_INTERVAL_MS: import_zod2.z.coerce
-    .number()
-    .int()
-    .positive()
-    .default((0, import_ms.default)('30s')),
+  REDIS_LOG_OUTAGE_INTERVAL_MS: import_zod2.z.coerce.number().int().positive().default((0, import_ms.default)("30s")),
   // Health probe for ingress rate limiting. Bounded on both ends deliberately:
   // below a second it becomes traffic against Redis for no extra fidelity, and
   // above five minutes an outage could pass unnoticed between two observations.
-  REDIS_RATE_LIMIT_HEALTH_INTERVAL_MS: import_zod2.z.coerce
-    .number()
-    .int()
-    .min((0, import_ms.default)('1s'))
-    .max((0, import_ms.default)('5m'))
-    .default((0, import_ms.default)('15s')),
+  REDIS_RATE_LIMIT_HEALTH_INTERVAL_MS: import_zod2.z.coerce.number().int().min((0, import_ms.default)("1s")).max((0, import_ms.default)("5m")).default((0, import_ms.default)("15s")),
   // Metrics
-  METRICS_ENABLED: import_zod2.z
-    .enum(['true', 'false'])
-    .transform((v) => v === 'true')
-    .default(true),
+  METRICS_ENABLED: import_zod2.z.enum(["true", "false"]).transform((v) => v === "true").default(true),
   METRICS_API_PORT: import_zod2.z.coerce.number().default(9091),
   METRICS_WORKER_PORT: import_zod2.z.coerce.number().default(9092),
   // Grafana (used in docker-compose.monitoring.yml)
   GRAFANA_ADMIN_PASSWORD: import_zod2.z.string().min(8),
   // App
-  APP_NAME: import_zod2.z.string().default('Backend Template Reborn'),
+  APP_NAME: import_zod2.z.string().default("Backend Template Reborn"),
   APP_PORT: import_zod2.z.coerce.number().default(3e3),
-  JWT_SECRET: import_zod2.z.string().min(60, 'JWT secret must be at least 60 characters long'),
-  FRONTEND_URL: import_zod2.z.url().default('http://localhost:5173'),
+  JWT_SECRET: import_zod2.z.string().min(60, "JWT secret must be at least 60 characters long"),
+  FRONTEND_URL: import_zod2.z.url().default("http://localhost:5173"),
   HASH_SALT_ROUNDS: import_zod2.z.coerce.number().default(12),
   // HTTP rate limits (test overrides supported via env)
   HTTP_RATE_LIMIT_GLOBAL_MAX: import_zod2.z.coerce.number().int().positive().default(300),
-  HTTP_RATE_LIMIT_GLOBAL_TIME_WINDOW: import_zod2.z.string().default('1 minute'),
+  HTTP_RATE_LIMIT_GLOBAL_TIME_WINDOW: import_zod2.z.string().default("1 minute"),
   HTTP_RATE_LIMIT_AUTH_SESSION_MAX: import_zod2.z.coerce.number().int().positive().default(15),
-  HTTP_RATE_LIMIT_AUTH_SESSION_TIME_WINDOW: import_zod2.z.string().default('1 minute'),
+  HTTP_RATE_LIMIT_AUTH_SESSION_TIME_WINDOW: import_zod2.z.string().default("1 minute"),
   HTTP_RATE_LIMIT_AUTH_REGISTER_MAX: import_zod2.z.coerce.number().int().positive().default(5),
-  HTTP_RATE_LIMIT_AUTH_REGISTER_TIME_WINDOW: import_zod2.z.string().default('1 minute'),
+  HTTP_RATE_LIMIT_AUTH_REGISTER_TIME_WINDOW: import_zod2.z.string().default("1 minute"),
   HTTP_RATE_LIMIT_AUTH_FORGOT_PASSWORD_MAX: import_zod2.z.coerce.number().int().positive().default(5),
-  HTTP_RATE_LIMIT_AUTH_FORGOT_PASSWORD_TIME_WINDOW: import_zod2.z.string().default('1 hour'),
+  HTTP_RATE_LIMIT_AUTH_FORGOT_PASSWORD_TIME_WINDOW: import_zod2.z.string().default("1 hour"),
   HTTP_RATE_LIMIT_AUTH_RESET_PASSWORD_MAX: import_zod2.z.coerce.number().int().positive().default(5),
-  HTTP_RATE_LIMIT_AUTH_RESET_PASSWORD_TIME_WINDOW: import_zod2.z.string().default('1 hour'),
+  HTTP_RATE_LIMIT_AUTH_RESET_PASSWORD_TIME_WINDOW: import_zod2.z.string().default("1 hour"),
   HTTP_RATE_LIMIT_USERS_LIST_MAX: import_zod2.z.coerce.number().int().positive().default(20),
-  HTTP_RATE_LIMIT_USERS_LIST_TIME_WINDOW: import_zod2.z.string().default('1 hour'),
+  HTTP_RATE_LIMIT_USERS_LIST_TIME_WINDOW: import_zod2.z.string().default("1 hour"),
   HTTP_RATE_LIMIT_USERS_DELETE_MAX: import_zod2.z.coerce.number().int().positive().default(10),
-  HTTP_RATE_LIMIT_USERS_DELETE_TIME_WINDOW: import_zod2.z.string().default('1 hour'),
+  HTTP_RATE_LIMIT_USERS_DELETE_TIME_WINDOW: import_zod2.z.string().default("1 hour"),
   HTTP_RATE_LIMIT_CHURCHES_NEAREST_MAX: import_zod2.z.coerce.number().int().positive().default(3e4),
-  HTTP_RATE_LIMIT_CHURCHES_NEAREST_TIME_WINDOW: import_zod2.z.string().default('1 minute'),
+  HTTP_RATE_LIMIT_CHURCHES_NEAREST_TIME_WINDOW: import_zod2.z.string().default("1 minute"),
   HTTP_RATE_LIMIT_FORMS_SUBMIT_MAX: import_zod2.z.coerce.number().int().positive().default(60),
-  HTTP_RATE_LIMIT_FORMS_SUBMIT_TIME_WINDOW: import_zod2.z.string().default('1 minute'),
+  HTTP_RATE_LIMIT_FORMS_SUBMIT_TIME_WINDOW: import_zod2.z.string().default("1 minute"),
   HTTP_RATE_LIMIT_HEALTH_CHECK_MAX: import_zod2.z.coerce.number().int().positive().default(120),
-  HTTP_RATE_LIMIT_HEALTH_CHECK_TIME_WINDOW: import_zod2.z.string().default('1 minute'),
+  HTTP_RATE_LIMIT_HEALTH_CHECK_TIME_WINDOW: import_zod2.z.string().default("1 minute"),
   // Analytics ingestion — tighter than the 300/min global default, because each
   // route has a known shape of legitimate use. `/session` is called once at
   // boot and again on logout; `/identify` once per login; only `/events` is
   // called repeatedly, and it batches up to 50 events per request.
   HTTP_RATE_LIMIT_ANALYTICS_SESSION_MAX: import_zod2.z.coerce.number().int().positive().default(5),
-  HTTP_RATE_LIMIT_ANALYTICS_SESSION_TIME_WINDOW: import_zod2.z.string().default('1 minute'),
+  HTTP_RATE_LIMIT_ANALYTICS_SESSION_TIME_WINDOW: import_zod2.z.string().default("1 minute"),
   HTTP_RATE_LIMIT_ANALYTICS_EVENTS_MAX: import_zod2.z.coerce.number().int().positive().default(60),
-  HTTP_RATE_LIMIT_ANALYTICS_EVENTS_TIME_WINDOW: import_zod2.z.string().default('1 minute'),
+  HTTP_RATE_LIMIT_ANALYTICS_EVENTS_TIME_WINDOW: import_zod2.z.string().default("1 minute"),
   HTTP_RATE_LIMIT_ANALYTICS_IDENTIFY_MAX: import_zod2.z.coerce.number().int().positive().default(5),
-  HTTP_RATE_LIMIT_ANALYTICS_IDENTIFY_TIME_WINDOW: import_zod2.z.string().default('1 minute'),
+  HTTP_RATE_LIMIT_ANALYTICS_IDENTIFY_TIME_WINDOW: import_zod2.z.string().default("1 minute"),
   HTTP_RATE_LIMIT_ANALYTICS_READ_MAX: import_zod2.z.coerce.number().int().positive().default(60),
-  HTTP_RATE_LIMIT_ANALYTICS_READ_TIME_WINDOW: import_zod2.z.string().default('1 minute'),
+  HTTP_RATE_LIMIT_ANALYTICS_READ_TIME_WINDOW: import_zod2.z.string().default("1 minute"),
   // Circuit breaker (resilient provider + cache policies)
   // Enabled by default: when off, the policy stack is *composed* without a
   // breaker rather than branching per call, so the flag costs nothing at runtime.
-  CIRCUIT_BREAKER_ENABLED: import_zod2.z
-    .enum(['true', 'false'])
-    .transform((v) => v === 'true')
-    .default(true),
+  CIRCUIT_BREAKER_ENABLED: import_zod2.z.enum(["true", "false"]).transform((v) => v === "true").default(true),
   // Fraction of calls that must fail within the sampling window before the
   // circuit opens. Exclusive bounds: 0 would trip on a healthy provider and 1
   // could never trip, so both are configuration mistakes rather than settings.
   CIRCUIT_BREAKER_FAILURE_THRESHOLD: import_zod2.z.coerce.number().gt(0).lt(1).default(0.5),
-  CIRCUIT_BREAKER_SAMPLING_WINDOW_MS: import_zod2.z.coerce
-    .number()
-    .int()
-    .positive()
-    .default((0, import_ms.default)('30s')),
+  CIRCUIT_BREAKER_SAMPLING_WINDOW_MS: import_zod2.z.coerce.number().int().positive().default((0, import_ms.default)("30s")),
   // Minimum throughput before the breaker may open, so a single failure during
   // an idle period cannot suspend a provider.
   CIRCUIT_BREAKER_MIN_THROUGHPUT: import_zod2.z.coerce.number().int().positive().default(5),
-  CIRCUIT_BREAKER_HALF_OPEN_AFTER_MS: import_zod2.z.coerce
-    .number()
-    .int()
-    .positive()
-    .default((0, import_ms.default)('10s')),
+  CIRCUIT_BREAKER_HALF_OPEN_AFTER_MS: import_zod2.z.coerce.number().int().positive().default((0, import_ms.default)("10s")),
   SENTRY_DSN: optionalEnv(import_zod2.z.string()),
   SENTRY_TRACES_SAMPLE_RATE: import_zod2.z.coerce.number().min(0).max(1).default(0.2),
   SENTRY_PROFILE_SAMPLE_RATE: import_zod2.z.coerce.number().min(0).max(1).default(0.1),
@@ -169,7 +132,7 @@ var envSchema = import_zod2.z.object({
   SMTP_PASSWORD: import_zod2.z.string().min(1),
   SMTP_PORT: import_zod2.z.coerce.number(),
   SMTP_HOST: import_zod2.z.string().min(1),
-  SMTP_SECURE: import_zod2.z.enum(['true', 'false']).transform((val) => val === 'true'),
+  SMTP_SECURE: import_zod2.z.enum(["true", "false"]).transform((val) => val === "true"),
   // Timeouts defensivos: impedem que um servidor SMTP travado bloqueie o chamador (padrões do Nodemailer chegam a 10 min)
   SMTP_CONNECTION_TIMEOUT_MS: import_zod2.z.coerce.number().int().positive().default(5e3),
   SMTP_GREETING_TIMEOUT_MS: import_zod2.z.coerce.number().int().positive().default(5e3),
@@ -177,7 +140,7 @@ var envSchema = import_zod2.z.object({
   // ADMIN EMAIL
   ADMIN_EMAIL: import_zod2.z.email(),
   // Seed data (dev/local only — override for anything beyond a throwaway local DB)
-  SEED_ADMIN_PASSWORD: import_zod2.z.string().min(8).default('ChangeMe123!SeedAdmin'),
+  SEED_ADMIN_PASSWORD: import_zod2.z.string().min(8).default("ChangeMe123!SeedAdmin"),
   // Address Providers
   AWESOME_API_URL: import_zod2.z.string(),
   //Also geocoding provider
@@ -187,18 +150,18 @@ var envSchema = import_zod2.z.object({
   // Geocoding Providers
   // Nominatim (Fallback)
   NOMINATIM_API_URL: import_zod2.z.string(),
-  LOCATION_IQ_API_URL: import_zod2.z.string().default('https://us1.locationiq.com/v1'),
+  LOCATION_IQ_API_URL: import_zod2.z.string().default("https://us1.locationiq.com/v1"),
   LOCATION_IQ_API_TOKEN: import_zod2.z.string().min(1),
   // Stadia API — only the batch matrix endpoint is called; the single-route
   // endpoint went away with the unused `fetchRawDistance`.
-  STADIA_MAPS_MATRIX_API_URL: import_zod2.z.url().default('https://api.stadiamaps.com/sources_to_targets'),
-  STADIA_API_TOKEN: import_zod2.z.string().min(1, 'STADIA_API_TOKEN is required'),
+  STADIA_MAPS_MATRIX_API_URL: import_zod2.z.url().default("https://api.stadiamaps.com/sources_to_targets"),
+  STADIA_API_TOKEN: import_zod2.z.string().min(1, "STADIA_API_TOKEN is required"),
   // No `.default(...)`, deliberately. The value that used to sit here was
   // committed to the repository and applied in every NODE_ENV, so forgetting the
   // variable in a deploy did not fail the boot — it silently signed production
   // cookies with a key anyone could read from git history. `JWT_SECRET` above was
   // already declared without a default; this aligns the two.
-  COOKIE_SECRET: import_zod2.z.string().min(32, 'Cookie secret must be at least 32 characters long'),
+  COOKIE_SECRET: import_zod2.z.string().min(32, "Cookie secret must be at least 32 characters long"),
   // Rotation window: `@fastify/cookie` signs with the first secret and accepts a
   // signature from any of them, so a new key can be deployed without
   // invalidating the 13-month visitor cookies already in the wild. Promote the
@@ -215,7 +178,7 @@ var envSchema = import_zod2.z.object({
   // Required in every NODE_ENV, with no default, for the same reason
   // COOKIE_SECRET is: a gate that silently disables itself when a variable is
   // missing is not a gate. Tests and local tooling send the header explicitly.
-  ANALYTICS_PROXY_SECRET: import_zod2.z.string().min(32, 'Analytics proxy secret must be at least 32 characters long'),
+  ANALYTICS_PROXY_SECRET: import_zod2.z.string().min(32, "Analytics proxy secret must be at least 32 characters long"),
   // Whether identity stitching reaches BACKWARDS over a visitor's earlier
   // anonymous sessions. Off by default, and behind a flag because it is a
   // privacy decision rather than a technical one: enabling it retroactively
@@ -226,51 +189,45 @@ var envSchema = import_zod2.z.object({
   ANALYTICS_RETENTION_EVENTS_DAYS: import_zod2.z.coerce.number().int().positive().default(425),
   ANALYTICS_RETENTION_SESSIONS_DAYS: import_zod2.z.coerce.number().int().positive().default(425),
   ANALYTICS_RETENTION_VISITORS_DAYS: import_zod2.z.coerce.number().int().positive().default(395),
-  ANALYTICS_BACKFILL_IDENTITY: import_zod2.z
-    .enum(['true', 'false'])
-    .transform((v) => v === 'true')
-    .default(false),
-  COOKIE_SECRET_PREVIOUS: optionalEnv(
-    import_zod2.z.string().min(32, 'Previous cookie secret must be at least 32 characters long'),
-  ),
-})
-var _env = envSchema.safeParse(process.env)
+  ANALYTICS_BACKFILL_IDENTITY: import_zod2.z.enum(["true", "false"]).transform((v) => v === "true").default(false),
+  COOKIE_SECRET_PREVIOUS: optionalEnv(import_zod2.z.string().min(32, "Previous cookie secret must be at least 32 characters long"))
+});
+var _env = envSchema.safeParse(process.env);
 if (!_env.success) {
-  process.stderr
-    .write(`Vari\xE1veis de ambiente inv\xE1lidas: ${JSON.stringify(import_zod2.z.treeifyError(_env.error), null, 2)}
-`)
-  throw new Error(ENV_CONSTANTS.INVALID_VARIABLES)
+  process.stderr.write(`Vari\xE1veis de ambiente inv\xE1lidas: ${JSON.stringify(import_zod2.z.treeifyError(_env.error), null, 2)}
+`);
+  throw new Error(ENV_CONSTANTS.INVALID_VARIABLES);
 }
-var env = _env.data
+var env = _env.data;
 
 // src/lib/sentry/init.ts
 function initSentry() {
   if (!env.SENTRY_DSN) {
-    return
+    return;
   }
-  ;(0, import_node.init)({
+  (0, import_node.init)({
     dsn: env.SENTRY_DSN,
     environment: env.NODE_ENV,
     integrations: [(0, import_profiling_node.nodeProfilingIntegration)()],
     tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
     profileSessionSampleRate: env.SENTRY_PROFILE_SAMPLE_RATE,
-    profileLifecycle: 'trace',
-  })
+    profileLifecycle: "trace"
+  });
 }
 
 // src/lib/infra/jobs/outbox-cron.ts
-var import_node_cron = __toESM(require('node-cron'))
+var import_node_cron = __toESM(require("node-cron"));
 
 // src/messages/constants/outbox/outbox.ts
 var OUTBOX_CONSTANTS = {
   LOCK_KEYS: {
-    OUTBOX_PROCESSOR: 'lock:outbox-processor',
-    OUTBOX_RECOVERY: 'lock:outbox-recovery',
-    OUTBOX_EXPIRY_SWEEP: 'lock:outbox-expiry-sweep',
-    OUTBOX_RETENTION: 'lock:outbox-retention',
+    OUTBOX_PROCESSOR: "lock:outbox-processor",
+    OUTBOX_RECOVERY: "lock:outbox-recovery",
+    OUTBOX_EXPIRY_SWEEP: "lock:outbox-expiry-sweep",
+    OUTBOX_RETENTION: "lock:outbox-retention"
   },
   LOCK_TTL_MS: {
-    DEFAULT: 1e4,
+    DEFAULT: 1e4
   },
   THRESHOLDS: {
     /**
@@ -287,170 +244,166 @@ var OUTBOX_CONSTANTS = {
      * Maximum dispatch cycles (PENDING -> SENDING transitions) before an event is
      * marked FAILED (terminal). Prevents poison messages from looping forever.
      */
-    MAX_DISPATCH_ATTEMPTS: 5,
+    MAX_DISPATCH_ATTEMPTS: 5
   },
   RETENTION: {
     /** Eventos com mais de N dias são removidos pela retenção diária, qualquer status. */
     DAYS: 14,
     /** Um lote por chamada, para renovar o lock distribuído entre lotes. */
-    BATCH_SIZE: 1e3,
-  },
-}
+    BATCH_SIZE: 1e3
+  }
+};
 
 // src/messages/constants/queue/queue.ts
 var QUEUE = {
   NAMES: {
-    MAIL: 'mail-queue',
+    MAIL: "mail-queue"
   },
   JOBS: {
-    OUTBOX_DISPATCH: 'outbox-dispatch',
-  },
-}
+    OUTBOX_DISPATCH: "outbox-dispatch"
+  }
+};
 
 // src/lib/logger/index.ts
-var import_pino = __toESM(require('pino'))
+var import_pino = __toESM(require("pino"));
 
 // src/lib/async-local-storage/index.ts
-var import_node_async_hooks = require('async_hooks')
-var asyncLocalStorage = new import_node_async_hooks.AsyncLocalStorage()
+var import_node_async_hooks = require("async_hooks");
+var asyncLocalStorage = new import_node_async_hooks.AsyncLocalStorage();
 
 // src/lib/logger/index.ts
-var ERROR_STACK_BREADCRUMB_LINES = 6
+var ERROR_STACK_BREADCRUMB_LINES = 6;
 function getRequestId() {
-  return asyncLocalStorage.getStore()?.requestId
+  return asyncLocalStorage.getStore()?.requestId;
 }
 function getUserId() {
-  return asyncLocalStorage.getStore()?.userId
+  return asyncLocalStorage.getStore()?.userId;
 }
-var isDev = env.NODE_ENV === 'development'
+var isDev = env.NODE_ENV === "development";
 function errSerializer(err2) {
-  if (!(err2 instanceof Error)) return err2
-  if (isDev) return import_pino.default.stdSerializers.err(err2)
-  const error = err2
+  if (!(err2 instanceof Error)) return err2;
+  if (isDev) return import_pino.default.stdSerializers.err(err2);
+  const error = err2;
   return {
     name: error.name,
     message: error.message,
     code: error.body?.code ?? error.code,
     type: error.type,
     failureMode: error.failureMode,
-    stack: error.stack?.split('\n').slice(0, ERROR_STACK_BREADCRUMB_LINES).join('\n'),
-  }
+    stack: error.stack?.split("\n").slice(0, ERROR_STACK_BREADCRUMB_LINES).join("\n")
+  };
 }
 var baseConfig = {
   level: env.LOG_LEVEL,
   redact: {
     paths: [
-      'req.headers.authorization',
-      'req.headers.cookie',
+      "req.headers.authorization",
+      "req.headers.cookie",
       'res.headers["set-cookie"]',
-      '*.password',
-      '*.cpf',
-      '*.token',
-      '*.rawToken',
-      '*.email',
+      "*.password",
+      "*.cpf",
+      "*.token",
+      "*.rawToken",
+      "*.email"
     ],
-    censor: '[REDACTED]',
+    censor: "[REDACTED]"
   },
   formatters: {
     level(label) {
-      return { level: label }
-    },
+      return { level: label };
+    }
   },
   mixin() {
-    return { requestId: getRequestId(), userId: getUserId() }
+    return { requestId: getRequestId(), userId: getUserId() };
   },
   serializers: {
     err: errSerializer,
     error: errSerializer,
-    cause: errSerializer,
-  },
-}
+    cause: errSerializer
+  }
+};
 var prodStreams = [
-  { level: 'info', stream: process.stdout },
-  { level: 'error', stream: process.stderr },
-]
-var loggerConfig = isDev
-  ? {
-      ...baseConfig,
-      transport: {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'HH:MM:ss.l',
-          ignore: 'pid,hostname',
-        },
-      },
+  { level: "info", stream: process.stdout },
+  { level: "error", stream: process.stderr }
+];
+var loggerConfig = isDev ? {
+  ...baseConfig,
+  transport: {
+    target: "pino-pretty",
+    options: {
+      colorize: true,
+      translateTime: "HH:MM:ss.l",
+      ignore: "pid,hostname"
     }
-  : baseConfig
-var logger = isDev
-  ? (0, import_pino.default)(loggerConfig)
-  : (0, import_pino.default)(baseConfig, (0, import_pino.multistream)(prodStreams))
+  }
+} : baseConfig;
+var logger = isDev ? (0, import_pino.default)(loggerConfig) : (0, import_pino.default)(baseConfig, (0, import_pino.multistream)(prodStreams));
 
 // src/lib/redis/connections/redis-bullMQ-connection.ts
-var import_ioredis = __toESM(require('ioredis'))
+var import_ioredis = __toESM(require("ioredis"));
 
 // src/messages/constants/logs/redis.ts
 var REDIS_LOGS = {
-  BULLMQ_UNEXPECTED_ERROR: 'Erro inesperado na conex\xE3o Redis do BullMQ',
-  CACHE_UNEXPECTED_ERROR: 'Erro inesperado na conex\xE3o Redis do cache',
-  RATE_LIMITER_UNEXPECTED_ERROR: 'Erro inesperado na conex\xE3o Redis do limitador de taxa',
-  CONNECTION_DEGRADED: 'Conex\xE3o Redis degradada',
-  CONNECTION_STILL_DEGRADED: 'Conex\xE3o Redis continua degradada',
-  CONNECTION_RECOVERED: 'Conex\xE3o Redis restabelecida',
-}
+  BULLMQ_UNEXPECTED_ERROR: "Erro inesperado na conex\xE3o Redis do BullMQ",
+  CACHE_UNEXPECTED_ERROR: "Erro inesperado na conex\xE3o Redis do cache",
+  RATE_LIMITER_UNEXPECTED_ERROR: "Erro inesperado na conex\xE3o Redis do limitador de taxa",
+  CONNECTION_DEGRADED: "Conex\xE3o Redis degradada",
+  CONNECTION_STILL_DEGRADED: "Conex\xE3o Redis continua degradada",
+  CONNECTION_RECOVERED: "Conex\xE3o Redis restabelecida"
+};
 
 // src/lib/redis/connections/redis-outage-logger.ts
 var CONNECTIVITY_ERROR_CODES = /* @__PURE__ */ new Set([
-  'ECONNREFUSED',
-  'ECONNRESET',
-  'EHOSTUNREACH',
-  'ETIMEDOUT',
-  'ENOTFOUND',
-  'EAI_AGAIN',
-])
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "ETIMEDOUT",
+  "ENOTFOUND",
+  "EAI_AGAIN"
+]);
 var CONNECTIVITY_ERROR_PHRASES = [
-  'ECONNREFUSED',
-  'CONNECTION IS CLOSED',
-  'READONLY',
-  'ETIMEDOUT',
-  'NOAUTH',
-  'COMMAND TIMED OUT',
-  "STREAM ISN'T WRITEABLE",
-]
+  "ECONNREFUSED",
+  "CONNECTION IS CLOSED",
+  "READONLY",
+  "ETIMEDOUT",
+  "NOAUTH",
+  "COMMAND TIMED OUT",
+  "STREAM ISN'T WRITEABLE"
+];
 function isRedisConnectivityError(error) {
-  const err2 = error ?? {}
-  const message = (err2.message ?? '').toUpperCase()
-  const code = (err2.code ?? '').toUpperCase()
-  return CONNECTIVITY_ERROR_CODES.has(code) || CONNECTIVITY_ERROR_PHRASES.some((phrase) => message.includes(phrase))
+  const err2 = error ?? {};
+  const message = (err2.message ?? "").toUpperCase();
+  const code = (err2.code ?? "").toUpperCase();
+  return CONNECTIVITY_ERROR_CODES.has(code) || CONNECTIVITY_ERROR_PHRASES.some((phrase) => message.includes(phrase));
 }
 var RedisOutageLogger = class {
   constructor(config) {
-    this.config = config
-    this.intervalMs = env.REDIS_LOG_OUTAGE_INTERVAL_MS
+    this.config = config;
+    this.intervalMs = env.REDIS_LOG_OUTAGE_INTERVAL_MS;
   }
-  config
-  intervalMs
-  outageStartedAt = null
-  lastWarnAt = 0
-  suppressedEvents = 0
+  config;
+  intervalMs;
+  outageStartedAt = null;
+  lastWarnAt = 0;
+  suppressedEvents = 0;
   onOutage(event, error) {
-    const now = Date.now()
+    const now = Date.now();
     if (this.outageStartedAt === null) {
-      this.startOutage(now, event, error)
-      return
+      this.startOutage(now, event, error);
+      return;
     }
     if (now - this.lastWarnAt >= this.intervalMs) {
-      this.reportOngoingOutage(now, event, error)
-      return
+      this.reportOngoingOutage(now, event, error);
+      return;
     }
-    this.suppressedEvents += 1
+    this.suppressedEvents += 1;
   }
   /** The connection went from healthy to degraded: always worth one log line. */
   startOutage(now, event, error) {
-    this.outageStartedAt = now
-    this.lastWarnAt = now
-    this.suppressedEvents = 0
-    logger.warn({ ...this.identity(), event, err: error }, REDIS_LOGS.CONNECTION_DEGRADED)
+    this.outageStartedAt = now;
+    this.lastWarnAt = now;
+    this.suppressedEvents = 0;
+    logger.warn({ ...this.identity(), event, err: error }, REDIS_LOGS.CONNECTION_DEGRADED);
   }
   /**
    * Still degraded, and the quiet period has elapsed. Reports how long the
@@ -464,75 +417,75 @@ var RedisOutageLogger = class {
         event,
         err: error,
         outageDurationMs: now - (this.outageStartedAt ?? now),
-        suppressedEvents: this.suppressedEvents,
+        suppressedEvents: this.suppressedEvents
       },
-      REDIS_LOGS.CONNECTION_STILL_DEGRADED,
-    )
-    this.lastWarnAt = now
-    this.suppressedEvents = 0
+      REDIS_LOGS.CONNECTION_STILL_DEGRADED
+    );
+    this.lastWarnAt = now;
+    this.suppressedEvents = 0;
   }
   identity() {
     return {
       subsystem: this.config.subsystem,
       redisHost: this.config.host,
-      redisPort: this.config.port,
-    }
+      redisPort: this.config.port
+    };
   }
   onRecovery() {
     if (this.outageStartedAt === null) {
-      return
+      return;
     }
-    const now = Date.now()
+    const now = Date.now();
     logger.info(
       {
         subsystem: this.config.subsystem,
         redisHost: this.config.host,
         redisPort: this.config.port,
         outageDurationMs: now - this.outageStartedAt,
-        suppressedEvents: this.suppressedEvents,
+        suppressedEvents: this.suppressedEvents
       },
-      REDIS_LOGS.CONNECTION_RECOVERED,
-    )
-    this.outageStartedAt = null
-    this.lastWarnAt = 0
-    this.suppressedEvents = 0
+      REDIS_LOGS.CONNECTION_RECOVERED
+    );
+    this.outageStartedAt = null;
+    this.lastWarnAt = 0;
+    this.suppressedEvents = 0;
   }
-}
+};
 
 // src/lib/redis/connections/attach-outage-logging.ts
 function attachOutageLogging(redis, subsystem, unexpectedErrorMessage) {
   const outageLogger = new RedisOutageLogger({
     subsystem,
     host: env.REDIS_HOST,
-    port: env.REDIS_PORT,
-  })
-  redis.on('ready', () => {
-    outageLogger.onRecovery()
-  })
-  redis.on('connect', () => {
-    outageLogger.onRecovery()
-  })
-  redis.on('close', () => {
-    outageLogger.onOutage('close')
-  })
-  redis.on('error', (error) => {
-    reportError(outageLogger, subsystem, unexpectedErrorMessage, error)
-  })
+    port: env.REDIS_PORT
+  });
+  redis.on("ready", () => {
+    outageLogger.onRecovery();
+  });
+  redis.on("connect", () => {
+    outageLogger.onRecovery();
+  });
+  redis.on("close", () => {
+    outageLogger.onOutage("close");
+  });
+  redis.on("error", (error) => {
+    reportError(outageLogger, subsystem, unexpectedErrorMessage, error);
+  });
 }
 function reportError(outageLogger, subsystem, unexpectedErrorMessage, error) {
   if (isRedisConnectivityError(error)) {
-    outageLogger.onOutage('error', error)
-    return
+    outageLogger.onOutage("error", error);
+    return;
   }
   logger.error(
     {
       subsystem,
       redisHost: env.REDIS_HOST,
       redisPort: env.REDIS_PORT,
-      err: error,
+      err: error
     },
-    unexpectedErrorMessage,
-  )
+    unexpectedErrorMessage
+  );
 }
 
 // src/lib/redis/connections/redis-bullMQ-connection.ts
@@ -544,47 +497,47 @@ function createRedisBullMQConnection() {
     maxRetriesPerRequest: null,
     // Obrigatório para BullMQ
     // === CORREÇÃO DE INFRAESTRUTURA (DOCKER) ===
-    family: 4,
+    family: 4
     // Força IPv4. Resolve instabilidade de rede no Docker.
     // === CONFIGURAÇÕES DE Tentativa de Conexão ===
     /*retryStrategy: (times) => {
       return Math.min(times * 50, 2000)
     },*/
-  })
-  attachOutageLogging(redis, 'bullmq', REDIS_LOGS.BULLMQ_UNEXPECTED_ERROR)
-  return redis
+  });
+  attachOutageLogging(redis, "bullmq", REDIS_LOGS.BULLMQ_UNEXPECTED_ERROR);
+  return redis;
 }
 function attachRedisLogger(redis, context) {
   const outageLogger = new RedisOutageLogger({
-    subsystem: 'bullmq',
+    subsystem: "bullmq",
     host: env.REDIS_HOST,
-    port: env.REDIS_PORT,
-  })
-  redis.on('connect', () => {
-    logger.info(`Conex\xE3o Redis (${context}) estabelecida`)
-    outageLogger.onRecovery()
-  })
-  redis.on('ready', () => {
-    logger.info(`Redis (${context}) pronto`)
-    outageLogger.onRecovery()
-  })
-  redis.on('error', (error) => {
+    port: env.REDIS_PORT
+  });
+  redis.on("connect", () => {
+    logger.info(`Conex\xE3o Redis (${context}) estabelecida`);
+    outageLogger.onRecovery();
+  });
+  redis.on("ready", () => {
+    logger.info(`Redis (${context}) pronto`);
+    outageLogger.onRecovery();
+  });
+  redis.on("error", (error) => {
     if (isRedisConnectivityError(error)) {
-      outageLogger.onOutage('error', error)
-      return
+      outageLogger.onOutage("error", error);
+      return;
     }
-    logger.error({ context, err: error.message }, 'Instabilidade na conex\xE3o Redis')
-  })
-  redis.on('close', () => {
-    outageLogger.onOutage('close')
-  })
+    logger.error({ context, err: error.message }, "Instabilidade na conex\xE3o Redis");
+  });
+  redis.on("close", () => {
+    outageLogger.onOutage("close");
+  });
 }
 
 // src/lib/redis/connections/redis-cache-connection.ts
-var import_ioredis2 = __toESM(require('ioredis'))
-var MAX_RECONNECT_ATTEMPTS = 2
-var RECONNECT_BACKOFF_STEP_MS = 50
-var RECONNECT_BACKOFF_MAX_MS = 500
+var import_ioredis2 = __toESM(require("ioredis"));
+var MAX_RECONNECT_ATTEMPTS = 2;
+var RECONNECT_BACKOFF_STEP_MS = 50;
+var RECONNECT_BACKOFF_MAX_MS = 500;
 function createRedisCacheConnection() {
   const redis = new import_ioredis2.default({
     host: env.REDIS_HOST,
@@ -595,70 +548,66 @@ function createRedisCacheConnection() {
     enableOfflineQueue: true,
     maxRetriesPerRequest: 1,
     retryStrategy: (times) => {
-      if (times > MAX_RECONNECT_ATTEMPTS) return null
-      return Math.min(times * RECONNECT_BACKOFF_STEP_MS, RECONNECT_BACKOFF_MAX_MS)
-    },
-  })
-  attachOutageLogging(redis, 'cache', REDIS_LOGS.CACHE_UNEXPECTED_ERROR)
-  return redis
+      if (times > MAX_RECONNECT_ATTEMPTS) return null;
+      return Math.min(times * RECONNECT_BACKOFF_STEP_MS, RECONNECT_BACKOFF_MAX_MS);
+    }
+  });
+  attachOutageLogging(redis, "cache", REDIS_LOGS.CACHE_UNEXPECTED_ERROR);
+  return redis;
 }
 
 // src/lib/redis/connections/redis-rate-limiter-connection.ts
-var import_ioredis3 = __toESM(require('ioredis'))
+var import_ioredis3 = __toESM(require("ioredis"));
 
 // src/lib/redis/connections/redis-outbox-signal-connection.ts
-var import_ioredis4 = __toESM(require('ioredis'))
+var import_ioredis4 = __toESM(require("ioredis"));
 
 // src/messages/constants/logs/outbox.ts
 var OUTBOX_LOGS = {
   // outbox-signal
-  SIGNAL_PUBLISH_FAILED:
-    'N\xE3o foi poss\xEDvel publicar sinal de envio da nova outbox. O cron job continuar\xE1 funcionando como fallback.',
-  SIGNAL_PROCESSING_ERROR: 'Erro ao processar sinal de envio do Outbox',
-  UNEXPECTED_CHANNEL: 'Mensagem recebida em canal inesperado. Ignorando.',
-  LISTENER_REMOVED: 'Listener anterior de OutboxSignal removido com sucesso',
-  SUBSCRIBE_ERROR: 'Erro ao se inscrever no canal de OutboxSignal',
-  PUBLISHER_CONNECTED: 'Redis publisher conectado ao outbox-signal',
-  PUBLISHER_ERROR: 'Erro no publicador Redis do outbox-signal',
-  PUBLISHER_CLOSED: 'Conex\xE3o do publicador Redis fechada para outbox-signal',
-  SUBSCRIBER_CONNECTED: 'Redis subscriber conectado para outbox-signal',
-  SUBSCRIBER_ERROR: 'Erro no assinante Redis do outbox-signal',
-  SUBSCRIBER_CLOSED: 'Conex\xE3o do assinante Redis fechada para outbox-signal',
+  SIGNAL_PUBLISH_FAILED: "N\xE3o foi poss\xEDvel publicar sinal de envio da nova outbox. O cron job continuar\xE1 funcionando como fallback.",
+  SIGNAL_PROCESSING_ERROR: "Erro ao processar sinal de envio do Outbox",
+  UNEXPECTED_CHANNEL: "Mensagem recebida em canal inesperado. Ignorando.",
+  LISTENER_REMOVED: "Listener anterior de OutboxSignal removido com sucesso",
+  SUBSCRIBE_ERROR: "Erro ao se inscrever no canal de OutboxSignal",
+  PUBLISHER_CONNECTED: "Redis publisher conectado ao outbox-signal",
+  PUBLISHER_ERROR: "Erro no publicador Redis do outbox-signal",
+  PUBLISHER_CLOSED: "Conex\xE3o do publicador Redis fechada para outbox-signal",
+  SUBSCRIBER_CONNECTED: "Redis subscriber conectado para outbox-signal",
+  SUBSCRIBER_ERROR: "Erro no assinante Redis do outbox-signal",
+  SUBSCRIBER_CLOSED: "Conex\xE3o do assinante Redis fechada para outbox-signal",
   // outbox-cron
-  CRON_START: 'Cron de meia-noite: iniciando varredura de seguran\xE7a da Outbox...',
-  PHASE1_DONE: 'Fase 1 (recupera\xE7\xE3o SENDING): conclu\xEDda.',
-  PHASE1_ERROR: 'Fase 1 (recupera\xE7\xE3o SENDING): erro inesperado.',
-  PHASE2_DONE: 'Fase 2 (eventos PENDING): conclu\xEDda.',
-  PHASE2_ERROR: 'Fase 2 (eventos PENDING): erro inesperado.',
-  SCAN_DONE: 'Varredura de seguran\xE7a da Outbox conclu\xEDda.',
-  SCHEDULER_CONFIGURED:
-    'Agendadores da Outbox configurados: varredura a cada 5 min, seguran\xE7a \xE0 meia-noite e reten\xE7\xE3o \xE0s 03:00.',
+  CRON_START: "Cron de meia-noite: iniciando varredura de seguran\xE7a da Outbox...",
+  PHASE1_DONE: "Fase 1 (recupera\xE7\xE3o SENDING): conclu\xEDda.",
+  PHASE1_ERROR: "Fase 1 (recupera\xE7\xE3o SENDING): erro inesperado.",
+  PHASE2_DONE: "Fase 2 (eventos PENDING): conclu\xEDda.",
+  PHASE2_ERROR: "Fase 2 (eventos PENDING): erro inesperado.",
+  SCAN_DONE: "Varredura de seguran\xE7a da Outbox conclu\xEDda.",
+  SCHEDULER_CONFIGURED: "Agendadores da Outbox configurados: varredura a cada 5 min, seguran\xE7a \xE0 meia-noite e reten\xE7\xE3o \xE0s 03:00.",
   // outbox-processor
-  SKIPPED_ANOTHER_RUNNING: 'processPendingEvents: Processamento ignorado. Outra inst\xE2ncia j\xE1 est\xE1 rodando.',
-  PENDING_FETCH_ERROR: 'Erro de Infra ao buscar eventos pendentes.',
-  STUCK_FETCH_ERROR: 'Erro de Infra ao buscar eventos travados na Outbox.',
-  STATUS_UPDATE_FAILED: 'Falha ao atualizar status para SENDING. Evento permanece em PENDING.',
-  REVERT_FATAL: 'FATAL: Falha ao reverter status para PENDING. Inconsist\xEAncia na DB.',
-  DISPATCH_REVERTED: 'Falha no dispatch, revertido para PENDING',
-  CRITICAL_LOOP_ERROR: 'Erro cr\xEDtico inesperado no loop principal de processPendingEvents',
-  CRITICAL_RECOVERY_ERROR: 'Erro cr\xEDtico inesperado no processStuckSendingEvents',
-  MARKED_FAILED: 'Evento excedeu o n\xFAmero m\xE1ximo de tentativas de despacho e foi marcado como FAILED.',
-  FAILED_MARK_ERROR: 'Falha ao marcar evento como FAILED no banco de dados.',
-  EXPIRED_EVENT_DELETED: 'Evento expirado removido da Outbox sem despacho (link morto nunca \xE9 enviado).',
-  EXPIRED_EVENT_DELETE_ERROR: 'Falha ao remover evento expirado da Outbox.',
-  PENDING_RECIPIENTS_UNRESOLVED:
-    'Destinat\xE1rios pendentes n\xE3o corresponderam a nenhum e-mail reconstru\xEDdo; despachando o lote completo (at-least-once).',
+  SKIPPED_ANOTHER_RUNNING: "processPendingEvents: Processamento ignorado. Outra inst\xE2ncia j\xE1 est\xE1 rodando.",
+  PENDING_FETCH_ERROR: "Erro de Infra ao buscar eventos pendentes.",
+  STUCK_FETCH_ERROR: "Erro de Infra ao buscar eventos travados na Outbox.",
+  STATUS_UPDATE_FAILED: "Falha ao atualizar status para SENDING. Evento permanece em PENDING.",
+  REVERT_FATAL: "FATAL: Falha ao reverter status para PENDING. Inconsist\xEAncia na DB.",
+  DISPATCH_REVERTED: "Falha no dispatch, revertido para PENDING",
+  CRITICAL_LOOP_ERROR: "Erro cr\xEDtico inesperado no loop principal de processPendingEvents",
+  CRITICAL_RECOVERY_ERROR: "Erro cr\xEDtico inesperado no processStuckSendingEvents",
+  MARKED_FAILED: "Evento excedeu o n\xFAmero m\xE1ximo de tentativas de despacho e foi marcado como FAILED.",
+  FAILED_MARK_ERROR: "Falha ao marcar evento como FAILED no banco de dados.",
+  EXPIRED_EVENT_DELETED: "Evento expirado removido da Outbox sem despacho (link morto nunca \xE9 enviado).",
+  EXPIRED_EVENT_DELETE_ERROR: "Falha ao remover evento expirado da Outbox.",
+  PENDING_RECIPIENTS_UNRESOLVED: "Destinat\xE1rios pendentes n\xE3o corresponderam a nenhum e-mail reconstru\xEDdo; despachando o lote completo (at-least-once).",
   // outbox-maintenance
-  EXPIRY_SWEEP_DELETED: 'Varredura de expira\xE7\xE3o: eventos expirados removidos da Outbox.',
-  EXPIRY_SWEEP_ERROR: 'Erro na varredura de expira\xE7\xE3o da Outbox.',
-  RETENTION_PURGED: 'Reten\xE7\xE3o: eventos antigos removidos da Outbox.',
-  RETENTION_PURGED_NON_TERMINAL:
-    'Reten\xE7\xE3o: eventos PENDING/SENDING antigos removidos da Outbox \u2014 investigar por que n\xE3o foram processados.',
-  RETENTION_ERROR: 'Erro na reten\xE7\xE3o da Outbox.',
-  FIVE_MIN_SWEEP_PENDING_ERROR: 'Varredura de 5 min: erro inesperado ao processar eventos PENDING.',
-  FIVE_MIN_SWEEP_EXPIRY_ERROR: 'Varredura de 5 min: erro inesperado na varredura de expira\xE7\xE3o.',
-  RETENTION_CRON_ERROR: 'Cron de reten\xE7\xE3o: erro inesperado.',
-}
+  EXPIRY_SWEEP_DELETED: "Varredura de expira\xE7\xE3o: eventos expirados removidos da Outbox.",
+  EXPIRY_SWEEP_ERROR: "Erro na varredura de expira\xE7\xE3o da Outbox.",
+  RETENTION_PURGED: "Reten\xE7\xE3o: eventos antigos removidos da Outbox.",
+  RETENTION_PURGED_NON_TERMINAL: "Reten\xE7\xE3o: eventos PENDING/SENDING antigos removidos da Outbox \u2014 investigar por que n\xE3o foram processados.",
+  RETENTION_ERROR: "Erro na reten\xE7\xE3o da Outbox.",
+  FIVE_MIN_SWEEP_PENDING_ERROR: "Varredura de 5 min: erro inesperado ao processar eventos PENDING.",
+  FIVE_MIN_SWEEP_EXPIRY_ERROR: "Varredura de 5 min: erro inesperado na varredura de expira\xE7\xE3o.",
+  RETENTION_CRON_ERROR: "Cron de reten\xE7\xE3o: erro inesperado."
+};
 
 // src/lib/redis/connections/redis-outbox-signal-connection.ts
 var baseConfig2 = {
@@ -666,19 +615,19 @@ var baseConfig2 = {
   port: env.REDIS_PORT,
   password: env.REDIS_PASSWORD || void 0,
   lazyConnect: true,
-  family: 4,
+  family: 4
   // force IPv4
-}
-var RECONNECT_BACKOFF_STEP_MS2 = 100
-var RECONNECT_BACKOFF_MAX_MS2 = 5e3
+};
+var RECONNECT_BACKOFF_STEP_MS2 = 100;
+var RECONNECT_BACKOFF_MAX_MS2 = 5e3;
 function createOutboxPublisherConnection() {
   const redis = new import_ioredis4.default({
     ...baseConfig2,
     enableOfflineQueue: true,
-    commandTimeout: 2e3,
-  })
-  attachOutageLogging(redis, 'outbox-publisher', OUTBOX_LOGS.PUBLISHER_ERROR)
-  return redis
+    commandTimeout: 2e3
+  });
+  attachOutageLogging(redis, "outbox-publisher", OUTBOX_LOGS.PUBLISHER_ERROR);
+  return redis;
 }
 function createOutboxSubscriberConnection() {
   const redis = new import_ioredis4.default({
@@ -686,39 +635,39 @@ function createOutboxSubscriberConnection() {
     maxRetriesPerRequest: null,
     enableOfflineQueue: false,
     retryStrategy: (times) => {
-      const delay = Math.min(Math.pow(2, times) * RECONNECT_BACKOFF_STEP_MS2, RECONNECT_BACKOFF_MAX_MS2)
-      logger.warn({ times, delay }, 'Reconnecting outbox subscriber...')
-      return delay
-    },
-  })
-  attachOutageLogging(redis, 'outbox-subscriber', OUTBOX_LOGS.SUBSCRIBER_ERROR)
-  return redis
+      const delay = Math.min(Math.pow(2, times) * RECONNECT_BACKOFF_STEP_MS2, RECONNECT_BACKOFF_MAX_MS2);
+      logger.warn({ times, delay }, "Reconnecting outbox subscriber...");
+      return delay;
+    }
+  });
+  attachOutageLogging(redis, "outbox-subscriber", OUTBOX_LOGS.SUBSCRIBER_ERROR);
+  return redis;
 }
 
 // src/lib/redis/clients/clients.ts
-var redisCacheInstance = null
-var redisRateLimitInstance = null
-var redisForQueueInstance = null
-var redisOutboxPublisherInstance = null
-var redisOutboxSubscriberInstance = null
+var redisCacheInstance = null;
+var redisRateLimitInstance = null;
+var redisForQueueInstance = null;
+var redisOutboxPublisherInstance = null;
+var redisOutboxSubscriberInstance = null;
 function getRedisCache() {
-  redisCacheInstance ??= createRedisCacheConnection()
-  return redisCacheInstance
+  redisCacheInstance ??= createRedisCacheConnection();
+  return redisCacheInstance;
 }
 function getRedisForQueue() {
-  redisForQueueInstance ??= createRedisBullMQConnection()
-  return redisForQueueInstance
+  redisForQueueInstance ??= createRedisBullMQConnection();
+  return redisForQueueInstance;
 }
 function createWorkerConnection() {
-  return createRedisBullMQConnection()
+  return createRedisBullMQConnection();
 }
 function getOutboxPublisher() {
-  redisOutboxPublisherInstance ??= createOutboxPublisherConnection()
-  return redisOutboxPublisherInstance
+  redisOutboxPublisherInstance ??= createOutboxPublisherConnection();
+  return redisOutboxPublisherInstance;
 }
 function getOutboxSubscriber() {
-  redisOutboxSubscriberInstance ??= createOutboxSubscriberConnection()
-  return redisOutboxSubscriberInstance
+  redisOutboxSubscriberInstance ??= createOutboxSubscriberConnection();
+  return redisOutboxSubscriberInstance;
 }
 async function closeAllRedisConnections() {
   const targets = [
@@ -726,191 +675,174 @@ async function closeAllRedisConnections() {
     redisRateLimitInstance,
     redisForQueueInstance,
     redisOutboxPublisherInstance,
-    redisOutboxSubscriberInstance,
-  ].filter((connection) => connection !== null)
-  redisCacheInstance = null
-  redisRateLimitInstance = null
-  redisForQueueInstance = null
-  redisOutboxPublisherInstance = null
-  redisOutboxSubscriberInstance = null
+    redisOutboxSubscriberInstance
+  ].filter((connection) => connection !== null);
+  redisCacheInstance = null;
+  redisRateLimitInstance = null;
+  redisForQueueInstance = null;
+  redisOutboxPublisherInstance = null;
+  redisOutboxSubscriberInstance = null;
   await Promise.allSettled(
-    targets.map((connection) => (connection.status === 'end' ? Promise.resolve() : connection.quit())),
-  )
+    targets.map((connection) => connection.status === "end" ? Promise.resolve() : connection.quit())
+  );
 }
 
 // src/lib/queue/mail-queue.ts
-var import_bullmq = require('bullmq')
+var import_bullmq = require("bullmq");
 
 // src/messages/constants/logs/worker.ts
 var WORKER_LOGS = {
-  BATCH_ALREADY_SENT: 'Lote j\xE1 enviado anteriormente. Limpando DB e abortando duplicata.',
-  BULLMQ_NETWORK_GLITCH: 'Falha de rede interna do BullMQ ap\xF3s processamento. Ignorando.',
-  GENERIC_WORKER_FAILURE: 'Falha gen\xE9rica n\xE3o mapeada no worker',
-  MAIL_QUEUE_ERROR: 'Erro na MailQueue (Producer)',
-  OUTBOX_REVERTED_AFTER_FINAL_FAILURE:
-    'Job falhou definitivamente no BullMQ. Evento revertido para PENDING para nova tentativa de despacho.',
-  OUTBOX_REVERT_AFTER_FINAL_FAILURE_ERROR:
-    'Falha ao reverter evento para PENDING ap\xF3s falha definitiva do job (linha possivelmente j\xE1 removida).',
-  FAILURE_HANDLER_ERROR: 'Erro inesperado no tratamento de falha de job do worker.',
-  EXPIRED_JOB_SKIPPED: 'Job com evento expirado: e-mail n\xE3o ser\xE1 enviado; removendo a linha da Outbox.',
-  PARTIAL_BATCH_FAILURE:
-    'Falha parcial no lote de e-mails \u2014 alguns foram enviados; apenas os destinat\xE1rios pendentes ser\xE3o re-tentados.',
-  PENDING_RECIPIENTS_UPDATE_FAILED:
-    'Falha ao persistir destinat\xE1rios pendentes no banco ap\xF3s envio parcial; o lote completo ser\xE1 re-tentado.',
-  JOB_DATA_UPDATE_FAILED:
-    'Falha ao atualizar o payload do job no BullMQ ap\xF3s envio parcial; a re-tentativa interna usar\xE1 o lote completo.',
-}
+  BATCH_ALREADY_SENT: "Lote j\xE1 enviado anteriormente. Limpando DB e abortando duplicata.",
+  BULLMQ_NETWORK_GLITCH: "Falha de rede interna do BullMQ ap\xF3s processamento. Ignorando.",
+  GENERIC_WORKER_FAILURE: "Falha gen\xE9rica n\xE3o mapeada no worker",
+  MAIL_QUEUE_ERROR: "Erro na MailQueue (Producer)",
+  OUTBOX_REVERTED_AFTER_FINAL_FAILURE: "Job falhou definitivamente no BullMQ. Evento revertido para PENDING para nova tentativa de despacho.",
+  OUTBOX_REVERT_AFTER_FINAL_FAILURE_ERROR: "Falha ao reverter evento para PENDING ap\xF3s falha definitiva do job (linha possivelmente j\xE1 removida).",
+  FAILURE_HANDLER_ERROR: "Erro inesperado no tratamento de falha de job do worker.",
+  EXPIRED_JOB_SKIPPED: "Job com evento expirado: e-mail n\xE3o ser\xE1 enviado; removendo a linha da Outbox.",
+  PARTIAL_BATCH_FAILURE: "Falha parcial no lote de e-mails \u2014 alguns foram enviados; apenas os destinat\xE1rios pendentes ser\xE3o re-tentados.",
+  PENDING_RECIPIENTS_UPDATE_FAILED: "Falha ao persistir destinat\xE1rios pendentes no banco ap\xF3s envio parcial; o lote completo ser\xE1 re-tentado.",
+  JOB_DATA_UPDATE_FAILED: "Falha ao atualizar o payload do job no BullMQ ap\xF3s envio parcial; a re-tentativa interna usar\xE1 o lote completo."
+};
 
 // src/lib/queue/mail-queue.ts
-var mailQueueInstance = null
+var mailQueueInstance = null;
 function getMailQueue() {
   if (!mailQueueInstance) {
-    const redisForQueue = getRedisForQueue()
-    attachRedisLogger(redisForQueue, QUEUE.NAMES.MAIL)
+    const redisForQueue = getRedisForQueue();
+    attachRedisLogger(redisForQueue, QUEUE.NAMES.MAIL);
     mailQueueInstance = new import_bullmq.Queue(QUEUE.NAMES.MAIL, {
       connection: redisForQueue,
       defaultJobOptions: {
         attempts: 3,
         backoff: {
-          type: 'exponential',
-          delay: 1e4,
+          type: "exponential",
+          delay: 1e4
         },
         removeOnComplete: true,
-        removeOnFail: true,
-      },
-    })
-    mailQueueInstance.on('error', (err2) => {
-      logger.error({ err: err2 }, WORKER_LOGS.MAIL_QUEUE_ERROR)
-    })
+        removeOnFail: true
+      }
+    });
+    mailQueueInstance.on("error", (err2) => {
+      logger.error({ err: err2 }, WORKER_LOGS.MAIL_QUEUE_ERROR);
+    });
   }
-  return mailQueueInstance
+  return mailQueueInstance;
 }
 
 // src/lib/sentry/capture.ts
-var import_node2 = require('@sentry/node')
+var import_node2 = require("@sentry/node");
 function captureError(error, context = {}) {
-  if (!(0, import_node2.isInitialized)()) return
-  const normalized = error instanceof Error ? error : new Error(String(error))
-  ;(0, import_node2.withScope)((scope) => {
-    const userId = getUserId()
+  if (!(0, import_node2.isInitialized)()) return;
+  const normalized = error instanceof Error ? error : new Error(String(error));
+  (0, import_node2.withScope)((scope) => {
+    const userId = getUserId();
     if (userId) {
-      scope.setUser({ id: userId })
+      scope.setUser({ id: userId });
     }
-    scope.setContext('runtime', { requestId: getRequestId(), ...context })
-    ;(0, import_node2.captureException)(normalized)
-  })
+    scope.setContext("runtime", { requestId: getRequestId(), ...context });
+    (0, import_node2.captureException)(normalized);
+  });
 }
 
 // src/messages/constants/logs/distributed-lock.ts
 var LOCK_LOGS = {
-  ACQUIRE_FAILED: 'Falha ao tentar adquirir Distributed Lock',
-  RENEW_FAILED: 'Falha ao tentar renovar Distributed Lock',
-  RENEW_EXPIRED: 'Distributed Lock n\xE3o renovado: expirou ou pertence a outra inst\xE2ncia',
-  RELEASE_EXPIRED: 'Distributed Lock j\xE1 havia expirado ou pertencia a outra inst\xE2ncia no momento do release',
-  RELEASE_FAILED: 'Falha ao liberar Distributed Lock (ele expirar\xE1 sozinho pelo TTL)',
-}
+  ACQUIRE_FAILED: "Falha ao tentar adquirir Distributed Lock",
+  RENEW_FAILED: "Falha ao tentar renovar Distributed Lock",
+  RENEW_EXPIRED: "Distributed Lock n\xE3o renovado: expirou ou pertence a outra inst\xE2ncia",
+  RELEASE_EXPIRED: "Distributed Lock j\xE1 havia expirado ou pertencia a outra inst\xE2ncia no momento do release",
+  RELEASE_FAILED: "Falha ao liberar Distributed Lock (ele expirar\xE1 sozinho pelo TTL)"
+};
 
 // src/lib/infra/distributed-lock/distributed-lock.ts
-var import_node_crypto = require('crypto')
+var import_node_crypto = require("crypto");
 
 // src/lib/metrics/lock-metrics.ts
-var import_prom_client2 = require('prom-client')
+var import_prom_client2 = require("prom-client");
 
 // src/lib/metrics/index.ts
-var import_prom_client = require('prom-client')
-var registry = null
-var initialized = false
+var import_prom_client = require("prom-client");
+var registry = null;
+var initialized = false;
 function getRegistry() {
-  if (!env.METRICS_ENABLED) return null
+  if (!env.METRICS_ENABLED) return null;
   if (!initialized) {
-    registry = new import_prom_client.Registry()
-    ;(0, import_prom_client.collectDefaultMetrics)({ register: registry })
-    initialized = true
+    registry = new import_prom_client.Registry();
+    (0, import_prom_client.collectDefaultMetrics)({ register: registry });
+    initialized = true;
   }
-  return registry
+  return registry;
 }
 
 // src/lib/metrics/lock-metrics.ts
-var registry2 = getRegistry()
-var collectMetricsLockAcquired = registry2
-  ? new import_prom_client2.Counter({
-      name: 'distributed_lock_acquired_total',
-      help: 'Successful lock acquisitions',
-      labelNames: ['key'],
-      registers: [registry2],
-    })
-  : null
-var collectMetricsLockContention = registry2
-  ? new import_prom_client2.Counter({
-      name: 'distributed_lock_contention_total',
-      help: 'Failed acquisitions (lock held by another)',
-      labelNames: ['key'],
-      registers: [registry2],
-    })
-  : null
-var collectMetricsLockReleased = registry2
-  ? new import_prom_client2.Counter({
-      name: 'distributed_lock_released_total',
-      help: 'Successful releases',
-      labelNames: ['key'],
-      registers: [registry2],
-    })
-  : null
-var collectMetricsLockExpired = registry2
-  ? new import_prom_client2.Counter({
-      name: 'distributed_lock_expired_total',
-      help: 'Release/renew found lock expired or owned by another instance',
-      labelNames: ['key'],
-      registers: [registry2],
-    })
-  : null
-var collectMetricsLockErrors = registry2
-  ? new import_prom_client2.Counter({
-      name: 'distributed_lock_errors_total',
-      help: 'Redis/infrastructure failures during lock operations',
-      labelNames: ['operation'],
-      registers: [registry2],
-    })
-  : null
-var collectMetricsLockDuration = registry2
-  ? new import_prom_client2.Histogram({
-      name: 'distributed_lock_duration_seconds',
-      help: 'Time between acquire and release',
-      labelNames: ['key'],
-      buckets: [0.1, 0.5, 1, 5, 10, 30, 60],
-      registers: [registry2],
-    })
-  : null
+var registry2 = getRegistry();
+var collectMetricsLockAcquired = registry2 ? new import_prom_client2.Counter({
+  name: "distributed_lock_acquired_total",
+  help: "Successful lock acquisitions",
+  labelNames: ["key"],
+  registers: [registry2]
+}) : null;
+var collectMetricsLockContention = registry2 ? new import_prom_client2.Counter({
+  name: "distributed_lock_contention_total",
+  help: "Failed acquisitions (lock held by another)",
+  labelNames: ["key"],
+  registers: [registry2]
+}) : null;
+var collectMetricsLockReleased = registry2 ? new import_prom_client2.Counter({
+  name: "distributed_lock_released_total",
+  help: "Successful releases",
+  labelNames: ["key"],
+  registers: [registry2]
+}) : null;
+var collectMetricsLockExpired = registry2 ? new import_prom_client2.Counter({
+  name: "distributed_lock_expired_total",
+  help: "Release/renew found lock expired or owned by another instance",
+  labelNames: ["key"],
+  registers: [registry2]
+}) : null;
+var collectMetricsLockErrors = registry2 ? new import_prom_client2.Counter({
+  name: "distributed_lock_errors_total",
+  help: "Redis/infrastructure failures during lock operations",
+  labelNames: ["operation"],
+  registers: [registry2]
+}) : null;
+var collectMetricsLockDuration = registry2 ? new import_prom_client2.Histogram({
+  name: "distributed_lock_duration_seconds",
+  help: "Time between acquire and release",
+  labelNames: ["key"],
+  buckets: [0.1, 0.5, 1, 5, 10, 30, 60],
+  registers: [registry2]
+}) : null;
 
 // src/lib/infra/distributed-lock/distributed-lock.ts
-var lockHoldStart = /* @__PURE__ */ new Map()
+var lockHoldStart = /* @__PURE__ */ new Map();
 var RELEASE_SCRIPT = `
   if redis.call("get", KEYS[1]) == ARGV[1] then
     return redis.call("del", KEYS[1])
   else
     return 0
   end
-`
+`;
 var RENEW_SCRIPT = `
   if redis.call("get", KEYS[1]) == ARGV[1] then
     return redis.call("pexpire", KEYS[1], ARGV[2])
   else
     return 0
   end
-`
+`;
 function getLockRedis() {
-  const redisCache = getRedisCache()
-  if (typeof redisCache.releaseLock !== 'function') {
-    redisCache.defineCommand('releaseLock', {
+  const redisCache = getRedisCache();
+  if (typeof redisCache.releaseLock !== "function") {
+    redisCache.defineCommand("releaseLock", {
       numberOfKeys: 1,
-      lua: RELEASE_SCRIPT,
-    })
-    redisCache.defineCommand('renewLock', {
+      lua: RELEASE_SCRIPT
+    });
+    redisCache.defineCommand("renewLock", {
       numberOfKeys: 1,
-      lua: RENEW_SCRIPT,
-    })
+      lua: RENEW_SCRIPT
+    });
   }
-  return redisCache
+  return redisCache;
 }
 var DistributedLock = class {
   /**
@@ -926,20 +858,20 @@ var DistributedLock = class {
    * @returns O token do lock se adquirido, null se já estava ocupado por outra instância.
    */
   static async acquire(key, ttlMs) {
-    const token = (0, import_node_crypto.randomUUID)()
-    const redisCache = getRedisCache()
+    const token = (0, import_node_crypto.randomUUID)();
+    const redisCache = getRedisCache();
     try {
-      const result = await redisCache.set(key, token, 'PX', ttlMs, 'NX')
-      if (result !== 'OK') {
-        collectMetricsLockContention?.inc({ key })
-        return null
+      const result = await redisCache.set(key, token, "PX", ttlMs, "NX");
+      if (result !== "OK") {
+        collectMetricsLockContention?.inc({ key });
+        return null;
       }
-      recordAcquisition(key, token)
-      return token
+      recordAcquisition(key, token);
+      return token;
     } catch (error) {
-      collectMetricsLockErrors?.inc({ operation: 'acquire' })
-      logger.error({ error, key }, LOCK_LOGS.ACQUIRE_FAILED)
-      return null
+      collectMetricsLockErrors?.inc({ operation: "acquire" });
+      logger.error({ error, key }, LOCK_LOGS.ACQUIRE_FAILED);
+      return null;
     }
   }
   /**
@@ -957,19 +889,19 @@ var DistributedLock = class {
    *          false se o lock expirou ou foi assumido por outra instância.
    */
   static async renew(key, token, ttlMs) {
-    const redisCache = getLockRedis()
+    const redisCache = getLockRedis();
     try {
-      const result = await redisCache.renewLock(key, token, String(ttlMs))
-      const renewed = result === 1
+      const result = await redisCache.renewLock(key, token, String(ttlMs));
+      const renewed = result === 1;
       if (!renewed) {
-        collectMetricsLockExpired?.inc({ key })
-        logger.warn({ key }, LOCK_LOGS.RENEW_EXPIRED)
+        collectMetricsLockExpired?.inc({ key });
+        logger.warn({ key }, LOCK_LOGS.RENEW_EXPIRED);
       }
-      return renewed
+      return renewed;
     } catch (error) {
-      collectMetricsLockErrors?.inc({ operation: 'renew' })
-      logger.error({ error, key }, LOCK_LOGS.RENEW_FAILED)
-      return false
+      collectMetricsLockErrors?.inc({ operation: "renew" });
+      logger.error({ error, key }, LOCK_LOGS.RENEW_FAILED);
+      return false;
     }
   }
   /**
@@ -983,63 +915,63 @@ var DistributedLock = class {
    * @param token - O token retornado pelo acquire
    */
   static async release(key, token) {
-    const redisCache = getLockRedis()
+    const redisCache = getLockRedis();
     try {
-      const result = await redisCache.releaseLock(key, token)
-      recordReleaseOutcome(key, result === 0)
+      const result = await redisCache.releaseLock(key, token);
+      recordReleaseOutcome(key, result === 0);
     } catch (error) {
-      collectMetricsLockErrors?.inc({ operation: 'release' })
-      logger.warn({ error, key }, LOCK_LOGS.RELEASE_FAILED)
+      collectMetricsLockErrors?.inc({ operation: "release" });
+      logger.warn({ error, key }, LOCK_LOGS.RELEASE_FAILED);
     } finally {
-      observeHoldDuration(key, token)
+      observeHoldDuration(key, token);
     }
   }
-}
+};
 function recordAcquisition(key, token) {
-  collectMetricsLockAcquired?.inc({ key })
+  collectMetricsLockAcquired?.inc({ key });
   if (collectMetricsLockDuration) {
-    lockHoldStart.set(token, Date.now())
+    lockHoldStart.set(token, Date.now());
   }
 }
 function recordReleaseOutcome(key, alreadyExpired) {
   if (alreadyExpired) {
-    collectMetricsLockExpired?.inc({ key })
-    logger.warn({ key }, LOCK_LOGS.RELEASE_EXPIRED)
-    return
+    collectMetricsLockExpired?.inc({ key });
+    logger.warn({ key }, LOCK_LOGS.RELEASE_EXPIRED);
+    return;
   }
-  collectMetricsLockReleased?.inc({ key })
+  collectMetricsLockReleased?.inc({ key });
 }
 function observeHoldDuration(key, token) {
   if (!collectMetricsLockDuration) {
-    return
+    return;
   }
-  const start = lockHoldStart.get(token)
+  const start = lockHoldStart.get(token);
   if (start !== void 0) {
-    collectMetricsLockDuration.observe({ key }, (Date.now() - start) / 1e3)
+    collectMetricsLockDuration.observe({ key }, (Date.now() - start) / 1e3);
   }
-  lockHoldStart.delete(token)
+  lockHoldStart.delete(token);
 }
 
 // src/lib/infra/distributed-lock/with-distributed-lock.ts
 async function withDistributedLock(params) {
-  const { lockKey, ttlMs, errorMessage, skippedMessage, work } = params
-  let lockToken = null
+  const { lockKey, ttlMs, errorMessage, skippedMessage, work } = params;
+  let lockToken = null;
   try {
-    lockToken = await DistributedLock.acquire(lockKey, ttlMs)
+    lockToken = await DistributedLock.acquire(lockKey, ttlMs);
     if (!lockToken) {
-      if (skippedMessage) logger.warn(skippedMessage)
-      return
+      if (skippedMessage) logger.warn(skippedMessage);
+      return;
     }
-    const token = lockToken
+    const token = lockToken;
     await work(async () => {
-      await DistributedLock.renew(lockKey, token, ttlMs)
-    })
+      await DistributedLock.renew(lockKey, token, ttlMs);
+    });
   } catch (error) {
-    logger.error({ error }, errorMessage)
-    captureError(error)
+    logger.error({ error }, errorMessage);
+    captureError(error);
   } finally {
     if (lockToken) {
-      await DistributedLock.release(lockKey, lockToken)
+      await DistributedLock.release(lockKey, lockToken);
     }
   }
 }
@@ -1047,102 +979,82 @@ async function withDistributedLock(params) {
 // src/core/shared/result.ts
 var ok = (value) => ({
   success: true,
-  value,
-})
+  value
+});
 var err = (error) => ({
   success: false,
-  error,
-})
+  error
+});
 function isErr(result) {
-  return !result.success
+  return !result.success;
 }
 
 // src/lib/metrics/outbox-metrics.ts
-var import_prom_client3 = require('prom-client')
-var registry3 = getRegistry()
-var collectMetricsOutboxEventsDispatched = registry3
-  ? new import_prom_client3.Counter({
-      name: 'outbox_events_dispatched_total',
-      help: 'Events successfully enqueued to BullMQ',
-      registers: [registry3],
-    })
-  : null
-var collectMetricsOutboxEventsReverted = registry3
-  ? new import_prom_client3.Counter({
-      name: 'outbox_events_reverted_total',
-      help: 'Dispatch failed and the event was successfully reverted to PENDING',
-      registers: [registry3],
-    })
-  : null
-var collectMetricsOutboxEventsRevertFailed = registry3
-  ? new import_prom_client3.Counter({
-      name: 'outbox_events_revert_failed_total',
-      help: 'Dispatch failed and the revert-to-PENDING write also failed (stranded in SENDING)',
-      registers: [registry3],
-    })
-  : null
-var collectMetricsOutboxEventsMarkedAsTerminalFail = registry3
-  ? new import_prom_client3.Counter({
-      name: 'outbox_events_marked_as_terminal_fail_total',
-      help: 'Events marked terminal FAILED after exceeding the dispatch attempts cap (poison message)',
-      registers: [registry3],
-    })
-  : null
-var collectMetricsOutboxEventsExpired = registry3
-  ? new import_prom_client3.Counter({
-      name: 'outbox_events_expired_total',
-      help: 'Events deleted at the expiration gate before dispatch',
-      registers: [registry3],
-    })
-  : null
-var collectMetricsOutboxEventsStuckSendingEventsRecovered = registry3
-  ? new import_prom_client3.Counter({
-      name: 'outbox_events_stuck_sending_events_recovered_total',
-      help: 'Stuck SENDING events reprocessed by the recovery loop',
-      registers: [registry3],
-    })
-  : null
-var collectMetricsOutboxCronRuns = registry3
-  ? new import_prom_client3.Counter({
-      name: 'outbox_cron_runs_total',
-      help: 'Outbox cron executions by phase',
-      labelNames: ['phase'],
-      registers: [registry3],
-    })
-  : null
-var collectMetricsOutboxMaintenanceDeleted = registry3
-  ? new import_prom_client3.Counter({
-      name: 'outbox_maintenance_deleted_total',
-      help: 'Events deleted by maintenance sweeps, by operation',
-      labelNames: ['operation'],
-      registers: [registry3],
-    })
-  : null
-var collectMetricsOutboxSignalPublished = registry3
-  ? new import_prom_client3.Counter({
-      name: 'outbox_signal_published_total',
-      help: 'Pub/Sub wakeup signals published after an outbox write',
-      registers: [registry3],
-    })
-  : null
-var collectMetricsOutboxSignalPublishFailed = registry3
-  ? new import_prom_client3.Counter({
-      name: 'outbox_signal_publish_failed_total',
-      help: 'Pub/Sub signal publish failures (Redis unavailable)',
-      registers: [registry3],
-    })
-  : null
+var import_prom_client3 = require("prom-client");
+var registry3 = getRegistry();
+var collectMetricsOutboxEventsDispatched = registry3 ? new import_prom_client3.Counter({
+  name: "outbox_events_dispatched_total",
+  help: "Events successfully enqueued to BullMQ",
+  registers: [registry3]
+}) : null;
+var collectMetricsOutboxEventsReverted = registry3 ? new import_prom_client3.Counter({
+  name: "outbox_events_reverted_total",
+  help: "Dispatch failed and the event was successfully reverted to PENDING",
+  registers: [registry3]
+}) : null;
+var collectMetricsOutboxEventsRevertFailed = registry3 ? new import_prom_client3.Counter({
+  name: "outbox_events_revert_failed_total",
+  help: "Dispatch failed and the revert-to-PENDING write also failed (stranded in SENDING)",
+  registers: [registry3]
+}) : null;
+var collectMetricsOutboxEventsMarkedAsTerminalFail = registry3 ? new import_prom_client3.Counter({
+  name: "outbox_events_marked_as_terminal_fail_total",
+  help: "Events marked terminal FAILED after exceeding the dispatch attempts cap (poison message)",
+  registers: [registry3]
+}) : null;
+var collectMetricsOutboxEventsExpired = registry3 ? new import_prom_client3.Counter({
+  name: "outbox_events_expired_total",
+  help: "Events deleted at the expiration gate before dispatch",
+  registers: [registry3]
+}) : null;
+var collectMetricsOutboxEventsStuckSendingEventsRecovered = registry3 ? new import_prom_client3.Counter({
+  name: "outbox_events_stuck_sending_events_recovered_total",
+  help: "Stuck SENDING events reprocessed by the recovery loop",
+  registers: [registry3]
+}) : null;
+var collectMetricsOutboxCronRuns = registry3 ? new import_prom_client3.Counter({
+  name: "outbox_cron_runs_total",
+  help: "Outbox cron executions by phase",
+  labelNames: ["phase"],
+  registers: [registry3]
+}) : null;
+var collectMetricsOutboxMaintenanceDeleted = registry3 ? new import_prom_client3.Counter({
+  name: "outbox_maintenance_deleted_total",
+  help: "Events deleted by maintenance sweeps, by operation",
+  labelNames: ["operation"],
+  registers: [registry3]
+}) : null;
+var collectMetricsOutboxSignalPublished = registry3 ? new import_prom_client3.Counter({
+  name: "outbox_signal_published_total",
+  help: "Pub/Sub wakeup signals published after an outbox write",
+  registers: [registry3]
+}) : null;
+var collectMetricsOutboxSignalPublishFailed = registry3 ? new import_prom_client3.Counter({
+  name: "outbox_signal_publish_failed_total",
+  help: "Pub/Sub signal publish failures (Redis unavailable)",
+  registers: [registry3]
+}) : null;
 
 // src/lib/infra/jobs/outbox-processor.ts
 var OutboxProcessor = class {
   constructor(outboxRepository, dispatchRegistry) {
-    this.outboxRepository = outboxRepository
-    this.dispatchRegistry = dispatchRegistry
+    this.outboxRepository = outboxRepository;
+    this.dispatchRegistry = dispatchRegistry;
   }
-  outboxRepository
-  dispatchRegistry
-  LOCK_KEY = OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_PROCESSOR
-  LOCK_TTL_MS = OUTBOX_CONSTANTS.LOCK_TTL_MS.DEFAULT
+  outboxRepository;
+  dispatchRegistry;
+  LOCK_KEY = OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_PROCESSOR;
+  LOCK_TTL_MS = OUTBOX_CONSTANTS.LOCK_TTL_MS.DEFAULT;
   async processPendingEvents() {
     await withDistributedLock({
       lockKey: this.LOCK_KEY,
@@ -1150,23 +1062,21 @@ var OutboxProcessor = class {
       errorMessage: OUTBOX_LOGS.CRITICAL_LOOP_ERROR,
       skippedMessage: OUTBOX_LOGS.SKIPPED_ANOTHER_RUNNING,
       work: async (renew) => {
-        const pendingEventsResult = await this.outboxRepository.findPending(
-          OUTBOX_CONSTANTS.THRESHOLDS.PENDING_FETCH_LIMIT,
-        )
+        const pendingEventsResult = await this.outboxRepository.findPending(OUTBOX_CONSTANTS.THRESHOLDS.PENDING_FETCH_LIMIT);
         if (isErr(pendingEventsResult)) {
-          logger.error({ error: pendingEventsResult.error }, OUTBOX_LOGS.PENDING_FETCH_ERROR)
-          captureError(pendingEventsResult.error)
-          return
+          logger.error({ error: pendingEventsResult.error }, OUTBOX_LOGS.PENDING_FETCH_ERROR);
+          captureError(pendingEventsResult.error);
+          return;
         }
-        const pendingEvents = pendingEventsResult.value
-        if (pendingEvents.length === 0) return
-        logger.info(`Processando ${pendingEvents.length} eventos pendentes da Outbox...`)
+        const pendingEvents = pendingEventsResult.value;
+        if (pendingEvents.length === 0) return;
+        logger.info(`Processando ${pendingEvents.length} eventos pendentes da Outbox...`);
         for (const event of pendingEvents) {
-          await renew()
-          await this.processSingleEvent(event)
+          await renew();
+          await this.processSingleEvent(event);
         }
-      },
-    })
+      }
+    });
   }
   async processStuckSendingEvents() {
     await withDistributedLock({
@@ -1174,42 +1084,42 @@ var OutboxProcessor = class {
       ttlMs: this.LOCK_TTL_MS,
       errorMessage: OUTBOX_LOGS.CRITICAL_RECOVERY_ERROR,
       work: async (renew) => {
-        const thresholdDate = new Date(Date.now() - OUTBOX_CONSTANTS.THRESHOLDS.STUCK_SENDING_MS)
+        const thresholdDate = new Date(Date.now() - OUTBOX_CONSTANTS.THRESHOLDS.STUCK_SENDING_MS);
         const stuckEventsResult = await this.outboxRepository.findStuck(
           thresholdDate,
-          OUTBOX_CONSTANTS.THRESHOLDS.STUCK_FETCH_LIMIT,
-        )
+          OUTBOX_CONSTANTS.THRESHOLDS.STUCK_FETCH_LIMIT
+        );
         if (isErr(stuckEventsResult)) {
-          logger.error({ error: stuckEventsResult.error }, OUTBOX_LOGS.STUCK_FETCH_ERROR)
-          captureError(stuckEventsResult.error)
-          return
+          logger.error({ error: stuckEventsResult.error }, OUTBOX_LOGS.STUCK_FETCH_ERROR);
+          captureError(stuckEventsResult.error);
+          return;
         }
-        const stuckEvents = stuckEventsResult.value
-        if (stuckEvents.length === 0) return
-        logger.warn(`Encontrados ${stuckEvents.length} eventos travados em SENDING. Iniciando recupera\xE7\xE3o...`)
+        const stuckEvents = stuckEventsResult.value;
+        if (stuckEvents.length === 0) return;
+        logger.warn(`Encontrados ${stuckEvents.length} eventos travados em SENDING. Iniciando recupera\xE7\xE3o...`);
         for (const event of stuckEvents) {
-          await renew()
-          collectMetricsOutboxEventsStuckSendingEventsRecovered?.inc()
-          await this.processSingleEvent(event)
+          await renew();
+          collectMetricsOutboxEventsStuckSendingEventsRecovered?.inc();
+          await this.processSingleEvent(event);
         }
-      },
-    })
+      }
+    });
   }
   async processSingleEvent(event) {
     if (isExpired(event)) {
-      await this.discardExpired(event)
-      return
+      await this.discardExpired(event);
+      return;
     }
     if (event.attempts >= OUTBOX_CONSTANTS.THRESHOLDS.MAX_DISPATCH_ATTEMPTS) {
-      await this.markPoisoned(event)
-      return
+      await this.markPoisoned(event);
+      return;
     }
-    const updateResult = await this.outboxRepository.updateStatus(event.publicId, 'SENDING' /* SENDING */)
+    const updateResult = await this.outboxRepository.updateStatus(event.publicId, "SENDING" /* SENDING */);
     if (isErr(updateResult)) {
-      logger.error({ publicId: event.publicId, error: updateResult.error }, OUTBOX_LOGS.STATUS_UPDATE_FAILED)
-      return
+      logger.error({ publicId: event.publicId, error: updateResult.error }, OUTBOX_LOGS.STATUS_UPDATE_FAILED);
+      return;
     }
-    await this.dispatchOrRevert(event)
+    await this.dispatchOrRevert(event);
   }
   /**
    * Gate de expiração — ANTES de qualquer fase: um evento expirado sai da tabela
@@ -1217,61 +1127,61 @@ var OutboxProcessor = class {
    * qualquer status.
    */
   async discardExpired(event) {
-    const deleteResult = await this.outboxRepository.delete(event.publicId)
+    const deleteResult = await this.outboxRepository.delete(event.publicId);
     if (isErr(deleteResult)) {
-      logger.error({ publicId: event.publicId, error: deleteResult.error }, OUTBOX_LOGS.EXPIRED_EVENT_DELETE_ERROR)
-      captureError(deleteResult.error, { publicId: event.publicId })
-      return
+      logger.error({ publicId: event.publicId, error: deleteResult.error }, OUTBOX_LOGS.EXPIRED_EVENT_DELETE_ERROR);
+      captureError(deleteResult.error, { publicId: event.publicId });
+      return;
     }
-    collectMetricsOutboxEventsExpired?.inc()
-    logger.info({ publicId: event.publicId, type: event.type }, OUTBOX_LOGS.EXPIRED_EVENT_DELETED)
+    collectMetricsOutboxEventsExpired?.inc();
+    logger.info({ publicId: event.publicId, type: event.type }, OUTBOX_LOGS.EXPIRED_EVENT_DELETED);
   }
   /** Phase 0: excedeu o limite de ciclos de despacho — terminal (poison message). */
   async markPoisoned(event) {
-    const failResult = await this.outboxRepository.updateStatus(event.publicId, 'FAILED' /* FAILED */)
+    const failResult = await this.outboxRepository.updateStatus(event.publicId, "FAILED" /* FAILED */);
     if (isErr(failResult)) {
-      logger.error({ publicId: event.publicId, error: failResult.error }, OUTBOX_LOGS.FAILED_MARK_ERROR)
-      captureError(failResult.error, { publicId: event.publicId })
-      return
+      logger.error({ publicId: event.publicId, error: failResult.error }, OUTBOX_LOGS.FAILED_MARK_ERROR);
+      captureError(failResult.error, { publicId: event.publicId });
+      return;
     }
-    collectMetricsOutboxEventsMarkedAsTerminalFail?.inc()
-    logger.warn({ publicId: event.publicId, attempts: event.attempts }, OUTBOX_LOGS.MARKED_FAILED)
-    captureError(new Error(OUTBOX_LOGS.MARKED_FAILED), { publicId: event.publicId, attempts: event.attempts })
+    collectMetricsOutboxEventsMarkedAsTerminalFail?.inc();
+    logger.warn({ publicId: event.publicId, attempts: event.attempts }, OUTBOX_LOGS.MARKED_FAILED);
+    captureError(new Error(OUTBOX_LOGS.MARKED_FAILED), { publicId: event.publicId, attempts: event.attempts });
   }
   /** Phase 2: despacha ao BullMQ, revertendo para PENDING se o despacho falhar. */
   async dispatchOrRevert(event) {
     try {
-      await this.dispatchToBullMQ(event)
-      collectMetricsOutboxEventsDispatched?.inc()
+      await this.dispatchToBullMQ(event);
+      collectMetricsOutboxEventsDispatched?.inc();
     } catch (error) {
-      const revertResult = await this.outboxRepository.updateStatus(event.publicId, 'PENDING' /* PENDING */)
+      const revertResult = await this.outboxRepository.updateStatus(event.publicId, "PENDING" /* PENDING */);
       if (isErr(revertResult)) {
-        collectMetricsOutboxEventsRevertFailed?.inc()
-        logger.error({ publicId: event.publicId, error: revertResult.error }, OUTBOX_LOGS.REVERT_FATAL)
-        captureError(revertResult.error, { publicId: event.publicId })
-        return
+        collectMetricsOutboxEventsRevertFailed?.inc();
+        logger.error({ publicId: event.publicId, error: revertResult.error }, OUTBOX_LOGS.REVERT_FATAL);
+        captureError(revertResult.error, { publicId: event.publicId });
+        return;
       }
-      collectMetricsOutboxEventsReverted?.inc()
-      logger.error({ publicId: event.publicId, error }, OUTBOX_LOGS.DISPATCH_REVERTED)
+      collectMetricsOutboxEventsReverted?.inc();
+      logger.error({ publicId: event.publicId, error }, OUTBOX_LOGS.DISPATCH_REVERTED);
     }
   }
   async dispatchToBullMQ(event) {
-    const strategyResult = this.dispatchRegistry.resolve(event.type)
+    const strategyResult = this.dispatchRegistry.resolve(event.type);
     if (isErr(strategyResult)) {
-      throw strategyResult.error
+      throw strategyResult.error;
     }
-    const planResult = strategyResult.value.buildDispatch(event)
+    const planResult = strategyResult.value.buildDispatch(event);
     if (isErr(planResult)) {
-      throw planResult.error
+      throw planResult.error;
     }
-    const { emails, jobOptions } = planResult.value
-    let finalEmails = emails
+    const { emails, jobOptions } = planResult.value;
+    let finalEmails = emails;
     if (event.pendingRecipients.length > 0) {
-      const filtered = emails.filter((e) => event.pendingRecipients.includes(e.to))
+      const filtered = emails.filter((e) => event.pendingRecipients.includes(e.to));
       if (filtered.length === 0) {
-        logger.warn({ publicId: event.publicId }, OUTBOX_LOGS.PENDING_RECIPIENTS_UNRESOLVED)
+        logger.warn({ publicId: event.publicId }, OUTBOX_LOGS.PENDING_RECIPIENTS_UNRESOLVED);
       } else {
-        finalEmails = filtered
+        finalEmails = filtered;
       }
     }
     await getMailQueue().add(
@@ -1280,37 +1190,37 @@ var OutboxProcessor = class {
         publicId: event.publicId,
         emails: finalEmails,
         // Repassa a expiração para o gate do mail worker (job data é JSON)
-        ...(event.expiresAt ? { expiresAt: new Date(event.expiresAt).toISOString() } : {}),
+        ...event.expiresAt ? { expiresAt: new Date(event.expiresAt).toISOString() } : {}
       },
-      { jobId: event.publicId, ...jobOptions },
-    )
+      { jobId: event.publicId, ...jobOptions }
+    );
   }
-}
+};
 function isExpired(event) {
-  return Boolean(event.expiresAt) && new Date(event.expiresAt).getTime() <= Date.now()
+  return Boolean(event.expiresAt) && new Date(event.expiresAt).getTime() <= Date.now();
 }
 
 // src/lib/infra/jobs/outbox-maintenance.ts
-var import_ms2 = __toESM(require('ms'))
+var import_ms2 = __toESM(require("ms"));
 var OutboxMaintenance = class {
   constructor(outboxRepository) {
-    this.outboxRepository = outboxRepository
+    this.outboxRepository = outboxRepository;
   }
-  outboxRepository
-  LOCK_TTL_MS = OUTBOX_CONSTANTS.LOCK_TTL_MS.DEFAULT
+  outboxRepository;
+  LOCK_TTL_MS = OUTBOX_CONSTANTS.LOCK_TTL_MS.DEFAULT;
   async sweepExpiredEvents() {
     await withDistributedLock({
       lockKey: OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_EXPIRY_SWEEP,
       ttlMs: this.LOCK_TTL_MS,
       errorMessage: OUTBOX_LOGS.EXPIRY_SWEEP_ERROR,
       work: async (renew) => {
-        const totalDeleted = await this.deleteExpiredInBatches(/* @__PURE__ */ new Date(), renew)
+        const totalDeleted = await this.deleteExpiredInBatches(/* @__PURE__ */ new Date(), renew);
         if (totalDeleted > 0) {
-          collectMetricsOutboxMaintenanceDeleted?.inc({ operation: 'expiry_sweep' }, totalDeleted)
-          logger.info({ deleted: totalDeleted }, OUTBOX_LOGS.EXPIRY_SWEEP_DELETED)
+          collectMetricsOutboxMaintenanceDeleted?.inc({ operation: "expiry_sweep" }, totalDeleted);
+          logger.info({ deleted: totalDeleted }, OUTBOX_LOGS.EXPIRY_SWEEP_DELETED);
         }
-      },
-    })
+      }
+    });
   }
   async purgeOldEvents() {
     await withDistributedLock({
@@ -1318,78 +1228,78 @@ var OutboxMaintenance = class {
       ttlMs: this.LOCK_TTL_MS,
       errorMessage: OUTBOX_LOGS.RETENTION_ERROR,
       work: async (renew) => {
-        const cutoff = new Date(Date.now() - (0, import_ms2.default)(`${OUTBOX_CONSTANTS.RETENTION.DAYS}d`))
-        const { totalDeleted, totalByStatus } = await this.deleteOlderThanInBatches(cutoff, renew)
+        const cutoff = new Date(Date.now() - (0, import_ms2.default)(`${OUTBOX_CONSTANTS.RETENTION.DAYS}d`));
+        const { totalDeleted, totalByStatus } = await this.deleteOlderThanInBatches(cutoff, renew);
         if (totalDeleted > 0) {
-          collectMetricsOutboxMaintenanceDeleted?.inc({ operation: 'retention_purge' }, totalDeleted)
-          reportPurge(totalDeleted, totalByStatus)
+          collectMetricsOutboxMaintenanceDeleted?.inc({ operation: "retention_purge" }, totalDeleted);
+          reportPurge(totalDeleted, totalByStatus);
         }
-      },
-    })
+      }
+    });
   }
   /** Um lote por iteração, renovando o lock entre lotes. */
   async deleteExpiredInBatches(now, renew) {
-    let totalDeleted = 0
-    let lastBatchSize = OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE
+    let totalDeleted = 0;
+    let lastBatchSize = OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE;
     while (lastBatchSize === OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE) {
-      await renew()
-      const result = await this.outboxRepository.deleteExpired(now, OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE)
+      await renew();
+      const result = await this.outboxRepository.deleteExpired(now, OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE);
       if (isErr(result)) {
-        logger.error({ error: result.error }, OUTBOX_LOGS.EXPIRY_SWEEP_ERROR)
-        captureError(result.error)
-        return totalDeleted
+        logger.error({ error: result.error }, OUTBOX_LOGS.EXPIRY_SWEEP_ERROR);
+        captureError(result.error);
+        return totalDeleted;
       }
-      lastBatchSize = result.value
-      totalDeleted += lastBatchSize
+      lastBatchSize = result.value;
+      totalDeleted += lastBatchSize;
     }
-    return totalDeleted
+    return totalDeleted;
   }
   async deleteOlderThanInBatches(cutoff, renew) {
-    let totalDeleted = 0
-    const totalByStatus = {}
-    let lastBatchSize = OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE
+    let totalDeleted = 0;
+    const totalByStatus = {};
+    let lastBatchSize = OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE;
     while (lastBatchSize === OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE) {
-      await renew()
-      const batchResult = await this.outboxRepository.deleteOlderThan(cutoff, OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE)
+      await renew();
+      const batchResult = await this.outboxRepository.deleteOlderThan(cutoff, OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE);
       if (isErr(batchResult)) {
-        logger.error({ error: batchResult.error }, OUTBOX_LOGS.RETENTION_ERROR)
-        captureError(batchResult.error)
-        return { totalDeleted, totalByStatus }
+        logger.error({ error: batchResult.error }, OUTBOX_LOGS.RETENTION_ERROR);
+        captureError(batchResult.error);
+        return { totalDeleted, totalByStatus };
       }
-      const { deleted, byStatus } = batchResult.value
-      lastBatchSize = deleted
-      totalDeleted += deleted
+      const { deleted, byStatus } = batchResult.value;
+      lastBatchSize = deleted;
+      totalDeleted += deleted;
       for (const [status, count] of Object.entries(byStatus)) {
-        totalByStatus[status] = (totalByStatus[status] ?? 0) + count
+        totalByStatus[status] = (totalByStatus[status] ?? 0) + count;
       }
     }
-    return { totalDeleted, totalByStatus }
+    return { totalDeleted, totalByStatus };
   }
-}
+};
 function reportPurge(totalDeleted, totalByStatus) {
-  const nonTerminal = (totalByStatus['PENDING' /* PENDING */] ?? 0) + (totalByStatus['SENDING' /* SENDING */] ?? 0)
+  const nonTerminal = (totalByStatus["PENDING" /* PENDING */] ?? 0) + (totalByStatus["SENDING" /* SENDING */] ?? 0);
   if (nonTerminal > 0) {
-    logger.warn({ deleted: totalDeleted, byStatus: totalByStatus }, OUTBOX_LOGS.RETENTION_PURGED_NON_TERMINAL)
-    return
+    logger.warn({ deleted: totalDeleted, byStatus: totalByStatus }, OUTBOX_LOGS.RETENTION_PURGED_NON_TERMINAL);
+    return;
   }
-  logger.info({ deleted: totalDeleted, byStatus: totalByStatus }, OUTBOX_LOGS.RETENTION_PURGED)
+  logger.info({ deleted: totalDeleted, byStatus: totalByStatus }, OUTBOX_LOGS.RETENTION_PURGED);
 }
 
 // src/core/types/outbox/outbox-event-input.ts
 var OUTBOX_EVENT_TYPES = {
-  FORM_SUBMISSION_CREATED: 'FormSubmissionCreated',
+  FORM_SUBMISSION_CREATED: "FormSubmissionCreated",
   // The name of an outbox EVENT TYPE, not a credential — the heuristic pairs
   // the word "password" with a string literal on the same line. The real reset
   // token lives only in the transient payload below.
   // eslint-disable-next-line sonarjs/no-hardcoded-passwords
-  PASSWORD_RESET_REQUESTED: 'PasswordResetRequested',
-}
+  PASSWORD_RESET_REQUESTED: "PasswordResetRequested"
+};
 
 // src/templates/contact-user/contact-user-subject-text.ts
 function contactUserSubjectTextTemplate(name) {
   return `
             Gra\xE7a e paz, ${name}. Ficamos felizes com o seu contato!
-        `
+        `;
 }
 
 // src/templates/contact-user/contact-user-text.ts
@@ -1399,7 +1309,7 @@ function contactUserTextTemplate(name) {
             Recebemos sua mensagem. \xC9 uma honra que voc\xEA esteja se conectando conosco!
             Voc\xEA ser\xE1 adicionado \xE0 nossa lista de e-mails para receber atualiza\xE7\xF5es, 
             recursos e inspira\xE7\xE3o para lhe auxiliar na sua jornada.
-        `
+        `;
 }
 
 // src/templates/contact-user/contact-user-html.ts
@@ -1431,30 +1341,28 @@ function contactUserHtmlTemplate(name) {
                     </tr>
                 </table>
             </div>
-        `
+        `;
 }
 
 // src/templates/contact-staff/contact-staff-subject-text.ts
 function contactStaffSubjectTextTemplate() {
   return `
             Novo formul\xE1rio enviado
-        `
+        `;
 }
 
 // src/templates/contact-staff/contact-staff-text.ts
 function contactStaffTextTemplate(name, email, ipAddress) {
-  const ipSection = ipAddress
-    ? `
-IP de origem: ${ipAddress}`
-    : ''
+  const ipSection = ipAddress ? `
+IP de origem: ${ipAddress}` : "";
   return `
             ${name} <${email}> enviou um formul\xE1rio.${ipSection}
-        `
+        `;
 }
 
 // src/templates/contact-staff/contact-staff-html.ts
 function contactStaffHtmlTemplate(name, lastName, email, ipAddress) {
-  const ipRow = ipAddress ? `<p><strong>IP de origem:</strong> ${ipAddress}</p>` : ''
+  const ipRow = ipAddress ? `<p><strong>IP de origem:</strong> ${ipAddress}</p>` : "";
   return `
             <div>
                 <table style="font-family: arial">
@@ -1477,25 +1385,25 @@ function contactStaffHtmlTemplate(name, lastName, email, ipAddress) {
                     </tr>
                 </table>
             </div>
-        `
+        `;
 }
 
 // src/errors/app-error.ts
 var AppError = class extends Error {
-  type
-  body
+  type;
+  body;
   /**
    * Machine-readable routing hint used by resilient fallback chains and cache
    * managers.  Subclasses that participate in fallback/caching declare their
    * own failure mode once; callers never need `instanceof` to branch on it.
    */
-  failureMode
+  failureMode;
   /**
    * Self-describing observability tag, parallel to `failureMode` but for metric
    * labels. Subclasses declare their own reason once; consumers read it without
    * `instanceof`. See {@link TelemetryReason}.
    */
-  telemetryReason
+  telemetryReason;
   /**
    * @param detail         – the error descriptor (code + message + optional extras)
    * @param type           – the HTTP-level error type
@@ -1503,105 +1411,129 @@ var AppError = class extends Error {
    * @param telemetryReason – optional observability reason for metric labels
    */
   constructor(detail, type, failureMode, telemetryReason) {
-    super(detail.message)
-    this.name = this.constructor.name
-    this.type = type
-    this.failureMode = failureMode
-    this.telemetryReason = telemetryReason
+    super(detail.message);
+    this.name = this.constructor.name;
+    this.type = type;
+    this.failureMode = failureMode;
+    this.telemetryReason = telemetryReason;
     this.body = {
       code: detail.code,
       message: detail.message,
-      ...(detail.issues && { issues: detail.issues }),
-    }
-    Error.captureStackTrace(this, this.constructor)
-    Object.setPrototypeOf(this, new.target.prototype)
+      ...detail.issues && { issues: detail.issues }
+    };
+    Error.captureStackTrace(this, this.constructor);
+    Object.setPrototypeOf(this, new.target.prototype);
   }
-}
+};
 
 // src/errors/domain-error.ts
 var DomainError = class extends AppError {
   // eslint-disable-next-line @typescript-eslint/no-useless-constructor
   constructor(detail, type, failureMode, telemetryReason) {
-    super(detail, type, failureMode, telemetryReason)
+    super(detail, type, failureMode, telemetryReason);
   }
-}
+};
 
 // src/messages/errors/forms.ts
 var INVALID_FORM_PAYLOAD_ERROR_FN = (fieldName) => ({
-  code: 'INVALID_FORM_PAYLOAD',
-  message: fieldName
-    ? `Payload do formul\xE1rio inv\xE1lido: campo '${fieldName}' possui valor inesperado.`
-    : 'Payload do formul\xE1rio inv\xE1lido: um ou mais campos possuem valores inesperados.',
-})
+  code: "INVALID_FORM_PAYLOAD",
+  message: fieldName ? `Payload do formul\xE1rio inv\xE1lido: campo '${fieldName}' possui valor inesperado.` : "Payload do formul\xE1rio inv\xE1lido: um ou mais campos possuem valores inesperados."
+});
 
 // src/use-cases/errors/forms/invalid-form-payload-error.ts
 var InvalidFormPayloadError = class extends DomainError {
   constructor(fieldName) {
-    super(INVALID_FORM_PAYLOAD_ERROR_FN(fieldName), 'BAD_REQUEST' /* BAD_REQUEST */)
+    super(INVALID_FORM_PAYLOAD_ERROR_FN(fieldName), "BAD_REQUEST" /* BAD_REQUEST */);
   }
-}
+};
 
 // src/use-cases/forms/strategies/form-payload-fields.ts
 function requireStringField(value, fieldName) {
-  if (typeof value === 'string') {
-    return ok(value)
+  if (typeof value === "string") {
+    return ok(value);
   }
-  return err(new InvalidFormPayloadError(fieldName))
+  return err(new InvalidFormPayloadError(fieldName));
 }
 function optionalStringField(value, fieldName) {
-  if (value === void 0 || typeof value === 'string') {
-    return ok(value || '')
+  if (value === void 0 || typeof value === "string") {
+    return ok(value || "");
   }
-  return err(new InvalidFormPayloadError(fieldName))
+  return err(new InvalidFormPayloadError(fieldName));
 }
 function optionalIpAddress(form) {
-  return typeof form.ipAddress === 'string' ? form.ipAddress : void 0
+  return typeof form.ipAddress === "string" ? form.ipAddress : void 0;
 }
 function requireSubmitterIdentity(form) {
-  const emailResult = requireStringField(form.email, 'form.email')
-  if (isErr(emailResult)) return emailResult
-  const nameResult = requireStringField(form.name, 'form.name')
-  if (isErr(nameResult)) return nameResult
-  return ok({ email: emailResult.value, name: nameResult.value })
+  const emailResult = requireStringField(form.email, "form.email");
+  if (isErr(emailResult)) return emailResult;
+  const nameResult = requireStringField(form.name, "form.name");
+  if (isErr(nameResult)) return nameResult;
+  return ok({ email: emailResult.value, name: nameResult.value });
+}
+function buildUserMailJob(form, buildContent) {
+  const identityResult = requireSubmitterIdentity(form);
+  if (isErr(identityResult)) return identityResult;
+  const { email, name } = identityResult.value;
+  const { type, subject, message, html } = buildContent({ email, name });
+  return ok({
+    subject,
+    message,
+    html,
+    to: email,
+    context: { type, recipient: "user" }
+  });
+}
+function buildStaffMailJob(content) {
+  return {
+    to: env.ADMIN_EMAIL,
+    subject: content.subject,
+    message: content.message,
+    html: content.html,
+    context: { type: content.type, recipient: "internal" }
+  };
+}
+function extractContactStaffData(form) {
+  const identityResult = requireSubmitterIdentity(form);
+  if (isErr(identityResult)) return identityResult;
+  const lastNameResult = optionalStringField(form.lastName, "form.lastName");
+  if (isErr(lastNameResult)) return lastNameResult;
+  return ok({
+    ...identityResult.value,
+    lastName: lastNameResult.value,
+    ipAddress: optionalIpAddress(form)
+  });
 }
 
 // src/use-cases/forms/strategies/contact-email-strategy.ts
 var ContactEmailStrategy = class {
   buildUserEmail(form) {
-    const identityResult = requireSubmitterIdentity(form)
-    if (isErr(identityResult)) return identityResult
-    const { email, name } = identityResult.value
-    return ok({
-      to: email,
+    return buildUserMailJob(form, ({ name }) => ({
+      type: "contact",
       subject: contactUserSubjectTextTemplate(name),
       message: contactUserTextTemplate(name),
-      html: contactUserHtmlTemplate(name),
-      context: { type: 'contact', recipient: 'user' },
-    })
+      html: contactUserHtmlTemplate(name)
+    }));
   }
   buildStaffEmail(form) {
-    const identityResult = requireSubmitterIdentity(form)
-    if (isErr(identityResult)) return identityResult
-    const lastNameResult = optionalStringField(form.lastName, 'form.lastName')
-    if (isErr(lastNameResult)) return lastNameResult
-    const { email, name } = identityResult.value
-    const lastName = lastNameResult.value
-    const ipAddress = optionalIpAddress(form)
-    return ok({
-      to: env.ADMIN_EMAIL,
-      subject: contactStaffSubjectTextTemplate(),
-      message: contactStaffTextTemplate(name, email, ipAddress),
-      html: contactStaffHtmlTemplate(name, lastName, email, ipAddress),
-      context: { type: 'contact', recipient: 'internal' },
-    })
+    const dataResult = extractContactStaffData(form);
+    if (isErr(dataResult)) return dataResult;
+    const { email, name, lastName, ipAddress } = dataResult.value;
+    return ok(
+      buildStaffMailJob({
+        type: "contact",
+        subject: contactStaffSubjectTextTemplate(),
+        message: contactStaffTextTemplate(name, email, ipAddress),
+        html: contactStaffHtmlTemplate(name, lastName, email, ipAddress)
+      })
+    );
   }
-}
+};
 
 // src/templates/decision-for-christ-user/decision-for-christ-user-subject-text.ts
 function decisionForChristUserSubjectText() {
   return `
         Parab\xE9ns pela sua decis\xE3o por Cristo!
-    `
+    `;
 }
 
 // src/templates/decision-for-christ-user/decision-for-christ-user-text.ts
@@ -1610,7 +1542,7 @@ function decisionForChristUserTextTemplate(name) {
         Ol\xE1 ${name}, 
         \xC9 uma alegria saber que voc\xEA tomou uma decis\xE3o por Cristo.
         Em breve, nossa equipe entrar\xE1 em contato para acompanh\xE1-lo nessa nova jornada.
-    `
+    `;
 }
 
 // src/templates/decision-for-christ-user/decision-for-christ-user-html.ts
@@ -1624,35 +1556,31 @@ function decisionForChristUserHtmlTemplate(name) {
                 
                 Em breve, nossa equipe entrar\xE1 em contato para acompanh\xE1-lo nessa nova jornada.
             </p>
-        `
+        `;
 }
 
 // src/templates/decision-for-christ-staff/decision-for-christ-staff-subject-text.ts
 function decisionForChristStaffSubjectText() {
   return `
       Nova decis\xE3o por Cristo registrada
-    `
+    `;
 }
 
 // src/templates/decision-for-christ-staff/decision-for-christ-staff-text.ts
 function decisionForChristStaffTextTemplate(name, email, ipAddress) {
-  const ipSection = ipAddress
-    ? `
-IP de origem: ${ipAddress}`
-    : ''
+  const ipSection = ipAddress ? `
+IP de origem: ${ipAddress}` : "";
   return `
             ${name} <${email}> aceitou a Cristo.${ipSection}
-        `
+        `;
 }
 
 // src/templates/decision-for-christ-staff/decision-for-christ-staff-html.ts
 function decisionForChristStaffHtmlTemplate(name, lastName, email, location, ipAddress) {
-  const ipSection = ipAddress
-    ? `
+  const ipSection = ipAddress ? `
                 <li>
                     IP de origem: ${ipAddress}
-                </li>`
-    : ''
+                </li>` : "";
   return `
             <p>
                 Nova decis\xE3o por Cristo:
@@ -1665,88 +1593,82 @@ function decisionForChristStaffHtmlTemplate(name, lastName, email, location, ipA
                     Email: ${email}
                 </li>
                 <li>
-                    Local: ${location ?? 'n\xE3o informado'}
+                    Local: ${location ?? "n\xE3o informado"}
                 </li>
                 ${ipSection}
             </ul>
-        `
+        `;
 }
 
 // src/use-cases/forms/strategies/decision-for-christ-email-strategy.ts
 var DecisionForChristEmailStrategy = class {
   buildUserEmail(form) {
-    const identityResult = requireSubmitterIdentity(form)
-    if (isErr(identityResult)) return identityResult
-    const { email, name } = identityResult.value
-    return ok({
-      to: email,
+    return buildUserMailJob(form, ({ name }) => ({
+      type: "decision-for-Christ",
       subject: decisionForChristUserSubjectText(),
       message: decisionForChristUserTextTemplate(name),
-      html: decisionForChristUserHtmlTemplate(name),
-      context: { type: 'decision-for-Christ', recipient: 'user' },
-    })
+      html: decisionForChristUserHtmlTemplate(name)
+    }));
   }
   buildStaffEmail(form) {
-    const identityResult = requireSubmitterIdentity(form)
-    if (isErr(identityResult)) return identityResult
-    const lastNameResult = requireStringField(form.lastName, 'form.lastName')
-    if (isErr(lastNameResult)) return lastNameResult
-    const locationResult = optionalStringField(form.location, 'form.location')
-    if (isErr(locationResult)) return locationResult
-    const { email, name } = identityResult.value
-    const lastName = lastNameResult.value
-    const location = locationResult.value
-    const ipAddress = optionalIpAddress(form)
-    return ok({
-      to: env.ADMIN_EMAIL,
-      subject: decisionForChristStaffSubjectText(),
-      message: decisionForChristStaffTextTemplate(name, email, ipAddress),
-      html: decisionForChristStaffHtmlTemplate(name, lastName, email, location, ipAddress),
-      context: { type: 'decision-for-Christ', recipient: 'internal' },
-    })
+    const identityResult = requireSubmitterIdentity(form);
+    if (isErr(identityResult)) return identityResult;
+    const lastNameResult = requireStringField(form.lastName, "form.lastName");
+    if (isErr(lastNameResult)) return lastNameResult;
+    const locationResult = optionalStringField(form.location, "form.location");
+    if (isErr(locationResult)) return locationResult;
+    const { email, name } = identityResult.value;
+    const lastName = lastNameResult.value;
+    const location = locationResult.value;
+    const ipAddress = optionalIpAddress(form);
+    return ok(
+      buildStaffMailJob({
+        type: "decision-for-Christ",
+        subject: decisionForChristStaffSubjectText(),
+        message: decisionForChristStaffTextTemplate(name, email, ipAddress),
+        html: decisionForChristStaffHtmlTemplate(name, lastName, email, location, ipAddress)
+      })
+    );
   }
-}
+};
 
 // src/use-cases/forms/strategies/form-submission-dispatch-strategy.ts
 var FormSubmissionDispatchStrategy = class {
   buildDispatch(event) {
-    const payload = event.payload
-    const strategy = payload.decisaoPorCristo ? new DecisionForChristEmailStrategy() : new ContactEmailStrategy()
-    const userJobResult = strategy.buildUserEmail(payload)
+    const payload = event.payload;
+    const strategy = payload.decisaoPorCristo ? new DecisionForChristEmailStrategy() : new ContactEmailStrategy();
+    const userJobResult = strategy.buildUserEmail(payload);
     if (isErr(userJobResult)) {
-      return userJobResult
+      return userJobResult;
     }
-    const staffJobResult = strategy.buildStaffEmail(payload)
+    const staffJobResult = strategy.buildStaffEmail(payload);
     if (isErr(staffJobResult)) {
-      return staffJobResult
+      return staffJobResult;
     }
-    return ok({ emails: [userJobResult.value, staffJobResult.value] })
+    return ok({ emails: [userJobResult.value, staffJobResult.value] });
   }
-}
+};
 
 // src/messages/errors/password-reset.ts
 var INVALID_PASSWORD_RESET_PAYLOAD_ERROR_FN = (fieldName) => ({
-  code: 'INVALID_PASSWORD_RESET_PAYLOAD',
-  message: fieldName
-    ? `Payload de reset de senha inv\xE1lido: campo '${fieldName}' possui valor inesperado.`
-    : 'Payload de reset de senha inv\xE1lido: um ou mais campos possuem valores inesperados.',
-})
+  code: "INVALID_PASSWORD_RESET_PAYLOAD",
+  message: fieldName ? `Payload de reset de senha inv\xE1lido: campo '${fieldName}' possui valor inesperado.` : "Payload de reset de senha inv\xE1lido: um ou mais campos possuem valores inesperados."
+});
 
 // src/use-cases/errors/invalid-password-reset-payload-error.ts
 var InvalidPasswordResetPayloadError = class extends DomainError {
   constructor(fieldName) {
-    super(INVALID_PASSWORD_RESET_PAYLOAD_ERROR_FN(fieldName), 'BAD_REQUEST' /* BAD_REQUEST */)
+    super(INVALID_PASSWORD_RESET_PAYLOAD_ERROR_FN(fieldName), "BAD_REQUEST" /* BAD_REQUEST */);
   }
-}
+};
 
 // src/messages/constants/email/email.ts
 var EMAIL_CONSTANTS = {
-  PASSWORD_RECOVERY_SUBJECT: 'Recupera\xE7\xE3o de senha',
-  PASSWORD_RESET_GENERIC_MESSAGE:
-    'Se o usu\xE1rio existir, voc\xEA receber\xE1 um e-mail com instru\xE7\xF5es para redefinir a senha.',
+  PASSWORD_RECOVERY_SUBJECT: "Recupera\xE7\xE3o de senha",
+  PASSWORD_RESET_GENERIC_MESSAGE: "Se o usu\xE1rio existir, voc\xEA receber\xE1 um e-mail com instru\xE7\xF5es para redefinir a senha.",
   // Após N falhas consecutivas de envio, o transportador em cache é descartado e recriado (SMTP instável)
-  SMTP_MAX_CONSECUTIVE_FAILURES: 3,
-}
+  SMTP_MAX_CONSECUTIVE_FAILURES: 3
+};
 
 // src/messages/constants/auth/password-reset.ts
 var PASSWORD_RESET_CONSTANTS = {
@@ -1759,13 +1681,13 @@ var PASSWORD_RESET_CONSTANTS = {
    * (~1 min no pior caso) cabe com folga na janela de 15 min do token.
    */
   JOB_ATTEMPTS: 3,
-  JOB_BACKOFF_DELAY_MS: 3e4,
-}
+  JOB_BACKOFF_DELAY_MS: 3e4
+};
 
 // src/templates/forgot-password/forgot-password-text.ts
 function forgotPasswordTextTemplate(userName, token) {
-  const url = `${env.FRONTEND_URL}/reset-password/${token}`
-  const appName = env.APP_NAME
+  const url = `${env.FRONTEND_URL}/reset-password/${token}`;
+  const appName = env.APP_NAME;
   return `
 Ol\xE1, ${userName}!
 
@@ -1779,13 +1701,13 @@ Se voc\xEA n\xE3o solicitou a recupera\xE7\xE3o de senha, ignore este e-mail.
 
 Atenciosamente,
 Equipe ${appName}
-  `.trim()
+  `.trim();
 }
 
 // src/templates/forgot-password/forgot-password-html.ts
 function forgotPasswordHtmlTemplate(userName, token) {
-  const url = `${env.FRONTEND_URL}/reset-password/${token}`
-  const appName = env.APP_NAME
+  const url = `${env.FRONTEND_URL}/reset-password/${token}`;
+  const appName = env.APP_NAME;
   return `
     <div style="font-family: Arial, sans-serif; color: #222;">
       <h2>Ol\xE1, ${userName}!</h2>
@@ -1813,22 +1735,22 @@ function forgotPasswordHtmlTemplate(userName, token) {
         Equipe ${appName}
       </p>
     </div>
-  `
+  `;
 }
 
 // src/use-cases/users/strategies/password-reset-dispatch-strategy.ts
 var PasswordResetDispatchStrategy = class {
   buildDispatch(event) {
-    const payload = event.payload
-    const nameResult = this.getStringField(payload.name, 'payload.name')
-    if (isErr(nameResult)) return nameResult
-    const emailResult = this.getStringField(payload.email, 'payload.email')
-    if (isErr(emailResult)) return emailResult
-    const tokenResult = this.getStringField(payload.token, 'payload.token')
-    if (isErr(tokenResult)) return tokenResult
-    const name = nameResult.value
-    const email = emailResult.value
-    const token = tokenResult.value
+    const payload = event.payload;
+    const nameResult = this.getStringField(payload.name, "payload.name");
+    if (isErr(nameResult)) return nameResult;
+    const emailResult = this.getStringField(payload.email, "payload.email");
+    if (isErr(emailResult)) return emailResult;
+    const tokenResult = this.getStringField(payload.token, "payload.token");
+    if (isErr(tokenResult)) return tokenResult;
+    const name = nameResult.value;
+    const email = emailResult.value;
+    const token = tokenResult.value;
     return ok({
       emails: [
         {
@@ -1836,98 +1758,92 @@ var PasswordResetDispatchStrategy = class {
           subject: EMAIL_CONSTANTS.PASSWORD_RECOVERY_SUBJECT,
           message: forgotPasswordTextTemplate(name, token),
           html: forgotPasswordHtmlTemplate(name, token),
-          context: { type: 'password-reset', recipient: 'user' },
-        },
+          context: { type: "password-reset", recipient: "user" }
+        }
       ],
       jobOptions: {
         attempts: PASSWORD_RESET_CONSTANTS.JOB_ATTEMPTS,
-        backoff: { type: 'fixed', delay: PASSWORD_RESET_CONSTANTS.JOB_BACKOFF_DELAY_MS },
-      },
-    })
+        backoff: { type: "fixed", delay: PASSWORD_RESET_CONSTANTS.JOB_BACKOFF_DELAY_MS }
+      }
+    });
   }
   getStringField(value, fieldName) {
-    if (typeof value === 'string' && value.length > 0) {
-      return ok(value)
+    if (typeof value === "string" && value.length > 0) {
+      return ok(value);
     }
-    return err(new InvalidPasswordResetPayloadError(fieldName))
+    return err(new InvalidPasswordResetPayloadError(fieldName));
   }
-}
+};
 
 // src/errors/infrastructure-error.ts
 var InfrastructureError = class extends AppError {
-  originalError
-  constructor(
-    detail,
-    originalError,
-    type = 'INTERNAL_SERVER_ERROR' /* INTERNAL_SERVER_ERROR */,
-    failureMode,
-    telemetryReason,
-  ) {
-    super(detail, type, failureMode, telemetryReason)
-    this.originalError = originalError
+  originalError;
+  constructor(detail, originalError, type = "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */, failureMode, telemetryReason) {
+    super(detail, type, failureMode, telemetryReason);
+    this.originalError = originalError;
     if (originalError) {
-      this.cause = originalError
+      this.cause = originalError;
     }
   }
-}
+};
 
 // src/messages/errors/outbox.ts
 var OUTBOX_ERRORS = {
   EVENT_NOT_FOUND: {
-    code: 'OUTBOX_EVENT_NOT_FOUND',
-    message: 'O evento de outbox solicitado n\xE3o foi encontrado no banco de dados.',
+    code: "OUTBOX_EVENT_NOT_FOUND",
+    message: "O evento de outbox solicitado n\xE3o foi encontrado no banco de dados."
   },
   OPERATION_FAILED: {
-    code: 'OUTBOX_OPERATION_FAILED',
-    message: 'Falha ao processar opera\xE7\xE3o da outbox no banco de dados.',
-  },
-}
+    code: "OUTBOX_OPERATION_FAILED",
+    message: "Falha ao processar opera\xE7\xE3o da outbox no banco de dados."
+  }
+};
 var UNKNOWN_OUTBOX_EVENT_TYPE_ERROR_FN = (eventType) => ({
-  code: 'UNKNOWN_OUTBOX_EVENT_TYPE',
-  message: `Nenhuma estrat\xE9gia de despacho registrada para o tipo de evento '${eventType}'.`,
-})
+  code: "UNKNOWN_OUTBOX_EVENT_TYPE",
+  message: `Nenhuma estrat\xE9gia de despacho registrada para o tipo de evento '${eventType}'.`
+});
 
 // src/lib/errors/outbox/unknown-outbox-event-type-error.ts
 var UnknownOutboxEventTypeError = class extends InfrastructureError {
   constructor(eventType) {
-    super(UNKNOWN_OUTBOX_EVENT_TYPE_ERROR_FN(eventType))
+    super(UNKNOWN_OUTBOX_EVENT_TYPE_ERROR_FN(eventType));
   }
-}
+};
 
 // src/lib/infra/jobs/outbox-dispatch-strategy-registry.ts
 var OutboxDispatchStrategyRegistry = class {
-  strategies
+  strategies;
   constructor(entries) {
-    this.strategies = new Map(entries)
+    this.strategies = new Map(entries);
   }
   resolve(eventType) {
-    const strategy = this.strategies.get(eventType)
+    const strategy = this.strategies.get(eventType);
     if (!strategy) {
-      return err(new UnknownOutboxEventTypeError(eventType))
+      return err(new UnknownOutboxEventTypeError(eventType));
     }
-    return ok(strategy)
+    return ok(strategy);
   }
-}
+};
 
 // src/lib/infra/jobs/make-outbox-dispatch-registry.ts
 function makeOutboxDispatchStrategyRegistry() {
   return new OutboxDispatchStrategyRegistry([
     [OUTBOX_EVENT_TYPES.FORM_SUBMISSION_CREATED, new FormSubmissionDispatchStrategy()],
-    [OUTBOX_EVENT_TYPES.PASSWORD_RESET_REQUESTED, new PasswordResetDispatchStrategy()],
-  ])
+    [OUTBOX_EVENT_TYPES.PASSWORD_RESET_REQUESTED, new PasswordResetDispatchStrategy()]
+  ]);
 }
 
 // src/repositories/prisma/prisma-outbox-event-repository.ts
-var import_client = require('@prisma/client')
+var import_client = require("@prisma/client");
 var PrismaOutboxRepository = class {
   constructor(dbContext, httpErrorMapper, infraErrorMapper) {
-    this.dbContext = dbContext
-    this.httpErrorMapper = httpErrorMapper
-    this.infraErrorMapper = infraErrorMapper
+    this.dbContext = dbContext;
+    this.httpErrorMapper = httpErrorMapper;
+    this.infraErrorMapper = infraErrorMapper;
   }
-  dbContext
-  httpErrorMapper
-  infraErrorMapper
+  dbContext;
+  httpErrorMapper;
+  infraErrorMapper;
   async create(data) {
     try {
       const outboxEvent = await this.dbContext.client.outboxEvent.create({
@@ -1935,49 +1851,49 @@ var PrismaOutboxRepository = class {
           type: data.type,
           status: data.status,
           payload: data.payload,
-          expiresAt: data.expiresAt ?? null,
-        },
-      })
-      return ok(this.toEntity(outboxEvent))
+          expiresAt: data.expiresAt ?? null
+        }
+      });
+      return ok(this.toEntity(outboxEvent));
     } catch (error) {
-      return err(this.httpErrorMapper.mapToKnownError(error))
+      return err(this.httpErrorMapper.mapToKnownError(error));
     }
   }
   async findPending(limit) {
     try {
       const events = await this.dbContext.client.outboxEvent.findMany({
-        where: { status: 'PENDING' /* PENDING */ },
-        orderBy: { occurredAt: 'asc' },
-        take: limit,
-      })
-      return ok(events.map((e) => this.toEntity(e)))
+        where: { status: "PENDING" /* PENDING */ },
+        orderBy: { occurredAt: "asc" },
+        take: limit
+      });
+      return ok(events.map((e) => this.toEntity(e)));
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async findStuck(stuckBefore, limit) {
     try {
       const events = await this.dbContext.client.outboxEvent.findMany({
         where: {
-          status: 'SENDING' /* SENDING */,
-          sendingAt: { lte: stuckBefore },
+          status: "SENDING" /* SENDING */,
+          sendingAt: { lte: stuckBefore }
         },
-        orderBy: { sendingAt: 'asc' },
-        take: limit,
-      })
-      return ok(events.map((e) => this.toEntity(e)))
+        orderBy: { sendingAt: "asc" },
+        take: limit
+      });
+      return ok(events.map((e) => this.toEntity(e)));
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async findByPublicId(publicId) {
     try {
       const event = await this.dbContext.client.outboxEvent.findUnique({
-        where: { publicId },
-      })
-      return ok(event ? this.toEntity(event) : null)
+        where: { publicId }
+      });
+      return ok(event ? this.toEntity(event) : null);
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async updateStatus(publicId, status) {
@@ -1987,38 +1903,36 @@ var PrismaOutboxRepository = class {
         data: {
           status,
           // SENDING marca o início do ciclo de despacho; demais status limpam o marcador
-          ...(status === 'SENDING' /* SENDING */
-            ? { sendingAt: /* @__PURE__ */ new Date(), attempts: { increment: 1 } }
-            : { sendingAt: null }),
-        },
-      })
-      return ok(void 0)
+          ...status === "SENDING" /* SENDING */ ? { sendingAt: /* @__PURE__ */ new Date(), attempts: { increment: 1 } } : { sendingAt: null }
+        }
+      });
+      return ok(void 0);
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async updatePendingRecipients(publicId, pendingRecipients) {
     try {
       await this.dbContext.client.outboxEvent.update({
         where: { publicId },
-        data: { pendingRecipients },
-      })
-      return ok(void 0)
+        data: { pendingRecipients }
+      });
+      return ok(void 0);
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async delete(publicId) {
     try {
       await this.dbContext.client.outboxEvent.delete({
-        where: { publicId },
-      })
-      return ok(void 0)
+        where: { publicId }
+      });
+      return ok(void 0);
     } catch (error) {
-      if (error instanceof import_client.Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        return ok(void 0)
+      if (error instanceof import_client.Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        return ok(void 0);
       }
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async deleteExpired(now, batchSize) {
@@ -2026,18 +1940,18 @@ var PrismaOutboxRepository = class {
       const batch = await this.dbContext.client.outboxEvent.findMany({
         where: { expiresAt: { lte: now } },
         select: { id: true },
-        orderBy: { expiresAt: 'asc' },
-        take: batchSize,
-      })
+        orderBy: { expiresAt: "asc" },
+        take: batchSize
+      });
       if (batch.length === 0) {
-        return ok(0)
+        return ok(0);
       }
       const result = await this.dbContext.client.outboxEvent.deleteMany({
-        where: { id: { in: batch.map((e) => e.id) } },
-      })
-      return ok(result.count)
+        where: { id: { in: batch.map((e) => e.id) } }
+      });
+      return ok(result.count);
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   async deleteOlderThan(cutoff, batchSize) {
@@ -2045,23 +1959,23 @@ var PrismaOutboxRepository = class {
       const batch = await this.dbContext.client.outboxEvent.findMany({
         where: { occurredAt: { lt: cutoff } },
         select: { id: true, status: true },
-        orderBy: { occurredAt: 'asc' },
-        take: batchSize,
-      })
+        orderBy: { occurredAt: "asc" },
+        take: batchSize
+      });
       if (batch.length === 0) {
-        return ok({ deleted: 0, byStatus: {} })
+        return ok({ deleted: 0, byStatus: {} });
       }
       const result = await this.dbContext.client.outboxEvent.deleteMany({
-        where: { id: { in: batch.map((e) => e.id) } },
-      })
-      const byStatus = {}
+        where: { id: { in: batch.map((e) => e.id) } }
+      });
+      const byStatus = {};
       for (const event of batch) {
-        const status = event.status
-        byStatus[status] = (byStatus[status] ?? 0) + 1
+        const status = event.status;
+        byStatus[status] = (byStatus[status] ?? 0) + 1;
       }
-      return ok({ deleted: result.count, byStatus })
+      return ok({ deleted: result.count, byStatus });
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
   // ─── Mapper ──────────────────────────────────────────────────────────────────
@@ -2076,161 +1990,160 @@ var PrismaOutboxRepository = class {
       occurredAt: raw.occurredAt,
       sendingAt: raw.sendingAt || void 0,
       expiresAt: raw.expiresAt || void 0,
-      pendingRecipients: raw.pendingRecipients,
-    }
+      pendingRecipients: raw.pendingRecipients
+    };
   }
-}
+};
 
 // src/lib/prisma/utils/prisma-error-mapper.ts
-var import_client2 = require('@prisma/client')
+var import_client2 = require("@prisma/client");
 
 // src/messages/errors/infrastructure.ts
 var INFRA_ERRORS = {
   SERVICE_BUSY: {
-    code: 'SERVICE_BUSY',
-    message: 'Servi\xE7o temporariamente indispon\xEDvel devido ao limite de requisi\xE7\xF5es.',
+    code: "SERVICE_BUSY",
+    message: "Servi\xE7o temporariamente indispon\xEDvel devido ao limite de requisi\xE7\xF5es."
   },
   PROVIDER_FAILURE: {
-    code: 'PROVIDER_FAILURE',
-    message: 'Falha de sistema ao processar dados no provedor de servi\xE7os externos.',
+    code: "PROVIDER_FAILURE",
+    message: "Falha de sistema ao processar dados no provedor de servi\xE7os externos."
   },
   DATABASE_QUERY_FAILURE: {
-    code: 'DATABASE_QUERY_FAILURE',
-    message: 'Falha de sistema ao processar consulta no banco de dados.',
+    code: "DATABASE_QUERY_FAILURE",
+    message: "Falha de sistema ao processar consulta no banco de dados."
   },
   DEADLINE_EXCEEDED: {
-    code: 'DEADLINE_EXCEEDED',
-    message: 'O tempo limite total da requisi\xE7\xE3o foi atingido antes da conclus\xE3o da opera\xE7\xE3o.',
+    code: "DEADLINE_EXCEEDED",
+    message: "O tempo limite total da requisi\xE7\xE3o foi atingido antes da conclus\xE3o da opera\xE7\xE3o."
   },
   CIRCUIT_OPEN: {
-    code: 'CIRCUIT_OPEN',
-    message: 'Provedor externo temporariamente suspenso ap\xF3s falhas repetidas.',
+    code: "CIRCUIT_OPEN",
+    message: "Provedor externo temporariamente suspenso ap\xF3s falhas repetidas."
   },
   SERVICE_OVERLOAD: {
-    code: 'SERVICE_OVERLOAD',
-    message:
-      'N\xFAmero de requisi\xE7\xF5es simult\xE2neas excedeu o limite de maxPendingFetches na mem\xF3ria cache do Redis.',
-  },
-}
+    code: "SERVICE_OVERLOAD",
+    message: "N\xFAmero de requisi\xE7\xF5es simult\xE2neas excedeu o limite de maxPendingFetches na mem\xF3ria cache do Redis."
+  }
+};
 
 // src/errors/infrastructure/database-query-error.ts
 var DatabaseQueryError = class extends InfrastructureError {
   constructor(originalError) {
-    super(INFRA_ERRORS.DATABASE_QUERY_FAILURE, originalError, 'INTERNAL_SERVER_ERROR' /* INTERNAL_SERVER_ERROR */)
-    this.name = 'DatabaseQueryError'
+    super(INFRA_ERRORS.DATABASE_QUERY_FAILURE, originalError, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+    this.name = "DatabaseQueryError";
   }
-}
+};
 
 // src/core/shared/safe-lookup.ts
 function safeLookup(table, key) {
-  return Object.hasOwn(table, key) ? table[key] : void 0
+  return Object.hasOwn(table, key) ? table[key] : void 0;
 }
 
 // src/lib/prisma/utils/prisma-error-mapper.ts
 var PrismaErrorMapper = class {
   constructor(errorMapping) {
-    this.errorMapping = errorMapping
+    this.errorMapping = errorMapping;
   }
-  errorMapping
+  errorMapping;
   mapToKnownError(error) {
     if (error instanceof AppError) {
-      return error
+      return error;
     }
     if (error instanceof import_client2.Prisma.PrismaClientKnownRequestError) {
-      const errorFactory = safeLookup(this.errorMapping, error.code)
+      const errorFactory = safeLookup(this.errorMapping, error.code);
       if (errorFactory) {
-        return errorFactory(error)
+        return errorFactory(error);
       }
     }
-    return new DatabaseQueryError(error)
+    return new DatabaseQueryError(error);
   }
-}
+};
 
 // src/errors/system-error.ts
 var SystemError = class extends AppError {
   // eslint-disable-next-line @typescript-eslint/no-useless-constructor
   constructor(detail, type) {
-    super(detail, type)
+    super(detail, type);
   }
-}
+};
 
 // src/use-cases/errors/outbox/outbox-errors.ts
 var OutboxEventNotFoundHttpError = class extends DomainError {
   constructor() {
-    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, 'NOT_FOUND' /* NOT_FOUND */)
+    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
   }
-}
+};
 var OutboxOperationFailedHttpError = class extends SystemError {
   constructor() {
-    super(OUTBOX_ERRORS.OPERATION_FAILED, 'INTERNAL_SERVER_ERROR' /* INTERNAL_SERVER_ERROR */)
+    super(OUTBOX_ERRORS.OPERATION_FAILED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
   }
-}
+};
 var OutboxEventNotFoundInfraError = class extends InfrastructureError {
   constructor(originalError) {
-    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, originalError)
+    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, originalError);
   }
-}
+};
 var OutboxOperationFailedInfraError = class extends InfrastructureError {
   constructor(originalError) {
-    super(OUTBOX_ERRORS.OPERATION_FAILED, originalError)
+    super(OUTBOX_ERRORS.OPERATION_FAILED, originalError);
   }
-}
+};
 
 // src/repositories/prisma/errors/outbox-error-mapping.ts
 var outboxHttpPrismaErrorMapping = {
   P2025: () => new OutboxEventNotFoundHttpError(),
-  P2003: () => new OutboxOperationFailedHttpError(),
-}
+  P2003: () => new OutboxOperationFailedHttpError()
+};
 var outboxInfraPrismaErrorMapping = {
   P2025: (error) => new OutboxEventNotFoundInfraError(error),
-  P2003: (error) => new OutboxOperationFailedInfraError(error),
-}
+  P2003: (error) => new OutboxOperationFailedInfraError(error)
+};
 
 // src/messages/errors/system.ts
 var SYSTEM_ERRORS = {
   ASYNC_LOCAL_STORAGE_NOT_INITIALIZED: {
-    code: 'ASYNC_LOCAL_STORAGE_NOT_INITIALIZED',
-    message: 'Async Local Storage is not initialized.',
-  },
-}
+    code: "ASYNC_LOCAL_STORAGE_NOT_INITIALIZED",
+    message: "Async Local Storage is not initialized."
+  }
+};
 
 // src/lib/errors/async-local-storage/async-local-storage-not-initialized-error.ts
 var AsyncLocalStorageNotInitializedError = class extends SystemError {
   constructor() {
-    super(SYSTEM_ERRORS.ASYNC_LOCAL_STORAGE_NOT_INITIALIZED, 'INTERNAL_SERVER_ERROR' /* INTERNAL_SERVER_ERROR */)
+    super(SYSTEM_ERRORS.ASYNC_LOCAL_STORAGE_NOT_INITIALIZED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
   }
-}
+};
 
 // src/lib/prisma/index.ts
-var import_client3 = require('@prisma/client')
+var import_client3 = require("@prisma/client");
 
 // src/lib/prisma/helpers/configuration.ts
-var import_adapter_pg = require('@prisma/adapter-pg')
-var import_pg = require('pg')
+var import_adapter_pg = require("@prisma/adapter-pg");
+var import_pg = require("pg");
 var pool = new import_pg.Pool({
   connectionString: env.DATABASE_URL_LOCAL || env.DATABASE_URL,
   max: env.DB_POOL_MAX,
   min: env.DB_POOL_MIN,
   connectionTimeoutMillis: env.DB_CONNECTION_TIMEOUT,
-  idleTimeoutMillis: env.DB_IDLE_TIMEOUT,
-})
-var adapter = new import_adapter_pg.PrismaPg(pool)
+  idleTimeoutMillis: env.DB_IDLE_TIMEOUT
+});
+var adapter = new import_adapter_pg.PrismaPg(pool);
 
 // src/lib/prisma/index.ts
 var prisma = new import_client3.PrismaClient({
   adapter,
-  log: env.LOG_LEVEL === 'debug' ? ['query', 'info', 'warn', 'error'] : [],
-})
+  log: env.LOG_LEVEL === "debug" ? ["query", "info", "warn", "error"] : []
+});
 
 // src/lib/prisma/helpers/database-context.ts
 var DatabaseContext = class {
   constructor(prisma2 = prisma) {
-    this.prisma = prisma2
+    this.prisma = prisma2;
   }
-  prisma
+  prisma;
   get client() {
-    const prismaTx = asyncLocalStorage.getStore()?.prismaTransaction
-    return prismaTx ?? this.prisma
+    const prismaTx = asyncLocalStorage.getStore()?.prismaTransaction;
+    return prismaTx ?? this.prisma;
   }
   /**
    * Executes a callback function within a database transaction.
@@ -2258,71 +2171,65 @@ var DatabaseContext = class {
    * - The transaction will automatically rollback if the callback throws an error
    */
   async runInTransaction(callback, options) {
-    const store = asyncLocalStorage.getStore()
+    const store = asyncLocalStorage.getStore();
     if (!store) {
-      throw new AsyncLocalStorageNotInitializedError()
+      throw new AsyncLocalStorageNotInitializedError();
     }
     if (store.prismaTransaction) {
-      return await callback()
+      return await callback();
     }
     return await this.prisma.$transaction(async (tx) => {
       return await asyncLocalStorage.run(
         {
           ...store,
-          prismaTransaction: tx,
+          prismaTransaction: tx
         },
-        callback,
-      )
-    }, options)
+        callback
+      );
+    }, options);
   }
-}
+};
 
 // src/messages/constants/cron/cron.ts
 var CRON_SCHEDULES = {
   /** Every day at midnight (00:00:00) */
-  MIDNIGHT_DAILY: '0 0 0 * * *',
+  MIDNIGHT_DAILY: "0 0 0 * * *",
   /** Every 5 minutes */
-  EVERY_FIVE_MINUTES: '0 */5 * * * *',
+  EVERY_FIVE_MINUTES: "0 */5 * * * *",
   /** Every day at 03:00 (off the midnight sweep) */
-  DAILY_3AM: '0 0 3 * * *',
+  DAILY_3AM: "0 0 3 * * *",
   /** Every day at 04:00 — analytics retention, after the outbox purge at 03:00 */
-  DAILY_4AM: '0 0 4 * * *',
-}
+  DAILY_4AM: "0 0 4 * * *"
+};
 
 // src/lib/metrics/analytics-metrics.ts
-var import_prom_client4 = require('prom-client')
-var registry4 = getRegistry()
-var collectMetricsAnalyticsRetentionDeleted = registry4
-  ? new import_prom_client4.Counter({
-      name: 'analytics_retention_deleted_total',
-      help: 'Analytics rows deleted by the retention sweep',
-      labelNames: ['table'],
-      registers: [registry4],
-    })
-  : null
-var collectMetricsAnalyticsRetentionRuns = registry4
-  ? new import_prom_client4.Counter({
-      name: 'analytics_retention_runs_total',
-      help: 'Analytics retention sweep executions',
-      registers: [registry4],
-    })
-  : null
-var collectMetricsAnalyticsCookieSupersededSecret = registry4
-  ? new import_prom_client4.Counter({
-      name: 'analytics_cookie_superseded_secret_total',
-      help: 'Signed analytics cookies presented that verified against a rotated-out secret',
-      labelNames: ['cookie'],
-      registers: [registry4],
-    })
-  : null
+var import_prom_client4 = require("prom-client");
+var registry4 = getRegistry();
+var collectMetricsAnalyticsRetentionDeleted = registry4 ? new import_prom_client4.Counter({
+  name: "analytics_retention_deleted_total",
+  help: "Analytics rows deleted by the retention sweep",
+  labelNames: ["table"],
+  registers: [registry4]
+}) : null;
+var collectMetricsAnalyticsRetentionRuns = registry4 ? new import_prom_client4.Counter({
+  name: "analytics_retention_runs_total",
+  help: "Analytics retention sweep executions",
+  registers: [registry4]
+}) : null;
+var collectMetricsAnalyticsCookieSupersededSecret = registry4 ? new import_prom_client4.Counter({
+  name: "analytics_cookie_superseded_secret_total",
+  help: "Signed analytics cookies presented that verified against a rotated-out secret",
+  labelNames: ["cookie"],
+  registers: [registry4]
+}) : null;
 
 // src/messages/constants/analytics/analytics.ts
 var ANALYTICS_CONSTANTS = {
   LOCK_KEYS: {
-    ANALYTICS_RETENTION: 'lock:analytics-retention',
+    ANALYTICS_RETENTION: "lock:analytics-retention"
   },
   LOCK_TTL_MS: {
-    DEFAULT: 1e4,
+    DEFAULT: 1e4
   },
   RETENTION: {
     /**
@@ -2335,55 +2242,55 @@ var ANALYTICS_CONSTANTS = {
      */
     BATCH_SIZE: 1e3,
     /** Ceiling on batches per run, so one night's sweep cannot run unbounded. */
-    MAX_BATCHES_PER_RUN: 100,
-  },
-}
+    MAX_BATCHES_PER_RUN: 100
+  }
+};
 var ANALYTICS_LOGS = {
-  RETENTION_ERROR: 'Falha na varredura de reten\xE7\xE3o de analytics',
-  RETENTION_DONE: 'Varredura de reten\xE7\xE3o de analytics conclu\xEDda',
-}
+  RETENTION_ERROR: "Falha na varredura de reten\xE7\xE3o de analytics",
+  RETENTION_DONE: "Varredura de reten\xE7\xE3o de analytics conclu\xEDda"
+};
 
 // src/lib/infra/jobs/analytics-retention.ts
-var import_ms3 = __toESM(require('ms'))
+var import_ms3 = __toESM(require("ms"));
 var AnalyticsRetention = class {
   constructor(analyticsRepository) {
-    this.analyticsRepository = analyticsRepository
+    this.analyticsRepository = analyticsRepository;
   }
-  analyticsRepository
-  LOCK_TTL_MS = ANALYTICS_CONSTANTS.LOCK_TTL_MS.DEFAULT
+  analyticsRepository;
+  LOCK_TTL_MS = ANALYTICS_CONSTANTS.LOCK_TTL_MS.DEFAULT;
   async purgeExpiredData() {
     await withDistributedLock({
       lockKey: ANALYTICS_CONSTANTS.LOCK_KEYS.ANALYTICS_RETENTION,
       ttlMs: this.LOCK_TTL_MS,
       errorMessage: ANALYTICS_LOGS.RETENTION_ERROR,
       work: async (renew) => {
-        collectMetricsAnalyticsRetentionRuns?.inc()
-        const deleted = {}
+        collectMetricsAnalyticsRetentionRuns?.inc();
+        const deleted = {};
         for (const target of this.targets()) {
-          deleted[target.table] = await this.purgeInBatches(target, renew)
+          deleted[target.table] = await this.purgeInBatches(target, renew);
         }
-        logger.info({ deleted }, ANALYTICS_LOGS.RETENTION_DONE)
-      },
-    })
+        logger.info({ deleted }, ANALYTICS_LOGS.RETENTION_DONE);
+      }
+    });
   }
   targets() {
     return [
       {
-        table: 'analytics_events',
+        table: "analytics_events",
         days: env.ANALYTICS_RETENTION_EVENTS_DAYS,
-        purge: (cutoff, size) => this.analyticsRepository.purgeEventsOlderThan(cutoff, size),
+        purge: (cutoff, size) => this.analyticsRepository.purgeEventsOlderThan(cutoff, size)
       },
       {
-        table: 'analytics_sessions',
+        table: "analytics_sessions",
         days: env.ANALYTICS_RETENTION_SESSIONS_DAYS,
-        purge: (cutoff, size) => this.analyticsRepository.purgeSessionsOlderThan(cutoff, size),
+        purge: (cutoff, size) => this.analyticsRepository.purgeSessionsOlderThan(cutoff, size)
       },
       {
-        table: 'analytics_visitors',
+        table: "analytics_visitors",
         days: env.ANALYTICS_RETENTION_VISITORS_DAYS,
-        purge: (cutoff, size) => this.analyticsRepository.purgeVisitorsInactiveSince(cutoff, size),
-      },
-    ]
+        purge: (cutoff, size) => this.analyticsRepository.purgeVisitorsInactiveSince(cutoff, size)
+      }
+    ];
   }
   /**
    * Loops one bounded batch at a time, renewing the lock between them, until a
@@ -2395,18 +2302,18 @@ var AnalyticsRetention = class {
    * because one table erred would let the other two grow unbounded.
    */
   async purgeInBatches(target, renew) {
-    const cutoff = new Date(Date.now() - (0, import_ms3.default)(`${target.days}d`))
-    let totalDeleted = 0
+    const cutoff = new Date(Date.now() - (0, import_ms3.default)(`${target.days}d`));
+    let totalDeleted = 0;
     for (let batch = 0; batch < ANALYTICS_CONSTANTS.RETENTION.MAX_BATCHES_PER_RUN; batch++) {
-      const deleted = await this.purgeOneBatch(target, cutoff)
+      const deleted = await this.purgeOneBatch(target, cutoff);
       if (deleted === 0) {
-        break
+        break;
       }
-      totalDeleted += deleted
-      collectMetricsAnalyticsRetentionDeleted?.inc({ table: target.table }, deleted)
-      await renew()
+      totalDeleted += deleted;
+      collectMetricsAnalyticsRetentionDeleted?.inc({ table: target.table }, deleted);
+      await renew();
     }
-    return totalDeleted
+    return totalDeleted;
   }
   /**
    * One batch, reporting a failure as zero deletions.
@@ -2417,47 +2324,47 @@ var AnalyticsRetention = class {
    * that produced it, so a table that quietly stops draining is visible.
    */
   async purgeOneBatch(target, cutoff) {
-    const result = await target.purge(cutoff, ANALYTICS_CONSTANTS.RETENTION.BATCH_SIZE)
+    const result = await target.purge(cutoff, ANALYTICS_CONSTANTS.RETENTION.BATCH_SIZE);
     if (isErr(result)) {
-      logger.error({ error: result.error, table: target.table }, ANALYTICS_LOGS.RETENTION_ERROR)
-      return 0
+      logger.error({ error: result.error, table: target.table }, ANALYTICS_LOGS.RETENTION_ERROR);
+      return 0;
     }
-    return result.value
+    return result.value;
   }
-}
+};
 
 // src/core/projections/analytics-session-attributes.ts
 var OPTIONAL_SESSION_FIELDS = [
-  'userId',
-  'ipAddress',
-  'browser',
-  'os',
-  'device',
-  'language',
-  'referrer',
-  'landingPath',
-  'utmSource',
-  'utmMedium',
-  'utmCampaign',
-  'utmTerm',
-  'utmContent',
-]
+  "userId",
+  "ipAddress",
+  "browser",
+  "os",
+  "device",
+  "language",
+  "referrer",
+  "landingPath",
+  "utmSource",
+  "utmMedium",
+  "utmCampaign",
+  "utmTerm",
+  "utmContent"
+];
 function toSessionAttributes(data) {
-  const optional = Object.fromEntries(OPTIONAL_SESSION_FIELDS.map((field) => [field, data[field] ?? null]))
-  return { visitorId: data.visitorId, ...optional }
+  const optional = Object.fromEntries(OPTIONAL_SESSION_FIELDS.map((field) => [field, data[field] ?? null]));
+  return { visitorId: data.visitorId, ...optional };
 }
-var FIRST_TOUCH_FIELDS = ['firstUtmSource', 'firstUtmMedium', 'firstUtmCampaign', 'firstLandingPath']
+var FIRST_TOUCH_FIELDS = ["firstUtmSource", "firstUtmMedium", "firstUtmCampaign", "firstLandingPath"];
 function toVisitorCreateAttributes(data) {
-  const firstTouch = Object.fromEntries(FIRST_TOUCH_FIELDS.map((field) => [field, data[field] ?? null]))
-  return { visitorId: data.visitorId, userId: data.userId ?? null, ...firstTouch }
+  const firstTouch = Object.fromEntries(FIRST_TOUCH_FIELDS.map((field) => [field, data[field] ?? null]));
+  return { visitorId: data.visitorId, userId: data.userId ?? null, ...firstTouch };
 }
 function toEventAttributes(data) {
   return {
     title: data.title ?? null,
     referrer: data.referrer ?? null,
     durationMs: data.durationMs ?? null,
-    scrollDepth: data.scrollDepth ?? null,
-  }
+    scrollDepth: data.scrollDepth ?? null
+  };
 }
 
 // src/repositories/prisma/prisma-analytics-repository.ts
@@ -2477,27 +2384,27 @@ var PrismaAnalyticsRepository = class {
         // the opposite of the session rule a few lines down, where absence must
         // clear the value; the two look alike and mean opposite things.
         update: {
-          ...(data.userId ? { userId: data.userId } : {}),
-          ...(data.countNewSession ? { sessionCount: { increment: 1 } } : {}),
+          ...data.userId ? { userId: data.userId } : {},
+          ...data.countNewSession ? { sessionCount: { increment: 1 } } : {}
         },
-        create: toVisitorCreateAttributes(data),
-      })
-      return ok(visitor)
+        create: toVisitorCreateAttributes(data)
+      });
+      return ok(visitor);
     } catch (error) {
-      return err(new DatabaseQueryError(error))
+      return err(new DatabaseQueryError(error));
     }
   }
   async upsertSession(data) {
     try {
-      const attributes = toSessionAttributes(data)
+      const attributes = toSessionAttributes(data);
       const session = await prisma.analyticsSession.upsert({
         where: { sessionId: data.sessionId },
         update: attributes,
-        create: { ...attributes, sessionId: data.sessionId },
-      })
-      return ok(session)
+        create: { ...attributes, sessionId: data.sessionId }
+      });
+      return ok(session);
     } catch (error) {
-      return err(new DatabaseQueryError(error))
+      return err(new DatabaseQueryError(error));
     }
   }
   async createEvent(data) {
@@ -2508,87 +2415,84 @@ var PrismaAnalyticsRepository = class {
           eventType: data.eventType,
           path: data.path,
           ...toEventAttributes(data),
-          payload: data.payload ?? null,
-        },
-      })
-      return ok(event)
+          payload: data.payload ?? null
+        }
+      });
+      return ok(event);
     } catch (error) {
-      return err(new DatabaseQueryError(error))
+      return err(new DatabaseQueryError(error));
     }
   }
   async findSessionBySessionId(sessionId) {
     try {
-      return ok(await prisma.analyticsSession.findUnique({ where: { sessionId } }))
+      return ok(await prisma.analyticsSession.findUnique({ where: { sessionId } }));
     } catch (error) {
-      return err(new DatabaseQueryError(error))
+      return err(new DatabaseQueryError(error));
     }
   }
   async findVisitorByVisitorId(visitorId) {
     try {
-      return ok(await prisma.analyticsVisitor.findUnique({ where: { visitorId } }))
+      return ok(await prisma.analyticsVisitor.findUnique({ where: { visitorId } }));
     } catch (error) {
-      return err(new DatabaseQueryError(error))
+      return err(new DatabaseQueryError(error));
     }
   }
   async linkSessionsToUser(data) {
     try {
       const { count } = await prisma.analyticsSession.updateMany({
         where: sessionsToClaim(data),
-        data: { userId: data.userId },
-      })
-      return ok(count)
+        data: { userId: data.userId }
+      });
+      return ok(count);
     } catch (error) {
-      return err(new DatabaseQueryError(error))
+      return err(new DatabaseQueryError(error));
     }
   }
   async deleteVisitorData(visitorId) {
     try {
-      const { count } = await prisma.analyticsVisitor.deleteMany({ where: { visitorId } })
-      return ok(count)
+      const { count } = await prisma.analyticsVisitor.deleteMany({ where: { visitorId } });
+      return ok(count);
     } catch (error) {
-      return err(new DatabaseQueryError(error))
+      return err(new DatabaseQueryError(error));
     }
   }
   async deleteDataForUser(userId) {
     try {
-      const { count } = await prisma.analyticsVisitor.deleteMany({ where: { userId } })
-      return ok(count)
+      const { count } = await prisma.analyticsVisitor.deleteMany({ where: { userId } });
+      return ok(count);
     } catch (error) {
-      return err(new DatabaseQueryError(error))
+      return err(new DatabaseQueryError(error));
     }
   }
   async purgeEventsOlderThan(cutoff, batchSize) {
     return this.purgeBatch(
       (ids) => prisma.analyticsEvent.deleteMany({ where: { id: { in: ids } } }),
-      () =>
-        prisma.analyticsEvent.findMany({
-          where: { occurredAt: { lt: cutoff } },
-          select: { id: true },
-          take: batchSize,
-        }),
-    )
+      () => prisma.analyticsEvent.findMany({
+        where: { occurredAt: { lt: cutoff } },
+        select: { id: true },
+        take: batchSize
+      })
+    );
   }
   async purgeSessionsOlderThan(cutoff, batchSize) {
     return this.purgeBatch(
       (ids) => prisma.analyticsSession.deleteMany({ where: { id: { in: ids } } }),
-      () =>
-        prisma.analyticsSession.findMany({
-          where: { startedAt: { lt: cutoff } },
-          select: { id: true },
-          take: batchSize,
-        }),
-    )
+      () => prisma.analyticsSession.findMany({
+        where: { startedAt: { lt: cutoff } },
+        select: { id: true },
+        take: batchSize
+      })
+    );
   }
   async purgeVisitorsInactiveSince(cutoff, batchSize) {
     return this.purgeBatch(
       (ids) => prisma.analyticsVisitor.deleteMany({ where: { id: { in: ids } } }),
-      () =>
-        prisma.analyticsVisitor.findMany({
-          where: { lastSeenAt: { lt: cutoff } },
-          select: { id: true },
-          take: batchSize,
-        }),
-    )
+      () => prisma.analyticsVisitor.findMany({
+        where: { lastSeenAt: { lt: cutoff } },
+        select: { id: true },
+        take: batchSize
+      })
+    );
   }
   async findPagesRead(query) {
     try {
@@ -2599,38 +2503,38 @@ var PrismaAnalyticsRepository = class {
           // written by page_exit, so its presence is what separates "read" from
           // "loaded and abandoned".
           durationMs: { not: null },
-          ...(query.cursor ? { occurredAt: { lt: query.cursor } } : {}),
+          ...query.cursor ? { occurredAt: { lt: query.cursor } } : {}
         },
-        orderBy: { occurredAt: 'desc' },
-        take: query.limit,
-      })
-      return ok(events)
+        orderBy: { occurredAt: "desc" },
+        take: query.limit
+      });
+      return ok(events);
     } catch (error) {
-      return err(new DatabaseQueryError(error))
+      return err(new DatabaseQueryError(error));
     }
   }
   async findVisits(visitorId, limit) {
     try {
       const sessions = await prisma.analyticsSession.findMany({
         where: { visitorId },
-        orderBy: { startedAt: 'desc' },
-        take: limit,
-      })
-      return ok(sessions)
+        orderBy: { startedAt: "desc" },
+        take: limit
+      });
+      return ok(sessions);
     } catch (error) {
-      return err(new DatabaseQueryError(error))
+      return err(new DatabaseQueryError(error));
     }
   }
   async findVisitorsByUserId(userId, limit) {
     try {
       const visitors = await prisma.analyticsVisitor.findMany({
         where: { userId },
-        orderBy: { lastSeenAt: 'desc' },
-        take: limit,
-      })
-      return ok(visitors)
+        orderBy: { lastSeenAt: "desc" },
+        take: limit
+      });
+      return ok(visitors);
     } catch (error) {
-      return err(new DatabaseQueryError(error))
+      return err(new DatabaseQueryError(error));
     }
   }
   /**
@@ -2643,143 +2547,149 @@ var PrismaAnalyticsRepository = class {
    */
   async purgeBatch(remove, find) {
     try {
-      const rows = await find()
+      const rows = await find();
       if (rows.length === 0) {
-        return ok(0)
+        return ok(0);
       }
-      const { count } = await remove(rows.map((row) => row.id))
-      return ok(count)
+      const { count } = await remove(rows.map((row) => row.id));
+      return ok(count);
     } catch (error) {
-      return err(new DatabaseQueryError(error))
+      return err(new DatabaseQueryError(error));
     }
   }
-}
+};
 function sessionsToClaim(data) {
   if (data.backfillEarlierSessions) {
-    return { visitorId: data.visitorId, userId: null }
+    return { visitorId: data.visitorId, userId: null };
   }
-  return data.sessionId === null ? { sessionId: '' } : { sessionId: data.sessionId }
+  return data.sessionId === null ? { sessionId: "" } : { sessionId: data.sessionId };
 }
 
 // src/lib/infra/jobs/outbox-cron.ts
 function startOutboxCron(existingProcessor, existingMaintenance, existingAnalyticsRetention) {
-  const processor = existingProcessor ?? buildProcessor()
-  const maintenance = existingMaintenance ?? buildMaintenance()
-  const analyticsRetention = existingAnalyticsRetention ?? buildAnalyticsRetention()
-  scheduleFiveMinuteSweep(processor, maintenance)
-  scheduleMidnightScan(processor)
-  scheduleRetentionPurge(maintenance)
-  scheduleAnalyticsRetention(analyticsRetention)
-  logger.info(OUTBOX_LOGS.SCHEDULER_CONFIGURED)
+  const processor = existingProcessor ?? buildProcessor();
+  const maintenance = existingMaintenance ?? buildMaintenance();
+  const analyticsRetention = existingAnalyticsRetention ?? buildAnalyticsRetention();
+  scheduleFiveMinuteSweep(processor, maintenance);
+  scheduleMidnightScan(processor);
+  scheduleRetentionPurge(maintenance);
+  scheduleAnalyticsRetention(analyticsRetention);
+  logger.info(OUTBOX_LOGS.SCHEDULER_CONFIGURED);
 }
 function scheduleAnalyticsRetention(analyticsRetention) {
   import_node_cron.default.schedule(CRON_SCHEDULES.DAILY_4AM, async () => {
-    await runPhase('analytics_retention', () => analyticsRetention.purgeExpiredData(), ANALYTICS_LOGS.RETENTION_ERROR)
-  })
+    await runPhase("analytics_retention", () => analyticsRetention.purgeExpiredData(), ANALYTICS_LOGS.RETENTION_ERROR);
+  });
 }
 function buildAnalyticsRetention() {
-  return new AnalyticsRetention(new PrismaAnalyticsRepository())
+  return new AnalyticsRetention(new PrismaAnalyticsRepository());
 }
 async function runPhase(phase, task, errorMessage, options = {}) {
-  collectMetricsOutboxCronRuns?.inc({ phase })
+  collectMetricsOutboxCronRuns?.inc({ phase });
   try {
-    await task()
+    await task();
     if (options.onSuccess) {
-      logger.info(options.onSuccess)
+      logger.info(options.onSuccess);
     }
   } catch (error) {
-    logger.error({ error }, errorMessage)
+    logger.error({ error }, errorMessage);
     if (options.sentryContext) {
-      captureError(error, options.sentryContext)
+      captureError(error, options.sentryContext);
     } else {
-      captureError(error)
+      captureError(error);
     }
   }
 }
 function scheduleFiveMinuteSweep(processor, maintenance) {
   import_node_cron.default.schedule(CRON_SCHEDULES.EVERY_FIVE_MINUTES, async () => {
-    await runPhase('five_min_sweep', () => maintenance.sweepExpiredEvents(), OUTBOX_LOGS.FIVE_MIN_SWEEP_EXPIRY_ERROR)
-    await runPhase('five_min_pending', () => processor.processPendingEvents(), OUTBOX_LOGS.FIVE_MIN_SWEEP_PENDING_ERROR)
-  })
+    await runPhase("five_min_sweep", () => maintenance.sweepExpiredEvents(), OUTBOX_LOGS.FIVE_MIN_SWEEP_EXPIRY_ERROR);
+    await runPhase("five_min_pending", () => processor.processPendingEvents(), OUTBOX_LOGS.FIVE_MIN_SWEEP_PENDING_ERROR);
+  });
 }
 function scheduleMidnightScan(processor) {
   import_node_cron.default.schedule(CRON_SCHEDULES.MIDNIGHT_DAILY, async () => {
-    logger.info(OUTBOX_LOGS.CRON_START)
-    await runPhase('midnight_recovery', () => processor.processStuckSendingEvents(), OUTBOX_LOGS.PHASE1_ERROR, {
+    logger.info(OUTBOX_LOGS.CRON_START);
+    await runPhase("midnight_recovery", () => processor.processStuckSendingEvents(), OUTBOX_LOGS.PHASE1_ERROR, {
       onSuccess: OUTBOX_LOGS.PHASE1_DONE,
-      sentryContext: { phase: 1 },
-    })
-    await runPhase('midnight_pending', () => processor.processPendingEvents(), OUTBOX_LOGS.PHASE2_ERROR, {
+      sentryContext: { phase: 1 }
+    });
+    await runPhase("midnight_pending", () => processor.processPendingEvents(), OUTBOX_LOGS.PHASE2_ERROR, {
       onSuccess: OUTBOX_LOGS.PHASE2_DONE,
-      sentryContext: { phase: 2 },
-    })
-    logger.info(OUTBOX_LOGS.SCAN_DONE)
-  })
+      sentryContext: { phase: 2 }
+    });
+    logger.info(OUTBOX_LOGS.SCAN_DONE);
+  });
 }
 function scheduleRetentionPurge(maintenance) {
   import_node_cron.default.schedule(CRON_SCHEDULES.DAILY_3AM, async () => {
-    await runPhase('retention_purge', () => maintenance.purgeOldEvents(), OUTBOX_LOGS.RETENTION_CRON_ERROR)
-  })
+    await runPhase("retention_purge", () => maintenance.purgeOldEvents(), OUTBOX_LOGS.RETENTION_CRON_ERROR);
+  });
 }
 function buildProcessor() {
-  return new OutboxProcessor(buildRepository(), makeOutboxDispatchStrategyRegistry())
+  return new OutboxProcessor(buildRepository(), makeOutboxDispatchStrategyRegistry());
 }
 function buildMaintenance() {
-  return new OutboxMaintenance(buildRepository())
+  return new OutboxMaintenance(buildRepository());
 }
 function buildRepository() {
-  const dbContext = new DatabaseContext()
-  const outboxHttpMapper = new PrismaErrorMapper(outboxHttpPrismaErrorMapping)
-  const outboxInfraMapper = new PrismaErrorMapper(outboxInfraPrismaErrorMapping)
-  return new PrismaOutboxRepository(dbContext, outboxHttpMapper, outboxInfraMapper)
+  const dbContext = new DatabaseContext();
+  const outboxHttpMapper = new PrismaErrorMapper(outboxHttpPrismaErrorMapping);
+  const outboxInfraMapper = new PrismaErrorMapper(outboxInfraPrismaErrorMapping);
+  return new PrismaOutboxRepository(dbContext, outboxHttpMapper, outboxInfraMapper);
 }
 
 // src/lib/workers/mail-worker.ts
-var import_bullmq2 = require('bullmq')
+var import_bullmq2 = require("bullmq");
 
 // src/messages/errors/queue.ts
 var QUEUE_ERRORS = {
   JOB_ALREADY_PROCESSING: {
-    code: 'JOB_ALREADY_PROCESSING',
-    message: 'Bloqueio de Idempot\xEAncia: Job em processamento simult\xE2neo por outra thread.',
+    code: "JOB_ALREADY_PROCESSING",
+    message: "Bloqueio de Idempot\xEAncia: Job em processamento simult\xE2neo por outra thread."
   },
   SMTP_DISPATCH_FAILED: {
-    code: 'SMTP_DISPATCH_FAILED',
-    message: 'Falha cr\xEDtica ao despachar os e-mails via servidor SMTP.',
-  },
-}
+    code: "SMTP_DISPATCH_FAILED",
+    message: "Falha cr\xEDtica ao despachar os e-mails via servidor SMTP."
+  }
+};
 
 // src/lib/errors/queue/smtp-dispatch-error.ts
 var SmtpDispatchError = class extends InfrastructureError {
   constructor(originalError) {
-    super(QUEUE_ERRORS.SMTP_DISPATCH_FAILED, originalError)
+    super(QUEUE_ERRORS.SMTP_DISPATCH_FAILED, originalError);
   }
-}
+};
 
 // src/use-cases/email/send-email.ts
 var SendEmailUseCase = class {
   constructor(mailSender2) {
-    this.mailSender = mailSender2
+    this.mailSender = mailSender2;
   }
-  mailSender
-  async execute({ to, subject, message, html, attachments }) {
+  mailSender;
+  async execute({
+    to,
+    subject,
+    message,
+    html,
+    attachments
+  }) {
     try {
-      const info = await this.mailSender.send({ to, subject, message, html, attachments })
-      return ok(info)
+      const info = await this.mailSender.send({ to, subject, message, html, attachments });
+      return ok(info);
     } catch (error) {
-      return err(new SmtpDispatchError(error))
+      return err(new SmtpDispatchError(error));
     }
   }
-}
+};
 
 // src/lib/mail/nodemailer-mail-sender.ts
-var import_nodemailer = __toESM(require('nodemailer'))
+var import_nodemailer = __toESM(require("nodemailer"));
 var NodemailerMailSender = class {
-  transporter = null
-  consecutiveFailures = 0
+  transporter = null;
+  consecutiveFailures = 0;
   async getTransporter() {
     if (this.transporter) {
-      return this.transporter
+      return this.transporter;
     }
     const transporter = import_nodemailer.default.createTransport({
       host: env.SMTP_HOST,
@@ -2787,25 +2697,25 @@ var NodemailerMailSender = class {
       secure: env.SMTP_SECURE,
       auth: {
         user: env.SMTP_EMAIL,
-        pass: env.SMTP_PASSWORD,
+        pass: env.SMTP_PASSWORD
       },
       // Sem esses limites, o Nodemailer cai nos timeouts do SO (até ~10 min por socket)
       connectionTimeout: env.SMTP_CONNECTION_TIMEOUT_MS,
       greetingTimeout: env.SMTP_GREETING_TIMEOUT_MS,
-      socketTimeout: env.SMTP_SOCKET_TIMEOUT_MS,
-    })
+      socketTimeout: env.SMTP_SOCKET_TIMEOUT_MS
+    });
     try {
-      await transporter.verify()
+      await transporter.verify();
     } catch (error) {
-      logger.error({ error }, 'transportador SMTP falhou na verifica\xE7\xE3o')
-      throw error
+      logger.error({ error }, "transportador SMTP falhou na verifica\xE7\xE3o");
+      throw error;
     }
-    logger.info('transportador SMTP verificado com sucesso')
-    this.transporter = transporter
-    return transporter
+    logger.info("transportador SMTP verificado com sucesso");
+    this.transporter = transporter;
+    return transporter;
   }
   async send({ to, subject, message, html, attachments }) {
-    const transporter = await this.getTransporter()
+    const transporter = await this.getTransporter();
     try {
       const info = await transporter.sendMail({
         from: env.SMTP_EMAIL,
@@ -2813,362 +2723,354 @@ var NodemailerMailSender = class {
         subject,
         text: message,
         html,
-        ...(attachments ? { attachments } : {}),
-      })
-      this.consecutiveFailures = 0
-      return info
+        ...attachments ? { attachments } : {}
+      });
+      this.consecutiveFailures = 0;
+      return info;
     } catch (error) {
-      this.consecutiveFailures++
+      this.consecutiveFailures++;
       if (this.consecutiveFailures >= EMAIL_CONSTANTS.SMTP_MAX_CONSECUTIVE_FAILURES) {
         logger.warn(
           { consecutiveFailures: this.consecutiveFailures },
-          'Reiniciando transportador SMTP ap\xF3s falhas consecutivas de envio',
-        )
-        this.transporter = null
-        this.consecutiveFailures = 0
+          "Reiniciando transportador SMTP ap\xF3s falhas consecutivas de envio"
+        );
+        this.transporter = null;
+        this.consecutiveFailures = 0;
       }
-      throw error
+      throw error;
     }
   }
-}
+};
 
 // src/use-cases/factories/make-send-email-use-case.ts
-var mailSender = new NodemailerMailSender()
+var mailSender = new NodemailerMailSender();
 function makeSendEmailUseCase() {
-  return new SendEmailUseCase(mailSender)
+  return new SendEmailUseCase(mailSender);
 }
 
 // src/lib/errors/queue/job-already-processing-error.ts
 var JobAlreadyProcessingError = class extends InfrastructureError {
   constructor() {
-    super(QUEUE_ERRORS.JOB_ALREADY_PROCESSING)
+    super(QUEUE_ERRORS.JOB_ALREADY_PROCESSING);
   }
-}
+};
 
 // src/messages/constants/redis/redis.ts
 var REDIS_CONSTANTS = {
   CHANNELS: {
-    OUTBOX_SIGNAL: 'outbox-signal',
+    OUTBOX_SIGNAL: "outbox-signal"
   },
   KEYS: {
-    IDEMPOTENCY_EMAIL_PREFIX: 'idempotency:email:',
-    RATE_LIMIT_PREFIX: 'ratelimit:v1:',
-  },
-}
+    IDEMPOTENCY_EMAIL_PREFIX: "idempotency:email:",
+    RATE_LIMIT_PREFIX: "ratelimit:v1:"
+  }
+};
 
 // src/messages/constants/workers/workers.ts
 var WORKER_CONSTANTS = {
   MAIL: {
     CONCURRENCY_LIMIT: 5,
     LOCK_DURATION_MS: 3e5,
-    STALLED_INTERVAL_MS: 3e5,
+    STALLED_INTERVAL_MS: 3e5
   },
   QUEUE: {
     JOB_ATTEMPTS: 3,
-    BACKOFF_TYPE: 'exponential',
-    BACKOFF_DELAY_MS: 1e4,
+    BACKOFF_TYPE: "exponential",
+    BACKOFF_DELAY_MS: 1e4
   },
   IDEMPOTENCY_TTL: {
     PROCESSING_SECONDS: 300,
-    COMPLETED_SECONDS: 86400,
-  },
-}
+    COMPLETED_SECONDS: 86400
+  }
+};
 
 // src/lib/metrics/email-metrics.ts
-var import_prom_client5 = require('prom-client')
-var registry5 = getRegistry()
-var collectMetricsEmailsSent = registry5
-  ? new import_prom_client5.Counter({
-      name: 'emails_sent_total',
-      help: 'Emails successfully sent to SMTP, counted per successful send (per recipient; a degraded-path re-send re-increments)',
-      registers: [registry5],
-    })
-  : null
-var collectMetricsEmailsFailed = registry5
-  ? new import_prom_client5.Counter({
-      name: 'emails_failed_total',
-      help: 'Email send failures, counted per recipient per attempt (not per batch)',
-      labelNames: ['error_type'],
-      registers: [registry5],
-    })
-  : null
-var collectMetricsEmailsSkipped = registry5
-  ? new import_prom_client5.Counter({
-      name: 'emails_skipped_total',
-      help: 'Email jobs not sent for a non-failure reason (idempotency dedup, contention, or expiry)',
-      labelNames: ['reason'],
-      registers: [registry5],
-    })
-  : null
-var collectMetricsEmailBatchDuration = registry5
-  ? new import_prom_client5.Histogram({
-      name: 'email_batch_duration_seconds',
-      help: 'Duration of the SMTP send batch (Promise.allSettled), recorded per attempt',
-      buckets: [0.5, 1, 2, 5, 10, 30, 60],
-      registers: [registry5],
-    })
-  : null
+var import_prom_client5 = require("prom-client");
+var registry5 = getRegistry();
+var collectMetricsEmailsSent = registry5 ? new import_prom_client5.Counter({
+  name: "emails_sent_total",
+  help: "Emails successfully sent to SMTP, counted per successful send (per recipient; a degraded-path re-send re-increments)",
+  registers: [registry5]
+}) : null;
+var collectMetricsEmailsFailed = registry5 ? new import_prom_client5.Counter({
+  name: "emails_failed_total",
+  help: "Email send failures, counted per recipient per attempt (not per batch)",
+  labelNames: ["error_type"],
+  registers: [registry5]
+}) : null;
+var collectMetricsEmailsSkipped = registry5 ? new import_prom_client5.Counter({
+  name: "emails_skipped_total",
+  help: "Email jobs not sent for a non-failure reason (idempotency dedup, contention, or expiry)",
+  labelNames: ["reason"],
+  registers: [registry5]
+}) : null;
+var collectMetricsEmailBatchDuration = registry5 ? new import_prom_client5.Histogram({
+  name: "email_batch_duration_seconds",
+  help: "Duration of the SMTP send batch (Promise.allSettled), recorded per attempt",
+  buckets: [0.5, 1, 2, 5, 10, 30, 60],
+  registers: [registry5]
+}) : null;
 
 // src/lib/workers/mail-worker.ts
 function createMailJobProcessor(outboxRepository) {
   return async (job) => {
-    const { publicId } = job.data
-    const childLogger = logger.child({ jobId: job.id, publicId })
-    const redisCache = getRedisCache()
-    const idempotencyKey = `${REDIS_CONSTANTS.KEYS.IDEMPOTENCY_EMAIL_PREFIX}${publicId}`
-    if (await discardIfExpired(job, outboxRepository, childLogger)) return
-    if (await alreadyHandled(job, outboxRepository, childLogger, redisCache, idempotencyKey)) return
-    await sendBatch(job, outboxRepository, childLogger, redisCache, idempotencyKey)
-    const deleteResult = await outboxRepository.delete(publicId)
+    const { publicId } = job.data;
+    const childLogger = logger.child({ jobId: job.id, publicId });
+    const redisCache = getRedisCache();
+    const idempotencyKey = `${REDIS_CONSTANTS.KEYS.IDEMPOTENCY_EMAIL_PREFIX}${publicId}`;
+    if (await discardIfExpired(job, outboxRepository, childLogger)) return;
+    if (await alreadyHandled(job, outboxRepository, childLogger, redisCache, idempotencyKey)) return;
+    await sendBatch(job, outboxRepository, childLogger, redisCache, idempotencyKey);
+    const deleteResult = await outboxRepository.delete(publicId);
     if (isErr(deleteResult)) {
-      throw deleteResult.error
+      throw deleteResult.error;
     }
-    childLogger.info('OutboxEvent deletado com sucesso do banco de dados')
-  }
+    childLogger.info("OutboxEvent deletado com sucesso do banco de dados");
+  };
 }
 async function discardIfExpired(job, outboxRepository, childLogger) {
   if (!job.data.expiresAt || new Date(job.data.expiresAt).getTime() > Date.now()) {
-    return false
+    return false;
   }
-  childLogger.warn(WORKER_LOGS.EXPIRED_JOB_SKIPPED)
-  const deleteResult = await outboxRepository.delete(job.data.publicId)
+  childLogger.warn(WORKER_LOGS.EXPIRED_JOB_SKIPPED);
+  const deleteResult = await outboxRepository.delete(job.data.publicId);
   if (isErr(deleteResult)) {
-    throw deleteResult.error
+    throw deleteResult.error;
   }
-  collectMetricsEmailsSkipped?.inc({ reason: 'expired' })
-  return true
+  collectMetricsEmailsSkipped?.inc({ reason: "expired" });
+  return true;
 }
 async function alreadyHandled(job, outboxRepository, childLogger, redisCache, idempotencyKey) {
   const acquired = await redisCache.set(
     idempotencyKey,
-    'processing',
-    'EX',
+    "processing",
+    "EX",
     WORKER_CONSTANTS.IDEMPOTENCY_TTL.PROCESSING_SECONDS,
-    'NX',
-  )
+    "NX"
+  );
   if (acquired) {
-    return false
+    return false;
   }
-  const status = await redisCache.get(idempotencyKey)
-  if (status !== 'completed') {
-    collectMetricsEmailsSkipped?.inc({ reason: 'processing' })
-    throw new JobAlreadyProcessingError()
+  const status = await redisCache.get(idempotencyKey);
+  if (status !== "completed") {
+    collectMetricsEmailsSkipped?.inc({ reason: "processing" });
+    throw new JobAlreadyProcessingError();
   }
-  childLogger.warn(WORKER_LOGS.BATCH_ALREADY_SENT)
-  const deleteResult = await outboxRepository.delete(job.data.publicId)
+  childLogger.warn(WORKER_LOGS.BATCH_ALREADY_SENT);
+  const deleteResult = await outboxRepository.delete(job.data.publicId);
   if (isErr(deleteResult)) {
-    throw deleteResult.error
+    throw deleteResult.error;
   }
-  collectMetricsEmailsSkipped?.inc({ reason: 'already_sent' })
-  return true
+  collectMetricsEmailsSkipped?.inc({ reason: "already_sent" });
+  return true;
 }
 async function sendBatch(job, outboxRepository, childLogger, redisCache, idempotencyKey) {
   try {
-    await dispatchAndEvaluate(job, outboxRepository, childLogger)
-    childLogger.info('Lote de e-mails processado com sucesso.')
-    await redisCache.set(idempotencyKey, 'completed', 'EX', WORKER_CONSTANTS.IDEMPOTENCY_TTL.COMPLETED_SECONDS)
+    await dispatchAndEvaluate(job, outboxRepository, childLogger);
+    childLogger.info("Lote de e-mails processado com sucesso.");
+    await redisCache.set(idempotencyKey, "completed", "EX", WORKER_CONSTANTS.IDEMPOTENCY_TTL.COMPLETED_SECONDS);
   } catch (err2) {
-    await redisCache.del(idempotencyKey)
+    await redisCache.del(idempotencyKey);
     if (err2 instanceof InfrastructureError) {
-      throw err2
+      throw err2;
     }
-    throw new SmtpDispatchError(err2)
+    throw new SmtpDispatchError(err2);
   }
 }
 async function dispatchAndEvaluate(job, outboxRepository, childLogger) {
-  const { emails } = job.data
-  childLogger.info(`Processando lote de ${emails.length} e-mails...`)
-  const sendEmailUseCase = makeSendEmailUseCase()
-  const end = collectMetricsEmailBatchDuration?.startTimer()
-  const results = await Promise.allSettled(emails.map((email) => sendEmailUseCase.execute(email)))
-  end?.()
-  const failures = results.filter((r) => r.status === 'rejected' || isErr(r.value))
-  recordSendOutcome(results, failures)
+  const { emails } = job.data;
+  childLogger.info(`Processando lote de ${emails.length} e-mails...`);
+  const sendEmailUseCase = makeSendEmailUseCase();
+  const end = collectMetricsEmailBatchDuration?.startTimer();
+  const results = await Promise.allSettled(emails.map((email) => sendEmailUseCase.execute(email)));
+  end?.();
+  const failures = results.filter((r) => r.status === "rejected" || isErr(r.value));
+  recordSendOutcome(results, failures);
   if (failures.length === 0) {
-    return
+    return;
   }
   if (failures.length < results.length) {
-    await persistSelectiveRetry(job, outboxRepository, childLogger, results, failures.length)
+    await persistSelectiveRetry(job, outboxRepository, childLogger, results, failures.length);
   }
-  throwFirstFailure(failures)
+  throwFirstFailure(failures);
 }
 function recordSendOutcome(results, failures) {
-  const successCount = results.length - failures.length
+  const successCount = results.length - failures.length;
   if (successCount > 0) {
-    collectMetricsEmailsSent?.inc(successCount)
+    collectMetricsEmailsSent?.inc(successCount);
   }
   for (const failure of failures) {
-    collectMetricsEmailsFailed?.inc({ error_type: causeOf(failure) instanceof InfrastructureError ? 'infra' : 'smtp' })
+    collectMetricsEmailsFailed?.inc({ error_type: causeOf(failure) instanceof InfrastructureError ? "infra" : "smtp" });
   }
 }
 function causeOf(failure) {
-  if (failure.status === 'rejected') {
-    return failure.reason
+  if (failure.status === "rejected") {
+    return failure.reason;
   }
-  return isErr(failure.value) ? failure.value.error : void 0
+  return isErr(failure.value) ? failure.value.error : void 0;
 }
 async function persistSelectiveRetry(job, outboxRepository, childLogger, results, failureCount) {
-  const { publicId, emails } = job.data
-  const failedEmails = emails.filter((_, i) => results[i].status === 'rejected' || isErr(results[i].value))
-  childLogger.warn({ successCount: results.length - failureCount, failureCount }, WORKER_LOGS.PARTIAL_BATCH_FAILURE)
+  const { publicId, emails } = job.data;
+  const failedEmails = emails.filter((_, i) => results[i].status === "rejected" || isErr(results[i].value));
+  childLogger.warn({ successCount: results.length - failureCount, failureCount }, WORKER_LOGS.PARTIAL_BATCH_FAILURE);
   const dbResult = await outboxRepository.updatePendingRecipients(
     publicId,
-    failedEmails.map((e) => e.to),
-  )
+    failedEmails.map((e) => e.to)
+  );
   if (isErr(dbResult)) {
-    childLogger.error({ publicId }, WORKER_LOGS.PENDING_RECIPIENTS_UPDATE_FAILED)
-    return
+    childLogger.error({ publicId }, WORKER_LOGS.PENDING_RECIPIENTS_UPDATE_FAILED);
+    return;
   }
   try {
-    await job.updateData({ ...job.data, emails: failedEmails })
+    await job.updateData({ ...job.data, emails: failedEmails });
   } catch {
-    childLogger.error({ publicId }, WORKER_LOGS.JOB_DATA_UPDATE_FAILED)
+    childLogger.error({ publicId }, WORKER_LOGS.JOB_DATA_UPDATE_FAILED);
   }
 }
 function throwFirstFailure(failures) {
-  const firstFailure = failures[0]
-  if (firstFailure.status === 'rejected') {
-    throw firstFailure.reason
+  const firstFailure = failures[0];
+  if (firstFailure.status === "rejected") {
+    throw firstFailure.reason;
   }
   if (isErr(firstFailure.value)) {
-    throw firstFailure.value.error
+    throw firstFailure.value.error;
   }
 }
 function createJobFailureHandler(outboxRepository) {
   return async (job, err2) => {
-    await handleJobFailure(job, err2, outboxRepository)
-  }
+    await handleJobFailure(job, err2, outboxRepository);
+  };
 }
 function jobContext(job) {
-  return { jobId: job?.id, publicId: job?.data.publicId }
+  return { jobId: job?.id, publicId: job?.data.publicId };
 }
 async function handleJobFailure(job, err2, outboxRepository) {
-  const context = jobContext(job)
+  const context = jobContext(job);
   try {
     if (isTransientBullMQGlitch(err2)) {
-      logger.warn({ jobId: context.jobId }, WORKER_LOGS.BULLMQ_NETWORK_GLITCH)
-      return
+      logger.warn({ jobId: context.jobId }, WORKER_LOGS.BULLMQ_NETWORK_GLITCH);
+      return;
     }
-    logFailure(job, err2)
-    if (!isFinalFailure(job, err2)) return
-    captureError(err2, context)
-    await revertForRedispatch(context, outboxRepository)
+    logFailure(job, err2);
+    if (!isFinalFailure(job, err2)) return;
+    captureError(err2, context);
+    await revertForRedispatch(context, outboxRepository);
   } catch (handlerError) {
-    logger.error({ jobId: context.jobId, err: handlerError }, WORKER_LOGS.FAILURE_HANDLER_ERROR)
-    captureError(handlerError, { jobId: context.jobId })
+    logger.error({ jobId: context.jobId, err: handlerError }, WORKER_LOGS.FAILURE_HANDLER_ERROR);
+    captureError(handlerError, { jobId: context.jobId });
   }
 }
 function isFinalFailure(job, err2) {
-  if (job == null) return false
-  return isStalledFinal(err2) || job.attemptsMade >= (job.opts.attempts ?? 1)
+  if (job == null) return false;
+  return isStalledFinal(err2) || job.attemptsMade >= (job.opts.attempts ?? 1);
 }
 function isStalledFinal(err2) {
-  return err2.message.includes('job stalled more than allowable limit')
+  return err2.message.includes("job stalled more than allowable limit");
 }
 function isTransientBullMQGlitch(err2) {
-  const message = err2.message
-  return !isStalledFinal(err2) && (message.includes('Missing lock') || message.includes('job stalled'))
+  const message = err2.message;
+  return !isStalledFinal(err2) && (message.includes("Missing lock") || message.includes("job stalled"));
 }
 function logFailure(job, err2) {
-  const isInfrastructureError = 'body' in err2 && 'statusCode' in err2
+  const isInfrastructureError = "body" in err2 && "statusCode" in err2;
   if (!isInfrastructureError) {
-    logger.error({ jobId: job?.id, err: err2.message }, WORKER_LOGS.GENERIC_WORKER_FAILURE)
-    return
+    logger.error({ jobId: job?.id, err: err2.message }, WORKER_LOGS.GENERIC_WORKER_FAILURE);
+    return;
   }
-  const infraError = err2
+  const infraError = err2;
   logger.error(
     {
       jobId: job?.id,
       code: infraError.body.code,
-      cause: infraError.cause,
+      cause: infraError.cause
     },
-    `Falha de Infraestrutura: ${infraError.message}`,
-  )
+    `Falha de Infraestrutura: ${infraError.message}`
+  );
 }
 async function revertForRedispatch(context, outboxRepository) {
-  const { jobId, publicId } = context
-  if (!publicId) return
-  const revertResult = await outboxRepository.updateStatus(publicId, 'PENDING' /* PENDING */)
+  const { jobId, publicId } = context;
+  if (!publicId) return;
+  const revertResult = await outboxRepository.updateStatus(publicId, "PENDING" /* PENDING */);
   if (isErr(revertResult)) {
-    logger.warn({ jobId, publicId, error: revertResult.error }, WORKER_LOGS.OUTBOX_REVERT_AFTER_FINAL_FAILURE_ERROR)
-    captureError(revertResult.error, { jobId, publicId })
-    return
+    logger.warn({ jobId, publicId, error: revertResult.error }, WORKER_LOGS.OUTBOX_REVERT_AFTER_FINAL_FAILURE_ERROR);
+    captureError(revertResult.error, { jobId, publicId });
+    return;
   }
-  logger.warn({ jobId, publicId }, WORKER_LOGS.OUTBOX_REVERTED_AFTER_FINAL_FAILURE)
+  logger.warn({ jobId, publicId }, WORKER_LOGS.OUTBOX_REVERTED_AFTER_FINAL_FAILURE);
 }
 function startMailWorker(outboxRepository) {
-  const workerConnection = createWorkerConnection()
-  attachRedisLogger(workerConnection, 'MailWorker')
+  const workerConnection = createWorkerConnection();
+  attachRedisLogger(workerConnection, "MailWorker");
   const worker2 = new import_bullmq2.Worker(QUEUE.NAMES.MAIL, createMailJobProcessor(outboxRepository), {
     connection: workerConnection,
     concurrency: WORKER_CONSTANTS.MAIL.CONCURRENCY_LIMIT,
     lockDuration: WORKER_CONSTANTS.MAIL.LOCK_DURATION_MS,
-    stalledInterval: WORKER_CONSTANTS.MAIL.STALLED_INTERVAL_MS,
-  })
-  const onJobFailed = createJobFailureHandler(outboxRepository)
-  worker2.on('failed', (job, err2) => {
-    void onJobFailed(job, err2)
-  })
-  return worker2
+    stalledInterval: WORKER_CONSTANTS.MAIL.STALLED_INTERVAL_MS
+  });
+  const onJobFailed = createJobFailureHandler(outboxRepository);
+  worker2.on("failed", (job, err2) => {
+    void onJobFailed(job, err2);
+  });
+  return worker2;
 }
 
 // src/lib/infra/events/outbox-signal.ts
 function isOutboxSignalPayload(value) {
-  if (typeof value !== 'object' || value === null) return false
-  const candidate = value
-  return typeof candidate.publicId === 'string' && typeof candidate.event === 'object' && candidate.event !== null
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value;
+  return typeof candidate.publicId === "string" && typeof candidate.event === "object" && candidate.event !== null;
 }
 function getPublisher() {
-  const publisher = getOutboxPublisher()
-  publisher.on('connect', () => {
-    logger.info(OUTBOX_LOGS.PUBLISHER_CONNECTED)
-  })
-  publisher.on('error', (err2) => {
-    logger.error({ err: err2 }, OUTBOX_LOGS.PUBLISHER_ERROR)
-  })
-  publisher.on('close', () => {
-    logger.warn(OUTBOX_LOGS.PUBLISHER_CLOSED)
-  })
-  return publisher
+  const publisher = getOutboxPublisher();
+  publisher.on("connect", () => {
+    logger.info(OUTBOX_LOGS.PUBLISHER_CONNECTED);
+  });
+  publisher.on("error", (err2) => {
+    logger.error({ err: err2 }, OUTBOX_LOGS.PUBLISHER_ERROR);
+  });
+  publisher.on("close", () => {
+    logger.warn(OUTBOX_LOGS.PUBLISHER_CLOSED);
+  });
+  return publisher;
 }
 function getSubscriber() {
-  const subscriber = getOutboxSubscriber()
-  subscriber.on('connect', () => {
-    logger.info(OUTBOX_LOGS.SUBSCRIBER_CONNECTED)
-  })
-  subscriber.on('error', (err2) => {
-    logger.error({ err: err2 }, OUTBOX_LOGS.SUBSCRIBER_ERROR)
-  })
-  subscriber.on('close', () => {
-    logger.warn(OUTBOX_LOGS.SUBSCRIBER_CLOSED)
-  })
-  return subscriber
+  const subscriber = getOutboxSubscriber();
+  subscriber.on("connect", () => {
+    logger.info(OUTBOX_LOGS.SUBSCRIBER_CONNECTED);
+  });
+  subscriber.on("error", (err2) => {
+    logger.error({ err: err2 }, OUTBOX_LOGS.SUBSCRIBER_ERROR);
+  });
+  subscriber.on("close", () => {
+    logger.warn(OUTBOX_LOGS.SUBSCRIBER_CLOSED);
+  });
+  return subscriber;
 }
 async function ensureConnected(client, name) {
-  if (client.status === 'wait' || client.status === 'close' || client.status === 'end') {
-    logger.info(`Conectando ${name}...`)
-    await client.connect()
+  if (client.status === "wait" || client.status === "close" || client.status === "end") {
+    logger.info(`Conectando ${name}...`);
+    await client.connect();
   }
 }
-var activeMessageListener = null
+var activeMessageListener = null;
 function createMessageHandler(onSignal) {
   return async (channel, message) => {
     if (channel !== REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL) {
-      logger.warn({ channel }, OUTBOX_LOGS.UNEXPECTED_CHANNEL)
-      return
+      logger.warn({ channel }, OUTBOX_LOGS.UNEXPECTED_CHANNEL);
+      return;
     }
     try {
-      const parsed = JSON.parse(message)
+      const parsed = JSON.parse(message);
       if (!isOutboxSignalPayload(parsed)) {
-        logger.warn({ message }, OUTBOX_LOGS.UNEXPECTED_CHANNEL)
-        return
+        logger.warn({ message }, OUTBOX_LOGS.UNEXPECTED_CHANNEL);
+        return;
       }
-      await onSignal(parsed.publicId, parsed.event)
+      await onSignal(parsed.publicId, parsed.event);
     } catch (err2) {
-      logger.error({ err: err2, publicId: message }, OUTBOX_LOGS.SIGNAL_PROCESSING_ERROR)
-      captureError(err2, { publicId: message })
+      logger.error({ err: err2, publicId: message }, OUTBOX_LOGS.SIGNAL_PROCESSING_ERROR);
+      captureError(err2, { publicId: message });
     }
-  }
+  };
 }
 var OutboxSignal = {
   /**
@@ -3180,13 +3082,13 @@ var OutboxSignal = {
    */
   async publishNewItem(publicId, event) {
     try {
-      const client = getPublisher()
-      await ensureConnected(client, 'OutboxPublisher')
-      await client.publish(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL, JSON.stringify({ publicId, event }))
-      collectMetricsOutboxSignalPublished?.inc()
+      const client = getPublisher();
+      await ensureConnected(client, "OutboxPublisher");
+      await client.publish(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL, JSON.stringify({ publicId, event }));
+      collectMetricsOutboxSignalPublished?.inc();
     } catch (err2) {
-      collectMetricsOutboxSignalPublishFailed?.inc()
-      logger.warn({ err: err2 }, OUTBOX_LOGS.SIGNAL_PUBLISH_FAILED)
+      collectMetricsOutboxSignalPublishFailed?.inc();
+      logger.warn({ err: err2 }, OUTBOX_LOGS.SIGNAL_PUBLISH_FAILED);
     }
   },
   /**
@@ -3204,85 +3106,80 @@ var OutboxSignal = {
    */
   async subscribe(onSignal) {
     try {
-      const client = getSubscriber()
-      await ensureConnected(client, 'OutboxSubscriber')
+      const client = getSubscriber();
+      await ensureConnected(client, "OutboxSubscriber");
       if (activeMessageListener !== null) {
-        client.off('message', activeMessageListener)
-        logger.info(OUTBOX_LOGS.LISTENER_REMOVED)
+        client.off("message", activeMessageListener);
+        logger.info(OUTBOX_LOGS.LISTENER_REMOVED);
       }
-      const handleMessage = createMessageHandler(onSignal)
+      const handleMessage = createMessageHandler(onSignal);
       activeMessageListener = (channel, message) => {
-        void handleMessage(channel, message)
-      }
-      client.on('message', activeMessageListener)
-      await client.subscribe(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL)
+        void handleMessage(channel, message);
+      };
+      client.on("message", activeMessageListener);
+      await client.subscribe(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL);
     } catch (err2) {
-      logger.error({ err: err2 }, OUTBOX_LOGS.SUBSCRIBE_ERROR)
-      captureError(err2)
+      logger.error({ err: err2 }, OUTBOX_LOGS.SUBSCRIBE_ERROR);
+      captureError(err2);
     }
   },
   disconnect() {
     if (activeMessageListener !== null) {
-      getOutboxSubscriber().off('message', activeMessageListener)
-      activeMessageListener = null
+      getOutboxSubscriber().off("message", activeMessageListener);
+      activeMessageListener = null;
     }
-  },
-}
+  }
+};
 
 // src/lib/shutdown/crash-shutdown.ts
-var import_node3 = require('@sentry/node')
-var SENTRY_FLUSH_TIMEOUT_MS = 2e3
+var import_node3 = require("@sentry/node");
+var SENTRY_FLUSH_TIMEOUT_MS = 2e3;
 async function crashShutdown(error) {
-  logger.fatal(
-    { err: error },
-    'Travamento n\xE3o tratado detectado, iniciando sequ\xEAncia de encerramento por falha...',
-  )
-  await reportToSentry(error)
+  logger.fatal({ err: error }, "Travamento n\xE3o tratado detectado, iniciando sequ\xEAncia de encerramento por falha...");
+  await reportToSentry(error);
 }
 async function reportToSentry(error) {
   try {
-    ;(0, import_node3.captureException)(error instanceof Error ? error : new Error(String(error)))
-    await (0, import_node3.flush)(SENTRY_FLUSH_TIMEOUT_MS)
-    logger.info('Logs do Sentry enviados com sucesso.')
+    (0, import_node3.captureException)(error instanceof Error ? error : new Error(String(error)));
+    await (0, import_node3.flush)(SENTRY_FLUSH_TIMEOUT_MS);
+    logger.info("Logs do Sentry enviados com sucesso.");
   } catch (sentryError) {
-    logger.error({ err: sentryError }, 'Erro ao enviar os logs do Sentry durante o encerramento por travamento')
+    logger.error({ err: sentryError }, "Erro ao enviar os logs do Sentry durante o encerramento por travamento");
   }
 }
 
 // src/worker.ts
-var import_close_with_grace = __toESM(require('close-with-grace'))
+var import_close_with_grace = __toESM(require("close-with-grace"));
 
 // src/lib/metrics/bullmq-metrics.ts
-var import_prom_client6 = require('prom-client')
-var registry6 = getRegistry()
-var collectMetricsBullmqJobs = registry6
-  ? new import_prom_client6.Gauge({
-      name: 'bullmq_jobs',
-      help: 'Current job count by state',
-      labelNames: ['queue', 'state'],
-      registers: [registry6],
-    })
-  : null
-var queues = /* @__PURE__ */ new Map()
+var import_prom_client6 = require("prom-client");
+var registry6 = getRegistry();
+var collectMetricsBullmqJobs = registry6 ? new import_prom_client6.Gauge({
+  name: "bullmq_jobs",
+  help: "Current job count by state",
+  labelNames: ["queue", "state"],
+  registers: [registry6]
+}) : null;
+var queues = /* @__PURE__ */ new Map();
 function registerQueue(name, queue) {
-  queues.set(name, queue)
+  queues.set(name, queue);
 }
 function unregisterQueue(name) {
-  queues.delete(name)
+  queues.delete(name);
 }
 async function collectBullMQMetrics() {
-  if (!collectMetricsBullmqJobs) return
+  if (!collectMetricsBullmqJobs) return;
   for (const [name, queue] of queues) {
-    const counts = await queue.getJobCounts()
+    const counts = await queue.getJobCounts();
     for (const [state, count] of Object.entries(counts)) {
-      collectMetricsBullmqJobs.set({ queue: name, state }, count)
+      collectMetricsBullmqJobs.set({ queue: name, state }, count);
     }
   }
 }
 
 // src/metrics-server.ts
-var import_fastify = __toESM(require('fastify'))
-var import_prom_client7 = require('prom-client')
+var import_fastify = __toESM(require("fastify"));
+var import_prom_client7 = require("prom-client");
 
 // src/http/http-status.ts
 var HTTP_STATUS = {
@@ -3297,156 +3194,151 @@ var HTTP_STATUS = {
   UNPROCESSABLE_ENTITY: 422,
   TOO_MANY_REQUESTS: 429,
   INTERNAL_SERVER_ERROR: 500,
-  SERVICE_UNAVAILABLE: 503,
-}
+  SERVICE_UNAVAILABLE: 503
+};
 
 // src/metrics-server.ts
-var METRICS_COLLECTION_TIMEOUT_MS = 2e3
-var metricsServer = null
-var registry7 = getRegistry()
-var metricsCollectionErrors = registry7
-  ? new import_prom_client7.Counter({
-      name: 'metrics_collection_errors_total',
-      help: 'Errors during metrics collection',
-      labelNames: ['source'],
-      registers: [registry7],
-    })
-  : null
+var METRICS_COLLECTION_TIMEOUT_MS = 2e3;
+var metricsServer = null;
+var registry7 = getRegistry();
+var metricsCollectionErrors = registry7 ? new import_prom_client7.Counter({
+  name: "metrics_collection_errors_total",
+  help: "Errors during metrics collection",
+  labelNames: ["source"],
+  registers: [registry7]
+}) : null;
 function withTimeout(promise, ms4, source) {
   return Promise.race([
     promise,
     new Promise((_, reject) => {
       setTimeout(() => {
-        metricsCollectionErrors?.inc({ source })
-        reject(new Error(`${source} timeout`))
-      }, ms4)
-    }),
-  ])
+        metricsCollectionErrors?.inc({ source });
+        reject(new Error(`${source} timeout`));
+      }, ms4);
+    })
+  ]);
 }
 async function startMetricsServer(options) {
   if (!env.METRICS_ENABLED) {
-    logger.info('Servidor de m\xE9tricas desabilitado')
-    return
+    logger.info("Servidor de m\xE9tricas desabilitado");
+    return;
   }
-  metricsServer = (0, import_fastify.default)({ logger: false })
-  metricsServer.get('/metrics', async (_request, reply) => {
-    const currentRegistry = getRegistry()
+  metricsServer = (0, import_fastify.default)({ logger: false });
+  metricsServer.get("/metrics", async (_request, reply) => {
+    const currentRegistry = getRegistry();
     if (!currentRegistry) {
-      return reply.code(HTTP_STATUS.SERVICE_UNAVAILABLE).send('Metrics disabled')
+      return reply.code(HTTP_STATUS.SERVICE_UNAVAILABLE).send("Metrics disabled");
     }
     try {
-      await withTimeout(collectBullMQMetrics(), METRICS_COLLECTION_TIMEOUT_MS, 'bullmq')
+      await withTimeout(collectBullMQMetrics(), METRICS_COLLECTION_TIMEOUT_MS, "bullmq");
     } catch (err2) {
-      logger.warn({ err: err2 }, 'Falha na coleta de m\xE9tricas do BullMQ')
+      logger.warn({ err: err2 }, "Falha na coleta de m\xE9tricas do BullMQ");
     }
     const results = await Promise.allSettled([
-      withTimeout(currentRegistry.metrics(), METRICS_COLLECTION_TIMEOUT_MS, 'prom-client'),
-    ])
-    const output = results
-      .filter((r) => r.status === 'fulfilled')
-      .map((r) => r.value)
-      .join('\n\n')
-    reply.header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
-    return output
-  })
-  metricsServer.get('/health', () => ({ status: 'ok' }))
-  await metricsServer.listen({ host: '0.0.0.0', port: options.port })
-  logger.info({ port: options.port }, 'Servidor de m\xE9tricas iniciado')
+      withTimeout(currentRegistry.metrics(), METRICS_COLLECTION_TIMEOUT_MS, "prom-client")
+    ]);
+    const output = results.filter((r) => r.status === "fulfilled").map((r) => r.value).join("\n\n");
+    reply.header("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+    return output;
+  });
+  metricsServer.get("/health", () => ({ status: "ok" }));
+  await metricsServer.listen({ host: "0.0.0.0", port: options.port });
+  logger.info({ port: options.port }, "Servidor de m\xE9tricas iniciado");
 }
 async function stopMetricsServer() {
-  const server = metricsServer
-  if (!server) return
-  metricsServer = null
-  await server.close()
-  logger.info('Servidor de m\xE9tricas parado')
+  const server = metricsServer;
+  if (!server) return;
+  metricsServer = null;
+  await server.close();
+  logger.info("Servidor de m\xE9tricas parado");
 }
 
 // src/worker.ts
-initSentry()
-var worker = null
+initSentry();
+var worker = null;
 async function bootstrap() {
   try {
-    logger.info('Inicializando servi\xE7os de background...')
-    const dbContext = new DatabaseContext()
-    const outboxHttpMapper = new PrismaErrorMapper(outboxHttpPrismaErrorMapping)
-    const outboxInfraMapper = new PrismaErrorMapper(outboxInfraPrismaErrorMapping)
-    const outboxRepository = new PrismaOutboxRepository(dbContext, outboxHttpMapper, outboxInfraMapper)
-    worker = startMailWorker(outboxRepository)
-    logger.info('Mail worker iniciado')
-    registerQueue(QUEUE.NAMES.MAIL, getMailQueue())
-    const outboxProcessor = new OutboxProcessor(outboxRepository, makeOutboxDispatchStrategyRegistry())
+    logger.info("Inicializando servi\xE7os de background...");
+    const dbContext = new DatabaseContext();
+    const outboxHttpMapper = new PrismaErrorMapper(outboxHttpPrismaErrorMapping);
+    const outboxInfraMapper = new PrismaErrorMapper(outboxInfraPrismaErrorMapping);
+    const outboxRepository = new PrismaOutboxRepository(dbContext, outboxHttpMapper, outboxInfraMapper);
+    worker = startMailWorker(outboxRepository);
+    logger.info("Mail worker iniciado");
+    registerQueue(QUEUE.NAMES.MAIL, getMailQueue());
+    const outboxProcessor = new OutboxProcessor(outboxRepository, makeOutboxDispatchStrategyRegistry());
     await OutboxSignal.subscribe(async (_publicId, event) => {
-      await outboxProcessor.processSingleEvent(event)
-    })
-    const outboxMaintenance = new OutboxMaintenance(outboxRepository)
-    const analyticsRetention = new AnalyticsRetention(new PrismaAnalyticsRepository())
-    startOutboxCron(outboxProcessor, outboxMaintenance, analyticsRetention)
+      await outboxProcessor.processSingleEvent(event);
+    });
+    const outboxMaintenance = new OutboxMaintenance(outboxRepository);
+    const analyticsRetention = new AnalyticsRetention(new PrismaAnalyticsRepository());
+    startOutboxCron(outboxProcessor, outboxMaintenance, analyticsRetention);
     try {
-      await startMetricsServer({ port: env.METRICS_WORKER_PORT })
+      await startMetricsServer({ port: env.METRICS_WORKER_PORT });
     } catch (metricsErr) {
       logger.error(
         { err: metricsErr },
-        'Falha ao iniciar o servidor de m\xE9tricas do worker; o worker continuar\xE1 sem m\xE9tricas',
-      )
-      captureError(metricsErr)
+        "Falha ao iniciar o servidor de m\xE9tricas do worker; o worker continuar\xE1 sem m\xE9tricas"
+      );
+      captureError(metricsErr);
     }
   } catch (error) {
-    await crashShutdown(error)
+    await crashShutdown(error);
   }
 }
 async function cleanup() {
   const tasks = [
     async () => {
-      OutboxSignal.disconnect()
-      logger.info('OutboxSignal desconectado')
-      await Promise.resolve()
+      OutboxSignal.disconnect();
+      logger.info("OutboxSignal desconectado");
+      await Promise.resolve();
     },
     async () => {
       if (worker) {
-        await worker.close()
-        logger.info('Worker finalizado')
+        await worker.close();
+        logger.info("Worker finalizado");
       }
     },
     async () => {
-      unregisterQueue(QUEUE.NAMES.MAIL)
-      await getMailQueue().close()
-      logger.info('MailQueue finalizada')
+      unregisterQueue(QUEUE.NAMES.MAIL);
+      await getMailQueue().close();
+      logger.info("MailQueue finalizada");
     },
     stopMetricsServer,
     async () => {
-      await closeAllRedisConnections()
-      logger.info('Conex\xF5es Redis finalizadas')
-    },
-  ]
+      await closeAllRedisConnections();
+      logger.info("Conex\xF5es Redis finalizadas");
+    }
+  ];
   for (const task of tasks) {
     try {
-      await task()
+      await task();
     } catch (err2) {
-      logger.error(err2, 'Erro durante o encerramento do worker')
+      logger.error(err2, "Erro durante o encerramento do worker");
     }
   }
 }
-;(0, import_close_with_grace.default)(
+(0, import_close_with_grace.default)(
   {
     delay: 15e3,
     onTimeout: () => {
-      logger.fatal('O tempo limite de limpeza para encerramento expirou ap\xF3s 15s. For\xE7ando a sa\xEDda.')
-    },
+      logger.fatal("O tempo limite de limpeza para encerramento expirou ap\xF3s 15s. For\xE7ando a sa\xEDda.");
+    }
   },
   async ({ signal, err: err2 }) => {
     if (err2) {
       try {
-        await cleanup()
-        logger.info('Limpeza de encerramento por travamento conclu\xEDda com sucesso.')
+        await cleanup();
+        logger.info("Limpeza de encerramento por travamento conclu\xEDda com sucesso.");
       } catch (cleanupError) {
-        logger.error({ err: cleanupError }, 'Ocorreu um erro durante a limpeza de encerramento por travamento')
+        logger.error({ err: cleanupError }, "Ocorreu um erro durante a limpeza de encerramento por travamento");
       }
-      await crashShutdown(err2)
+      await crashShutdown(err2);
     } else {
-      logger.info({ signal }, `Recebido sinal ${signal ?? 'desconhecido'}. Iniciando graceful shutdown do worker...`)
-      await cleanup()
-      logger.info('Worker encerrado graciosamente.')
+      logger.info({ signal }, `Recebido sinal ${signal ?? "desconhecido"}. Iniciando graceful shutdown do worker...`);
+      await cleanup();
+      logger.info("Worker encerrado graciosamente.");
     }
-  },
-)
-void bootstrap()
+  }
+);
+void bootstrap();

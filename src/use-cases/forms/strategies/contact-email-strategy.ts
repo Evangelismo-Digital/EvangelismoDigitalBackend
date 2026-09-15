@@ -9,42 +9,31 @@ import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 import { IMailJobData } from 'core/contracts/lib/queue/mail-job-data.interface'
 import { Result, ok, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { env } from '@env/index'
-import { optionalIpAddress, optionalStringField, requireSubmitterIdentity } from './form-payload-fields'
+import { buildStaffMailJob, buildUserMailJob, extractContactStaffData } from './form-payload-fields'
 
 export class ContactEmailStrategy implements IFormEmailStrategy {
   buildUserEmail(form: FormPayload): Result<IMailJobData, AppError> {
-    const identityResult = requireSubmitterIdentity(form)
-    if (isErr(identityResult)) return identityResult
-
-    const { email, name } = identityResult.value
-
-    return ok({
-      to: email,
+    return buildUserMailJob(form, ({ name }) => ({
+      type: 'contact',
       subject: contactUserSubjectTextTemplate(name),
       message: contactUserTextTemplate(name),
       html: contactUserHtmlTemplate(name),
-      context: { type: 'contact', recipient: 'user' },
-    })
+    }))
   }
 
   buildStaffEmail(form: FormPayload): Result<IMailJobData, AppError> {
-    const identityResult = requireSubmitterIdentity(form)
-    if (isErr(identityResult)) return identityResult
+    const dataResult = extractContactStaffData(form)
+    if (isErr(dataResult)) return dataResult
 
-    const lastNameResult = optionalStringField(form.lastName, 'form.lastName')
-    if (isErr(lastNameResult)) return lastNameResult
+    const { email, name, lastName, ipAddress } = dataResult.value
 
-    const { email, name } = identityResult.value
-    const lastName = lastNameResult.value
-    const ipAddress = optionalIpAddress(form)
-
-    return ok({
-      to: env.ADMIN_EMAIL,
-      subject: contactStaffSubjectTextTemplate(),
-      message: contactStaffTextTemplate(name, email, ipAddress),
-      html: contactStaffHtmlTemplate(name, lastName, email, ipAddress),
-      context: { type: 'contact', recipient: 'internal' },
-    })
+    return ok(
+      buildStaffMailJob({
+        type: 'contact',
+        subject: contactStaffSubjectTextTemplate(),
+        message: contactStaffTextTemplate(name, email, ipAddress),
+        html: contactStaffHtmlTemplate(name, lastName, email, ipAddress),
+      }),
+    )
   }
 }

@@ -9,8 +9,9 @@ import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 import { IMailJobData } from 'core/contracts/lib/queue/mail-job-data.interface'
 import { Result, ok, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
-import { env } from '@env/index'
 import {
+  buildStaffMailJob,
+  buildUserMailJob,
   optionalIpAddress,
   optionalStringField,
   requireStringField,
@@ -19,18 +20,12 @@ import {
 
 export class DecisionForChristEmailStrategy implements IFormEmailStrategy {
   buildUserEmail(form: FormPayload): Result<IMailJobData, AppError> {
-    const identityResult = requireSubmitterIdentity(form)
-    if (isErr(identityResult)) return identityResult
-
-    const { email, name } = identityResult.value
-
-    return ok({
-      to: email,
+    return buildUserMailJob(form, ({ name }) => ({
+      type: 'decision-for-Christ',
       subject: decisionForChristUserSubjectText(),
       message: decisionForChristUserTextTemplate(name),
       html: decisionForChristUserHtmlTemplate(name),
-      context: { type: 'decision-for-Christ', recipient: 'user' },
-    })
+    }))
   }
 
   buildStaffEmail(form: FormPayload): Result<IMailJobData, AppError> {
@@ -50,12 +45,13 @@ export class DecisionForChristEmailStrategy implements IFormEmailStrategy {
     const location = locationResult.value
     const ipAddress = optionalIpAddress(form)
 
-    return ok({
-      to: env.ADMIN_EMAIL,
-      subject: decisionForChristStaffSubjectText(),
-      message: decisionForChristStaffTextTemplate(name, email, ipAddress),
-      html: decisionForChristStaffHtmlTemplate(name, lastName, email, location, ipAddress),
-      context: { type: 'decision-for-Christ', recipient: 'internal' },
-    })
+    return ok(
+      buildStaffMailJob({
+        type: 'decision-for-Christ',
+        subject: decisionForChristStaffSubjectText(),
+        message: decisionForChristStaffTextTemplate(name, email, ipAddress),
+        html: decisionForChristStaffHtmlTemplate(name, lastName, email, location, ipAddress),
+      }),
+    )
   }
 }

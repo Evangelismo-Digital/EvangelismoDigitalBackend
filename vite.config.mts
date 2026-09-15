@@ -233,6 +233,7 @@ export default defineConfig(({ mode }) => {
             include: ['**/*.acceptance.spec.mts'],
             // Uses Docker database with public schema
             environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
+            fileParallelism: false,
           },
         },
         {
