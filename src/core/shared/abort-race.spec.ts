@@ -43,3 +43,27 @@ describe('abortRace', () => {
     // but the test shouldn't leave unhandled things.
   })
 })
+
+it('rejects the promise if onAbort throws synchronously', async () => {
+  const ac = new AbortController()
+  const promise = new Promise<string>(() => {})
+
+  setTimeout(() => ac.abort(), 10)
+
+  await expect(
+    abortRace(promise, ac.signal, () => {
+      throw new Error('sync fail')
+    }),
+  ).rejects.toThrow('sync fail')
+})
+
+it('rejects the promise if onAbort throws synchronously and signal is already aborted', async () => {
+  const signal = AbortSignal.abort()
+  const promise = new Promise<string>(() => {})
+
+  await expect(
+    abortRace(promise, signal, () => {
+      throw new Error('sync fail')
+    }),
+  ).rejects.toThrow('sync fail')
+})

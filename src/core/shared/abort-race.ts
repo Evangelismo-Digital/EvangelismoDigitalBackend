@@ -8,7 +8,11 @@ import { addAbortListener } from 'node:events'
  */
 export function abortRace<T>(promise: Promise<T>, signal: AbortSignal, onAbort: () => T | Promise<T>): Promise<T> {
   if (signal.aborted) {
-    return Promise.resolve(onAbort())
+    try {
+      return Promise.resolve(onAbort())
+    } catch (err) {
+      return Promise.reject(err)
+    }
   }
 
   return new Promise<T>((resolve, reject) => {
@@ -17,7 +21,11 @@ export function abortRace<T>(promise: Promise<T>, signal: AbortSignal, onAbort: 
     const disposable = addAbortListener(signal, () => {
       if (settled) return
       settled = true
-      Promise.resolve(onAbort()).then(resolve, reject)
+      try {
+        Promise.resolve(onAbort()).then(resolve, reject)
+      } catch (err) {
+        reject(err)
+      }
     })
 
     const onResolve = (val: T) => {
