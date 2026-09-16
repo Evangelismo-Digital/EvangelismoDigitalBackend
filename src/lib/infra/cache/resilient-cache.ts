@@ -4,6 +4,7 @@ import { logger } from '@lib/logger'
 import { CACHE_LOGS } from 'messages/constants/logs/cache'
 import { CACHE_CONFIG } from 'messages/constants/cache/cache'
 import { Deadline } from 'core/shared/deadline'
+import { abortRace } from 'core/shared/abort-race'
 import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
@@ -107,31 +108,6 @@ interface PendingFetch {
  * is waiting on. `cleanup()` releases the listener when the race is decided the
  * other way, so a long-lived parent deadline does not accumulate them.
  */
-function whenExpired(deadline: Deadline): { promise: Promise<void>; cleanup: () => void } {
-  let onAbort: (() => void) | undefined
-
-  const promise = new Promise<void>((resolve) => {
-    if (deadline.expired) {
-      resolve()
-      return
-    }
-
-    onAbort = () => {
-      resolve()
-    }
-    deadline.signal.addEventListener('abort', onAbort, { once: true })
-  })
-
-  return {
-    promise,
-    cleanup: () => {
-      if (onAbort) {
-        deadline.signal.removeEventListener('abort', onAbort)
-      }
-    },
-  }
-}
-
 /**
  * Awaits `work`, giving up if `deadline` expires first.
  *
@@ -139,13 +115,7 @@ function whenExpired(deadline: Deadline): { promise: Promise<void>; cleanup: () 
  * itself runs on, but the caller stops paying for it.
  */
 async function withinBudget<T>(work: Promise<T>, deadline: Deadline): Promise<T | undefined> {
-  const expiry = whenExpired(deadline)
-
-  try {
-    return await Promise.race([work, expiry.promise.then(() => undefined)])
-  } finally {
-    expiry.cleanup()
-  }
+  return abortRace(work, deadline.signal, () => undefined)
 }
 
 export class ResilientCache<E = unknown> {
@@ -371,18 +341,7 @@ export class ResilientCache<E = unknown> {
     shared: Promise<Result<T, E | AppError>>,
     callerDeadline: Deadline,
   ): Promise<Result<T, E | AppError>> {
-    const expiry = whenExpired(callerDeadline)
-
-    try {
-      const outcome = await Promise.race([
-        shared.then((value) => ({ settled: true, value }) as const),
-        expiry.promise.then(() => ({ settled: false }) as const),
-      ])
-
-      return outcome.settled ? outcome.value : err(callerDeadline.asError())
-    } finally {
-      expiry.cleanup()
-    }
+    return abortRace(shared, callerDeadline.signal, () => err(callerDeadline.asError()))
   }
 
   private reportPendingSize(): void {
@@ -403,13 +362,13 @@ export class ResilientCache<E = unknown> {
     fetchDeadline: Deadline,
   ): Promise<Result<T, E | AppError>> {
     const endTimer = collectMetricsCacheFetchDuration?.startTimer({ prefix: this.options.prefix })
-    const expiry = whenExpired(fetchDeadline)
 
     try {
-      const outcome = await Promise.race([
+      const outcome = await abortRace<{ settled: true; value: Result<T, E> } | { settled: false }>(
         fetcher(fetchDeadline).then((value) => ({ settled: true, value }) as const),
-        expiry.promise.then(() => ({ settled: false }) as const),
-      ])
+        fetchDeadline.signal,
+        () => ({ settled: false }) as const,
+      )
 
       if (!outcome.settled) {
         return err(fetchDeadline.asError())
@@ -423,7 +382,6 @@ export class ResilientCache<E = unknown> {
       return this.mapFetchThrow(error, fetchDeadline)
     } finally {
       endTimer?.()
-      expiry.cleanup()
       fetchDeadline.dispose()
     }
   }

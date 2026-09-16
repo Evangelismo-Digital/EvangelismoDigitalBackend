@@ -1520,7 +1520,7 @@ describe('ResilientCache Unit Tests', () => {
 
         const added = addSpy.mock.calls.find(([event]) => event === 'abort')
         expect(added).toBeDefined()
-        expect(added?.[2]).toEqual({ once: true })
+        expect(added?.[2]).toEqual(expect.objectContaining({ once: true }))
 
         // The very same handler must be detached, or long-lived signals leak.
         expect(removeSpy).toHaveBeenCalledWith('abort', added?.[1])

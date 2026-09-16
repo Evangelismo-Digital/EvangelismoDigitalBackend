@@ -1,6 +1,7 @@
 import { Deadline } from 'core/shared/deadline'
 import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
+import { abortRace } from 'core/shared/abort-race'
 import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
 import { logger } from '@lib/logger'
 import {
@@ -111,16 +112,8 @@ export async function runWithRetries<T>(params: RunWithRetriesParams<T>): Promis
  * reaching the provider.
  */
 function settleFirst<T>(work: Promise<T>, deadline: Deadline): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => {
-      reject(deadline.asError())
-    }
-
-    deadline.signal.addEventListener('abort', onAbort, { once: true })
-
-    work.then(resolve, reject).finally(() => {
-      deadline.signal.removeEventListener('abort', onAbort)
-    })
+  return abortRace(work, deadline.signal, () => {
+    throw deadline.asError()
   })
 }
 

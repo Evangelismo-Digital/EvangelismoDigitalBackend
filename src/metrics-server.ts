@@ -1,5 +1,6 @@
 import Fastify, { FastifyInstance } from 'fastify'
 import { Counter } from 'prom-client'
+import { abortRace } from 'core/shared/abort-race'
 import { getRegistry } from '@lib/metrics'
 import { collectBullMQMetrics } from '@lib/metrics/bullmq-metrics'
 import { env } from '@env/index'
@@ -27,15 +28,10 @@ interface StartOptions {
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, source: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      setTimeout(() => {
-        metricsCollectionErrors?.inc({ source })
-        reject(new Error(`${source} timeout`))
-      }, ms)
-    }),
-  ])
+  return abortRace(promise, AbortSignal.timeout(ms), () => {
+    metricsCollectionErrors?.inc({ source })
+    throw new Error(`${source} timeout`)
+  })
 }
 
 export async function startMetricsServer(options: StartOptions): Promise<void> {
