@@ -175,7 +175,7 @@ export class OutboxProcessor {
       throw strategyResult.error
     }
 
-    const planResult = strategyResult.value.buildDispatch(event)
+    const planResult = await strategyResult.value.buildDispatch(event)
     if (isErr(planResult)) {
       throw planResult.error
     }

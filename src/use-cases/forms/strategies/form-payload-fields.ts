@@ -72,15 +72,15 @@ export interface UserMailJobContent {
   html: string
 }
 
-export function buildUserMailJob(
+export async function buildUserMailJob(
   form: FormPayload,
-  buildContent: (identity: SubmitterIdentity) => UserMailJobContent,
-): Result<IMailJobData, AppError> {
+  buildContent: (identity: SubmitterIdentity) => Promise<UserMailJobContent> | UserMailJobContent,
+): Promise<Result<IMailJobData, AppError>> {
   const identityResult = requireSubmitterIdentity(form)
   if (isErr(identityResult)) return identityResult
 
   const { email, name } = identityResult.value
-  const { type, subject, message, html } = buildContent({ email, name })
+  const { type, subject, message, html } = await buildContent({ email, name })
 
   return ok({
     subject,

@@ -10,7 +10,10 @@ import { InvalidPasswordResetPayloadError } from '@use-cases/errors/invalid-pass
 import { EMAIL_CONSTANTS } from 'messages/constants/email/email'
 import { PASSWORD_RESET_CONSTANTS } from 'messages/constants/auth/password-reset'
 import { forgotPasswordTextTemplate } from '@templates/forgot-password/forgot-password-text'
-import { forgotPasswordHtmlTemplate } from '@templates/forgot-password/forgot-password-html'
+import { ForgotPasswordEmail } from '@templates/react/forgot-password'
+import { render } from '@react-email/render'
+import React from 'react'
+import { env } from '@env/index'
 
 /**
  * Despacho de eventos PasswordResetRequested: um único e-mail para o usuário,
@@ -18,21 +21,20 @@ import { forgotPasswordHtmlTemplate } from '@templates/forgot-password/forgot-pa
  * na janela de 15 min do token — nunca vale a pena tentar além dela.
  */
 export class PasswordResetDispatchStrategy implements IOutboxDispatchStrategy {
-  buildDispatch(event: IOutboxEvent): Result<IOutboxDispatchPlan, AppError> {
-    const payload = event.payload as Partial<PasswordResetRequestedPayload>
+  async buildDispatch(event: IOutboxEvent): Promise<Result<IOutboxDispatchPlan, AppError>> {
+    const payloadResult = this.parsePayload(event.payload as Partial<PasswordResetRequestedPayload>)
+    if (isErr(payloadResult)) return payloadResult
 
-    const nameResult = this.getStringField(payload.name, 'payload.name')
-    if (isErr(nameResult)) return nameResult
-
-    const emailResult = this.getStringField(payload.email, 'payload.email')
-    if (isErr(emailResult)) return emailResult
-
-    const tokenResult = this.getStringField(payload.token, 'payload.token')
-    if (isErr(tokenResult)) return tokenResult
-
-    const name = nameResult.value
-    const email = emailResult.value
-    const token = tokenResult.value
+    const { name, email, token } = payloadResult.value
+    const url = `${env.FRONTEND_URL}/reset-password/${token}`
+    const html = await render(
+      React.createElement(ForgotPasswordEmail, {
+        userName: name,
+        resetUrl: url,
+        appName: env.APP_NAME,
+        expiresInMinutes: PASSWORD_RESET_CONSTANTS.TOKEN_EXPIRES_IN_MINUTES,
+      }),
+    )
 
     return ok({
       emails: [
@@ -40,7 +42,7 @@ export class PasswordResetDispatchStrategy implements IOutboxDispatchStrategy {
           to: email,
           subject: EMAIL_CONSTANTS.PASSWORD_RECOVERY_SUBJECT,
           message: forgotPasswordTextTemplate(name, token),
-          html: forgotPasswordHtmlTemplate(name, token),
+          html,
           context: { type: 'password-reset', recipient: 'user' },
         },
       ],
@@ -49,6 +51,19 @@ export class PasswordResetDispatchStrategy implements IOutboxDispatchStrategy {
         backoff: { type: 'fixed', delay: PASSWORD_RESET_CONSTANTS.JOB_BACKOFF_DELAY_MS },
       },
     })
+  }
+
+  private parsePayload(
+    payload: Partial<PasswordResetRequestedPayload>,
+  ): Result<{ name: string; email: string; token: string }, AppError> {
+    const name = this.getStringField(payload.name, 'payload.name')
+    if (isErr(name)) return name
+    const email = this.getStringField(payload.email, 'payload.email')
+    if (isErr(email)) return email
+    const token = this.getStringField(payload.token, 'payload.token')
+    if (isErr(token)) return token
+
+    return ok({ name: name.value, email: email.value, token: token.value })
   }
 
   private getStringField(value: unknown, fieldName: string): Result<string, AppError> {

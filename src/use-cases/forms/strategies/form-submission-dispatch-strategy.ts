@@ -16,17 +16,17 @@ import { DecisionForChristEmailStrategy } from './decision-for-christ-email-stra
  * Sem jobOptions: usa os defaults da fila.
  */
 export class FormSubmissionDispatchStrategy implements IOutboxDispatchStrategy {
-  buildDispatch(event: IOutboxEvent): Result<IOutboxDispatchPlan, AppError> {
+  async buildDispatch(event: IOutboxEvent): Promise<Result<IOutboxDispatchPlan, AppError>> {
     const payload = event.payload as FormPayload
 
     const strategy = payload.decisaoPorCristo ? new DecisionForChristEmailStrategy() : new ContactEmailStrategy()
 
-    const userJobResult = strategy.buildUserEmail(payload)
+    const userJobResult = await strategy.buildUserEmail(payload)
     if (isErr(userJobResult)) {
       return userJobResult
     }
 
-    const staffJobResult = strategy.buildStaffEmail(payload)
+    const staffJobResult = await strategy.buildStaffEmail(payload)
     if (isErr(staffJobResult)) {
       return staffJobResult
     }

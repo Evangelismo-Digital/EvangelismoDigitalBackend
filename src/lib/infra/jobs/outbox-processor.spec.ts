@@ -227,7 +227,7 @@ describe('OutboxProcessor', () => {
     })
 
     it('falha no buildUserEmail: reverte para PENDING sem enfileirar', async () => {
-      vi.spyOn(ContactEmailStrategy.prototype, 'buildUserEmail').mockReturnValueOnce(err(new StrategyTestError()))
+      vi.spyOn(ContactEmailStrategy.prototype, 'buildUserEmail').mockResolvedValueOnce(err(new StrategyTestError()))
       const event = await createEvent(repository)
 
       await processor.processSingleEvent(event)
@@ -237,7 +237,7 @@ describe('OutboxProcessor', () => {
     })
 
     it('falha no buildStaffEmail: reverte para PENDING sem enfileirar', async () => {
-      vi.spyOn(ContactEmailStrategy.prototype, 'buildStaffEmail').mockReturnValueOnce(err(new StrategyTestError()))
+      vi.spyOn(ContactEmailStrategy.prototype, 'buildStaffEmail').mockResolvedValueOnce(err(new StrategyTestError()))
       const event = await createEvent(repository)
 
       await processor.processSingleEvent(event)

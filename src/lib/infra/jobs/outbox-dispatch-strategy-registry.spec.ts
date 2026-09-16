@@ -5,7 +5,7 @@ import { IOutboxDispatchStrategy } from 'core/contracts/lib/infra/outbox-dispatc
 import { isOk, isErr, ok } from 'core/shared/result'
 
 const stubStrategy: IOutboxDispatchStrategy = {
-  buildDispatch: () => ok({ emails: [] }),
+  buildDispatch: async () => ok({ emails: [] }),
 }
 
 describe('OutboxDispatchStrategyRegistry', () => {
