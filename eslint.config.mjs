@@ -29,7 +29,7 @@ export default [
     ],
   },
   {
-    files: ['src/**/*.{js,mjs,cjs,ts}', 'spec/**/*.{js,mjs,cjs,ts}'],
+    files: ['src/**/*.{js,mjs,cjs,ts,tsx}', 'spec/**/*.{js,mjs,cjs,ts,tsx}'],
     languageOptions: {
       globals: globals.node,
       parserOptions: {
@@ -87,7 +87,7 @@ export default [
     // Knip covers whole unused files, exports and dependencies; these cover
     // what it cannot see — the unused local, the assignment nobody reads, the
     // branch whose condition the type system already decided.
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.{ts,tsx}'],
     rules: {
       'unused-imports/no-unused-imports': 'error',
       '@typescript-eslint/no-unused-vars': [
@@ -136,7 +136,7 @@ export default [
     // Two different sources of truth: TypeScript's @deprecated JSDoc tag (any
     // library or our own code) and eslint-plugin-n's table of Node built-ins
     // deprecated by the runtime itself.
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.{ts,tsx}'],
     rules: {
       '@typescript-eslint/no-deprecated': 'error',
       'n/no-deprecated-api': 'error',
@@ -144,7 +144,7 @@ export default [
   },
   {
     // --- Node.js / backend best practice ---
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.{ts,tsx}'],
     rules: {
       // Async correctness. In a Fastify app an unawaited promise is a request
       // that returns before its work is done and an error nobody handles.
@@ -211,7 +211,7 @@ export default [
     // eslint-plugin-security's heuristics catch the classes SAST tools flag in
     // Node services: dynamic RegExp built from input (ReDoS), child_process
     // with a non-literal command, non-literal fs paths, unsafe buffer use.
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.{ts,tsx}'],
     rules: {
       // `detect-object-injection` is deliberately absent. It flags every
       // computed member access, and on this tree it produced 30 findings of
@@ -261,7 +261,7 @@ export default [
     // dashboard, and it measures something `complexity` does not: nesting is
     // weighted, so three sequential guards score far below one triply-nested
     // branch even though both are cyclomatic 4. Both gates apply.
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.{ts,tsx}'],
     ignores: ['**/*.spec.ts'],
     rules: {
       complexity: ['error', 6],
@@ -325,9 +325,10 @@ export default [
     // `max-lines-per-function` measures markup rather than logic. Splitting the
     // markup to satisfy a line count would make the templates harder to read,
     // not easier. `complexity` and `max-depth` still apply here.
-    files: ['src/templates/**/*.ts'],
+    files: ['src/templates/**/*.{ts,tsx}'],
     rules: {
       'max-lines-per-function': 'off',
+      'sonarjs/prefer-read-only-props': 'off',
     },
   },
 ]

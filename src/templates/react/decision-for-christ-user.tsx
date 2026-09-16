@@ -13,14 +13,10 @@ export function DecisionForChristUserEmail({ name }: DecisionForChristUserEmailP
         <Text className="mb-[15px]">
           Olá <strong>{name}</strong>,
         </Text>
-        
-        <Text className="mb-[15px]">
-          É uma alegria saber que você tomou uma decisão por Cristo.
-        </Text>
 
-        <Text className="m-0">
-          Em breve, nossa equipe entrará em contato para acompanhá-lo nessa nova jornada.
-        </Text>
+        <Text className="mb-[15px]">É uma alegria saber que você tomou uma decisão por Cristo.</Text>
+
+        <Text className="m-0">Em breve, nossa equipe entrará em contato para acompanhá-lo nessa nova jornada.</Text>
       </Section>
     </EmailLayout>
   )

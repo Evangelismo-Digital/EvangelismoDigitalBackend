@@ -15,7 +15,7 @@ export function ContactStaffEmail({ name, lastName, email, ipAddress }: ContactS
       <Heading className="text-[20px] font-semibold text-gray-800 text-center mb-[20px]">
         Um novo formulário acaba de ser enviado!
       </Heading>
-      
+
       <Section className="text-[16px] text-gray-700 space-y-2">
         <Text className="m-0">
           <strong>Nome:</strong> {name} {lastName}
