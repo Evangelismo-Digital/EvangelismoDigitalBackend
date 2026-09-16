@@ -507,7 +507,7 @@ export class ResilientCache<E = unknown> {
     if (!('v' in envelope)) {
       collectMetricsCacheErrors?.inc({ prefix, error_type: 'corrupted' })
       logger.error({ key, envelope }, CACHE_LOGS.CORRUPTED_ENVELOPE)
-      return err(new ProviderFailureError(new Error('Corrupted Cache: Missing value')))
+      return err(new ProviderFailureError('Corrupted Cache: Missing value'))
     }
 
     collectMetricsCacheHits?.inc({ prefix })

@@ -123,6 +123,10 @@ const envSchema = z.object({
   SMTP_PORT: z.coerce.number(),
   SMTP_HOST: z.string().min(1),
   SMTP_SECURE: z.enum(['true', 'false']).transform((val) => val === 'true'),
+  SMTP_POOL_MAX_CONNECTIONS: z.coerce.number().int().positive().default(5),
+  SMTP_POOL_MAX_MESSAGES: z.coerce.number().int().positive().default(100),
+  SMTP_POOL_RATE_LIMIT: z.coerce.number().int().positive().default(5),
+  SMTP_POOL_RATE_DELTA_MS: z.coerce.number().int().positive().default(1_000),
   // Timeouts defensivos: impedem que um servidor SMTP travado bloqueie o chamador (padrões do Nodemailer chegam a 10 min)
   SMTP_CONNECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
   SMTP_GREETING_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),

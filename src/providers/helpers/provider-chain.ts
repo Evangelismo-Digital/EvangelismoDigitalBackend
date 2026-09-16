@@ -205,5 +205,5 @@ function decideExhausted<TProvider extends object, TValue>(
     return err(tally.lastRetryableError)
   }
 
-  return err(new ProviderFailureError(new Error('TODOS os provedores falharam')))
+  return err(new ProviderFailureError('TODOS os provedores falharam'))
 }

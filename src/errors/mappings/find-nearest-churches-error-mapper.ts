@@ -75,7 +75,7 @@ export class FindNearestChurchesErrorMapper {
       return new ServiceOverloadError()
     }
 
-    return new ProviderFailureError(error instanceof Error ? error : new Error(String(error)))
+    return new ProviderFailureError(error)
   }
 
   private static mapAxiosError(error: AxiosError): AppError {

@@ -1366,8 +1366,8 @@ describe('ResilientCache Unit Tests', () => {
 
       expect(isErr(result)).toBe(true)
       if (isErr(result)) {
-        const cause = (result.error as ProviderFailureError).originalError as Error
-        expect(cause.message).toBe('Corrupted Cache: Missing value')
+        const cause = (result.error as ProviderFailureError).originalError
+        expect(cause).toBe('Corrupted Cache: Missing value')
       }
     })
 
@@ -1384,8 +1384,8 @@ describe('ResilientCache Unit Tests', () => {
 
       expect(isErr(result)).toBe(true)
       if (isErr(result)) {
-        const cause = (result.error as ProviderFailureError).originalError as Error
-        expect(cause.message).toBe('Cached Error: GoneError - vanished')
+        const cause = (result.error as ProviderFailureError).originalError
+        expect(cause).toBe('Cached Error: GoneError - vanished')
       }
     })
 
