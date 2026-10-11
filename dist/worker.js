@@ -133,6 +133,10 @@ var envSchema = import_zod2.z.object({
   SMTP_PORT: import_zod2.z.coerce.number(),
   SMTP_HOST: import_zod2.z.string().min(1),
   SMTP_SECURE: import_zod2.z.enum(["true", "false"]).transform((val) => val === "true"),
+  SMTP_POOL_MAX_CONNECTIONS: import_zod2.z.coerce.number().int().positive().default(5),
+  SMTP_POOL_MAX_MESSAGES: import_zod2.z.coerce.number().int().positive().default(100),
+  SMTP_POOL_RATE_LIMIT: import_zod2.z.coerce.number().int().positive().default(5),
+  SMTP_POOL_RATE_DELTA_MS: import_zod2.z.coerce.number().int().positive().default(1e3),
   // Timeouts defensivos: impedem que um servidor SMTP travado bloqueie o chamador (padrões do Nodemailer chegam a 10 min)
   SMTP_CONNECTION_TIMEOUT_MS: import_zod2.z.coerce.number().int().positive().default(5e3),
   SMTP_GREETING_TIMEOUT_MS: import_zod2.z.coerce.number().int().positive().default(5e3),
@@ -215,53 +219,95 @@ function initSentry() {
   });
 }
 
-// src/lib/infra/jobs/outbox-cron.ts
-var import_node_cron = __toESM(require("node-cron"));
-
-// src/messages/constants/outbox/outbox.ts
-var OUTBOX_CONSTANTS = {
-  LOCK_KEYS: {
-    OUTBOX_PROCESSOR: "lock:outbox-processor",
-    OUTBOX_RECOVERY: "lock:outbox-recovery",
-    OUTBOX_EXPIRY_SWEEP: "lock:outbox-expiry-sweep",
-    OUTBOX_RETENTION: "lock:outbox-retention"
-  },
-  LOCK_TTL_MS: {
-    DEFAULT: 1e4
-  },
-  THRESHOLDS: {
-    /**
-     * Time in ms after which a SENDING event is considered stuck (e.g., after a crash).
-     * Must exceed the worst-case BullMQ job lifetime (3 attempts x lockDuration + exponential
-     * backoff), otherwise recovery could re-dispatch a job that is still being retried.
-     */
-    STUCK_SENDING_MS: 9e5,
-    /** Maximum number of pending events fetched per processing cycle */
-    PENDING_FETCH_LIMIT: 50,
-    /** Maximum number of stuck SENDING events fetched per recovery cycle */
-    STUCK_FETCH_LIMIT: 50,
-    /**
-     * Maximum dispatch cycles (PENDING -> SENDING transitions) before an event is
-     * marked FAILED (terminal). Prevents poison messages from looping forever.
-     */
-    MAX_DISPATCH_ATTEMPTS: 5
-  },
-  RETENTION: {
-    /** Eventos com mais de N dias são removidos pela retenção diária, qualquer status. */
-    DAYS: 14,
-    /** Um lote por chamada, para renovar o lock distribuído entre lotes. */
-    BATCH_SIZE: 1e3
-  }
+// src/messages/constants/cron/cron.ts
+var CRON_SCHEDULES = {
+  /** Every day at midnight (00:00:00) */
+  MIDNIGHT_DAILY: "0 0 0 * * *",
+  /** Every 5 minutes */
+  EVERY_FIVE_MINUTES: "0 */5 * * * *",
+  /** Every day at 03:00 (off the midnight sweep) */
+  DAILY_3AM: "0 0 3 * * *",
+  /** Every day at 04:00 — analytics retention, after the outbox purge at 03:00 */
+  DAILY_4AM: "0 0 4 * * *"
 };
 
 // src/messages/constants/queue/queue.ts
 var QUEUE = {
   NAMES: {
-    MAIL: "mail-queue"
+    MAIL: "mail-queue",
+    MAINTENANCE: "maintenance-queue"
   },
   JOBS: {
-    OUTBOX_DISPATCH: "outbox-dispatch"
+    OUTBOX_DISPATCH: "outbox-dispatch",
+    FIVE_MIN_SWEEP: "five-min-sweep",
+    MIDNIGHT_SCAN: "midnight-scan",
+    RETENTION_PURGE: "retention-purge",
+    ANALYTICS_RETENTION: "analytics-retention"
+  },
+  /**
+   * Scheduler ids are the dedup key: every pod upserts the same id, so BullMQ
+   * keeps one scheduler and emits one job per tick regardless of pod count.
+   * Changing an id orphans the old scheduler in Redis — rename only alongside a
+   * `removeJobScheduler` for the previous id.
+   */
+  SCHEDULER_IDS: {
+    FIVE_MIN_SWEEP: "maintenance:five-min-sweep",
+    MIDNIGHT_SCAN: "maintenance:midnight-scan",
+    RETENTION_PURGE: "maintenance:retention-purge",
+    ANALYTICS_RETENTION: "maintenance:analytics-retention"
   }
+};
+
+// src/messages/constants/logs/outbox.ts
+var OUTBOX_LOGS = {
+  // outbox-signal
+  SIGNAL_PUBLISH_FAILED: "N\xE3o foi poss\xEDvel publicar sinal de envio da nova outbox. O cron job continuar\xE1 funcionando como fallback.",
+  SIGNAL_PROCESSING_ERROR: "Erro ao processar sinal de envio do Outbox",
+  UNEXPECTED_CHANNEL: "Mensagem recebida em canal inesperado. Ignorando.",
+  LISTENER_REMOVED: "Listener anterior de OutboxSignal removido com sucesso",
+  SUBSCRIBE_ERROR: "Erro ao se inscrever no canal de OutboxSignal",
+  PUBLISHER_CONNECTED: "Redis publisher conectado ao outbox-signal",
+  PUBLISHER_ERROR: "Erro no publicador Redis do outbox-signal",
+  PUBLISHER_CLOSED: "Conex\xE3o do publicador Redis fechada para outbox-signal",
+  SUBSCRIBER_CONNECTED: "Redis subscriber conectado para outbox-signal",
+  SUBSCRIBER_ERROR: "Erro no assinante Redis do outbox-signal",
+  SUBSCRIBER_CLOSED: "Conex\xE3o do assinante Redis fechada para outbox-signal",
+  // outbox-cron
+  CRON_START: "Cron de meia-noite: iniciando varredura de seguran\xE7a da Outbox...",
+  PHASE1_DONE: "Fase 1 (recupera\xE7\xE3o SENDING): conclu\xEDda.",
+  PHASE1_ERROR: "Fase 1 (recupera\xE7\xE3o SENDING): erro inesperado.",
+  PHASE2_DONE: "Fase 2 (eventos PENDING): conclu\xEDda.",
+  PHASE2_ERROR: "Fase 2 (eventos PENDING): erro inesperado.",
+  SCAN_DONE: "Varredura de seguran\xE7a da Outbox conclu\xEDda.",
+  SCHEDULER_CONFIGURED: "Agendadores da Outbox configurados: varredura a cada 5 min, seguran\xE7a \xE0 meia-noite e reten\xE7\xE3o \xE0s 03:00.",
+  // maintenance-scheduler / maintenance-worker
+  MAINTENANCE_PHASE_RETRYING: "Fase de manuten\xE7\xE3o falhou; o BullMQ far\xE1 nova tentativa com backoff antes de desistir.",
+  MAINTENANCE_JOB_UNKNOWN: "Job de manuten\xE7\xE3o desconhecido recebido na fila; nada a executar.",
+  MAINTENANCE_WORKER_STARTED: "Worker de manuten\xE7\xE3o iniciado e consumindo a fila.",
+  MAINTENANCE_QUEUE_ERROR: "Erro na fila de manuten\xE7\xE3o.",
+  // outbox-processor
+  SKIPPED_ANOTHER_RUNNING: "processPendingEvents: Processamento ignorado. Outra inst\xE2ncia j\xE1 est\xE1 rodando.",
+  PENDING_FETCH_ERROR: "Erro de Infra ao buscar eventos pendentes.",
+  STUCK_FETCH_ERROR: "Erro de Infra ao buscar eventos travados na Outbox.",
+  STATUS_UPDATE_FAILED: "Falha ao atualizar status para SENDING. Evento permanece em PENDING.",
+  REVERT_FATAL: "FATAL: Falha ao reverter status para PENDING. Inconsist\xEAncia na DB.",
+  DISPATCH_REVERTED: "Falha no dispatch, revertido para PENDING",
+  CRITICAL_LOOP_ERROR: "Erro cr\xEDtico inesperado no loop principal de processPendingEvents",
+  CRITICAL_RECOVERY_ERROR: "Erro cr\xEDtico inesperado no processStuckSendingEvents",
+  MARKED_FAILED: "Evento excedeu o n\xFAmero m\xE1ximo de tentativas de despacho e foi marcado como FAILED.",
+  FAILED_MARK_ERROR: "Falha ao marcar evento como FAILED no banco de dados.",
+  EXPIRED_EVENT_DELETED: "Evento expirado removido da Outbox sem despacho (link morto nunca \xE9 enviado).",
+  EXPIRED_EVENT_DELETE_ERROR: "Falha ao remover evento expirado da Outbox.",
+  PENDING_RECIPIENTS_UNRESOLVED: "Destinat\xE1rios pendentes n\xE3o corresponderam a nenhum e-mail reconstru\xEDdo; despachando o lote completo (at-least-once).",
+  // outbox-maintenance
+  EXPIRY_SWEEP_DELETED: "Varredura de expira\xE7\xE3o: eventos expirados removidos da Outbox.",
+  EXPIRY_SWEEP_ERROR: "Erro na varredura de expira\xE7\xE3o da Outbox.",
+  RETENTION_PURGED: "Reten\xE7\xE3o: eventos antigos removidos da Outbox.",
+  RETENTION_PURGED_NON_TERMINAL: "Reten\xE7\xE3o: eventos PENDING/SENDING antigos removidos da Outbox \u2014 investigar por que n\xE3o foram processados.",
+  RETENTION_ERROR: "Erro na reten\xE7\xE3o da Outbox.",
+  FIVE_MIN_SWEEP_PENDING_ERROR: "Varredura de 5 min: erro inesperado ao processar eventos PENDING.",
+  FIVE_MIN_SWEEP_EXPIRY_ERROR: "Varredura de 5 min: erro inesperado na varredura de expira\xE7\xE3o.",
+  RETENTION_CRON_ERROR: "Cron de reten\xE7\xE3o: erro inesperado."
 };
 
 // src/lib/logger/index.ts
@@ -561,55 +607,6 @@ var import_ioredis3 = __toESM(require("ioredis"));
 
 // src/lib/redis/connections/redis-outbox-signal-connection.ts
 var import_ioredis4 = __toESM(require("ioredis"));
-
-// src/messages/constants/logs/outbox.ts
-var OUTBOX_LOGS = {
-  // outbox-signal
-  SIGNAL_PUBLISH_FAILED: "N\xE3o foi poss\xEDvel publicar sinal de envio da nova outbox. O cron job continuar\xE1 funcionando como fallback.",
-  SIGNAL_PROCESSING_ERROR: "Erro ao processar sinal de envio do Outbox",
-  UNEXPECTED_CHANNEL: "Mensagem recebida em canal inesperado. Ignorando.",
-  LISTENER_REMOVED: "Listener anterior de OutboxSignal removido com sucesso",
-  SUBSCRIBE_ERROR: "Erro ao se inscrever no canal de OutboxSignal",
-  PUBLISHER_CONNECTED: "Redis publisher conectado ao outbox-signal",
-  PUBLISHER_ERROR: "Erro no publicador Redis do outbox-signal",
-  PUBLISHER_CLOSED: "Conex\xE3o do publicador Redis fechada para outbox-signal",
-  SUBSCRIBER_CONNECTED: "Redis subscriber conectado para outbox-signal",
-  SUBSCRIBER_ERROR: "Erro no assinante Redis do outbox-signal",
-  SUBSCRIBER_CLOSED: "Conex\xE3o do assinante Redis fechada para outbox-signal",
-  // outbox-cron
-  CRON_START: "Cron de meia-noite: iniciando varredura de seguran\xE7a da Outbox...",
-  PHASE1_DONE: "Fase 1 (recupera\xE7\xE3o SENDING): conclu\xEDda.",
-  PHASE1_ERROR: "Fase 1 (recupera\xE7\xE3o SENDING): erro inesperado.",
-  PHASE2_DONE: "Fase 2 (eventos PENDING): conclu\xEDda.",
-  PHASE2_ERROR: "Fase 2 (eventos PENDING): erro inesperado.",
-  SCAN_DONE: "Varredura de seguran\xE7a da Outbox conclu\xEDda.",
-  SCHEDULER_CONFIGURED: "Agendadores da Outbox configurados: varredura a cada 5 min, seguran\xE7a \xE0 meia-noite e reten\xE7\xE3o \xE0s 03:00.",
-  // outbox-processor
-  SKIPPED_ANOTHER_RUNNING: "processPendingEvents: Processamento ignorado. Outra inst\xE2ncia j\xE1 est\xE1 rodando.",
-  PENDING_FETCH_ERROR: "Erro de Infra ao buscar eventos pendentes.",
-  STUCK_FETCH_ERROR: "Erro de Infra ao buscar eventos travados na Outbox.",
-  STATUS_UPDATE_FAILED: "Falha ao atualizar status para SENDING. Evento permanece em PENDING.",
-  REVERT_FATAL: "FATAL: Falha ao reverter status para PENDING. Inconsist\xEAncia na DB.",
-  DISPATCH_REVERTED: "Falha no dispatch, revertido para PENDING",
-  CRITICAL_LOOP_ERROR: "Erro cr\xEDtico inesperado no loop principal de processPendingEvents",
-  CRITICAL_RECOVERY_ERROR: "Erro cr\xEDtico inesperado no processStuckSendingEvents",
-  MARKED_FAILED: "Evento excedeu o n\xFAmero m\xE1ximo de tentativas de despacho e foi marcado como FAILED.",
-  FAILED_MARK_ERROR: "Falha ao marcar evento como FAILED no banco de dados.",
-  EXPIRED_EVENT_DELETED: "Evento expirado removido da Outbox sem despacho (link morto nunca \xE9 enviado).",
-  EXPIRED_EVENT_DELETE_ERROR: "Falha ao remover evento expirado da Outbox.",
-  PENDING_RECIPIENTS_UNRESOLVED: "Destinat\xE1rios pendentes n\xE3o corresponderam a nenhum e-mail reconstru\xEDdo; despachando o lote completo (at-least-once).",
-  // outbox-maintenance
-  EXPIRY_SWEEP_DELETED: "Varredura de expira\xE7\xE3o: eventos expirados removidos da Outbox.",
-  EXPIRY_SWEEP_ERROR: "Erro na varredura de expira\xE7\xE3o da Outbox.",
-  RETENTION_PURGED: "Reten\xE7\xE3o: eventos antigos removidos da Outbox.",
-  RETENTION_PURGED_NON_TERMINAL: "Reten\xE7\xE3o: eventos PENDING/SENDING antigos removidos da Outbox \u2014 investigar por que n\xE3o foram processados.",
-  RETENTION_ERROR: "Erro na reten\xE7\xE3o da Outbox.",
-  FIVE_MIN_SWEEP_PENDING_ERROR: "Varredura de 5 min: erro inesperado ao processar eventos PENDING.",
-  FIVE_MIN_SWEEP_EXPIRY_ERROR: "Varredura de 5 min: erro inesperado na varredura de expira\xE7\xE3o.",
-  RETENTION_CRON_ERROR: "Cron de reten\xE7\xE3o: erro inesperado."
-};
-
-// src/lib/redis/connections/redis-outbox-signal-connection.ts
 var baseConfig2 = {
   host: env.REDIS_HOST,
   port: env.REDIS_PORT,
@@ -687,8 +684,392 @@ async function closeAllRedisConnections() {
   );
 }
 
-// src/lib/queue/mail-queue.ts
+// src/lib/queue/maintenance-queue.ts
 var import_bullmq = require("bullmq");
+
+// src/messages/constants/workers/workers.ts
+var WORKER_CONSTANTS = {
+  MAIL: {
+    CONCURRENCY_LIMIT: 5,
+    LOCK_DURATION_MS: 3e5,
+    STALLED_INTERVAL_MS: 3e5
+  },
+  /**
+   * Concorrência 1: as varreduras de manutenção são pesadas no banco e já se
+   * excluem via DistributedLock. Deixar duas rodarem juntas só trocaria o lock
+   * por espera, sem ganho — e a fila nunca tem mais que quatro jobs por hora.
+   */
+  MAINTENANCE: {
+    CONCURRENCY_LIMIT: 1
+  },
+  QUEUE: {
+    JOB_ATTEMPTS: 3,
+    BACKOFF_TYPE: "exponential",
+    BACKOFF_DELAY_MS: 1e4
+  },
+  IDEMPOTENCY_TTL: {
+    PROCESSING_SECONDS: 300,
+    COMPLETED_SECONDS: 86400
+  }
+};
+
+// src/lib/queue/maintenance-queue.ts
+var maintenanceQueueInstance = null;
+function getMaintenanceQueue() {
+  if (!maintenanceQueueInstance) {
+    const redisForQueue = getRedisForQueue();
+    attachRedisLogger(redisForQueue, QUEUE.NAMES.MAINTENANCE);
+    maintenanceQueueInstance = new import_bullmq.Queue(QUEUE.NAMES.MAINTENANCE, {
+      connection: redisForQueue,
+      defaultJobOptions: {
+        attempts: WORKER_CONSTANTS.QUEUE.JOB_ATTEMPTS,
+        backoff: {
+          type: WORKER_CONSTANTS.QUEUE.BACKOFF_TYPE,
+          delay: WORKER_CONSTANTS.QUEUE.BACKOFF_DELAY_MS
+        },
+        removeOnComplete: true,
+        removeOnFail: true
+      }
+    });
+    maintenanceQueueInstance.on("error", (err2) => {
+      logger.error({ err: err2 }, OUTBOX_LOGS.MAINTENANCE_QUEUE_ERROR);
+    });
+  }
+  return maintenanceQueueInstance;
+}
+
+// src/lib/infra/jobs/maintenance-scheduler.ts
+var MAINTENANCE_SCHEDULES = [
+  {
+    schedulerId: QUEUE.SCHEDULER_IDS.FIVE_MIN_SWEEP,
+    jobName: QUEUE.JOBS.FIVE_MIN_SWEEP,
+    pattern: CRON_SCHEDULES.EVERY_FIVE_MINUTES
+  },
+  {
+    schedulerId: QUEUE.SCHEDULER_IDS.MIDNIGHT_SCAN,
+    jobName: QUEUE.JOBS.MIDNIGHT_SCAN,
+    pattern: CRON_SCHEDULES.MIDNIGHT_DAILY
+  },
+  {
+    schedulerId: QUEUE.SCHEDULER_IDS.RETENTION_PURGE,
+    jobName: QUEUE.JOBS.RETENTION_PURGE,
+    pattern: CRON_SCHEDULES.DAILY_3AM
+  },
+  {
+    schedulerId: QUEUE.SCHEDULER_IDS.ANALYTICS_RETENTION,
+    jobName: QUEUE.JOBS.ANALYTICS_RETENTION,
+    pattern: CRON_SCHEDULES.DAILY_4AM
+  }
+];
+async function startMaintenanceScheduler(queue = getMaintenanceQueue()) {
+  for (const schedule of MAINTENANCE_SCHEDULES) {
+    await queue.upsertJobScheduler(
+      schedule.schedulerId,
+      { pattern: schedule.pattern },
+      { name: schedule.jobName, data: { schedulerId: schedule.schedulerId } }
+    );
+  }
+  logger.info(OUTBOX_LOGS.SCHEDULER_CONFIGURED);
+}
+
+// src/lib/infra/jobs/maintenance-worker.ts
+var import_bullmq2 = require("bullmq");
+
+// src/lib/sentry/capture.ts
+var import_node2 = require("@sentry/node");
+function captureError(error, context = {}) {
+  if (!(0, import_node2.isInitialized)()) return;
+  const normalized = error instanceof Error ? error : new Error(String(error));
+  (0, import_node2.withScope)((scope) => {
+    const userId = getUserId();
+    if (userId) {
+      scope.setUser({ id: userId });
+    }
+    scope.setContext("runtime", { requestId: getRequestId(), ...context });
+    (0, import_node2.captureException)(normalized);
+  });
+}
+
+// src/lib/metrics/outbox-metrics.ts
+var import_prom_client2 = require("prom-client");
+
+// src/lib/metrics/index.ts
+var import_prom_client = require("prom-client");
+var registry = null;
+var initialized = false;
+function getRegistry() {
+  if (!env.METRICS_ENABLED) return null;
+  if (!initialized) {
+    registry = new import_prom_client.Registry();
+    (0, import_prom_client.collectDefaultMetrics)({ register: registry });
+    initialized = true;
+  }
+  return registry;
+}
+
+// src/lib/metrics/outbox-metrics.ts
+var registry2 = getRegistry();
+var collectMetricsOutboxEventsDispatched = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_events_dispatched_total",
+  help: "Events successfully enqueued to BullMQ",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxEventsReverted = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_events_reverted_total",
+  help: "Dispatch failed and the event was successfully reverted to PENDING",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxEventsRevertFailed = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_events_revert_failed_total",
+  help: "Dispatch failed and the revert-to-PENDING write also failed (stranded in SENDING)",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxEventsMarkedAsTerminalFail = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_events_marked_as_terminal_fail_total",
+  help: "Events marked terminal FAILED after exceeding the dispatch attempts cap (poison message)",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxEventsExpired = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_events_expired_total",
+  help: "Events deleted at the expiration gate before dispatch",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxEventsStuckSendingEventsRecovered = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_events_stuck_sending_events_recovered_total",
+  help: "Stuck SENDING events reprocessed by the recovery loop",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxCronRuns = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_cron_runs_total",
+  help: "Outbox cron executions by phase",
+  labelNames: ["phase"],
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxCronFailures = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_cron_failures_total",
+  help: "Maintenance phase failures by phase and outcome (retrying | exhausted)",
+  labelNames: ["phase", "outcome"],
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxMaintenanceDeleted = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_maintenance_deleted_total",
+  help: "Events deleted by maintenance sweeps, by operation",
+  labelNames: ["operation"],
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxSignalPublished = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_signal_published_total",
+  help: "Pub/Sub wakeup signals published after an outbox write",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxSignalPublishFailed = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_signal_publish_failed_total",
+  help: "Pub/Sub signal publish failures (Redis unavailable)",
+  registers: [registry2]
+}) : null;
+
+// src/messages/constants/analytics/analytics.ts
+var ANALYTICS_CONSTANTS = {
+  LOCK_KEYS: {
+    ANALYTICS_RETENTION: "lock:analytics-retention"
+  },
+  LOCK_TTL_MS: {
+    DEFAULT: 1e4
+  },
+  RETENTION: {
+    /**
+     * One batch per statement, with the lock renewed between batches.
+     *
+     * A `DELETE` without a bound would take one lock over months of backlog and
+     * hold the table for the length of it. The sweep loops until a pass deletes
+     * nothing, so a large backlog drains over several passes instead of one long
+     * outage.
+     */
+    BATCH_SIZE: 1e3,
+    /** Ceiling on batches per run, so one night's sweep cannot run unbounded. */
+    MAX_BATCHES_PER_RUN: 100
+  }
+};
+var ANALYTICS_LOGS = {
+  RETENTION_ERROR: "Falha na varredura de reten\xE7\xE3o de analytics",
+  RETENTION_DONE: "Varredura de reten\xE7\xE3o de analytics conclu\xEDda"
+};
+
+// src/lib/infra/jobs/maintenance-worker.ts
+function fiveMinSweepPhases({ processor, maintenance }) {
+  return [
+    {
+      name: "five_min_sweep",
+      run: () => maintenance.sweepExpiredEvents(),
+      errorMessage: OUTBOX_LOGS.FIVE_MIN_SWEEP_EXPIRY_ERROR
+    },
+    {
+      name: "five_min_pending",
+      run: () => processor.processPendingEvents(),
+      errorMessage: OUTBOX_LOGS.FIVE_MIN_SWEEP_PENDING_ERROR
+    }
+  ];
+}
+function midnightScanPhases({ processor }) {
+  return [
+    {
+      name: "midnight_recovery",
+      run: () => processor.processStuckSendingEvents(),
+      errorMessage: OUTBOX_LOGS.PHASE1_ERROR,
+      onSuccess: OUTBOX_LOGS.PHASE1_DONE,
+      sentryContext: { phase: 1 }
+    },
+    {
+      name: "midnight_pending",
+      run: () => processor.processPendingEvents(),
+      errorMessage: OUTBOX_LOGS.PHASE2_ERROR,
+      onSuccess: OUTBOX_LOGS.PHASE2_DONE,
+      sentryContext: { phase: 2 }
+    }
+  ];
+}
+function retentionPurgePhases({ maintenance }) {
+  return [
+    {
+      name: "retention_purge",
+      run: () => maintenance.purgeOldEvents(),
+      errorMessage: OUTBOX_LOGS.RETENTION_CRON_ERROR
+    }
+  ];
+}
+function analyticsRetentionPhases({ analyticsRetention }) {
+  return [
+    {
+      name: "analytics_retention",
+      run: () => analyticsRetention.purgeExpiredData(),
+      errorMessage: ANALYTICS_LOGS.RETENTION_ERROR
+    }
+  ];
+}
+var PHASE_BUILDERS = /* @__PURE__ */ new Map([
+  [QUEUE.JOBS.FIVE_MIN_SWEEP, fiveMinSweepPhases],
+  [QUEUE.JOBS.MIDNIGHT_SCAN, midnightScanPhases],
+  [QUEUE.JOBS.RETENTION_PURGE, retentionPurgePhases],
+  [QUEUE.JOBS.ANALYTICS_RETENTION, analyticsRetentionPhases]
+]);
+function phasesFor(jobName, deps) {
+  return PHASE_BUILDERS.get(jobName)?.(deps) ?? [];
+}
+function isFinalAttempt(job) {
+  return job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+}
+async function runPhase(phase, job) {
+  collectMetricsOutboxCronRuns?.inc({ phase: phase.name });
+  try {
+    await phase.run();
+    if (phase.onSuccess) {
+      logger.info(phase.onSuccess);
+    }
+    return null;
+  } catch (error) {
+    reportPhaseFailure(phase, job, error);
+    return { error };
+  }
+}
+function reportPhaseFailure(phase, job, error) {
+  if (!isFinalAttempt(job)) {
+    collectMetricsOutboxCronFailures?.inc({ phase: phase.name, outcome: "retrying" });
+    logger.warn({ error, phase: phase.name, attempt: job.attemptsMade + 1 }, OUTBOX_LOGS.MAINTENANCE_PHASE_RETRYING);
+    return;
+  }
+  collectMetricsOutboxCronFailures?.inc({ phase: phase.name, outcome: "exhausted" });
+  logger.error({ error }, phase.errorMessage);
+  if (phase.sentryContext) {
+    captureError(error, phase.sentryContext);
+  } else {
+    captureError(error);
+  }
+}
+async function runAllPhases(phases, job) {
+  const isMidnightScan = job.name === QUEUE.JOBS.MIDNIGHT_SCAN;
+  if (isMidnightScan) {
+    logger.info(OUTBOX_LOGS.CRON_START);
+  }
+  const failures = [];
+  for (const phase of phases) {
+    const outcome = await runPhase(phase, job);
+    if (outcome) {
+      failures.push(outcome.error);
+    }
+  }
+  if (isMidnightScan) {
+    logger.info(OUTBOX_LOGS.SCAN_DONE);
+  }
+  return failures;
+}
+function asThrowable(failures) {
+  if (failures.length === 1 && failures[0] instanceof Error) {
+    return failures[0];
+  }
+  return new AggregateError(failures, OUTBOX_LOGS.MAINTENANCE_PHASE_RETRYING);
+}
+function createMaintenanceJobProcessor(deps) {
+  return async (job) => {
+    const phases = phasesFor(job.name, deps);
+    if (phases.length === 0) {
+      logger.warn({ jobName: job.name, jobId: job.id }, OUTBOX_LOGS.MAINTENANCE_JOB_UNKNOWN);
+      return;
+    }
+    const failures = await runAllPhases(phases, job);
+    if (failures.length > 0 && !isFinalAttempt(job)) {
+      throw asThrowable(failures);
+    }
+  };
+}
+function startMaintenanceWorker(deps) {
+  const workerConnection = createWorkerConnection();
+  attachRedisLogger(workerConnection, "MaintenanceWorker");
+  const worker2 = new import_bullmq2.Worker(QUEUE.NAMES.MAINTENANCE, createMaintenanceJobProcessor(deps), {
+    connection: workerConnection,
+    concurrency: WORKER_CONSTANTS.MAINTENANCE.CONCURRENCY_LIMIT
+  });
+  logger.info(OUTBOX_LOGS.MAINTENANCE_WORKER_STARTED);
+  return worker2;
+}
+
+// src/messages/constants/outbox/outbox.ts
+var OUTBOX_CONSTANTS = {
+  LOCK_KEYS: {
+    OUTBOX_PROCESSOR: "lock:outbox-processor",
+    OUTBOX_RECOVERY: "lock:outbox-recovery",
+    OUTBOX_EXPIRY_SWEEP: "lock:outbox-expiry-sweep",
+    OUTBOX_RETENTION: "lock:outbox-retention"
+  },
+  LOCK_TTL_MS: {
+    DEFAULT: 1e4
+  },
+  THRESHOLDS: {
+    /**
+     * Time in ms after which a SENDING event is considered stuck (e.g., after a crash).
+     * Must exceed the worst-case BullMQ job lifetime (3 attempts x lockDuration + exponential
+     * backoff), otherwise recovery could re-dispatch a job that is still being retried.
+     */
+    STUCK_SENDING_MS: 9e5,
+    /** Maximum number of pending events fetched per processing cycle */
+    PENDING_FETCH_LIMIT: 50,
+    /** Maximum number of stuck SENDING events fetched per recovery cycle */
+    STUCK_FETCH_LIMIT: 50,
+    /**
+     * Maximum dispatch cycles (PENDING -> SENDING transitions) before an event is
+     * marked FAILED (terminal). Prevents poison messages from looping forever.
+     */
+    MAX_DISPATCH_ATTEMPTS: 5
+  },
+  RETENTION: {
+    /** Eventos com mais de N dias são removidos pela retenção diária, qualquer status. */
+    DAYS: 14,
+    /** Um lote por chamada, para renovar o lock distribuído entre lotes. */
+    BATCH_SIZE: 1e3
+  }
+};
+
+// src/lib/queue/mail-queue.ts
+var import_bullmq3 = require("bullmq");
 
 // src/messages/constants/logs/worker.ts
 var WORKER_LOGS = {
@@ -711,7 +1092,7 @@ function getMailQueue() {
   if (!mailQueueInstance) {
     const redisForQueue = getRedisForQueue();
     attachRedisLogger(redisForQueue, QUEUE.NAMES.MAIL);
-    mailQueueInstance = new import_bullmq.Queue(QUEUE.NAMES.MAIL, {
+    mailQueueInstance = new import_bullmq3.Queue(QUEUE.NAMES.MAIL, {
       connection: redisForQueue,
       defaultJobOptions: {
         attempts: 3,
@@ -730,21 +1111,6 @@ function getMailQueue() {
   return mailQueueInstance;
 }
 
-// src/lib/sentry/capture.ts
-var import_node2 = require("@sentry/node");
-function captureError(error, context = {}) {
-  if (!(0, import_node2.isInitialized)()) return;
-  const normalized = error instanceof Error ? error : new Error(String(error));
-  (0, import_node2.withScope)((scope) => {
-    const userId = getUserId();
-    if (userId) {
-      scope.setUser({ id: userId });
-    }
-    scope.setContext("runtime", { requestId: getRequestId(), ...context });
-    (0, import_node2.captureException)(normalized);
-  });
-}
-
 // src/messages/constants/logs/distributed-lock.ts
 var LOCK_LOGS = {
   ACQUIRE_FAILED: "Falha ao tentar adquirir Distributed Lock",
@@ -758,60 +1124,44 @@ var LOCK_LOGS = {
 var import_node_crypto = require("crypto");
 
 // src/lib/metrics/lock-metrics.ts
-var import_prom_client2 = require("prom-client");
-
-// src/lib/metrics/index.ts
-var import_prom_client = require("prom-client");
-var registry = null;
-var initialized = false;
-function getRegistry() {
-  if (!env.METRICS_ENABLED) return null;
-  if (!initialized) {
-    registry = new import_prom_client.Registry();
-    (0, import_prom_client.collectDefaultMetrics)({ register: registry });
-    initialized = true;
-  }
-  return registry;
-}
-
-// src/lib/metrics/lock-metrics.ts
-var registry2 = getRegistry();
-var collectMetricsLockAcquired = registry2 ? new import_prom_client2.Counter({
+var import_prom_client3 = require("prom-client");
+var registry3 = getRegistry();
+var collectMetricsLockAcquired = registry3 ? new import_prom_client3.Counter({
   name: "distributed_lock_acquired_total",
   help: "Successful lock acquisitions",
   labelNames: ["key"],
-  registers: [registry2]
+  registers: [registry3]
 }) : null;
-var collectMetricsLockContention = registry2 ? new import_prom_client2.Counter({
+var collectMetricsLockContention = registry3 ? new import_prom_client3.Counter({
   name: "distributed_lock_contention_total",
   help: "Failed acquisitions (lock held by another)",
   labelNames: ["key"],
-  registers: [registry2]
+  registers: [registry3]
 }) : null;
-var collectMetricsLockReleased = registry2 ? new import_prom_client2.Counter({
+var collectMetricsLockReleased = registry3 ? new import_prom_client3.Counter({
   name: "distributed_lock_released_total",
   help: "Successful releases",
   labelNames: ["key"],
-  registers: [registry2]
+  registers: [registry3]
 }) : null;
-var collectMetricsLockExpired = registry2 ? new import_prom_client2.Counter({
+var collectMetricsLockExpired = registry3 ? new import_prom_client3.Counter({
   name: "distributed_lock_expired_total",
   help: "Release/renew found lock expired or owned by another instance",
   labelNames: ["key"],
-  registers: [registry2]
+  registers: [registry3]
 }) : null;
-var collectMetricsLockErrors = registry2 ? new import_prom_client2.Counter({
+var collectMetricsLockErrors = registry3 ? new import_prom_client3.Counter({
   name: "distributed_lock_errors_total",
   help: "Redis/infrastructure failures during lock operations",
   labelNames: ["operation"],
-  registers: [registry2]
+  registers: [registry3]
 }) : null;
-var collectMetricsLockDuration = registry2 ? new import_prom_client2.Histogram({
+var collectMetricsLockDuration = registry3 ? new import_prom_client3.Histogram({
   name: "distributed_lock_duration_seconds",
   help: "Time between acquire and release",
   labelNames: ["key"],
   buckets: [0.1, 0.5, 1, 5, 10, 30, 60],
-  registers: [registry2]
+  registers: [registry3]
 }) : null;
 
 // src/lib/infra/distributed-lock/distributed-lock.ts
@@ -989,62 +1339,6 @@ function isErr(result) {
   return !result.success;
 }
 
-// src/lib/metrics/outbox-metrics.ts
-var import_prom_client3 = require("prom-client");
-var registry3 = getRegistry();
-var collectMetricsOutboxEventsDispatched = registry3 ? new import_prom_client3.Counter({
-  name: "outbox_events_dispatched_total",
-  help: "Events successfully enqueued to BullMQ",
-  registers: [registry3]
-}) : null;
-var collectMetricsOutboxEventsReverted = registry3 ? new import_prom_client3.Counter({
-  name: "outbox_events_reverted_total",
-  help: "Dispatch failed and the event was successfully reverted to PENDING",
-  registers: [registry3]
-}) : null;
-var collectMetricsOutboxEventsRevertFailed = registry3 ? new import_prom_client3.Counter({
-  name: "outbox_events_revert_failed_total",
-  help: "Dispatch failed and the revert-to-PENDING write also failed (stranded in SENDING)",
-  registers: [registry3]
-}) : null;
-var collectMetricsOutboxEventsMarkedAsTerminalFail = registry3 ? new import_prom_client3.Counter({
-  name: "outbox_events_marked_as_terminal_fail_total",
-  help: "Events marked terminal FAILED after exceeding the dispatch attempts cap (poison message)",
-  registers: [registry3]
-}) : null;
-var collectMetricsOutboxEventsExpired = registry3 ? new import_prom_client3.Counter({
-  name: "outbox_events_expired_total",
-  help: "Events deleted at the expiration gate before dispatch",
-  registers: [registry3]
-}) : null;
-var collectMetricsOutboxEventsStuckSendingEventsRecovered = registry3 ? new import_prom_client3.Counter({
-  name: "outbox_events_stuck_sending_events_recovered_total",
-  help: "Stuck SENDING events reprocessed by the recovery loop",
-  registers: [registry3]
-}) : null;
-var collectMetricsOutboxCronRuns = registry3 ? new import_prom_client3.Counter({
-  name: "outbox_cron_runs_total",
-  help: "Outbox cron executions by phase",
-  labelNames: ["phase"],
-  registers: [registry3]
-}) : null;
-var collectMetricsOutboxMaintenanceDeleted = registry3 ? new import_prom_client3.Counter({
-  name: "outbox_maintenance_deleted_total",
-  help: "Events deleted by maintenance sweeps, by operation",
-  labelNames: ["operation"],
-  registers: [registry3]
-}) : null;
-var collectMetricsOutboxSignalPublished = registry3 ? new import_prom_client3.Counter({
-  name: "outbox_signal_published_total",
-  help: "Pub/Sub wakeup signals published after an outbox write",
-  registers: [registry3]
-}) : null;
-var collectMetricsOutboxSignalPublishFailed = registry3 ? new import_prom_client3.Counter({
-  name: "outbox_signal_publish_failed_total",
-  help: "Pub/Sub signal publish failures (Redis unavailable)",
-  registers: [registry3]
-}) : null;
-
 // src/lib/infra/jobs/outbox-processor.ts
 var OutboxProcessor = class {
   constructor(outboxRepository, dispatchRegistry) {
@@ -1170,7 +1464,7 @@ var OutboxProcessor = class {
     if (isErr(strategyResult)) {
       throw strategyResult.error;
     }
-    const planResult = strategyResult.value.buildDispatch(event);
+    const planResult = await strategyResult.value.buildDispatch(event);
     if (isErr(planResult)) {
       throw planResult.error;
     }
@@ -1285,923 +1579,6 @@ function reportPurge(totalDeleted, totalByStatus) {
   logger.info({ deleted: totalDeleted, byStatus: totalByStatus }, OUTBOX_LOGS.RETENTION_PURGED);
 }
 
-// src/core/types/outbox/outbox-event-input.ts
-var OUTBOX_EVENT_TYPES = {
-  FORM_SUBMISSION_CREATED: "FormSubmissionCreated",
-  // The name of an outbox EVENT TYPE, not a credential — the heuristic pairs
-  // the word "password" with a string literal on the same line. The real reset
-  // token lives only in the transient payload below.
-  // eslint-disable-next-line sonarjs/no-hardcoded-passwords
-  PASSWORD_RESET_REQUESTED: "PasswordResetRequested"
-};
-
-// src/templates/contact-user/contact-user-subject-text.ts
-function contactUserSubjectTextTemplate(name) {
-  return `
-            Gra\xE7a e paz, ${name}. Ficamos felizes com o seu contato!
-        `;
-}
-
-// src/templates/contact-user/contact-user-text.ts
-function contactUserTextTemplate(name) {
-  return `
-            Gra\xE7a e paz, ${name}! 
-            Recebemos sua mensagem. \xC9 uma honra que voc\xEA esteja se conectando conosco!
-            Voc\xEA ser\xE1 adicionado \xE0 nossa lista de e-mails para receber atualiza\xE7\xF5es, 
-            recursos e inspira\xE7\xE3o para lhe auxiliar na sua jornada.
-        `;
-}
-
-// src/templates/contact-user/contact-user-html.ts
-function contactUserHtmlTemplate(name) {
-  return `
-            <div>
-                <table style="font-family: arial">
-                    <tr>
-                        <td align="center" style="background-color: #eb5933; padding: 20px; color: white;">
-                            <h1>Evangelismo Digital</h1>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td align="center" style="padding: 10px; font-size: 20px;">
-                            <p>Gra\xE7a e paz, <strong>${name}</strong>!</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td align="center" style="padding: 10px; font-size: 20px;">
-                            <p>Recebemos sua mensagem. \xC9 uma honra que voc\xEA esteja se conectando conosco!</p>
-                            <p>Voc\xEA ser\xE1 adicionado \xE0 nossa lista de e-mails para receber atualiza\xE7\xF5es, recursos e inspira\xE7\xE3o para lhe auxiliar na sua jornada.</p>
-                        </td>
-                    </tr>
-
-                    <tr>
-                        <td style="padding: 20px; text-align: center; font-size: 12px; color: #999999;">
-                            <p style="margin: 5px 0 0;">Se deseja n\xE3o receber mais estes e-mails, <a href="#" style="color: #999999; text-decoration: underline;">clique aqui</a>.</p>
-                        </td>
-                    </tr>
-                </table>
-            </div>
-        `;
-}
-
-// src/templates/contact-staff/contact-staff-subject-text.ts
-function contactStaffSubjectTextTemplate() {
-  return `
-            Novo formul\xE1rio enviado
-        `;
-}
-
-// src/templates/contact-staff/contact-staff-text.ts
-function contactStaffTextTemplate(name, email, ipAddress) {
-  const ipSection = ipAddress ? `
-IP de origem: ${ipAddress}` : "";
-  return `
-            ${name} <${email}> enviou um formul\xE1rio.${ipSection}
-        `;
-}
-
-// src/templates/contact-staff/contact-staff-html.ts
-function contactStaffHtmlTemplate(name, lastName, email, ipAddress) {
-  const ipRow = ipAddress ? `<p><strong>IP de origem:</strong> ${ipAddress}</p>` : "";
-  return `
-            <div>
-                <table style="font-family: arial">
-                    <tr>
-                        <td align="center" style="background-color: #eb5933; padding: 20px; color: white;">
-                            <h1>Boas not\xEDcias!</h1>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td align="center" style="padding: 10px; font-size: 20px;">
-                            <p>Um novo formul\xE1rio acaba de ser enviado!</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td align="center" style="padding: 10px; font-size: 20px;">
-                            <p><strong>Nome:</strong> ${name} ${lastName}</p>
-                            <p><strong>Email:</strong> ${email}</p>
-                            ${ipRow}
-                        </td>
-                    </tr>
-                </table>
-            </div>
-        `;
-}
-
-// src/errors/app-error.ts
-var AppError = class extends Error {
-  type;
-  body;
-  /**
-   * Machine-readable routing hint used by resilient fallback chains and cache
-   * managers.  Subclasses that participate in fallback/caching declare their
-   * own failure mode once; callers never need `instanceof` to branch on it.
-   */
-  failureMode;
-  /**
-   * Self-describing observability tag, parallel to `failureMode` but for metric
-   * labels. Subclasses declare their own reason once; consumers read it without
-   * `instanceof`. See {@link TelemetryReason}.
-   */
-  telemetryReason;
-  /**
-   * @param detail         – the error descriptor (code + message + optional extras)
-   * @param type           – the HTTP-level error type
-   * @param failureMode    – optional routing failure mode (RETRYABLE | NOT_FOUND)
-   * @param telemetryReason – optional observability reason for metric labels
-   */
-  constructor(detail, type, failureMode, telemetryReason) {
-    super(detail.message);
-    this.name = this.constructor.name;
-    this.type = type;
-    this.failureMode = failureMode;
-    this.telemetryReason = telemetryReason;
-    this.body = {
-      code: detail.code,
-      message: detail.message,
-      ...detail.issues && { issues: detail.issues }
-    };
-    Error.captureStackTrace(this, this.constructor);
-    Object.setPrototypeOf(this, new.target.prototype);
-  }
-};
-
-// src/errors/domain-error.ts
-var DomainError = class extends AppError {
-  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
-  constructor(detail, type, failureMode, telemetryReason) {
-    super(detail, type, failureMode, telemetryReason);
-  }
-};
-
-// src/messages/errors/forms.ts
-var INVALID_FORM_PAYLOAD_ERROR_FN = (fieldName) => ({
-  code: "INVALID_FORM_PAYLOAD",
-  message: fieldName ? `Payload do formul\xE1rio inv\xE1lido: campo '${fieldName}' possui valor inesperado.` : "Payload do formul\xE1rio inv\xE1lido: um ou mais campos possuem valores inesperados."
-});
-
-// src/use-cases/errors/forms/invalid-form-payload-error.ts
-var InvalidFormPayloadError = class extends DomainError {
-  constructor(fieldName) {
-    super(INVALID_FORM_PAYLOAD_ERROR_FN(fieldName), "BAD_REQUEST" /* BAD_REQUEST */);
-  }
-};
-
-// src/use-cases/forms/strategies/form-payload-fields.ts
-function requireStringField(value, fieldName) {
-  if (typeof value === "string") {
-    return ok(value);
-  }
-  return err(new InvalidFormPayloadError(fieldName));
-}
-function optionalStringField(value, fieldName) {
-  if (value === void 0 || typeof value === "string") {
-    return ok(value || "");
-  }
-  return err(new InvalidFormPayloadError(fieldName));
-}
-function optionalIpAddress(form) {
-  return typeof form.ipAddress === "string" ? form.ipAddress : void 0;
-}
-function requireSubmitterIdentity(form) {
-  const emailResult = requireStringField(form.email, "form.email");
-  if (isErr(emailResult)) return emailResult;
-  const nameResult = requireStringField(form.name, "form.name");
-  if (isErr(nameResult)) return nameResult;
-  return ok({ email: emailResult.value, name: nameResult.value });
-}
-function buildUserMailJob(form, buildContent) {
-  const identityResult = requireSubmitterIdentity(form);
-  if (isErr(identityResult)) return identityResult;
-  const { email, name } = identityResult.value;
-  const { type, subject, message, html } = buildContent({ email, name });
-  return ok({
-    subject,
-    message,
-    html,
-    to: email,
-    context: { type, recipient: "user" }
-  });
-}
-function buildStaffMailJob(content) {
-  return {
-    to: env.ADMIN_EMAIL,
-    subject: content.subject,
-    message: content.message,
-    html: content.html,
-    context: { type: content.type, recipient: "internal" }
-  };
-}
-function extractContactStaffData(form) {
-  const identityResult = requireSubmitterIdentity(form);
-  if (isErr(identityResult)) return identityResult;
-  const lastNameResult = optionalStringField(form.lastName, "form.lastName");
-  if (isErr(lastNameResult)) return lastNameResult;
-  return ok({
-    ...identityResult.value,
-    lastName: lastNameResult.value,
-    ipAddress: optionalIpAddress(form)
-  });
-}
-
-// src/use-cases/forms/strategies/contact-email-strategy.ts
-var ContactEmailStrategy = class {
-  buildUserEmail(form) {
-    return buildUserMailJob(form, ({ name }) => ({
-      type: "contact",
-      subject: contactUserSubjectTextTemplate(name),
-      message: contactUserTextTemplate(name),
-      html: contactUserHtmlTemplate(name)
-    }));
-  }
-  buildStaffEmail(form) {
-    const dataResult = extractContactStaffData(form);
-    if (isErr(dataResult)) return dataResult;
-    const { email, name, lastName, ipAddress } = dataResult.value;
-    return ok(
-      buildStaffMailJob({
-        type: "contact",
-        subject: contactStaffSubjectTextTemplate(),
-        message: contactStaffTextTemplate(name, email, ipAddress),
-        html: contactStaffHtmlTemplate(name, lastName, email, ipAddress)
-      })
-    );
-  }
-};
-
-// src/templates/decision-for-christ-user/decision-for-christ-user-subject-text.ts
-function decisionForChristUserSubjectText() {
-  return `
-        Parab\xE9ns pela sua decis\xE3o por Cristo!
-    `;
-}
-
-// src/templates/decision-for-christ-user/decision-for-christ-user-text.ts
-function decisionForChristUserTextTemplate(name) {
-  return `
-        Ol\xE1 ${name}, 
-        \xC9 uma alegria saber que voc\xEA tomou uma decis\xE3o por Cristo.
-        Em breve, nossa equipe entrar\xE1 em contato para acompanh\xE1-lo nessa nova jornada.
-    `;
-}
-
-// src/templates/decision-for-christ-user/decision-for-christ-user-html.ts
-function decisionForChristUserHtmlTemplate(name) {
-  return `
-            <p>
-                Ol\xE1 <strong>${name}</strong>,
-            </p>
-            <p>
-                \xC9 uma alegria saber que voc\xEA tomou uma decis\xE3o por Cristo.
-                
-                Em breve, nossa equipe entrar\xE1 em contato para acompanh\xE1-lo nessa nova jornada.
-            </p>
-        `;
-}
-
-// src/templates/decision-for-christ-staff/decision-for-christ-staff-subject-text.ts
-function decisionForChristStaffSubjectText() {
-  return `
-      Nova decis\xE3o por Cristo registrada
-    `;
-}
-
-// src/templates/decision-for-christ-staff/decision-for-christ-staff-text.ts
-function decisionForChristStaffTextTemplate(name, email, ipAddress) {
-  const ipSection = ipAddress ? `
-IP de origem: ${ipAddress}` : "";
-  return `
-            ${name} <${email}> aceitou a Cristo.${ipSection}
-        `;
-}
-
-// src/templates/decision-for-christ-staff/decision-for-christ-staff-html.ts
-function decisionForChristStaffHtmlTemplate(name, lastName, email, location, ipAddress) {
-  const ipSection = ipAddress ? `
-                <li>
-                    IP de origem: ${ipAddress}
-                </li>` : "";
-  return `
-            <p>
-                Nova decis\xE3o por Cristo:
-            </p>
-            <ul>
-                <li>
-                    Nome: ${name} ${lastName}
-                </li>
-                <li>
-                    Email: ${email}
-                </li>
-                <li>
-                    Local: ${location ?? "n\xE3o informado"}
-                </li>
-                ${ipSection}
-            </ul>
-        `;
-}
-
-// src/use-cases/forms/strategies/decision-for-christ-email-strategy.ts
-var DecisionForChristEmailStrategy = class {
-  buildUserEmail(form) {
-    return buildUserMailJob(form, ({ name }) => ({
-      type: "decision-for-Christ",
-      subject: decisionForChristUserSubjectText(),
-      message: decisionForChristUserTextTemplate(name),
-      html: decisionForChristUserHtmlTemplate(name)
-    }));
-  }
-  buildStaffEmail(form) {
-    const identityResult = requireSubmitterIdentity(form);
-    if (isErr(identityResult)) return identityResult;
-    const lastNameResult = requireStringField(form.lastName, "form.lastName");
-    if (isErr(lastNameResult)) return lastNameResult;
-    const locationResult = optionalStringField(form.location, "form.location");
-    if (isErr(locationResult)) return locationResult;
-    const { email, name } = identityResult.value;
-    const lastName = lastNameResult.value;
-    const location = locationResult.value;
-    const ipAddress = optionalIpAddress(form);
-    return ok(
-      buildStaffMailJob({
-        type: "decision-for-Christ",
-        subject: decisionForChristStaffSubjectText(),
-        message: decisionForChristStaffTextTemplate(name, email, ipAddress),
-        html: decisionForChristStaffHtmlTemplate(name, lastName, email, location, ipAddress)
-      })
-    );
-  }
-};
-
-// src/use-cases/forms/strategies/form-submission-dispatch-strategy.ts
-var FormSubmissionDispatchStrategy = class {
-  buildDispatch(event) {
-    const payload = event.payload;
-    const strategy = payload.decisaoPorCristo ? new DecisionForChristEmailStrategy() : new ContactEmailStrategy();
-    const userJobResult = strategy.buildUserEmail(payload);
-    if (isErr(userJobResult)) {
-      return userJobResult;
-    }
-    const staffJobResult = strategy.buildStaffEmail(payload);
-    if (isErr(staffJobResult)) {
-      return staffJobResult;
-    }
-    return ok({ emails: [userJobResult.value, staffJobResult.value] });
-  }
-};
-
-// src/messages/errors/password-reset.ts
-var INVALID_PASSWORD_RESET_PAYLOAD_ERROR_FN = (fieldName) => ({
-  code: "INVALID_PASSWORD_RESET_PAYLOAD",
-  message: fieldName ? `Payload de reset de senha inv\xE1lido: campo '${fieldName}' possui valor inesperado.` : "Payload de reset de senha inv\xE1lido: um ou mais campos possuem valores inesperados."
-});
-
-// src/use-cases/errors/invalid-password-reset-payload-error.ts
-var InvalidPasswordResetPayloadError = class extends DomainError {
-  constructor(fieldName) {
-    super(INVALID_PASSWORD_RESET_PAYLOAD_ERROR_FN(fieldName), "BAD_REQUEST" /* BAD_REQUEST */);
-  }
-};
-
-// src/messages/constants/email/email.ts
-var EMAIL_CONSTANTS = {
-  PASSWORD_RECOVERY_SUBJECT: "Recupera\xE7\xE3o de senha",
-  PASSWORD_RESET_GENERIC_MESSAGE: "Se o usu\xE1rio existir, voc\xEA receber\xE1 um e-mail com instru\xE7\xF5es para redefinir a senha.",
-  // Após N falhas consecutivas de envio, o transportador em cache é descartado e recriado (SMTP instável)
-  SMTP_MAX_CONSECUTIVE_FAILURES: 3
-};
-
-// src/messages/constants/auth/password-reset.ts
-var PASSWORD_RESET_CONSTANTS = {
-  /** Janela de validade do token — também impressa nos templates de e-mail. */
-  TOKEN_EXPIRES_IN_MINUTES: 15,
-  /** Bytes de entropia do token (64 hex chars). */
-  TOKEN_LENGTH_BYTES: 32,
-  /**
-   * Orçamento de retry do job de e-mail: 3 tentativas × backoff fixo de 30s
-   * (~1 min no pior caso) cabe com folga na janela de 15 min do token.
-   */
-  JOB_ATTEMPTS: 3,
-  JOB_BACKOFF_DELAY_MS: 3e4
-};
-
-// src/templates/forgot-password/forgot-password-text.ts
-function forgotPasswordTextTemplate(userName, token) {
-  const url = `${env.FRONTEND_URL}/reset-password/${token}`;
-  const appName = env.APP_NAME;
-  return `
-Ol\xE1, ${userName}!
-
-Recebemos uma solicita\xE7\xE3o para redefinir a sua senha. Para continuar, acesse o link abaixo:
-
-${url}
-
-Este link \xE9 v\xE1lido por ${PASSWORD_RESET_CONSTANTS.TOKEN_EXPIRES_IN_MINUTES} minutos.
-
-Se voc\xEA n\xE3o solicitou a recupera\xE7\xE3o de senha, ignore este e-mail.
-
-Atenciosamente,
-Equipe ${appName}
-  `.trim();
-}
-
-// src/templates/forgot-password/forgot-password-html.ts
-function forgotPasswordHtmlTemplate(userName, token) {
-  const url = `${env.FRONTEND_URL}/reset-password/${token}`;
-  const appName = env.APP_NAME;
-  return `
-    <div style="font-family: Arial, sans-serif; color: #222;">
-      <h2>Ol\xE1, ${userName}!</h2>
-      <p>
-        Recebemos uma solicita\xE7\xE3o para redefinir a sua senha.<br>
-        Para continuar, clique no bot\xE3o abaixo:
-      </p>
-      <p style="text-align: center; margin: 32px 0;">
-        <a href="${url}" style="background: #1976d2; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold;">
-          Redefinir senha
-        </a>
-      </p>
-      <p>
-        Ou copie e cole este link no seu navegador:<br>
-        <a href="${url}">${url}</a>
-      </p>
-      <p>
-        Este link \xE9 v\xE1lido por ${PASSWORD_RESET_CONSTANTS.TOKEN_EXPIRES_IN_MINUTES} minutos.
-      </p>
-      <p>
-        Se voc\xEA n\xE3o solicitou a recupera\xE7\xE3o de senha, ignore este e-mail.
-      </p>
-      <p>
-        Atenciosamente,<br>
-        Equipe ${appName}
-      </p>
-    </div>
-  `;
-}
-
-// src/use-cases/users/strategies/password-reset-dispatch-strategy.ts
-var PasswordResetDispatchStrategy = class {
-  buildDispatch(event) {
-    const payload = event.payload;
-    const nameResult = this.getStringField(payload.name, "payload.name");
-    if (isErr(nameResult)) return nameResult;
-    const emailResult = this.getStringField(payload.email, "payload.email");
-    if (isErr(emailResult)) return emailResult;
-    const tokenResult = this.getStringField(payload.token, "payload.token");
-    if (isErr(tokenResult)) return tokenResult;
-    const name = nameResult.value;
-    const email = emailResult.value;
-    const token = tokenResult.value;
-    return ok({
-      emails: [
-        {
-          to: email,
-          subject: EMAIL_CONSTANTS.PASSWORD_RECOVERY_SUBJECT,
-          message: forgotPasswordTextTemplate(name, token),
-          html: forgotPasswordHtmlTemplate(name, token),
-          context: { type: "password-reset", recipient: "user" }
-        }
-      ],
-      jobOptions: {
-        attempts: PASSWORD_RESET_CONSTANTS.JOB_ATTEMPTS,
-        backoff: { type: "fixed", delay: PASSWORD_RESET_CONSTANTS.JOB_BACKOFF_DELAY_MS }
-      }
-    });
-  }
-  getStringField(value, fieldName) {
-    if (typeof value === "string" && value.length > 0) {
-      return ok(value);
-    }
-    return err(new InvalidPasswordResetPayloadError(fieldName));
-  }
-};
-
-// src/errors/infrastructure-error.ts
-var InfrastructureError = class extends AppError {
-  originalError;
-  constructor(detail, originalError, type = "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */, failureMode, telemetryReason) {
-    super(detail, type, failureMode, telemetryReason);
-    this.originalError = originalError;
-    if (originalError) {
-      this.cause = originalError;
-    }
-  }
-};
-
-// src/messages/errors/outbox.ts
-var OUTBOX_ERRORS = {
-  EVENT_NOT_FOUND: {
-    code: "OUTBOX_EVENT_NOT_FOUND",
-    message: "O evento de outbox solicitado n\xE3o foi encontrado no banco de dados."
-  },
-  OPERATION_FAILED: {
-    code: "OUTBOX_OPERATION_FAILED",
-    message: "Falha ao processar opera\xE7\xE3o da outbox no banco de dados."
-  }
-};
-var UNKNOWN_OUTBOX_EVENT_TYPE_ERROR_FN = (eventType) => ({
-  code: "UNKNOWN_OUTBOX_EVENT_TYPE",
-  message: `Nenhuma estrat\xE9gia de despacho registrada para o tipo de evento '${eventType}'.`
-});
-
-// src/lib/errors/outbox/unknown-outbox-event-type-error.ts
-var UnknownOutboxEventTypeError = class extends InfrastructureError {
-  constructor(eventType) {
-    super(UNKNOWN_OUTBOX_EVENT_TYPE_ERROR_FN(eventType));
-  }
-};
-
-// src/lib/infra/jobs/outbox-dispatch-strategy-registry.ts
-var OutboxDispatchStrategyRegistry = class {
-  strategies;
-  constructor(entries) {
-    this.strategies = new Map(entries);
-  }
-  resolve(eventType) {
-    const strategy = this.strategies.get(eventType);
-    if (!strategy) {
-      return err(new UnknownOutboxEventTypeError(eventType));
-    }
-    return ok(strategy);
-  }
-};
-
-// src/lib/infra/jobs/make-outbox-dispatch-registry.ts
-function makeOutboxDispatchStrategyRegistry() {
-  return new OutboxDispatchStrategyRegistry([
-    [OUTBOX_EVENT_TYPES.FORM_SUBMISSION_CREATED, new FormSubmissionDispatchStrategy()],
-    [OUTBOX_EVENT_TYPES.PASSWORD_RESET_REQUESTED, new PasswordResetDispatchStrategy()]
-  ]);
-}
-
-// src/repositories/prisma/prisma-outbox-event-repository.ts
-var import_client = require("@prisma/client");
-var PrismaOutboxRepository = class {
-  constructor(dbContext, httpErrorMapper, infraErrorMapper) {
-    this.dbContext = dbContext;
-    this.httpErrorMapper = httpErrorMapper;
-    this.infraErrorMapper = infraErrorMapper;
-  }
-  dbContext;
-  httpErrorMapper;
-  infraErrorMapper;
-  async create(data) {
-    try {
-      const outboxEvent = await this.dbContext.client.outboxEvent.create({
-        data: {
-          type: data.type,
-          status: data.status,
-          payload: data.payload,
-          expiresAt: data.expiresAt ?? null
-        }
-      });
-      return ok(this.toEntity(outboxEvent));
-    } catch (error) {
-      return err(this.httpErrorMapper.mapToKnownError(error));
-    }
-  }
-  async findPending(limit) {
-    try {
-      const events = await this.dbContext.client.outboxEvent.findMany({
-        where: { status: "PENDING" /* PENDING */ },
-        orderBy: { occurredAt: "asc" },
-        take: limit
-      });
-      return ok(events.map((e) => this.toEntity(e)));
-    } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error));
-    }
-  }
-  async findStuck(stuckBefore, limit) {
-    try {
-      const events = await this.dbContext.client.outboxEvent.findMany({
-        where: {
-          status: "SENDING" /* SENDING */,
-          sendingAt: { lte: stuckBefore }
-        },
-        orderBy: { sendingAt: "asc" },
-        take: limit
-      });
-      return ok(events.map((e) => this.toEntity(e)));
-    } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error));
-    }
-  }
-  async findByPublicId(publicId) {
-    try {
-      const event = await this.dbContext.client.outboxEvent.findUnique({
-        where: { publicId }
-      });
-      return ok(event ? this.toEntity(event) : null);
-    } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error));
-    }
-  }
-  async updateStatus(publicId, status) {
-    try {
-      await this.dbContext.client.outboxEvent.update({
-        where: { publicId },
-        data: {
-          status,
-          // SENDING marca o início do ciclo de despacho; demais status limpam o marcador
-          ...status === "SENDING" /* SENDING */ ? { sendingAt: /* @__PURE__ */ new Date(), attempts: { increment: 1 } } : { sendingAt: null }
-        }
-      });
-      return ok(void 0);
-    } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error));
-    }
-  }
-  async updatePendingRecipients(publicId, pendingRecipients) {
-    try {
-      await this.dbContext.client.outboxEvent.update({
-        where: { publicId },
-        data: { pendingRecipients }
-      });
-      return ok(void 0);
-    } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error));
-    }
-  }
-  async delete(publicId) {
-    try {
-      await this.dbContext.client.outboxEvent.delete({
-        where: { publicId }
-      });
-      return ok(void 0);
-    } catch (error) {
-      if (error instanceof import_client.Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
-        return ok(void 0);
-      }
-      return err(this.infraErrorMapper.mapToKnownError(error));
-    }
-  }
-  async deleteExpired(now, batchSize) {
-    try {
-      const batch = await this.dbContext.client.outboxEvent.findMany({
-        where: { expiresAt: { lte: now } },
-        select: { id: true },
-        orderBy: { expiresAt: "asc" },
-        take: batchSize
-      });
-      if (batch.length === 0) {
-        return ok(0);
-      }
-      const result = await this.dbContext.client.outboxEvent.deleteMany({
-        where: { id: { in: batch.map((e) => e.id) } }
-      });
-      return ok(result.count);
-    } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error));
-    }
-  }
-  async deleteOlderThan(cutoff, batchSize) {
-    try {
-      const batch = await this.dbContext.client.outboxEvent.findMany({
-        where: { occurredAt: { lt: cutoff } },
-        select: { id: true, status: true },
-        orderBy: { occurredAt: "asc" },
-        take: batchSize
-      });
-      if (batch.length === 0) {
-        return ok({ deleted: 0, byStatus: {} });
-      }
-      const result = await this.dbContext.client.outboxEvent.deleteMany({
-        where: { id: { in: batch.map((e) => e.id) } }
-      });
-      const byStatus = {};
-      for (const event of batch) {
-        const status = event.status;
-        byStatus[status] = (byStatus[status] ?? 0) + 1;
-      }
-      return ok({ deleted: result.count, byStatus });
-    } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error));
-    }
-  }
-  // ─── Mapper ──────────────────────────────────────────────────────────────────
-  toEntity(raw) {
-    return {
-      id: raw.id,
-      publicId: raw.publicId,
-      type: raw.type,
-      status: raw.status,
-      payload: raw.payload,
-      attempts: raw.attempts,
-      occurredAt: raw.occurredAt,
-      sendingAt: raw.sendingAt || void 0,
-      expiresAt: raw.expiresAt || void 0,
-      pendingRecipients: raw.pendingRecipients
-    };
-  }
-};
-
-// src/lib/prisma/utils/prisma-error-mapper.ts
-var import_client2 = require("@prisma/client");
-
-// src/messages/errors/infrastructure.ts
-var INFRA_ERRORS = {
-  SERVICE_BUSY: {
-    code: "SERVICE_BUSY",
-    message: "Servi\xE7o temporariamente indispon\xEDvel devido ao limite de requisi\xE7\xF5es."
-  },
-  PROVIDER_FAILURE: {
-    code: "PROVIDER_FAILURE",
-    message: "Falha de sistema ao processar dados no provedor de servi\xE7os externos."
-  },
-  DATABASE_QUERY_FAILURE: {
-    code: "DATABASE_QUERY_FAILURE",
-    message: "Falha de sistema ao processar consulta no banco de dados."
-  },
-  DEADLINE_EXCEEDED: {
-    code: "DEADLINE_EXCEEDED",
-    message: "O tempo limite total da requisi\xE7\xE3o foi atingido antes da conclus\xE3o da opera\xE7\xE3o."
-  },
-  CIRCUIT_OPEN: {
-    code: "CIRCUIT_OPEN",
-    message: "Provedor externo temporariamente suspenso ap\xF3s falhas repetidas."
-  },
-  SERVICE_OVERLOAD: {
-    code: "SERVICE_OVERLOAD",
-    message: "N\xFAmero de requisi\xE7\xF5es simult\xE2neas excedeu o limite de maxPendingFetches na mem\xF3ria cache do Redis."
-  }
-};
-
-// src/errors/infrastructure/database-query-error.ts
-var DatabaseQueryError = class extends InfrastructureError {
-  constructor(originalError) {
-    super(INFRA_ERRORS.DATABASE_QUERY_FAILURE, originalError, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
-    this.name = "DatabaseQueryError";
-  }
-};
-
-// src/core/shared/safe-lookup.ts
-function safeLookup(table, key) {
-  return Object.hasOwn(table, key) ? table[key] : void 0;
-}
-
-// src/lib/prisma/utils/prisma-error-mapper.ts
-var PrismaErrorMapper = class {
-  constructor(errorMapping) {
-    this.errorMapping = errorMapping;
-  }
-  errorMapping;
-  mapToKnownError(error) {
-    if (error instanceof AppError) {
-      return error;
-    }
-    if (error instanceof import_client2.Prisma.PrismaClientKnownRequestError) {
-      const errorFactory = safeLookup(this.errorMapping, error.code);
-      if (errorFactory) {
-        return errorFactory(error);
-      }
-    }
-    return new DatabaseQueryError(error);
-  }
-};
-
-// src/errors/system-error.ts
-var SystemError = class extends AppError {
-  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
-  constructor(detail, type) {
-    super(detail, type);
-  }
-};
-
-// src/use-cases/errors/outbox/outbox-errors.ts
-var OutboxEventNotFoundHttpError = class extends DomainError {
-  constructor() {
-    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
-  }
-};
-var OutboxOperationFailedHttpError = class extends SystemError {
-  constructor() {
-    super(OUTBOX_ERRORS.OPERATION_FAILED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
-  }
-};
-var OutboxEventNotFoundInfraError = class extends InfrastructureError {
-  constructor(originalError) {
-    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, originalError);
-  }
-};
-var OutboxOperationFailedInfraError = class extends InfrastructureError {
-  constructor(originalError) {
-    super(OUTBOX_ERRORS.OPERATION_FAILED, originalError);
-  }
-};
-
-// src/repositories/prisma/errors/outbox-error-mapping.ts
-var outboxHttpPrismaErrorMapping = {
-  P2025: () => new OutboxEventNotFoundHttpError(),
-  P2003: () => new OutboxOperationFailedHttpError()
-};
-var outboxInfraPrismaErrorMapping = {
-  P2025: (error) => new OutboxEventNotFoundInfraError(error),
-  P2003: (error) => new OutboxOperationFailedInfraError(error)
-};
-
-// src/messages/errors/system.ts
-var SYSTEM_ERRORS = {
-  ASYNC_LOCAL_STORAGE_NOT_INITIALIZED: {
-    code: "ASYNC_LOCAL_STORAGE_NOT_INITIALIZED",
-    message: "Async Local Storage is not initialized."
-  }
-};
-
-// src/lib/errors/async-local-storage/async-local-storage-not-initialized-error.ts
-var AsyncLocalStorageNotInitializedError = class extends SystemError {
-  constructor() {
-    super(SYSTEM_ERRORS.ASYNC_LOCAL_STORAGE_NOT_INITIALIZED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
-  }
-};
-
-// src/lib/prisma/index.ts
-var import_client3 = require("@prisma/client");
-
-// src/lib/prisma/helpers/configuration.ts
-var import_adapter_pg = require("@prisma/adapter-pg");
-var import_pg = require("pg");
-var pool = new import_pg.Pool({
-  connectionString: env.DATABASE_URL_LOCAL || env.DATABASE_URL,
-  max: env.DB_POOL_MAX,
-  min: env.DB_POOL_MIN,
-  connectionTimeoutMillis: env.DB_CONNECTION_TIMEOUT,
-  idleTimeoutMillis: env.DB_IDLE_TIMEOUT
-});
-var adapter = new import_adapter_pg.PrismaPg(pool);
-
-// src/lib/prisma/index.ts
-var prisma = new import_client3.PrismaClient({
-  adapter,
-  log: env.LOG_LEVEL === "debug" ? ["query", "info", "warn", "error"] : []
-});
-
-// src/lib/prisma/helpers/database-context.ts
-var DatabaseContext = class {
-  constructor(prisma2 = prisma) {
-    this.prisma = prisma2;
-  }
-  prisma;
-  get client() {
-    const prismaTx = asyncLocalStorage.getStore()?.prismaTransaction;
-    return prismaTx ?? this.prisma;
-  }
-  /**
-   * Executes a callback function within a database transaction.
-   *
-   * This method provides automatic transaction management with the following features:
-   * - **Nested transaction support**: If already in a transaction, reuses the existing one
-   * - **Automatic rollback**: Rolls back on errors
-   * - **Context propagation**: Transaction context is available to all nested calls
-   *
-   * @template T - The return type of the callback function
-   * @param callback - The async function to execute within the transaction
-   * @param options - Optional transaction configuration
-   * @param options.isolationLevel - The isolation level for the transaction (e.g., 'ReadCommitted', 'Serializable')
-   * @param options.maxWait - Maximum time to wait for a transaction slot (in milliseconds)
-   * @param options.timeout - Maximum time for the transaction to complete (in milliseconds)
-   *
-   * @returns A promise that resolves with the callback's return value
-   *
-   * @throws {AsyncLocalStorageNotInitializedError} When AsyncLocalStorage is not properly initialized
-   * @throws {Error} Any error thrown by the callback will cause a rollback and be re-thrown
-   * @remarks
-   * - When nested, the inner transaction options are ignored and the outer transaction is reused
-   * - All database operations within the callback should use `db.client` to participate in the transaction
-   * - The transaction will automatically commit if the callback completes successfully
-   * - The transaction will automatically rollback if the callback throws an error
-   */
-  async runInTransaction(callback, options) {
-    const store = asyncLocalStorage.getStore();
-    if (!store) {
-      throw new AsyncLocalStorageNotInitializedError();
-    }
-    if (store.prismaTransaction) {
-      return await callback();
-    }
-    return await this.prisma.$transaction(async (tx) => {
-      return await asyncLocalStorage.run(
-        {
-          ...store,
-          prismaTransaction: tx
-        },
-        callback
-      );
-    }, options);
-  }
-};
-
-// src/messages/constants/cron/cron.ts
-var CRON_SCHEDULES = {
-  /** Every day at midnight (00:00:00) */
-  MIDNIGHT_DAILY: "0 0 0 * * *",
-  /** Every 5 minutes */
-  EVERY_FIVE_MINUTES: "0 */5 * * * *",
-  /** Every day at 03:00 (off the midnight sweep) */
-  DAILY_3AM: "0 0 3 * * *",
-  /** Every day at 04:00 — analytics retention, after the outbox purge at 03:00 */
-  DAILY_4AM: "0 0 4 * * *"
-};
-
 // src/lib/metrics/analytics-metrics.ts
 var import_prom_client4 = require("prom-client");
 var registry4 = getRegistry();
@@ -2222,33 +1599,6 @@ var collectMetricsAnalyticsCookieSupersededSecret = registry4 ? new import_prom_
   labelNames: ["cookie"],
   registers: [registry4]
 }) : null;
-
-// src/messages/constants/analytics/analytics.ts
-var ANALYTICS_CONSTANTS = {
-  LOCK_KEYS: {
-    ANALYTICS_RETENTION: "lock:analytics-retention"
-  },
-  LOCK_TTL_MS: {
-    DEFAULT: 1e4
-  },
-  RETENTION: {
-    /**
-     * One batch per statement, with the lock renewed between batches.
-     *
-     * A `DELETE` without a bound would take one lock over months of backlog and
-     * hold the table for the length of it. The sweep loops until a pass deletes
-     * nothing, so a large backlog drains over several passes instead of one long
-     * outage.
-     */
-    BATCH_SIZE: 1e3,
-    /** Ceiling on batches per run, so one night's sweep cannot run unbounded. */
-    MAX_BATCHES_PER_RUN: 100
-  }
-};
-var ANALYTICS_LOGS = {
-  RETENTION_ERROR: "Falha na varredura de reten\xE7\xE3o de analytics",
-  RETENTION_DONE: "Varredura de reten\xE7\xE3o de analytics conclu\xEDda"
-};
 
 // src/lib/infra/jobs/analytics-retention.ts
 var import_ms3 = __toESM(require("ms"));
@@ -2330,6 +1680,113 @@ var AnalyticsRetention = class {
       return 0;
     }
     return result.value;
+  }
+};
+
+// src/lib/prisma/index.ts
+var import_client = require("@prisma/client");
+
+// src/lib/prisma/helpers/configuration.ts
+var import_adapter_pg = require("@prisma/adapter-pg");
+var import_pg = require("pg");
+var pool = new import_pg.Pool({
+  connectionString: env.DATABASE_URL_LOCAL || env.DATABASE_URL,
+  max: env.DB_POOL_MAX,
+  min: env.DB_POOL_MIN,
+  connectionTimeoutMillis: env.DB_CONNECTION_TIMEOUT,
+  idleTimeoutMillis: env.DB_IDLE_TIMEOUT
+});
+var adapter = new import_adapter_pg.PrismaPg(pool);
+
+// src/lib/prisma/index.ts
+var prisma = new import_client.PrismaClient({
+  adapter,
+  log: env.LOG_LEVEL === "debug" ? ["query", "info", "warn", "error"] : []
+});
+
+// src/errors/app-error.ts
+var AppError = class extends Error {
+  type;
+  body;
+  /**
+   * Machine-readable routing hint used by resilient fallback chains and cache
+   * managers.  Subclasses that participate in fallback/caching declare their
+   * own failure mode once; callers never need `instanceof` to branch on it.
+   */
+  failureMode;
+  /**
+   * Self-describing observability tag, parallel to `failureMode` but for metric
+   * labels. Subclasses declare their own reason once; consumers read it without
+   * `instanceof`. See {@link TelemetryReason}.
+   */
+  telemetryReason;
+  /**
+   * @param detail         – the error descriptor (code + message + optional extras)
+   * @param type           – the HTTP-level error type
+   * @param failureMode    – optional routing failure mode (RETRYABLE | NOT_FOUND)
+   * @param telemetryReason – optional observability reason for metric labels
+   */
+  constructor(detail, type, failureMode, telemetryReason) {
+    super(detail.message);
+    this.name = this.constructor.name;
+    this.type = type;
+    this.failureMode = failureMode;
+    this.telemetryReason = telemetryReason;
+    this.body = {
+      code: detail.code,
+      message: detail.message,
+      ...detail.issues && { issues: detail.issues }
+    };
+    Error.captureStackTrace(this, this.constructor);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+};
+
+// src/errors/infrastructure-error.ts
+var InfrastructureError = class extends AppError {
+  originalError;
+  constructor(detail, originalError, type = "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */, failureMode, telemetryReason) {
+    super(detail, type, failureMode, telemetryReason);
+    this.originalError = originalError;
+    if (originalError) {
+      this.cause = originalError;
+    }
+  }
+};
+
+// src/messages/errors/infrastructure.ts
+var INFRA_ERRORS = {
+  SERVICE_BUSY: {
+    code: "SERVICE_BUSY",
+    message: "Servi\xE7o temporariamente indispon\xEDvel devido ao limite de requisi\xE7\xF5es."
+  },
+  PROVIDER_FAILURE: {
+    code: "PROVIDER_FAILURE",
+    message: "Falha de sistema ao processar dados no provedor de servi\xE7os externos."
+  },
+  DATABASE_QUERY_FAILURE: {
+    code: "DATABASE_QUERY_FAILURE",
+    message: "Falha de sistema ao processar consulta no banco de dados."
+  },
+  DEADLINE_EXCEEDED: {
+    code: "DEADLINE_EXCEEDED",
+    message: "O tempo limite total da requisi\xE7\xE3o foi atingido antes da conclus\xE3o da opera\xE7\xE3o."
+  },
+  CIRCUIT_OPEN: {
+    code: "CIRCUIT_OPEN",
+    message: "Provedor externo temporariamente suspenso ap\xF3s falhas repetidas."
+  },
+  SERVICE_OVERLOAD: {
+    code: "SERVICE_OVERLOAD",
+    message: "N\xFAmero de requisi\xE7\xF5es simult\xE2neas excedeu o limite de maxPendingFetches na mem\xF3ria cache do Redis."
+  }
+};
+
+// src/errors/infrastructure/database-query-error.ts
+var DatabaseQueryError = class extends InfrastructureError {
+  constructor(originalError) {
+    super(INFRA_ERRORS.DATABASE_QUERY_FAILURE, originalError, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+    this.name = "DatabaseQueryError";
   }
 };
 
@@ -2565,81 +2022,634 @@ function sessionsToClaim(data) {
   return data.sessionId === null ? { sessionId: "" } : { sessionId: data.sessionId };
 }
 
-// src/lib/infra/jobs/outbox-cron.ts
-function startOutboxCron(existingProcessor, existingMaintenance, existingAnalyticsRetention) {
-  const processor = existingProcessor ?? buildProcessor();
-  const maintenance = existingMaintenance ?? buildMaintenance();
-  const analyticsRetention = existingAnalyticsRetention ?? buildAnalyticsRetention();
-  scheduleFiveMinuteSweep(processor, maintenance);
-  scheduleMidnightScan(processor);
-  scheduleRetentionPurge(maintenance);
-  scheduleAnalyticsRetention(analyticsRetention);
-  logger.info(OUTBOX_LOGS.SCHEDULER_CONFIGURED);
-}
-function scheduleAnalyticsRetention(analyticsRetention) {
-  import_node_cron.default.schedule(CRON_SCHEDULES.DAILY_4AM, async () => {
-    await runPhase("analytics_retention", () => analyticsRetention.purgeExpiredData(), ANALYTICS_LOGS.RETENTION_ERROR);
-  });
-}
-function buildAnalyticsRetention() {
-  return new AnalyticsRetention(new PrismaAnalyticsRepository());
-}
-async function runPhase(phase, task, errorMessage, options = {}) {
-  collectMetricsOutboxCronRuns?.inc({ phase });
-  try {
-    await task();
-    if (options.onSuccess) {
-      logger.info(options.onSuccess);
-    }
-  } catch (error) {
-    logger.error({ error }, errorMessage);
-    if (options.sentryContext) {
-      captureError(error, options.sentryContext);
-    } else {
-      captureError(error);
-    }
-  }
-}
-function scheduleFiveMinuteSweep(processor, maintenance) {
-  import_node_cron.default.schedule(CRON_SCHEDULES.EVERY_FIVE_MINUTES, async () => {
-    await runPhase("five_min_sweep", () => maintenance.sweepExpiredEvents(), OUTBOX_LOGS.FIVE_MIN_SWEEP_EXPIRY_ERROR);
-    await runPhase("five_min_pending", () => processor.processPendingEvents(), OUTBOX_LOGS.FIVE_MIN_SWEEP_PENDING_ERROR);
-  });
-}
-function scheduleMidnightScan(processor) {
-  import_node_cron.default.schedule(CRON_SCHEDULES.MIDNIGHT_DAILY, async () => {
-    logger.info(OUTBOX_LOGS.CRON_START);
-    await runPhase("midnight_recovery", () => processor.processStuckSendingEvents(), OUTBOX_LOGS.PHASE1_ERROR, {
-      onSuccess: OUTBOX_LOGS.PHASE1_DONE,
-      sentryContext: { phase: 1 }
-    });
-    await runPhase("midnight_pending", () => processor.processPendingEvents(), OUTBOX_LOGS.PHASE2_ERROR, {
-      onSuccess: OUTBOX_LOGS.PHASE2_DONE,
-      sentryContext: { phase: 2 }
-    });
-    logger.info(OUTBOX_LOGS.SCAN_DONE);
-  });
-}
-function scheduleRetentionPurge(maintenance) {
-  import_node_cron.default.schedule(CRON_SCHEDULES.DAILY_3AM, async () => {
-    await runPhase("retention_purge", () => maintenance.purgeOldEvents(), OUTBOX_LOGS.RETENTION_CRON_ERROR);
-  });
-}
-function buildProcessor() {
-  return new OutboxProcessor(buildRepository(), makeOutboxDispatchStrategyRegistry());
-}
-function buildMaintenance() {
-  return new OutboxMaintenance(buildRepository());
-}
-function buildRepository() {
-  const dbContext = new DatabaseContext();
-  const outboxHttpMapper = new PrismaErrorMapper(outboxHttpPrismaErrorMapping);
-  const outboxInfraMapper = new PrismaErrorMapper(outboxInfraPrismaErrorMapping);
-  return new PrismaOutboxRepository(dbContext, outboxHttpMapper, outboxInfraMapper);
+// src/core/types/outbox/outbox-event-input.ts
+var OUTBOX_EVENT_TYPES = {
+  FORM_SUBMISSION_CREATED: "FormSubmissionCreated",
+  // The name of an outbox EVENT TYPE, not a credential — the heuristic pairs
+  // the word "password" with a string literal on the same line. The real reset
+  // token lives only in the transient payload below.
+  // eslint-disable-next-line sonarjs/no-hardcoded-passwords
+  PASSWORD_RESET_REQUESTED: "PasswordResetRequested"
+};
+
+// src/templates/contact-user/contact-user-subject-text.ts
+function contactUserSubjectTextTemplate(name) {
+  return `
+            Gra\xE7a e paz, ${name}. Ficamos felizes com o seu contato!
+        `;
 }
 
+// src/templates/contact-user/contact-user-text.ts
+function contactUserTextTemplate(name) {
+  return `
+            Gra\xE7a e paz, ${name}! 
+            Recebemos sua mensagem. \xC9 uma honra que voc\xEA esteja se conectando conosco!
+            Voc\xEA ser\xE1 adicionado \xE0 nossa lista de e-mails para receber atualiza\xE7\xF5es, 
+            recursos e inspira\xE7\xE3o para lhe auxiliar na sua jornada.
+        `;
+}
+
+// src/templates/react/contact-user.tsx
+var import_components2 = require("@react-email/components");
+
+// src/templates/react/layout.tsx
+var import_components = require("@react-email/components");
+var import_jsx_runtime = require("react/jsx-runtime");
+function EmailLayout({ headerTitle, children, footerContent }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_components.Html, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_components.Tailwind, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_components.Head, {}),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_components.Body, { className: "bg-gray-100 font-sans", children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_components.Container, { className: "bg-white mx-auto my-[40px] shadow-sm rounded-lg overflow-hidden w-full max-w-[600px]", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_components.Section, { className: "bg-[#eb5933] p-[20px] text-center", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_components.Text, { className: "text-white text-[24px] font-bold m-0", children: headerTitle }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_components.Section, { className: "p-[30px]", children }),
+      footerContent && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_components.Section, { className: "bg-gray-50 border-t border-gray-200 p-[20px] text-center", children: footerContent })
+    ] }) })
+  ] }) });
+}
+
+// src/templates/react/contact-user.tsx
+var import_jsx_runtime2 = require("react/jsx-runtime");
+function ContactUserEmail({ name }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    EmailLayout,
+    {
+      headerTitle: "Evangelismo Digital",
+      footerContent: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_components2.Text, { className: "text-[12px] text-gray-500 m-0", children: [
+        "Se deseja n\xE3o receber mais estes e-mails,",
+        " ",
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_components2.Link, { href: "#", className: "text-gray-500 underline", children: "clique aqui" }),
+        "."
+      ] }),
+      children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_components2.Section, { className: "text-center text-gray-700 text-[16px]", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_components2.Text, { className: "text-[20px] font-semibold mb-[20px]", children: [
+          "Gra\xE7a e paz, ",
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("strong", { children: name }),
+          "!"
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_components2.Text, { className: "mb-[15px]", children: "Recebemos sua mensagem. \xC9 uma honra que voc\xEA esteja se conectando conosco!" }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_components2.Text, { className: "m-0", children: "Voc\xEA ser\xE1 adicionado \xE0 nossa lista de e-mails para receber atualiza\xE7\xF5es, recursos e inspira\xE7\xE3o para lhe auxiliar na sua jornada." })
+      ] })
+    }
+  );
+}
+
+// src/templates/contact-staff/contact-staff-subject-text.ts
+function contactStaffSubjectTextTemplate() {
+  return `
+            Novo formul\xE1rio enviado
+        `;
+}
+
+// src/templates/contact-staff/contact-staff-text.ts
+function contactStaffTextTemplate(name, email, ipAddress) {
+  const ipSection = ipAddress ? `
+IP de origem: ${ipAddress}` : "";
+  return `
+            ${name} <${email}> enviou um formul\xE1rio.${ipSection}
+        `;
+}
+
+// src/templates/react/contact-staff.tsx
+var import_components3 = require("@react-email/components");
+var import_jsx_runtime3 = require("react/jsx-runtime");
+function ContactStaffEmail({ name, lastName, email, ipAddress }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(EmailLayout, { headerTitle: "Boas not\xEDcias!", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_components3.Heading, { className: "text-[20px] font-semibold text-gray-800 text-center mb-[20px]", children: "Um novo formul\xE1rio acaba de ser enviado!" }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_components3.Section, { className: "text-[16px] text-gray-700 space-y-2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_components3.Text, { className: "m-0", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("strong", { children: "Nome:" }),
+        " ",
+        name,
+        " ",
+        lastName
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_components3.Text, { className: "m-0", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("strong", { children: "Email:" }),
+        " ",
+        email
+      ] }),
+      ipAddress && /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_components3.Text, { className: "m-0", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("strong", { children: "IP de origem:" }),
+        " ",
+        ipAddress
+      ] })
+    ] })
+  ] });
+}
+
+// src/errors/domain-error.ts
+var DomainError = class extends AppError {
+  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
+  constructor(detail, type, failureMode, telemetryReason) {
+    super(detail, type, failureMode, telemetryReason);
+  }
+};
+
+// src/messages/errors/forms.ts
+var INVALID_FORM_PAYLOAD_ERROR_FN = (fieldName) => ({
+  code: "INVALID_FORM_PAYLOAD",
+  message: fieldName ? `Payload do formul\xE1rio inv\xE1lido: campo '${fieldName}' possui valor inesperado.` : "Payload do formul\xE1rio inv\xE1lido: um ou mais campos possuem valores inesperados."
+});
+
+// src/use-cases/errors/forms/invalid-form-payload-error.ts
+var InvalidFormPayloadError = class extends DomainError {
+  constructor(fieldName) {
+    super(INVALID_FORM_PAYLOAD_ERROR_FN(fieldName), "BAD_REQUEST" /* BAD_REQUEST */);
+  }
+};
+
+// src/use-cases/forms/strategies/form-payload-fields.ts
+function requireStringField(value, fieldName) {
+  if (typeof value === "string") {
+    return ok(value);
+  }
+  return err(new InvalidFormPayloadError(fieldName));
+}
+function optionalStringField(value, fieldName) {
+  if (value === void 0 || typeof value === "string") {
+    return ok(value || "");
+  }
+  return err(new InvalidFormPayloadError(fieldName));
+}
+function optionalIpAddress(form) {
+  return typeof form.ipAddress === "string" ? form.ipAddress : void 0;
+}
+function requireSubmitterIdentity(form) {
+  const emailResult = requireStringField(form.email, "form.email");
+  if (isErr(emailResult)) return emailResult;
+  const nameResult = requireStringField(form.name, "form.name");
+  if (isErr(nameResult)) return nameResult;
+  return ok({ email: emailResult.value, name: nameResult.value });
+}
+async function buildUserMailJob(form, buildContent) {
+  const identityResult = requireSubmitterIdentity(form);
+  if (isErr(identityResult)) return identityResult;
+  const { email, name } = identityResult.value;
+  const { type, subject, message, html } = await buildContent({ email, name });
+  return ok({
+    subject,
+    message,
+    html,
+    to: email,
+    context: { type, recipient: "user" }
+  });
+}
+function buildStaffMailJob(content) {
+  return {
+    to: env.ADMIN_EMAIL,
+    subject: content.subject,
+    message: content.message,
+    html: content.html,
+    context: { type: content.type, recipient: "internal" }
+  };
+}
+function extractContactStaffData(form) {
+  const identityResult = requireSubmitterIdentity(form);
+  if (isErr(identityResult)) return identityResult;
+  const lastNameResult = optionalStringField(form.lastName, "form.lastName");
+  if (isErr(lastNameResult)) return lastNameResult;
+  return ok({
+    ...identityResult.value,
+    lastName: lastNameResult.value,
+    ipAddress: optionalIpAddress(form)
+  });
+}
+
+// src/use-cases/forms/strategies/contact-email-strategy.ts
+var import_render = require("@react-email/render");
+var import_react = __toESM(require("react"));
+var ContactEmailStrategy = class {
+  async buildUserEmail(form) {
+    return buildUserMailJob(form, async ({ name }) => ({
+      type: "contact",
+      subject: contactUserSubjectTextTemplate(name),
+      message: contactUserTextTemplate(name),
+      html: await (0, import_render.render)(import_react.default.createElement(ContactUserEmail, { name }))
+    }));
+  }
+  async buildStaffEmail(form) {
+    const dataResult = extractContactStaffData(form);
+    if (isErr(dataResult)) return dataResult;
+    const { email, name, lastName, ipAddress } = dataResult.value;
+    return ok(
+      buildStaffMailJob({
+        type: "contact",
+        subject: contactStaffSubjectTextTemplate(),
+        message: contactStaffTextTemplate(name, email, ipAddress),
+        html: await (0, import_render.render)(import_react.default.createElement(ContactStaffEmail, { name, lastName, email, ipAddress }))
+      })
+    );
+  }
+};
+
+// src/templates/decision-for-christ-user/decision-for-christ-user-subject-text.ts
+function decisionForChristUserSubjectText() {
+  return `
+        Parab\xE9ns pela sua decis\xE3o por Cristo!
+    `;
+}
+
+// src/templates/decision-for-christ-user/decision-for-christ-user-text.ts
+function decisionForChristUserTextTemplate(name) {
+  return `
+        Ol\xE1 ${name}, 
+        \xC9 uma alegria saber que voc\xEA tomou uma decis\xE3o por Cristo.
+        Em breve, nossa equipe entrar\xE1 em contato para acompanh\xE1-lo nessa nova jornada.
+    `;
+}
+
+// src/templates/react/decision-for-christ-user.tsx
+var import_components4 = require("@react-email/components");
+var import_jsx_runtime4 = require("react/jsx-runtime");
+function DecisionForChristUserEmail({ name }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(EmailLayout, { headerTitle: "Evangelismo Digital", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_components4.Section, { className: "text-gray-700 text-[16px]", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_components4.Text, { className: "mb-[15px]", children: [
+      "Ol\xE1 ",
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("strong", { children: name }),
+      ","
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_components4.Text, { className: "mb-[15px]", children: "\xC9 uma alegria saber que voc\xEA tomou uma decis\xE3o por Cristo." }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_components4.Text, { className: "m-0", children: "Em breve, nossa equipe entrar\xE1 em contato para acompanh\xE1-lo nessa nova jornada." })
+  ] }) });
+}
+
+// src/templates/decision-for-christ-staff/decision-for-christ-staff-subject-text.ts
+function decisionForChristStaffSubjectText() {
+  return `
+      Nova decis\xE3o por Cristo registrada
+    `;
+}
+
+// src/templates/decision-for-christ-staff/decision-for-christ-staff-text.ts
+function decisionForChristStaffTextTemplate(name, email, ipAddress) {
+  const ipSection = ipAddress ? `
+IP de origem: ${ipAddress}` : "";
+  return `
+            ${name} <${email}> aceitou a Cristo.${ipSection}
+        `;
+}
+
+// src/templates/react/decision-for-christ-staff.tsx
+var import_components5 = require("@react-email/components");
+var import_jsx_runtime5 = require("react/jsx-runtime");
+function DecisionForChristStaffEmail({
+  name,
+  lastName,
+  email,
+  location,
+  ipAddress
+}) {
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(EmailLayout, { headerTitle: "Nova Decis\xE3o por Cristo!", children: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_components5.Section, { className: "text-gray-700 text-[16px]", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_components5.Text, { className: "font-semibold text-[18px] mb-[15px]", children: "Algu\xE9m tomou uma decis\xE3o por Cristo:" }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("ul", { className: "list-disc list-inside space-y-2 mt-[10px]", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("strong", { children: "Nome:" }),
+        " ",
+        name,
+        " ",
+        lastName
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("strong", { children: "Email:" }),
+        " ",
+        email
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("strong", { children: "Local:" }),
+        " ",
+        location ?? "n\xE3o informado"
+      ] }),
+      ipAddress && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("li", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("strong", { children: "IP de origem:" }),
+        " ",
+        ipAddress
+      ] })
+    ] })
+  ] }) });
+}
+
+// src/use-cases/forms/strategies/decision-for-christ-email-strategy.ts
+var import_render2 = require("@react-email/render");
+var import_react2 = __toESM(require("react"));
+var DecisionForChristEmailStrategy = class {
+  async buildUserEmail(form) {
+    return buildUserMailJob(form, async ({ name }) => ({
+      type: "decision-for-Christ",
+      subject: decisionForChristUserSubjectText(),
+      message: decisionForChristUserTextTemplate(name),
+      html: await (0, import_render2.render)(import_react2.default.createElement(DecisionForChristUserEmail, { name }))
+    }));
+  }
+  async buildStaffEmail(form) {
+    const identityResult = requireSubmitterIdentity(form);
+    if (isErr(identityResult)) return identityResult;
+    const lastNameResult = requireStringField(form.lastName, "form.lastName");
+    if (isErr(lastNameResult)) return lastNameResult;
+    const locationResult = optionalStringField(form.location, "form.location");
+    if (isErr(locationResult)) return locationResult;
+    const { email, name } = identityResult.value;
+    const lastName = lastNameResult.value;
+    const location = locationResult.value;
+    const ipAddress = optionalIpAddress(form);
+    return ok(
+      buildStaffMailJob({
+        type: "decision-for-Christ",
+        subject: decisionForChristStaffSubjectText(),
+        message: decisionForChristStaffTextTemplate(name, email, ipAddress),
+        html: await (0, import_render2.render)(
+          import_react2.default.createElement(DecisionForChristStaffEmail, { name, lastName, email, location, ipAddress })
+        )
+      })
+    );
+  }
+};
+
+// src/use-cases/forms/strategies/form-submission-dispatch-strategy.ts
+var FormSubmissionDispatchStrategy = class {
+  async buildDispatch(event) {
+    const payload = event.payload;
+    const strategy = payload.decisaoPorCristo ? new DecisionForChristEmailStrategy() : new ContactEmailStrategy();
+    const userJobResult = await strategy.buildUserEmail(payload);
+    if (isErr(userJobResult)) {
+      return userJobResult;
+    }
+    const staffJobResult = await strategy.buildStaffEmail(payload);
+    if (isErr(staffJobResult)) {
+      return staffJobResult;
+    }
+    return ok({ emails: [userJobResult.value, staffJobResult.value] });
+  }
+};
+
+// src/messages/errors/password-reset.ts
+var INVALID_PASSWORD_RESET_PAYLOAD_ERROR_FN = (fieldName) => ({
+  code: "INVALID_PASSWORD_RESET_PAYLOAD",
+  message: fieldName ? `Payload de reset de senha inv\xE1lido: campo '${fieldName}' possui valor inesperado.` : "Payload de reset de senha inv\xE1lido: um ou mais campos possuem valores inesperados."
+});
+
+// src/use-cases/errors/invalid-password-reset-payload-error.ts
+var InvalidPasswordResetPayloadError = class extends DomainError {
+  constructor(fieldName) {
+    super(INVALID_PASSWORD_RESET_PAYLOAD_ERROR_FN(fieldName), "BAD_REQUEST" /* BAD_REQUEST */);
+  }
+};
+
+// src/messages/constants/email/email.ts
+var EMAIL_CONSTANTS = {
+  PASSWORD_RECOVERY_SUBJECT: "Recupera\xE7\xE3o de senha",
+  PASSWORD_RESET_GENERIC_MESSAGE: "Se o usu\xE1rio existir, voc\xEA receber\xE1 um e-mail com instru\xE7\xF5es para redefinir a senha.",
+  // Após N falhas consecutivas de envio, o transportador em cache é descartado e recriado (SMTP instável)
+  SMTP_MAX_CONSECUTIVE_FAILURES: 3
+};
+
+// src/messages/constants/auth/password-reset.ts
+var PASSWORD_RESET_CONSTANTS = {
+  /** Janela de validade do token — também impressa nos templates de e-mail. */
+  TOKEN_EXPIRES_IN_MINUTES: 15,
+  /** Bytes de entropia do token (64 hex chars). */
+  TOKEN_LENGTH_BYTES: 32,
+  /**
+   * Orçamento de retry do job de e-mail: 3 tentativas × backoff fixo de 30s
+   * (~1 min no pior caso) cabe com folga na janela de 15 min do token.
+   */
+  JOB_ATTEMPTS: 3,
+  JOB_BACKOFF_DELAY_MS: 3e4
+};
+
+// src/templates/forgot-password/forgot-password-text.ts
+function forgotPasswordTextTemplate(userName, token) {
+  const url = `${env.FRONTEND_URL}/reset-password/${token}`;
+  const appName = env.APP_NAME;
+  return `
+Ol\xE1, ${userName}!
+
+Recebemos uma solicita\xE7\xE3o para redefinir a sua senha. Para continuar, acesse o link abaixo:
+
+${url}
+
+Este link \xE9 v\xE1lido por ${PASSWORD_RESET_CONSTANTS.TOKEN_EXPIRES_IN_MINUTES} minutos.
+
+Se voc\xEA n\xE3o solicitou a recupera\xE7\xE3o de senha, ignore este e-mail.
+
+Atenciosamente,
+Equipe ${appName}
+  `.trim();
+}
+
+// src/templates/react/forgot-password.tsx
+var import_components6 = require("@react-email/components");
+var import_jsx_runtime6 = require("react/jsx-runtime");
+function ForgotPasswordEmail({ userName, resetUrl, appName, expiresInMinutes }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(EmailLayout, { headerTitle: "Recupera\xE7\xE3o de Senha", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_components6.Section, { className: "text-gray-700 text-[16px]", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_components6.Heading, { className: "text-[20px] font-semibold mb-[20px] m-0", children: [
+      "Ol\xE1, ",
+      userName,
+      "!"
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_components6.Text, { className: "mb-[20px]", children: "Recebemos uma solicita\xE7\xE3o para redefinir a sua senha. Para continuar, clique no bot\xE3o abaixo:" }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_components6.Section, { className: "text-center mb-[20px]", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+      import_components6.Button,
+      {
+        href: resetUrl,
+        className: "bg-[#1976d2] text-white px-[24px] py-[12px] rounded-[6px] font-bold decoration-none",
+        children: "Redefinir senha"
+      }
+    ) }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_components6.Text, { className: "mb-[20px]", children: [
+      "Ou copie e cole este link no seu navegador: ",
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("br", {}),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_components6.Link, { href: resetUrl, className: "text-[#1976d2] underline break-all", children: resetUrl })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_components6.Text, { className: "mb-[20px]", children: [
+      "Este link \xE9 v\xE1lido por ",
+      expiresInMinutes,
+      " minutos."
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_components6.Text, { className: "mb-[20px]", children: "Se voc\xEA n\xE3o solicitou a recupera\xE7\xE3o de senha, ignore este e-mail." }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_components6.Text, { className: "m-0", children: [
+      "Atenciosamente, ",
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("br", {}),
+      "Equipe ",
+      appName
+    ] })
+  ] }) });
+}
+
+// src/use-cases/users/strategies/password-reset-dispatch-strategy.ts
+var import_render3 = require("@react-email/render");
+var import_react3 = __toESM(require("react"));
+var PasswordResetDispatchStrategy = class {
+  async buildDispatch(event) {
+    const payloadResult = this.parsePayload(event.payload);
+    if (isErr(payloadResult)) return payloadResult;
+    const { name, email, token } = payloadResult.value;
+    const url = `${env.FRONTEND_URL}/reset-password/${token}`;
+    const html = await (0, import_render3.render)(
+      import_react3.default.createElement(ForgotPasswordEmail, {
+        userName: name,
+        resetUrl: url,
+        appName: env.APP_NAME,
+        expiresInMinutes: PASSWORD_RESET_CONSTANTS.TOKEN_EXPIRES_IN_MINUTES
+      })
+    );
+    return ok({
+      emails: [
+        {
+          to: email,
+          subject: EMAIL_CONSTANTS.PASSWORD_RECOVERY_SUBJECT,
+          message: forgotPasswordTextTemplate(name, token),
+          html,
+          context: { type: "password-reset", recipient: "user" }
+        }
+      ],
+      jobOptions: {
+        attempts: PASSWORD_RESET_CONSTANTS.JOB_ATTEMPTS,
+        backoff: { type: "fixed", delay: PASSWORD_RESET_CONSTANTS.JOB_BACKOFF_DELAY_MS }
+      }
+    });
+  }
+  parsePayload(payload) {
+    const name = this.getStringField(payload.name, "payload.name");
+    if (isErr(name)) return name;
+    const email = this.getStringField(payload.email, "payload.email");
+    if (isErr(email)) return email;
+    const token = this.getStringField(payload.token, "payload.token");
+    if (isErr(token)) return token;
+    return ok({ name: name.value, email: email.value, token: token.value });
+  }
+  getStringField(value, fieldName) {
+    if (typeof value === "string" && value.length > 0) {
+      return ok(value);
+    }
+    return err(new InvalidPasswordResetPayloadError(fieldName));
+  }
+};
+
+// src/messages/errors/outbox.ts
+var OUTBOX_ERRORS = {
+  EVENT_NOT_FOUND: {
+    code: "OUTBOX_EVENT_NOT_FOUND",
+    message: "O evento de outbox solicitado n\xE3o foi encontrado no banco de dados."
+  },
+  OPERATION_FAILED: {
+    code: "OUTBOX_OPERATION_FAILED",
+    message: "Falha ao processar opera\xE7\xE3o da outbox no banco de dados."
+  }
+};
+var UNKNOWN_OUTBOX_EVENT_TYPE_ERROR_FN = (eventType) => ({
+  code: "UNKNOWN_OUTBOX_EVENT_TYPE",
+  message: `Nenhuma estrat\xE9gia de despacho registrada para o tipo de evento '${eventType}'.`
+});
+
+// src/lib/errors/outbox/unknown-outbox-event-type-error.ts
+var UnknownOutboxEventTypeError = class extends InfrastructureError {
+  constructor(eventType) {
+    super(UNKNOWN_OUTBOX_EVENT_TYPE_ERROR_FN(eventType));
+  }
+};
+
+// src/lib/infra/jobs/outbox-dispatch-strategy-registry.ts
+var OutboxDispatchStrategyRegistry = class {
+  strategies;
+  constructor(entries) {
+    this.strategies = new Map(entries);
+  }
+  resolve(eventType) {
+    const strategy = this.strategies.get(eventType);
+    if (!strategy) {
+      return err(new UnknownOutboxEventTypeError(eventType));
+    }
+    return ok(strategy);
+  }
+};
+
+// src/lib/infra/jobs/make-outbox-dispatch-registry.ts
+function makeOutboxDispatchStrategyRegistry() {
+  return new OutboxDispatchStrategyRegistry([
+    [OUTBOX_EVENT_TYPES.FORM_SUBMISSION_CREATED, new FormSubmissionDispatchStrategy()],
+    [OUTBOX_EVENT_TYPES.PASSWORD_RESET_REQUESTED, new PasswordResetDispatchStrategy()]
+  ]);
+}
+
+// src/messages/errors/system.ts
+var SYSTEM_ERRORS = {
+  ASYNC_LOCAL_STORAGE_NOT_INITIALIZED: {
+    code: "ASYNC_LOCAL_STORAGE_NOT_INITIALIZED",
+    message: "Async Local Storage is not initialized."
+  }
+};
+
+// src/errors/system-error.ts
+var SystemError = class extends AppError {
+  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
+  constructor(detail, type) {
+    super(detail, type);
+  }
+};
+
+// src/lib/errors/async-local-storage/async-local-storage-not-initialized-error.ts
+var AsyncLocalStorageNotInitializedError = class extends SystemError {
+  constructor() {
+    super(SYSTEM_ERRORS.ASYNC_LOCAL_STORAGE_NOT_INITIALIZED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+  }
+};
+
+// src/lib/prisma/helpers/database-context.ts
+var DatabaseContext = class {
+  constructor(prisma2 = prisma) {
+    this.prisma = prisma2;
+  }
+  prisma;
+  get client() {
+    const prismaTx = asyncLocalStorage.getStore()?.prismaTransaction;
+    return prismaTx ?? this.prisma;
+  }
+  /**
+   * Executes a callback function within a database transaction.
+   *
+   * This method provides automatic transaction management with the following features:
+   * - **Nested transaction support**: If already in a transaction, reuses the existing one
+   * - **Automatic rollback**: Rolls back on errors
+   * - **Context propagation**: Transaction context is available to all nested calls
+   *
+   * @template T - The return type of the callback function
+   * @param callback - The async function to execute within the transaction
+   * @param options - Optional transaction configuration
+   * @param options.isolationLevel - The isolation level for the transaction (e.g., 'ReadCommitted', 'Serializable')
+   * @param options.maxWait - Maximum time to wait for a transaction slot (in milliseconds)
+   * @param options.timeout - Maximum time for the transaction to complete (in milliseconds)
+   *
+   * @returns A promise that resolves with the callback's return value
+   *
+   * @throws {AsyncLocalStorageNotInitializedError} When AsyncLocalStorage is not properly initialized
+   * @throws {Error} Any error thrown by the callback will cause a rollback and be re-thrown
+   * @remarks
+   * - When nested, the inner transaction options are ignored and the outer transaction is reused
+   * - All database operations within the callback should use `db.client` to participate in the transaction
+   * - The transaction will automatically commit if the callback completes successfully
+   * - The transaction will automatically rollback if the callback throws an error
+   */
+  async runInTransaction(callback, options) {
+    const store = asyncLocalStorage.getStore();
+    if (!store) {
+      throw new AsyncLocalStorageNotInitializedError();
+    }
+    if (store.prismaTransaction) {
+      return await callback();
+    }
+    return await this.prisma.$transaction(async (tx) => {
+      return await asyncLocalStorage.run(
+        {
+          ...store,
+          prismaTransaction: tx
+        },
+        callback
+      );
+    }, options);
+  }
+};
+
 // src/lib/workers/mail-worker.ts
-var import_bullmq2 = require("bullmq");
+var import_bullmq4 = require("bullmq");
 
 // src/messages/errors/queue.ts
 var QUEUE_ERRORS = {
@@ -2763,24 +2773,6 @@ var REDIS_CONSTANTS = {
   KEYS: {
     IDEMPOTENCY_EMAIL_PREFIX: "idempotency:email:",
     RATE_LIMIT_PREFIX: "ratelimit:v1:"
-  }
-};
-
-// src/messages/constants/workers/workers.ts
-var WORKER_CONSTANTS = {
-  MAIL: {
-    CONCURRENCY_LIMIT: 5,
-    LOCK_DURATION_MS: 3e5,
-    STALLED_INTERVAL_MS: 3e5
-  },
-  QUEUE: {
-    JOB_ATTEMPTS: 3,
-    BACKOFF_TYPE: "exponential",
-    BACKOFF_DELAY_MS: 1e4
-  },
-  IDEMPOTENCY_TTL: {
-    PROCESSING_SECONDS: 300,
-    COMPLETED_SECONDS: 86400
   }
 };
 
@@ -3001,7 +2993,7 @@ async function revertForRedispatch(context, outboxRepository) {
 function startMailWorker(outboxRepository) {
   const workerConnection = createWorkerConnection();
   attachRedisLogger(workerConnection, "MailWorker");
-  const worker2 = new import_bullmq2.Worker(QUEUE.NAMES.MAIL, createMailJobProcessor(outboxRepository), {
+  const worker2 = new import_bullmq4.Worker(QUEUE.NAMES.MAIL, createMailJobProcessor(outboxRepository), {
     connection: workerConnection,
     concurrency: WORKER_CONSTANTS.MAIL.CONCURRENCY_LIMIT,
     lockDuration: WORKER_CONSTANTS.MAIL.LOCK_DURATION_MS,
@@ -3131,6 +3123,228 @@ var OutboxSignal = {
   }
 };
 
+// src/repositories/prisma/prisma-outbox-event-repository.ts
+var import_client2 = require("@prisma/client");
+var PrismaOutboxRepository = class {
+  constructor(dbContext, httpErrorMapper, infraErrorMapper) {
+    this.dbContext = dbContext;
+    this.httpErrorMapper = httpErrorMapper;
+    this.infraErrorMapper = infraErrorMapper;
+  }
+  dbContext;
+  httpErrorMapper;
+  infraErrorMapper;
+  async create(data) {
+    try {
+      const outboxEvent = await this.dbContext.client.outboxEvent.create({
+        data: {
+          type: data.type,
+          status: data.status,
+          payload: data.payload,
+          expiresAt: data.expiresAt ?? null
+        }
+      });
+      return ok(this.toEntity(outboxEvent));
+    } catch (error) {
+      return err(this.httpErrorMapper.mapToKnownError(error));
+    }
+  }
+  async findPending(limit) {
+    try {
+      const events = await this.dbContext.client.outboxEvent.findMany({
+        where: { status: "PENDING" /* PENDING */ },
+        orderBy: { occurredAt: "asc" },
+        take: limit
+      });
+      return ok(events.map((e) => this.toEntity(e)));
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
+  async findStuck(stuckBefore, limit) {
+    try {
+      const events = await this.dbContext.client.outboxEvent.findMany({
+        where: {
+          status: "SENDING" /* SENDING */,
+          sendingAt: { lte: stuckBefore }
+        },
+        orderBy: { sendingAt: "asc" },
+        take: limit
+      });
+      return ok(events.map((e) => this.toEntity(e)));
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
+  async findByPublicId(publicId) {
+    try {
+      const event = await this.dbContext.client.outboxEvent.findUnique({
+        where: { publicId }
+      });
+      return ok(event ? this.toEntity(event) : null);
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
+  async updateStatus(publicId, status) {
+    try {
+      await this.dbContext.client.outboxEvent.update({
+        where: { publicId },
+        data: {
+          status,
+          // SENDING marca o início do ciclo de despacho; demais status limpam o marcador
+          ...status === "SENDING" /* SENDING */ ? { sendingAt: /* @__PURE__ */ new Date(), attempts: { increment: 1 } } : { sendingAt: null }
+        }
+      });
+      return ok(void 0);
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
+  async updatePendingRecipients(publicId, pendingRecipients) {
+    try {
+      await this.dbContext.client.outboxEvent.update({
+        where: { publicId },
+        data: { pendingRecipients }
+      });
+      return ok(void 0);
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
+  async delete(publicId) {
+    try {
+      await this.dbContext.client.outboxEvent.delete({
+        where: { publicId }
+      });
+      return ok(void 0);
+    } catch (error) {
+      if (error instanceof import_client2.Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+        return ok(void 0);
+      }
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
+  async deleteExpired(now, batchSize) {
+    try {
+      const batch = await this.dbContext.client.outboxEvent.findMany({
+        where: { expiresAt: { lte: now } },
+        select: { id: true },
+        orderBy: { expiresAt: "asc" },
+        take: batchSize
+      });
+      if (batch.length === 0) {
+        return ok(0);
+      }
+      const result = await this.dbContext.client.outboxEvent.deleteMany({
+        where: { id: { in: batch.map((e) => e.id) } }
+      });
+      return ok(result.count);
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
+  async deleteOlderThan(cutoff, batchSize) {
+    try {
+      const batch = await this.dbContext.client.outboxEvent.findMany({
+        where: { occurredAt: { lt: cutoff } },
+        select: { id: true, status: true },
+        orderBy: { occurredAt: "asc" },
+        take: batchSize
+      });
+      if (batch.length === 0) {
+        return ok({ deleted: 0, byStatus: {} });
+      }
+      const result = await this.dbContext.client.outboxEvent.deleteMany({
+        where: { id: { in: batch.map((e) => e.id) } }
+      });
+      const byStatus = {};
+      for (const event of batch) {
+        const status = event.status;
+        byStatus[status] = (byStatus[status] ?? 0) + 1;
+      }
+      return ok({ deleted: result.count, byStatus });
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
+  // ─── Mapper ──────────────────────────────────────────────────────────────────
+  toEntity(raw) {
+    return {
+      id: raw.id,
+      publicId: raw.publicId,
+      type: raw.type,
+      status: raw.status,
+      payload: raw.payload,
+      attempts: raw.attempts,
+      occurredAt: raw.occurredAt,
+      sendingAt: raw.sendingAt || void 0,
+      expiresAt: raw.expiresAt || void 0,
+      pendingRecipients: raw.pendingRecipients
+    };
+  }
+};
+
+// src/lib/prisma/utils/prisma-error-mapper.ts
+var import_client3 = require("@prisma/client");
+
+// src/core/shared/safe-lookup.ts
+function safeLookup(table, key) {
+  return Object.hasOwn(table, key) ? table[key] : void 0;
+}
+
+// src/lib/prisma/utils/prisma-error-mapper.ts
+var PrismaErrorMapper = class {
+  constructor(errorMapping) {
+    this.errorMapping = errorMapping;
+  }
+  errorMapping;
+  mapToKnownError(error) {
+    if (error instanceof AppError) {
+      return error;
+    }
+    if (error instanceof import_client3.Prisma.PrismaClientKnownRequestError) {
+      const errorFactory = safeLookup(this.errorMapping, error.code);
+      if (errorFactory) {
+        return errorFactory(error);
+      }
+    }
+    return new DatabaseQueryError(error);
+  }
+};
+
+// src/use-cases/errors/outbox/outbox-errors.ts
+var OutboxEventNotFoundHttpError = class extends DomainError {
+  constructor() {
+    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
+  }
+};
+var OutboxOperationFailedHttpError = class extends SystemError {
+  constructor() {
+    super(OUTBOX_ERRORS.OPERATION_FAILED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+  }
+};
+var OutboxEventNotFoundInfraError = class extends InfrastructureError {
+  constructor(originalError) {
+    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, originalError);
+  }
+};
+var OutboxOperationFailedInfraError = class extends InfrastructureError {
+  constructor(originalError) {
+    super(OUTBOX_ERRORS.OPERATION_FAILED, originalError);
+  }
+};
+
+// src/repositories/prisma/errors/outbox-error-mapping.ts
+var outboxHttpPrismaErrorMapping = {
+  P2025: () => new OutboxEventNotFoundHttpError(),
+  P2003: () => new OutboxOperationFailedHttpError()
+};
+var outboxInfraPrismaErrorMapping = {
+  P2025: (error) => new OutboxEventNotFoundInfraError(error),
+  P2003: (error) => new OutboxOperationFailedInfraError(error)
+};
+
 // src/lib/shutdown/crash-shutdown.ts
 var import_node3 = require("@sentry/node");
 var SENTRY_FLUSH_TIMEOUT_MS = 2e3;
@@ -3181,6 +3395,56 @@ async function collectBullMQMetrics() {
 var import_fastify = __toESM(require("fastify"));
 var import_prom_client7 = require("prom-client");
 
+// src/core/shared/abort-race.ts
+var import_node_events = require("events");
+var toError = (reason) => {
+  if (reason instanceof Error) return reason;
+  if (typeof reason === "string") return new Error(reason);
+  return new Error(String(reason));
+};
+var resolveAbort = (onAbort, resolve, reject) => {
+  try {
+    Promise.resolve(onAbort()).then(resolve, reject);
+  } catch (reason) {
+    reject(reason);
+  }
+};
+var resolveIfAlreadyAborted = (signal, onAbort) => {
+  if (!signal.aborted) return void 0;
+  try {
+    return Promise.resolve(onAbort());
+  } catch (reason) {
+    return Promise.reject(toError(reason));
+  }
+};
+function abortRace(promise, signal, onAbort) {
+  const aborted = resolveIfAlreadyAborted(signal, onAbort);
+  if (aborted) return aborted;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const onResolve = (val) => {
+      if (settled) return;
+      settled = true;
+      disposable[Symbol.dispose]();
+      resolve(val);
+    };
+    const onReject = (err2) => {
+      if (settled) return;
+      settled = true;
+      disposable[Symbol.dispose]();
+      reject(toError(err2));
+    };
+    const disposable = (0, import_node_events.addAbortListener)(signal, () => {
+      if (settled) return;
+      settled = true;
+      resolveAbort(onAbort, resolve, (reason) => {
+        reject(toError(reason));
+      });
+    });
+    promise.then(onResolve, onReject);
+  });
+}
+
 // src/http/http-status.ts
 var HTTP_STATUS = {
   OK: 200,
@@ -3208,15 +3472,10 @@ var metricsCollectionErrors = registry7 ? new import_prom_client7.Counter({
   registers: [registry7]
 }) : null;
 function withTimeout(promise, ms4, source) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      setTimeout(() => {
-        metricsCollectionErrors?.inc({ source });
-        reject(new Error(`${source} timeout`));
-      }, ms4);
-    })
-  ]);
+  return abortRace(promise, AbortSignal.timeout(ms4), () => {
+    metricsCollectionErrors?.inc({ source });
+    throw new Error(`${source} timeout`);
+  });
 }
 async function startMetricsServer(options) {
   if (!env.METRICS_ENABLED) {
@@ -3256,6 +3515,16 @@ async function stopMetricsServer() {
 // src/worker.ts
 initSentry();
 var worker = null;
+var maintenanceWorker = null;
+async function startMaintenance(outboxRepository, outboxProcessor) {
+  maintenanceWorker = startMaintenanceWorker({
+    processor: outboxProcessor,
+    maintenance: new OutboxMaintenance(outboxRepository),
+    analyticsRetention: new AnalyticsRetention(new PrismaAnalyticsRepository())
+  });
+  registerQueue(QUEUE.NAMES.MAINTENANCE, getMaintenanceQueue());
+  await startMaintenanceScheduler();
+}
 async function bootstrap() {
   try {
     logger.info("Inicializando servi\xE7os de background...");
@@ -3270,9 +3539,7 @@ async function bootstrap() {
     await OutboxSignal.subscribe(async (_publicId, event) => {
       await outboxProcessor.processSingleEvent(event);
     });
-    const outboxMaintenance = new OutboxMaintenance(outboxRepository);
-    const analyticsRetention = new AnalyticsRetention(new PrismaAnalyticsRepository());
-    startOutboxCron(outboxProcessor, outboxMaintenance, analyticsRetention);
+    await startMaintenance(outboxRepository, outboxProcessor);
     try {
       await startMetricsServer({ port: env.METRICS_WORKER_PORT });
     } catch (metricsErr) {
@@ -3300,9 +3567,20 @@ async function cleanup() {
       }
     },
     async () => {
+      if (maintenanceWorker) {
+        await maintenanceWorker.close();
+        logger.info("Worker de manuten\xE7\xE3o finalizado");
+      }
+    },
+    async () => {
       unregisterQueue(QUEUE.NAMES.MAIL);
       await getMailQueue().close();
       logger.info("MailQueue finalizada");
+    },
+    async () => {
+      unregisterQueue(QUEUE.NAMES.MAINTENANCE);
+      await getMaintenanceQueue().close();
+      logger.info("MaintenanceQueue finalizada");
     },
     stopMetricsServer,
     async () => {

@@ -137,7 +137,8 @@ npx vitest run --coverage \
   --project=unit-geo-provider --project=unit-address-provider --project=unit-http \
   --project=unit-http-users --project=unit-church-routing-provider --project=unit-lib \
   --project=unit-resilient-cache --project=unit-rate-limiter --project=unit-repositories \
-  --project=integration-cache --project=integration-repositories --project=e2e \
+  --project=integration-cache --project=integration-jobs \
+  --project=integration-repositories --project=e2e \
   --coverage.reporter=json-summary \
   --coverage.reporter=json \
   --coverage.reporter=lcov \

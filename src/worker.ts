@@ -3,7 +3,9 @@ import { initSentry } from '@lib/sentry/init'
 // Initialize Sentry at process startup
 initSentry()
 
-import { startOutboxCron } from '@lib/infra/jobs/outbox-cron'
+import { startMaintenanceScheduler } from '@lib/infra/jobs/maintenance-scheduler'
+import { startMaintenanceWorker } from '@lib/infra/jobs/maintenance-worker'
+import { getMaintenanceQueue } from '@lib/queue/maintenance-queue'
 import { OutboxProcessor } from '@lib/infra/jobs/outbox-processor'
 import { OutboxMaintenance } from '@lib/infra/jobs/outbox-maintenance'
 import { AnalyticsRetention } from '@lib/infra/jobs/analytics-retention'
@@ -32,6 +34,39 @@ import { QUEUE } from 'messages/constants/queue/queue'
 import { startMetricsServer, stopMetricsServer } from './metrics-server'
 
 let worker: Worker | null = null
+let maintenanceWorker: Worker | null = null
+
+/**
+ * [ESCALABILIDADE HORIZONTAL]
+ * A manutenção agendada JÁ É segura com N pods. Os agendamentos deixaram de ser
+ * node-cron rodando dentro de cada processo e passaram a ser Job Schedulers do
+ * BullMQ, que vivem no Redis: todo pod faz upsert do mesmo id, o BullMQ mantém
+ * um único agendador e emite UM job por tique, consumido por um único worker.
+ * Não é preciso eleger líder para isto.
+ *
+ * O QUE CONTINUA EM ABERTO é o handler de Pub/Sub de OutboxSignal.subscribe: o
+ * Redis entrega o sinal a TODOS os assinantes, então N pods processariam o
+ * mesmo evento concorrentemente. Hoje a segurança vem do jobId determinístico
+ * no BullMQ (dedup) e do updateStatus idempotente — não de um lock. É aqui que
+ * se deve começar no dia do segundo pod.
+ *
+ * O worker sobe ANTES do agendador: assim o primeiro tique já encontra
+ * consumidor, em vez de esperar o próximo.
+ */
+async function startMaintenance(
+  outboxRepository: PrismaOutboxRepository,
+  outboxProcessor: OutboxProcessor,
+): Promise<void> {
+  maintenanceWorker = startMaintenanceWorker({
+    processor: outboxProcessor,
+    maintenance: new OutboxMaintenance(outboxRepository),
+    analyticsRetention: new AnalyticsRetention(new PrismaAnalyticsRepository()),
+  })
+
+  registerQueue(QUEUE.NAMES.MAINTENANCE, getMaintenanceQueue())
+
+  await startMaintenanceScheduler()
+}
 
 async function bootstrap() {
   try {
@@ -54,29 +89,7 @@ async function bootstrap() {
       await outboxProcessor.processSingleEvent(event)
     })
 
-    // ============================================================================
-    // NOTA: [ALERTA DE ESCALABILIDADE HORIZONTAL]
-    // Limitação conhecida e aceita da topologia atual (um único worker), não uma
-    // tarefa pendente — o dia em que houver um segundo pod, comece por aqui.
-    // Se a infraestrutura for escalada para mais de um worker/pod, TODOS os pods
-    // rodarão este cron simultaneamente. Embora a classe OutboxProcessor já utilize
-    // um DistributedLock para evitar processamento duplicado, ter múltiplos crons
-    // competindo pelo mesmo lock gera overhead e contenção no Redis/DB.
-    //
-    // SUGESTÃO DE ARQUITETURA:
-    // Implementar um sistema de "Leader Election" (Eleição de Líder).
-    // Antes de rodar a rotina do cron, os workers disputam uma chave no Redis
-    // (ex: usando SETNX com TTL de 1 minuto). O worker que conseguir o lock atua
-    // como "Líder" e executa a varredura, enquanto os outros ficam em standby.
-    //
-    // O mesmo alerta vale para o handler de Pub/Sub acima (OutboxSignal.subscribe):
-    // o Redis entrega o sinal a TODOS os assinantes, então N pods processariam o
-    // mesmo evento concorrentemente. Hoje a segurança vem do jobId determinístico
-    // no BullMQ (dedup) e do updateStatus idempotente — não de um lock.
-    // ============================================================================
-    const outboxMaintenance = new OutboxMaintenance(outboxRepository)
-    const analyticsRetention = new AnalyticsRetention(new PrismaAnalyticsRepository())
-    startOutboxCron(outboxProcessor, outboxMaintenance, analyticsRetention)
+    await startMaintenance(outboxRepository, outboxProcessor)
 
     // Metrics server is auxiliary: a bind failure must not take down the worker.
     try {
@@ -108,9 +121,20 @@ async function cleanup() {
       }
     },
     async () => {
+      if (maintenanceWorker) {
+        await maintenanceWorker.close()
+        logger.info('Worker de manutenção finalizado')
+      }
+    },
+    async () => {
       unregisterQueue(QUEUE.NAMES.MAIL)
       await getMailQueue().close()
       logger.info('MailQueue finalizada')
+    },
+    async () => {
+      unregisterQueue(QUEUE.NAMES.MAINTENANCE)
+      await getMaintenanceQueue().close()
+      logger.info('MaintenanceQueue finalizada')
     },
     stopMetricsServer,
     async () => {

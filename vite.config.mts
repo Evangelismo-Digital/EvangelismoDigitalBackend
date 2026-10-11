@@ -273,6 +273,26 @@ export default defineConfig(({ mode }) => {
         {
           extends: true,
           test: {
+            // Redis-only integration suite for the BullMQ maintenance jobs. Same
+            // rationale as `integration-cache`: no Postgres, no Prisma
+            // environment, cheap enough to gate every push. It exists because the
+            // claim of the Job Scheduler migration — N pods upserting one
+            // scheduler id produce ONE job per tick — is only provable against a
+            // real Redis, and a claim that CI never checks is an assumption.
+            // Listed in BOTH the ci.yml and scripts/ci-local.sh allowlists —
+            // keep them in lockstep.
+            name: 'integration-jobs',
+            dir: 'src/lib/infra/jobs',
+            include: ['**/*.redis-integration.spec.ts'],
+            // One shared Redis keyspace; parallel files would collide.
+            fileParallelism: false,
+            hookTimeout: 30_000,
+            testTimeout: 30_000,
+          },
+        },
+        {
+          extends: true,
+          test: {
             // Postgres-only integration suite for the repositories. Split out of
             // `unit-repositories` — where it had been running as if it were a
             // unit test — but kept in the CI allowlist, because dropping it there

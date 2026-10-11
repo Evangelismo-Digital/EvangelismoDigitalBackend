@@ -133,6 +133,10 @@ var envSchema = import_zod2.z.object({
   SMTP_PORT: import_zod2.z.coerce.number(),
   SMTP_HOST: import_zod2.z.string().min(1),
   SMTP_SECURE: import_zod2.z.enum(["true", "false"]).transform((val) => val === "true"),
+  SMTP_POOL_MAX_CONNECTIONS: import_zod2.z.coerce.number().int().positive().default(5),
+  SMTP_POOL_MAX_MESSAGES: import_zod2.z.coerce.number().int().positive().default(100),
+  SMTP_POOL_RATE_LIMIT: import_zod2.z.coerce.number().int().positive().default(5),
+  SMTP_POOL_RATE_DELTA_MS: import_zod2.z.coerce.number().int().positive().default(1e3),
   // Timeouts defensivos: impedem que um servidor SMTP travado bloqueie o chamador (padrões do Nodemailer chegam a 10 min)
   SMTP_CONNECTION_TIMEOUT_MS: import_zod2.z.coerce.number().int().positive().default(5e3),
   SMTP_GREETING_TIMEOUT_MS: import_zod2.z.coerce.number().int().positive().default(5e3),
@@ -1613,6 +1617,11 @@ var OUTBOX_LOGS = {
   PHASE2_ERROR: "Fase 2 (eventos PENDING): erro inesperado.",
   SCAN_DONE: "Varredura de seguran\xE7a da Outbox conclu\xEDda.",
   SCHEDULER_CONFIGURED: "Agendadores da Outbox configurados: varredura a cada 5 min, seguran\xE7a \xE0 meia-noite e reten\xE7\xE3o \xE0s 03:00.",
+  // maintenance-scheduler / maintenance-worker
+  MAINTENANCE_PHASE_RETRYING: "Fase de manuten\xE7\xE3o falhou; o BullMQ far\xE1 nova tentativa com backoff antes de desistir.",
+  MAINTENANCE_JOB_UNKNOWN: "Job de manuten\xE7\xE3o desconhecido recebido na fila; nada a executar.",
+  MAINTENANCE_WORKER_STARTED: "Worker de manuten\xE7\xE3o iniciado e consumindo a fila.",
+  MAINTENANCE_QUEUE_ERROR: "Erro na fila de manuten\xE7\xE3o.",
   // outbox-processor
   SKIPPED_ANOTHER_RUNNING: "processPendingEvents: Processamento ignorado. Outra inst\xE2ncia j\xE1 est\xE1 rodando.",
   PENDING_FETCH_ERROR: "Erro de Infra ao buscar eventos pendentes.",
@@ -1691,6 +1700,12 @@ var collectMetricsOutboxCronRuns = registry2 ? new import_prom_client2.Counter({
   name: "outbox_cron_runs_total",
   help: "Outbox cron executions by phase",
   labelNames: ["phase"],
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxCronFailures = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_cron_failures_total",
+  help: "Maintenance phase failures by phase and outcome (retrying | exhausted)",
+  labelNames: ["phase", "outcome"],
   registers: [registry2]
 }) : null;
 var collectMetricsOutboxMaintenanceDeleted = registry2 ? new import_prom_client2.Counter({
@@ -3352,6 +3367,56 @@ var Deadline = class _Deadline {
   }
 };
 
+// src/core/shared/abort-race.ts
+var import_node_events = require("events");
+var toError = (reason) => {
+  if (reason instanceof Error) return reason;
+  if (typeof reason === "string") return new Error(reason);
+  return new Error(String(reason));
+};
+var resolveAbort = (onAbort, resolve, reject) => {
+  try {
+    Promise.resolve(onAbort()).then(resolve, reject);
+  } catch (reason) {
+    reject(reason);
+  }
+};
+var resolveIfAlreadyAborted = (signal, onAbort) => {
+  if (!signal.aborted) return void 0;
+  try {
+    return Promise.resolve(onAbort());
+  } catch (reason) {
+    return Promise.reject(toError(reason));
+  }
+};
+function abortRace(promise, signal, onAbort) {
+  const aborted = resolveIfAlreadyAborted(signal, onAbort);
+  if (aborted) return aborted;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const onResolve = (val) => {
+      if (settled) return;
+      settled = true;
+      disposable[Symbol.dispose]();
+      resolve(val);
+    };
+    const onReject = (err2) => {
+      if (settled) return;
+      settled = true;
+      disposable[Symbol.dispose]();
+      reject(toError(err2));
+    };
+    const disposable = (0, import_node_events.addAbortListener)(signal, () => {
+      if (settled) return;
+      settled = true;
+      resolveAbort(onAbort, resolve, (reason) => {
+        reject(toError(reason));
+      });
+    });
+    promise.then(onResolve, onReject);
+  });
+}
+
 // src/errors/infrastructure/service-overload-error.ts
 var ServiceOverloadError = class extends InfrastructureError {
   constructor() {
@@ -3487,7 +3552,7 @@ var CacheFailurePolicy = class {
     if (deserialized) {
       return deserialized;
     }
-    return new ProviderFailureError(new Error(`Cached Error: ${cached.type} - ${cached.message}`));
+    return new ProviderFailureError(`Cached Error: ${cached.type} - ${cached.message}`);
   }
   negativeTtlFor(error) {
     return this.options.negativeTtlFor?.(error) ?? this.options.negativeTtlSeconds;
@@ -3497,34 +3562,8 @@ var CacheFailurePolicy = class {
 // src/lib/infra/cache/resilient-cache.ts
 var DEFAULT_MAX_PENDING_FETCHES = 1e3;
 var DEFAULT_TTL_JITTER_PERCENTAGE = 0.05;
-function whenExpired(deadline) {
-  let onAbort;
-  const promise = new Promise((resolve) => {
-    if (deadline.expired) {
-      resolve();
-      return;
-    }
-    onAbort = () => {
-      resolve();
-    };
-    deadline.signal.addEventListener("abort", onAbort, { once: true });
-  });
-  return {
-    promise,
-    cleanup: () => {
-      if (onAbort) {
-        deadline.signal.removeEventListener("abort", onAbort);
-      }
-    }
-  };
-}
 async function withinBudget(work, deadline) {
-  const expiry = whenExpired(deadline);
-  try {
-    return await Promise.race([work, expiry.promise.then(() => void 0)]);
-  } finally {
-    expiry.cleanup();
-  }
+  return abortRace(work, deadline.signal, () => void 0);
 }
 var ResilientCache = class {
   constructor(redis, options) {
@@ -3692,16 +3731,7 @@ var ResilientCache = class {
    * allows. Giving up here neither cancels the fetch nor affects anyone else.
    */
   async raceCaller(shared, callerDeadline) {
-    const expiry = whenExpired(callerDeadline);
-    try {
-      const outcome = await Promise.race([
-        shared.then((value) => ({ settled: true, value })),
-        expiry.promise.then(() => ({ settled: false }))
-      ]);
-      return outcome.settled ? outcome.value : err(callerDeadline.asError());
-    } finally {
-      expiry.cleanup();
-    }
+    return abortRace(shared, callerDeadline.signal, () => err(callerDeadline.asError()));
   }
   reportPendingSize() {
     collectMetricsCachePendingFetches?.set({ prefix: this.options.prefix }, this.pendingFetches.size);
@@ -3716,12 +3746,12 @@ var ResilientCache = class {
    */
   async executeFetch(key, fetcher, fetchDeadline) {
     const endTimer = collectMetricsCacheFetchDuration?.startTimer({ prefix: this.options.prefix });
-    const expiry = whenExpired(fetchDeadline);
     try {
-      const outcome = await Promise.race([
+      const outcome = await abortRace(
         fetcher(fetchDeadline).then((value) => ({ settled: true, value })),
-        expiry.promise.then(() => ({ settled: false }))
-      ]);
+        fetchDeadline.signal,
+        () => ({ settled: false })
+      );
       if (!outcome.settled) {
         return err(fetchDeadline.asError());
       }
@@ -3730,7 +3760,6 @@ var ResilientCache = class {
       return this.mapFetchThrow(error, fetchDeadline);
     } finally {
       endTimer?.();
-      expiry.cleanup();
       fetchDeadline.dispose();
     }
   }
@@ -3790,7 +3819,7 @@ var ResilientCache = class {
     if (!("v" in envelope)) {
       collectMetricsCacheErrors?.inc({ prefix, error_type: "corrupted" });
       logger.error({ key, envelope }, CACHE_LOGS.CORRUPTED_ENVELOPE);
-      return err(new ProviderFailureError(new Error("Corrupted Cache: Missing value")));
+      return err(new ProviderFailureError("Corrupted Cache: Missing value"));
     }
     collectMetricsCacheHits?.inc({ prefix });
     return ok(envelope.v);
@@ -4337,7 +4366,7 @@ function decideExhausted(run, tally) {
     run.narrator.systemFailure(tally.lastProviderName, tally.notFoundCount, tally.lastRetryableError);
     return err(tally.lastRetryableError);
   }
-  return err(new ProviderFailureError(new Error("TODOS os provedores falharam")));
+  return err(new ProviderFailureError("TODOS os provedores falharam"));
 }
 
 // src/providers/address-provider/resilient-address-provider.ts
@@ -5322,7 +5351,7 @@ var FindNearestChurchesErrorMapper = class _FindNearestChurchesErrorMapper {
     if (error instanceof import_cockatiel2.BulkheadRejectedError) {
       return new ServiceOverloadError();
     }
-    return new ProviderFailureError(error instanceof Error ? error : new Error(String(error)));
+    return new ProviderFailureError(error);
   }
   static mapAxiosError(error) {
     const status = error.response?.status;
@@ -5420,14 +5449,8 @@ async function runWithRetries(params) {
   }
 }
 function settleFirst(work, deadline) {
-  return new Promise((resolve, reject) => {
-    const onAbort = () => {
-      reject(deadline.asError());
-    };
-    deadline.signal.addEventListener("abort", onAbort, { once: true });
-    work.then(resolve, reject).finally(() => {
-      deadline.signal.removeEventListener("abort", onAbort);
-    });
+  return abortRace(work, deadline.signal, () => {
+    throw deadline.asError();
   });
 }
 async function attemptOnce(params, counter) {
@@ -7769,15 +7792,10 @@ var metricsCollectionErrors = registry8 ? new import_prom_client9.Counter({
   registers: [registry8]
 }) : null;
 function withTimeout(promise, ms3, source) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      setTimeout(() => {
-        metricsCollectionErrors?.inc({ source });
-        reject(new Error(`${source} timeout`));
-      }, ms3);
-    })
-  ]);
+  return abortRace(promise, AbortSignal.timeout(ms3), () => {
+    metricsCollectionErrors?.inc({ source });
+    throw new Error(`${source} timeout`);
+  });
 }
 async function startMetricsServer(options) {
   if (!env.METRICS_ENABLED) {
