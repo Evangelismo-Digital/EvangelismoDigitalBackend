@@ -10,6 +10,14 @@ is about machinery — plumbing that some library, somewhere, already solves.
 Audit date: 2026-09-10. Branch `feat/cookies-enhancements` @ `a360d08`.
 Surface reviewed: 349 non-test `.ts` files under `src/`, `package.json`, both entrypoints.
 
+> **Implementation status — updated 2026-10-12.** Every finding in this document has now
+> been implemented. Phases 1, 2a, 2b and 5 landed earlier on this branch; Phase 3 (A2),
+> Phase 4 (A4 + B4) and A6 landed on 2026-10-12. **B4 deviates from the recommendation
+> below:** the templates were migrated to **React Email**, not MJML — see the note in that
+> finding. A6 required no change: all three call sites already used `ms()` by the time it
+> was reached. Each finding carries its own status line; the summary table at the end is
+> the quickest view.
+
 ---
 
 ## Executive summary
@@ -92,6 +100,19 @@ force-exit — that is `onSecondError`, and it must not be lost.
 
 ### A2. `bullmq` Job Schedulers replace `node-cron` — and dissolve the scale-out caveat
 
+> **DONE (2026-10-12).** `outbox-cron.ts` is gone, replaced by `lib/queue/maintenance-queue.ts`,
+> `lib/infra/jobs/maintenance-scheduler.ts` and `lib/infra/jobs/maintenance-worker.ts`;
+> `node-cron` is removed from `package.json`. The four cron expressions moved verbatim and
+> no `tz` is passed, so the windows did not shift (cron-parser, like node-cron, resolves in
+> the process-local zone). The `worker.ts` caveat was rewritten: scheduled work is now safe
+> under N pods, and the `OutboxSignal.subscribe` fan-out remains documented as the open item.
+> Failure policy now uses BullMQ retries (attempts=3, exponential from 10s) with Sentry only
+> on exhaustion, and all phases still run even when an earlier one fails. Proof lives in
+> `maintenance-scheduler.redis-integration.spec.ts` under the new Redis-only `integration-jobs`
+> vitest project, which is in **both** CI allowlists; it was seen red (8 jobs instead of 4)
+> with per-pod duplication reinjected. New metric `outbox_cron_failures_total{phase,outcome}`
+> plus three alert rules in `prometheus/alerts.yml`.
+
 `src/worker.ts:56-75` carries a 20-line comment describing a known limitation: with more than one worker
 pod, every pod runs `startOutboxCron` simultaneously, contending on the `DistributedLock`. The suggested
 fix recorded there is to build leader election.
@@ -138,6 +159,15 @@ serialization.
 
 ### A4. `cockatiel` + `nodemailer` pooling replace the hand-rolled SMTP breaker
 
+> **DONE (2026-10-12).** Pooling is enabled through the `SMTP_POOL_*` settings that were
+> already declared in the env schema but never consumed, now documented in `.env.example`.
+> The `consecutiveFailures` counter is replaced by a cockatiel `SamplingBreaker`, which
+> reads its own `SMTP_CIRCUIT_BREAKER_*` vars rather than sharing `CIRCUIT_BREAKER_*` with
+> the providers — the traffic profiles are nothing alike, and the shared flag would have
+> silently disabled the mail breaker. Both halves were kept deliberately: opening the
+> circuit also drops the transporter, because the pooled connections of an SMTP that just
+> failed in series are not worth trusting. 100% mutation score on the file.
+
 `src/lib/mail/nodemailer-mail-sender.ts:64-78` counts `consecutiveFailures` and discards the cached
 transporter past a threshold. That is a circuit breaker, hand-rolled, in a codebase that already depends
 on `cockatiel` and uses its `circuitBreaker` + `SamplingBreaker` in two other places
@@ -167,6 +197,11 @@ The lock's _algorithm_ is correct and stays as-is (see Rejection C3).
 ---
 
 ### A6. `ms` — raw millisecond arithmetic
+
+> **ALREADY DONE — no change needed (verified 2026-10-11).** All three call sites listed
+> below had been migrated by the time this was reached: `outbox-maintenance.ts:48`,
+> `analytics-retention.ts:89` and `forgot-password.ts:45` all use `ms()`, and a repo-wide
+> grep finds no remaining raw millisecond arithmetic outside specs.
 
 `ms@2.1.3` is installed and used throughout `src/env/index.ts` (`ms('10s')`, `ms('30s')`, `ms('5m')`).
 It is not used at:
@@ -271,6 +306,24 @@ it may be wired into the deploy smoke test at `scripts/ci-local.sh`).
 ---
 
 ### B4. Email templates: unescaped interpolation, duplicated markup
+
+> **DONE — but NOT as recommended below (2026-10-12).** The templates were migrated to
+> **React Email** (`@react-email/components`, `.tsx` templates with a shared `layout.tsx`),
+> not MJML. This reverses the assessment in the table below, which rejected react-email on
+> compatibility grounds ("a Fastify backend with no React anywhere"). The decision was taken
+> deliberately by the repository owner, and the stack now carries React as a render-time
+> dependency; `knip.json` was widened to follow `.tsx` so the dead-code gate still sees them.
+>
+> The escaping goal of this finding is met and, as of 2026-10-12, **tested**: rendering specs
+> drive the real production path (strategy → `React.createElement` → `render`) with no mocked
+> renderer, asserting that a name, surname, email, free-text location or reset token carrying
+> markup is escaped. They were proven red by injecting `dangerouslySetInnerHTML` into a
+> template. Each escaping test carries a counterweight, because over-escaping mangles
+> Brazilian names: accents stay raw in the source and an apostrophe may be encoded but must
+> still decode to what was typed.
+>
+> `nodemailer-html-to-text` was **not** adopted — the `*-text.ts` templates remain the source
+> of the plaintext part.
 
 **Gap.** `src/templates/**/*-html.ts` are raw template literals. `contact-user-html.ts:12` interpolates
 `${name}` **directly into HTML with no escaping** — and `name` is user-submitted, arriving through the
@@ -398,7 +451,7 @@ chain routes on, for no capability gain. `lib/http/https-agent.ts` already provi
 `ci:local` must be run serially and must exit 0 before a phase is considered done. Phases are ordered by
 value ÷ risk, and each is independently shippable and revertible.
 
-### Phase 0 — Baseline (no `src/` changes)
+### Phase 0 — Baseline (no `src/` changes) — **DONE**
 
 Preparation only, so later phases have something to compare against.
 
@@ -413,7 +466,7 @@ Preparation only, so later phases have something to compare against.
 
 ---
 
-### Phase 1 — Reclaim installed dependencies (low risk, includes the bug fix)
+### Phase 1 — Reclaim installed dependencies (low risk, includes the bug fix) — **DONE**
 
 Pure deletion and configuration. No new dependencies. Highest value-to-risk ratio in the plan, and it
 carries the only defect found.
@@ -438,7 +491,7 @@ adjacent to it survives — a redact config that over-matches is as much a defec
 
 ---
 
-### Phase 2 — HTTP boundary hardening (highest value; B1 is the highest risk)
+### Phase 2 — HTTP boundary hardening (highest value; B1 is the highest risk) — **DONE**
 
 **Split into two independently shippable changes. Do not combine.**
 
@@ -465,7 +518,7 @@ adjacent to it survives — a redact config that over-matches is as much a defec
 
 ---
 
-### Phase 3 — BullMQ Job Schedulers (medium risk, retires a documented limitation)
+### Phase 3 — BullMQ Job Schedulers (medium risk, retires a documented limitation) — **DONE 2026-10-12**
 
 **A2.** The payoff is architectural: it removes `node-cron`, removes lock contention on scheduled work,
 and turns the `worker.ts:56-75` scale-out caveat from a warning into a solved problem.
@@ -490,11 +543,12 @@ That is the whole claim of this phase; it must be proven, not assumed.
 
 ---
 
-### Phase 4 — Email templating (medium risk, closes an injection vector)
+### Phase 4 — Email templating (medium risk, closes an injection vector) — **DONE 2026-10-12**
 
 **B4**, plus **A4** since both touch the mail path.
 
-1. Add `mjml`; build one shared layout carrying the header/footer currently copy-pasted four times.
+1. ~~Add `mjml`~~ — React Email was adopted instead (see B4); one shared `layout.tsx` carries the
+   header/footer that was copy-pasted four times.
 2. Migrate one template family per change. Escape every interpolation.
 3. Diff each rendered output against the Phase 0 snapshot. **Only escaping and whitespace may differ**;
    anything else is a regression, not an improvement.
@@ -512,7 +566,7 @@ defect in a PT-BR product.
 
 ---
 
-### Phase 5 — Consolidate the abort/timeout primitive (low risk, no new dependency)
+### Phase 5 — Consolidate the abort/timeout primitive (low risk, no new dependency) — **DONE**
 
 **B5.** Build `src/core/shared/abort-race.ts` on `node:events`'s `addAbortListener`. Migrate the three
 call sites one per change: `metrics-server.ts` first (it has the timer leak and the least coupling), then
@@ -546,25 +600,34 @@ lands — which is what makes the `CLAUDE.md` rule enforceable rather than aspir
 
 ## Summary table
 
-| #   | Finding                                             | Category | Phase | Risk     | New dep                                         |
-| --- | --------------------------------------------------- | -------- | ----- | -------- | ----------------------------------------------- |
-| A1  | Duplicate crash handlers race, interrupting cleanup | A        | 1     | Low      | —                                               |
-| A3  | No pino `redact` — PII in logs                      | A        | 1     | Low      | —                                               |
-| A5  | Lua via `eval` instead of `defineCommand`           | A        | 1     | Low      | —                                               |
-| A8  | `OutboxSignal` bypasses connection factories        | A        | 1     | Low      | —                                               |
-| A6  | Raw ms arithmetic                                   | A        | 1     | Trivial  | —                                               |
-| B2  | No security headers                                 | B        | 2a    | Low      | `@fastify/helmet`                               |
-| B3  | Hand-rolled health check; no load shedding          | B        | 2a    | Low      | `@fastify/under-pressure`                       |
-| B1  | No Zod type provider; no OpenAPI                    | B        | 2b    | **High** | `fastify-type-provider-zod`, `@fastify/swagger` |
-| A2  | `node-cron` + lock contention vs Job Schedulers     | A        | 3     | Medium   | — (removes `node-cron`)                         |
-| B4  | Unescaped HTML in email templates                   | B        | 4     | Medium   | `mjml`, `nodemailer-html-to-text`               |
-| A4  | Hand-rolled SMTP breaker; no pooling                | A        | 4     | Low      | —                                               |
-| B5  | Promise-timeout helper ×3, one leaking a timer      | B        | 5     | Low      | —                                               |
-| A7  | Manual `.parse()` in controllers                    | A        | 2b    | (see B1) | —                                               |
+| #   | Finding                                             | Category | Phase | Risk     | New dep                                         | Status                          |
+| --- | --------------------------------------------------- | -------- | ----- | -------- | ----------------------------------------------- | ------------------------------- |
+| A1  | Duplicate crash handlers race, interrupting cleanup | A        | 1     | Low      | —                                               | Done                            |
+| A3  | No pino `redact` — PII in logs                      | A        | 1     | Low      | —                                               | Done                            |
+| A5  | Lua via `eval` instead of `defineCommand`           | A        | 1     | Low      | —                                               | Done                            |
+| A8  | `OutboxSignal` bypasses connection factories        | A        | 1     | Low      | —                                               | Done                            |
+| A6  | Raw ms arithmetic                                   | A        | 1     | Trivial  | —                                               | Done (no change needed)         |
+| B2  | No security headers                                 | B        | 2a    | Low      | `@fastify/helmet`                               | Done                            |
+| B3  | Hand-rolled health check; no load shedding          | B        | 2a    | Low      | `@fastify/under-pressure`                       | Done                            |
+| B1  | No Zod type provider; no OpenAPI                    | B        | 2b    | **High** | `fastify-type-provider-zod`, `@fastify/swagger` | Done                            |
+| A2  | `node-cron` + lock contention vs Job Schedulers     | A        | 3     | Medium   | — (removes `node-cron`)                         | Done 2026-10-12                 |
+| B4  | Unescaped HTML in email templates                   | B        | 4     | Medium   | **React Email** (not `mjml`)                    | Done 2026-10-12 — see deviation |
+| A4  | Hand-rolled SMTP breaker; no pooling                | A        | 4     | Low      | —                                               | Done 2026-10-12                 |
+| B5  | Promise-timeout helper ×3, one leaking a timer      | B        | 5     | Low      | —                                               | Done                            |
+| A7  | Manual `.parse()` in controllers                    | A        | 2b    | (see B1) | —                                               | Done (with B1)                  |
 
-**Net dependency change:** +5 (`@fastify/helmet`, `@fastify/under-pressure`,
-`fastify-type-provider-zod`, `@fastify/swagger`/`@fastify/scalar`, `mjml`+`nodemailer-html-to-text`),
-−1 (`node-cron`). Four of the five additions are Fastify-core or industry-standard MIT packages.
+**Net dependency change as actually landed:** `@fastify/helmet`, `@fastify/under-pressure`,
+`fastify-type-provider-zod`, `@fastify/swagger` and `@react-email/components` +
+`@react-email/render` (in place of the planned `mjml`); `nodemailer-html-to-text` was not
+adopted. `node-cron` was removed.
+
+**One defect found outside the plan, while implementing Phase 3 (2026-10-12):** `abortRace`'s
+already-aborted shortcut never attached a handler to the promise it abandoned, so that
+promise's later rejection surfaced as an `unhandledRejection` — which `close-with-grace`
+treats as fatal in the worker. Reachable through `runWithRetries` whenever a caller
+disconnects during the first attempt. Fixed with a regression test proven red against the
+pre-fix code; the file's mutation score went from 63.64% to 82.50%, the remainder documented
+as equivalent.
 
 ---
 

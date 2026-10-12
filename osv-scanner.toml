@@ -1,8 +1,24 @@
 # OSV-Scanner ignore config — Evangelismo Digital Backend
 #
-# Every entry below has a real upstream fix, but not one safe to take right
-# now. Revisit periodically (aim: within ~90 days) rather than treating these
-# as permanent.
+# Revisit periodically (aim: within ~90 days) rather than treating these as
+# permanent. Each entry carries its own reasoning and its own re-check command.
+#
+# REVISIT TRIGGER — two of the three entries clear on the SAME event: a snyk
+# release whose BUNDLED global-agent reaches 4.x. global-agent 4 dropped roarr
+# entirely, and roarr 2.x is what drags in both the vulnerable semver
+# (GHSA-c2qf-rxjj-qqgw) and sprintf-js (GHSA-hp3w-g68c-fv3c). Until then neither
+# can be fixed OR overridden, because snyk declares
+# `bundleDependencies: ["global-agent", "roarr", "boolean"]` and npm cannot
+# rewrite what ships inside a package's own tarball. After any snyk bump:
+#
+#     npm ls sprintf-js semver
+#
+# If both come back clean, delete those two entries. The third
+# (GHSA-6w3j-5fw6-r9vr, @hapi/joi) is independent and tracks
+# cpf-cnpj-validator.
+#
+# Note that two of the three have NO upstream fix at all, so "wait for a patch"
+# is not the plan for them — see each reason block.
 #
 # (The two @hono/node-server entries that used to live here were dropped once
 # prisma 7.9.1 removed that transitive dependency entirely.)
