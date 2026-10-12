@@ -73,10 +73,16 @@ function readSigned(request: FastifyRequest, name: string): string | null {
  * request arrived with `visitorId === undefined`, which slipped past a
  * `=== null` guard and reached the database as a null visitor id.
  *
- * `fp` applies this to the ENCLOSING scope, which is `analyticsRoutes` — itself
- * registered under a prefix and therefore already its own encapsulation context.
- * The boundary that keeps /health free of Set-Cookie is that registration, not
- * this one. Item 4 stays fixed; the hook now actually runs.
+ * `fp` applies this to the ENCLOSING scope. That scope is `ingestionRoutes`,
+ * NOT `analyticsRoutes`: `analyticsRoutes` registers `ingestionRoutes` and
+ * `adminReadRoutes` as SIBLINGS, so this preHandler runs for the ingestion
+ * routes and never for the admin read routes. That is harmless —
+ * `GET /visitors/:visitorId` takes the id from `request.params`, not from a
+ * cookie — but it is not what this comment claimed until 2026-10-12, and a
+ * reader who believed it would expect `request.visitorId` to be populated on
+ * the admin routes. The boundary that keeps /health free of Set-Cookie is the
+ * route registration, not this one. Item 4 stays fixed; the hook now actually
+ * runs where it is meant to.
  */
 const analyticsIdentityPlugin: FastifyPluginAsync = async (app) => {
   app.decorateRequest('visitorId', null)
