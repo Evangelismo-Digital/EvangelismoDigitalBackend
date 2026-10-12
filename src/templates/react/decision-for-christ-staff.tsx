@@ -16,7 +16,7 @@ export function DecisionForChristStaffEmail({
   email,
   location,
   ipAddress,
-}: DecisionForChristStaffEmailProps) {
+}: Readonly<DecisionForChristStaffEmailProps>) {
   return (
     <EmailLayout headerTitle="Nova Decisão por Cristo!">
       <Section className="text-gray-700 text-[16px]">

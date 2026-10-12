@@ -6,7 +6,7 @@ interface ContactUserEmailProps {
   name: string
 }
 
-export function ContactUserEmail({ name }: ContactUserEmailProps) {
+export function ContactUserEmail({ name }: Readonly<ContactUserEmailProps>) {
   return (
     <EmailLayout
       headerTitle="Evangelismo Digital"

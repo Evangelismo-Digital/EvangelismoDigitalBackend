@@ -2455,7 +2455,12 @@ Equipe ${appName}
 // src/templates/react/forgot-password.tsx
 var import_components6 = require("@react-email/components");
 var import_jsx_runtime6 = require("react/jsx-runtime");
-function ForgotPasswordEmail({ userName, resetUrl, appName, expiresInMinutes }) {
+function ForgotPasswordEmail({
+  userName,
+  resetUrl,
+  appName,
+  expiresInMinutes
+}) {
   return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(EmailLayout, { headerTitle: "Recupera\xE7\xE3o de Senha", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_components6.Section, { className: "text-gray-700 text-[16px]", children: [
     /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_components6.Heading, { className: "text-[20px] font-semibold mb-[20px] m-0", children: [
       "Ol\xE1, ",
@@ -2514,8 +2519,8 @@ var PasswordResetDispatchStrategy = class {
           to: email,
           subject: EMAIL_CONSTANTS.PASSWORD_RECOVERY_SUBJECT,
           message: forgotPasswordTextTemplate(name, token),
-          html,
-          context: { type: "password-reset", recipient: "user" }
+          context: { type: "password-reset", recipient: "user" },
+          html
         }
       ],
       jobOptions: {

@@ -6,7 +6,7 @@ interface DecisionForChristUserEmailProps {
   name: string
 }
 
-export function DecisionForChristUserEmail({ name }: DecisionForChristUserEmailProps) {
+export function DecisionForChristUserEmail({ name }: Readonly<DecisionForChristUserEmailProps>) {
   return (
     <EmailLayout headerTitle="Evangelismo Digital">
       <Section className="text-gray-700 text-[16px]">

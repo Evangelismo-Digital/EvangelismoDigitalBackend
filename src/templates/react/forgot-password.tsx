@@ -9,7 +9,12 @@ interface ForgotPasswordEmailProps {
   expiresInMinutes: number
 }
 
-export function ForgotPasswordEmail({ userName, resetUrl, appName, expiresInMinutes }: ForgotPasswordEmailProps) {
+export function ForgotPasswordEmail({
+  userName,
+  resetUrl,
+  appName,
+  expiresInMinutes,
+}: Readonly<ForgotPasswordEmailProps>) {
   return (
     <EmailLayout headerTitle="Recuperação de Senha">
       <Section className="text-gray-700 text-[16px]">

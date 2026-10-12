@@ -34,14 +34,15 @@ describe('abortRace', () => {
     const ac = new AbortController()
     const signal = ac.signal
 
-    const promise = Promise.resolve('ok')
-    await abortRace(promise, signal, () => 'aborted')
+    const result = await abortRace(Promise.resolve('ok'), signal, () => 'aborted')
 
-    // addAbortListener should have been cleaned up if it was a promise resolution.
-    // wait a tick just in case
-    await new Promise((r) => setTimeout(r, 0))
-    // We can't directly check the listener count on AbortSignal in standard web APIs,
-    // but the test shouldn't leave unhandled things.
+    // O comentário anterior dizia que a contagem de listeners não era
+    // observável e o teste não afirmava nada — um teste que passa com a função
+    // esvaziada. `getEventListeners` do node:events observa exatamente isso, e
+    // o vazamento importa: um deadline reaproveitado acumularia um listener por
+    // chamada.
+    expect(result).toBe('ok')
+    expect(getEventListeners(signal, 'abort')).toHaveLength(0)
   })
 })
 

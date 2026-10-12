@@ -9,7 +9,7 @@ interface ContactStaffEmailProps {
   ipAddress?: string
 }
 
-export function ContactStaffEmail({ name, lastName, email, ipAddress }: ContactStaffEmailProps) {
+export function ContactStaffEmail({ name, lastName, email, ipAddress }: Readonly<ContactStaffEmailProps>) {
   return (
     <EmailLayout headerTitle="Boas notícias!">
       <Heading className="text-[20px] font-semibold text-gray-800 text-center mb-[20px]">

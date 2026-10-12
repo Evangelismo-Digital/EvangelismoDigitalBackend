@@ -42,8 +42,8 @@ export class PasswordResetDispatchStrategy implements IOutboxDispatchStrategy {
           to: email,
           subject: EMAIL_CONSTANTS.PASSWORD_RECOVERY_SUBJECT,
           message: forgotPasswordTextTemplate(name, token),
-          html,
           context: { type: 'password-reset', recipient: 'user' },
+          html,
         },
       ],
       jobOptions: {

@@ -7,7 +7,7 @@ interface EmailLayoutProps {
   footerContent?: React.ReactNode
 }
 
-export function EmailLayout({ headerTitle, children, footerContent }: EmailLayoutProps) {
+export function EmailLayout({ headerTitle, children, footerContent }: Readonly<EmailLayoutProps>) {
   return (
     <Html>
       <Tailwind>
