@@ -84,6 +84,7 @@ npm run test:e2e:users
 npm run test:integration:cache        # Redis-only cache suite (in CI)
 npm run test:integration:repositories # Postgres/PostGIS repository contract (in CI)
 npm run test:integration:full         # everything, opt-in, not in CI
+npx vitest run --project integration-jobs  # Redis-only BullMQ scheduler suite (in CI)
 npm run test:coverage
 npm run test:ui
 
@@ -94,6 +95,8 @@ npx vitest run --project unit-users src/use-cases/users/reset-password-use-case.
 E2E projects use a custom Vitest environment (`prisma/vitest-environment-prisma/prisma-docker-environment.ts`) and require the Docker Postgres/Redis stack to be running (`docker-compose up`). When running the API on the host (`npm run dev`), Redis must be reachable at `localhost:6379` — the `redis` hostname only resolves inside the Docker network.
 
 `unit-repositories` deliberately excludes `*.integration.spec.ts`: the Prisma/PostGIS contract suite used to be collected there, which made `npm run test:unit:all` — the Docker-free gate the pre-commit hook runs — fail the moment the database container stopped. It now runs as its own `integration-repositories` project, which **is** in both CI allowlists, so the coverage did not move, only the label.
+
+Three integration projects are cheap enough to gate every push and are listed in **both** `ci.yml` and `scripts/ci-local.sh` (keep them in lockstep): `integration-cache` (Redis only, `src/lib/infra/cache`), `integration-jobs` (Redis only, `src/lib/infra/jobs`) and `integration-repositories` (Postgres only, `src/repositories`). They are split by the infrastructure they need, which is what keeps them out of the Docker-free unit gate. The catch-all `integration` project — `*.integration.spec.ts` anywhere under `src`, using the Prisma Docker environment — is opt-in and **not** in CI; `src/lib/mail/nodemailer-mail-sender.integration.spec.ts` (real SMTP dialogue over `node:net`) lives there.
 
 The CI coverage step uses an explicit project **allowlist** that omits `e2e-api-providers-fallback-strategy` and `e2e-users`, so those two projects do not run in CI. `e2e-api-providers-fallback-strategy` calls **live** geocoding APIs (LocationIQ, Nominatim, ViaCEP, BrasilAPI) and needs two things set up before it can be green locally:
 
@@ -242,6 +245,8 @@ The instance is provisioned **from code** (`scripts/sonar-configure.mjs`), idemp
 
 The scan is deliberately **not** `--all-projects`: that walks the `.stryker-tmp` mutation sandboxes, whose stale lockfiles produced 102 findings against versions the project no longer uses.
 
+**Dependency advisories** are gated by OSV-Scanner. Accepted ones are baselined in `osv-scanner.toml`, each with the reason _and_ its re-check command — two of the current three cannot be fixed or even overridden, because `snyk` ships `global-agent`/`roarr` as `bundleDependencies` and npm cannot rewrite what lives inside a package's own tarball. Read the header there before adding or removing an entry; OSV also prints "has unused ignores" for entries that are in fact working, so cross-check against the "Filtered N vulnerabilities" line rather than deleting on that message alone.
+
 **Duplication** is gated by `jscpd` (`npm run check:duplication`, threshold 3 % in `.jscpd.json`), because SonarQube's token-level CPD misses restructured copy-paste: it scored the project at 0.7 % while two provider chains were 21 % duplicated.
 
 **Snyk Code** adds semantic/taint analysis — it follows user-controlled values through the call graph, reaching injection and traversal bugs that only appear when source and sink are several functions apart. It needs a credential: `export SNYK_TOKEN=<token>` locally, or the `SNYK_TOKEN` repository secret in CI. Without it the stage **skips loudly** and the report marks it as not-run, because a report that certifies a scan which never happened is worse than a red pipeline.
@@ -261,7 +266,9 @@ Husky hooks (installed automatically by `npm install` via the `prepare` script) 
 - **pre-commit** (~1–2 min): `lint-staged` (ESLint + Prettier autofix on staged files), gitleaks scan of the staged diff, whole-project typecheck, and all unit-test projects (`npm run test:unit:all` — no Docker needed).
 - **pre-push** (~8–15 min): `npm run ci:local` (`scripts/ci-local.sh`) — a 1:1 mirror of every CI job, including the security scanners (Docker images pinned to the same versions as ci.yml), the drift check + unit/e2e suite with coverage, the tsup build (into gitignored `.ci-local/dist`, since `dist/` is tracked), and the Docker image build + `/health/` smoke test. Requires Docker; starts the compose stack itself; refuses the smoke test if something else is on port 3333.
 
-Keep `scripts/ci-local.sh` and `ci.yml` in lockstep when changing either (the vitest project allowlist especially). Escape hatch for emergencies: `--no-verify` — but the branch will still fail on GitHub, so prefer fixing locally.
+Both hooks source `.husky/use-nvmrc-node.sh` first, which puts the `.nvmrc` Node at the front of `PATH` so they run on the same version as CI rather than whatever the developer's shell defaults to. It resolves the version directory instead of sourcing `nvm.sh`, because git runs hooks under `/bin/sh` (dash on Debian/WSL) where loading nvm is slow and unreliable; it is a no-op for anyone on fnm/volta/asdf, warns when the running version still differs, and `HUSKY_SKIP_NODE_PIN=1` turns it off. Without it the hooks silently used a different Node **and npm** than every other command.
+
+Keep `scripts/ci-local.sh` and `ci.yml` in lockstep when changing either (the vitest project allowlist especially). Escape hatch for emergencies: `--no-verify` — but the branch will still fail on GitHub, so prefer fixing locally. Note `ci:local` is slow mostly because of its last stage: the Docker image build plus smoke test can take ~35 min cold, a few minutes warm.
 
 ## Path aliases
 
@@ -312,9 +319,21 @@ External API integrations under `src/providers/` use a two-level resilience desi
 
 When adding a provider, implement the raw interface, wrap it in the decorator, and add it to the chain; declare its `failureMode` on the errors it produces rather than special-casing in the chain.
 
-### Background jobs (outbox + mail worker)
+### Background jobs (outbox, mail worker, scheduled maintenance)
 
-`src/worker.ts` is a separate process running: a BullMQ mail worker (`@lib/workers/mail-worker`), an `OutboxProcessor` driven both by a Redis pub/sub signal (`OutboxSignal`) for low latency and a `node-cron` sweep (`startOutboxCron`) as a safety net. The outbox pattern (`src/use-cases/outbox-event`, `OutboxEventStatus` in Prisma) guarantees at-least-once delivery of async side-effects (e.g. emails). `OutboxProcessor` uses a `DistributedLock` (Redis) to avoid duplicate processing. Note the documented horizontal-scaling caveat in `worker.ts`: multiple worker pods would each run the cron and contend on the lock — leader election is the suggested fix before scaling out.
+`src/worker.ts` is a separate process running three things:
+
+1. **The mail worker** (`@lib/workers/mail-worker`) — a BullMQ worker over `QUEUE.NAMES.MAIL`.
+2. **`OutboxProcessor`**, driven by a Redis pub/sub signal (`OutboxSignal`) for low latency. The outbox pattern (`src/use-cases/outbox-event`, `OutboxEventStatus` in Prisma) guarantees at-least-once delivery of async side-effects (e.g. emails), and `OutboxProcessor` uses a `DistributedLock` (Redis) to avoid duplicate processing.
+3. **Scheduled maintenance**, on BullMQ **Job Schedulers** — not `node-cron`, which was removed. `startMaintenanceScheduler` (`@lib/infra/jobs/maintenance-scheduler`) upserts four schedulers onto `QUEUE.NAMES.MAINTENANCE`, and `startMaintenanceWorker` (`@lib/infra/jobs/maintenance-worker`) consumes them.
+
+The four schedules and their stable ids live in `QUEUE.SCHEDULER_IDS` / `CRON_SCHEDULES`: a 5-minute sweep, the midnight safety scan, the outbox retention purge at 03:00 and the analytics retention purge at 04:00. Each schedule is **one job with its phases inside**, never a job per phase, because the ordering between phases is load-bearing — the 5-minute sweep must expire events _before_ dispatching pending ones, or a just-expired PENDING would be emailed as a dead link.
+
+No timezone is passed to `upsertJobScheduler` **on purpose**: BullMQ's cron-parser, like node-cron before it, resolves the pattern in the process-local zone, so naming a zone would move the windows in production (the container runs UTC). Adding one is a behaviour change, not a clarification.
+
+**Failure policy** (`maintenance-worker.ts`): every phase runs even when an earlier one fails — a failing phase must not block the next — and the handler only decides afterwards. If any phase failed and attempts remain, it throws so BullMQ retries with backoff; on the final attempt it logs, reports to Sentry and swallows, leaving the next scheduled tick as the safety net. Sentry therefore sees terminal failures only, matching the mail worker's policy. One consequence to know: a swallowed final attempt completes rather than fails, so `bullmq_jobs{state="failed"}` never shows maintenance — `outbox_cron_failures_total{phase,outcome}` does, and the `MaintenancePhase*` alerts in `prometheus/alerts.yml` fire on it.
+
+**Horizontal scaling.** Scheduled work is now safe under N pods: a Job Scheduler lives in Redis, every pod upserts the same id, and BullMQ emits one job per tick regardless of pod count. No leader election needed — the claim is proven in `maintenance-scheduler.redis-integration.spec.ts`. **Still open:** `OutboxSignal.subscribe` is pub/sub fan-out, so N pods would each receive the same event; today the safety comes from the deterministic BullMQ `jobId` (dedup) and idempotent `updateStatus`, not from a lock. Start there before adding a second worker pod.
 
 ### Repositories & testing doubles
 
@@ -328,5 +347,7 @@ Each aggregate has a repository interface in `src/core/contracts/repository/`, a
 - Sentry is initialized first thing in both `server.ts` and `worker.ts` (no-ops without `SENTRY_DSN`).
 - PostGIS is required (used for nearest-church geospatial queries); the DB image is `postgis/postgis`.
 - Metrics: both `server.ts` and `worker.ts` start a dedicated Prometheus endpoint via `src/metrics-server.ts`, toggled by `METRICS_ENABLED` (ports `METRICS_API_PORT`/`METRICS_WORKER_PORT`, default 9091/9092). On shutdown the metrics server is stopped **last** so telemetry stays available while the app drains; `stopMetricsServer` is a safe no-op if it never started.
-- Observability stack (Prometheus/Grafana/Alertmanager, `fastify-metrics`/`prom-client`) — see `docs/prometheus_grafana.md`.
+- Observability stack (Prometheus/Grafana/Alertmanager, `fastify-metrics`/`prom-client`): the compose file is `docker-compose.monitoring.yml`, alert rules are `prometheus/alerts.yml`, dashboards are under `grafana/`, and the counters/gauges are declared in `src/lib/metrics/` (one module per area — `outbox-metrics.ts`, `email-metrics.ts`, `bullmq-metrics.ts`, `analytics-metrics.ts`, `lock-metrics.ts`). `scripts/verify-monitoring.sh` checks the stack end to end.
+- Mail (`src/lib/mail/nodemailer-mail-sender.ts`): nodemailer runs **pooled** (`SMTP_POOL_*`), because the worker sends in batches and one connection per message makes a batch slow enough to outlive the job lock. Sending is wrapped in a cockatiel `SamplingBreaker` configured from its own `SMTP_CIRCUIT_BREAKER_*` vars — deliberately _not_ the `CIRCUIT_BREAKER_*` shared with the providers, whose traffic profile is nothing alike and whose kill switch would otherwise disable the mail breaker too. Opening the circuit also drops the cached transporter, since the pooled sockets of an SMTP that just failed in series are not worth keeping. Nothing is lost while the circuit is open: the failure reaches the mail worker, which turns it into a BullMQ retry, and the event stays in the outbox.
+- Email templates are **React Email** (`src/templates/react/*.tsx`, shared `layout.tsx`), rendered with `@react-email/render` from the dispatch strategies. React escapes interpolation by construction, which is the security property the old raw template literals lacked — the rendering specs next to each strategy assert it, each paired with a counterweight so that over-escaping (which mangles accented Brazilian names) fails too. The plaintext part still comes from the `*-text.ts` templates. `knip.json` must keep following `.tsx` or the dead-code gate stops seeing these files.
 - Deployment: `Dockerfile` (multi-stage; prod image only copies `@prisma/client`/`.prisma` from node_modules), `deploy.sh`, and PM2 `ecosystem.config.js` for the VPS target.
