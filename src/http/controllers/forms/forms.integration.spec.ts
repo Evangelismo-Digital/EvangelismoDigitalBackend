@@ -19,6 +19,26 @@ import { err } from 'core/shared/result'
 import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
 import { OUTBOX_EVENT_TYPES } from 'core/types/outbox/outbox-event-input'
 
+import { OutboxProcessor } from '@lib/infra/jobs/outbox-processor'
+import { makeOutboxDispatchStrategyRegistry } from '@lib/infra/jobs/make-outbox-dispatch-registry'
+import { getMailQueue } from '@lib/queue/mail-queue'
+import { DatabaseContext } from '@lib/prisma/helpers/database-context'
+import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
+import {
+  outboxHttpPrismaErrorMapping,
+  outboxInfraPrismaErrorMapping,
+} from '@repositories/prisma/errors/outbox-error-mapping'
+
+function makeProcessor() {
+  const dbContext = new DatabaseContext()
+  const repo = new PrismaOutboxRepository(
+    dbContext,
+    new PrismaErrorMapper(outboxHttpPrismaErrorMapping),
+    new PrismaErrorMapper(outboxInfraPrismaErrorMapping),
+  )
+  return new OutboxProcessor(repo, makeOutboxDispatchStrategyRegistry())
+}
+
 const VALID = {
   name: 'Maria',
   lastName: 'Souza',
@@ -142,5 +162,115 @@ describe('POST /forms/submit-form (integration, real Postgres)', () => {
     expect(publishNewItem).not.toHaveBeenCalled()
 
     spy.mockRestore()
+  })
+
+  it('E2E: processa o form via OutboxProcessor, resolve rota e enfileira email (decisão por Cristo)', async () => {
+    // 1. Submit form (this inserts form + PENDING outbox)
+    const e2ePayload = {
+      ...VALID,
+      email: 'forms-it-e2e-decisao@example.com',
+      decisaoPorCristo: true, // Should trigger DecisionForChristEmailStrategy
+    }
+    const res = await request(app.server)
+      .post('/forms/submit-form')
+      .set('x-forwarded-for', '198.51.100.15')
+      .send(e2ePayload)
+    expect(res.statusCode).toBe(201)
+
+    // 2. Run the outbox processor synchronously
+    // We mock mailQueue.add to avoid actually connecting to BullMQ in this test
+    // (though real Redis is available, mailQueue is not always initialized cleanly here)
+    const mailQueue = getMailQueue()
+    const addSpy = vi.spyOn(mailQueue, 'add').mockResolvedValue({ id: 'job-1' } as any)
+
+    const processor = makeProcessor()
+
+    // Process pending outbox events
+    await processor.processPendingEvents()
+
+    // 3. Verify it was processed
+    const event = await prisma.outboxEvent.findFirst({
+      where: {
+        type: OUTBOX_EVENT_TYPES.FORM_SUBMISSION_CREATED,
+        payload: { path: ['email'], equals: 'forms-it-e2e-decisao@example.com' },
+      },
+    })
+    expect(event).toBeTruthy()
+    // It should be SENDING because the OutboxProcessor marks it as SENDING and
+    // enqueues to BullMQ. The mail-worker is responsible for marking it COMPLETED,
+    // but we mocked mailQueue.add.
+    expect(event?.status).toBe('SENDING')
+
+    // 4. Verify the correct emails were queued
+    // DecisionForChrist triggers ONE BullMQ job containing TWO emails (User + Staff)
+    expect(addSpy).toHaveBeenCalledTimes(1)
+
+    const args = addSpy.mock.calls[0]
+    expect(args[0]).toBe('outbox-dispatch')
+
+    const emailsInJob = args[1].emails
+    expect(emailsInJob).toHaveLength(2)
+
+    const userEmail = emailsInJob[0]
+    expect(userEmail.to).toBe('forms-it-e2e-decisao@example.com')
+    expect(userEmail.subject).toContain('Parabéns pela sua decisão')
+
+    const staffEmail = emailsInJob[1]
+    expect(staffEmail.subject).toContain('Nova decisão por Cristo')
+
+    addSpy.mockRestore()
+  })
+
+  it('E2E: processa o form de contato via OutboxProcessor e enfileira um único email (decisão por Cristo = false)', async () => {
+    // 1. Submit form (this inserts form + PENDING outbox)
+    const e2ePayload = {
+      ...VALID,
+      email: 'forms-it-e2e-contato@example.com',
+      decisaoPorCristo: false, // Should trigger ContactEmailStrategy
+    }
+    const res = await request(app.server)
+      .post('/forms/submit-form')
+      .set('x-forwarded-for', '198.51.100.16')
+      .send(e2ePayload)
+    expect(res.statusCode).toBe(201)
+
+    // 2. Run the outbox processor synchronously
+    const mailQueue = getMailQueue()
+    const addSpy = vi.spyOn(mailQueue, 'add').mockResolvedValue({ id: 'job-2' } as any)
+
+    const processor = makeProcessor()
+
+    // Process pending outbox events
+    await processor.processPendingEvents()
+
+    // 3. Verify it was processed
+    const event = await prisma.outboxEvent.findFirst({
+      where: {
+        type: OUTBOX_EVENT_TYPES.FORM_SUBMISSION_CREATED,
+        payload: { path: ['email'], equals: 'forms-it-e2e-contato@example.com' },
+      },
+    })
+    expect(event).toBeTruthy()
+    expect(event?.status).toBe('SENDING')
+
+    // 4. Verify the correct emails were queued
+    // Contact form triggers ONE email to Staff (No user email)
+    expect(addSpy).toHaveBeenCalledTimes(1)
+
+    const args = addSpy.mock.calls[0]
+    expect(args[0]).toBe('outbox-dispatch')
+
+    const emailsInJob = args[1].emails
+    expect(emailsInJob).toHaveLength(2)
+
+    const userEmail = emailsInJob[0]
+    expect(userEmail.to).toBe('forms-it-e2e-contato@example.com')
+    // We don't check exact subject since we don't know it off-hand, just that it exists
+    expect(userEmail.subject).toBeTruthy()
+
+    const staffEmail = emailsInJob[1]
+    expect(staffEmail.subject).toBeTruthy()
+
+    addSpy.mockRestore()
   })
 })

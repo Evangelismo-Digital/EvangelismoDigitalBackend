@@ -1,3 +1,4 @@
+import { ZodRequest } from '@http/types/zod-request'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { logger } from '@lib/logger'
 import { makeDeleteUserUseCase } from '@use-cases/factories/make-delete-user-use-case'
@@ -22,8 +23,11 @@ export async function deleteUser(request: FastifyRequest, reply: FastifyReply) {
   return reply.code(HTTP_STATUS.NO_CONTENT).send()
 }
 
-export async function deleteUserByPublicId(request: FastifyRequest, reply: FastifyReply) {
-  const { publicId } = publicIdSchema.parse(request.params)
+export async function deleteUserByPublicId(
+  request: ZodRequest<{ params: typeof publicIdSchema }>,
+  reply: FastifyReply,
+) {
+  const { publicId } = request.params
 
   const deleteUserUseCase = makeDeleteUserUseCase()
 

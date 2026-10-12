@@ -20,33 +20,31 @@ async function shutdown() {
   await stopMetricsServer()
 }
 
-// Register close-with-grace for signal-based shutdowns (SIGTERM, SIGINT)
-closeWithGrace({ delay: 10000 }, async ({ signal, err }) => {
-  if (err) {
-    await crashShutdown(err, shutdown)
-  } else {
-    // `signal` is undefined when the shutdown was triggered programmatically
-    // rather than by a signal, and `${undefined}` would print the word.
-    logger.info({ signal }, `Sinal ${signal ?? 'desconhecido'} recebido. Encerrando o servidor graciosamente...`)
-    await shutdown()
-    logger.info('Servidor encerrado graciosamente.')
-    process.exit(0)
-  }
-})
-
-// Unhandled Promise Rejections & Uncaught Exceptions
-//
-// `void` rather than `await`: these handlers are synchronous by contract, and
-// crashShutdown never rejects — it swallows both cleanup and Sentry failures
-// and always ends in process.exit(1). Marking the discard explicit is the point;
-// a bare call reads as an oversight.
-process.on('unhandledRejection', (reason) => {
-  void crashShutdown(reason, shutdown)
-})
-
-process.on('uncaughtException', (error) => {
-  void crashShutdown(error, shutdown)
-})
+closeWithGrace(
+  {
+    delay: 15_000,
+    onTimeout: () => {
+      logger.fatal('O tempo limite de limpeza para encerramento expirou após 15s. Forçando a saída.')
+    },
+  },
+  async ({ signal, err }) => {
+    if (err) {
+      try {
+        await shutdown()
+        logger.info('Limpeza de encerramento por travamento concluída com sucesso.')
+      } catch (cleanupError) {
+        logger.error({ err: cleanupError }, 'Ocorreu um erro durante a limpeza de encerramento por travamento')
+      }
+      await crashShutdown(err)
+    } else {
+      // \`signal\` is undefined when the shutdown was triggered programmatically
+      // rather than by a signal, and \`\${undefined}\` would print the word.
+      logger.info({ signal }, `Sinal ${signal ?? 'desconhecido'} recebido. Encerrando o servidor graciosamente...`)
+      await shutdown()
+      logger.info('Servidor encerrado graciosamente.')
+    }
+  },
+)
 
 async function start() {
   try {
@@ -61,7 +59,7 @@ async function start() {
       captureError(metricsErr)
     }
   } catch (err) {
-    await crashShutdown(err, shutdown)
+    await crashShutdown(err)
   }
 }
 

@@ -80,7 +80,7 @@ export class CacheFailurePolicy<E> {
     }
 
     // Fallback reconstruction
-    return new ProviderFailureError(new Error(`Cached Error: ${cached.type} - ${cached.message}`))
+    return new ProviderFailureError(`Cached Error: ${cached.type} - ${cached.message}`)
   }
 
   negativeTtlFor(error: E): number {

@@ -32,7 +32,7 @@ alert rules loaded with no errors (Watchdog firing), Alertmanager config valid, 
 with the Prometheus datasource provisioned. Exits non-zero on the first failing stage. Leaves the stack
 running afterward for the manual checks below.
 
-This script intentionally does **not** run the *full* `npm run ci:local` pipeline — security/license
+This script intentionally does **not** run the _full_ `npm run ci:local` pipeline — security/license
 scanners (gitleaks, semgrep, osv-scanner, trivy), coverage reporting, and its own separate Docker image
 build+smoke test stay a heavier, still-recommended pre-push gate, run separately.
 

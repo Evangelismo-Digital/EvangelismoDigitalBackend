@@ -28,7 +28,7 @@ const basePayload = {
   decisaoPorCristo: false,
 }
 
-describe('FormSubmissionDispatchStrategy', () => {
+describe('FormSubmissionDispatchStrategy', async () => {
   let strategy: FormSubmissionDispatchStrategy
 
   beforeEach(() => {
@@ -36,8 +36,8 @@ describe('FormSubmissionDispatchStrategy', () => {
     strategy = new FormSubmissionDispatchStrategy()
   })
 
-  it('monta dois e-mails (usuário + equipe) sem jobOptions (defaults da fila)', () => {
-    const result = strategy.buildDispatch(makeEvent(basePayload))
+  it('async monta dois e-mails (usuário + equipe) sem jobOptions (defaults da fila)', async () => {
+    const result = await strategy.buildDispatch(makeEvent(basePayload))
 
     expect(isOk(result)).toBe(true)
     if (!isOk(result)) return
@@ -46,39 +46,39 @@ describe('FormSubmissionDispatchStrategy', () => {
     expect(result.value.jobOptions).toBeUndefined()
   })
 
-  it('roteia decisaoPorCristo=true para DecisionForChristEmailStrategy', () => {
+  it('async roteia decisaoPorCristo=true para DecisionForChristEmailStrategy', async () => {
     const decisionSpy = vi.spyOn(DecisionForChristEmailStrategy.prototype, 'buildUserEmail')
     const contactSpy = vi.spyOn(ContactEmailStrategy.prototype, 'buildUserEmail')
 
-    strategy.buildDispatch(makeEvent({ ...basePayload, decisaoPorCristo: true }))
+    await strategy.buildDispatch(makeEvent({ ...basePayload, decisaoPorCristo: true }))
 
     expect(decisionSpy).toHaveBeenCalledOnce()
     expect(contactSpy).not.toHaveBeenCalled()
   })
 
-  it('roteia decisaoPorCristo=false para ContactEmailStrategy', () => {
+  it('async roteia decisaoPorCristo=false para ContactEmailStrategy', async () => {
     const decisionSpy = vi.spyOn(DecisionForChristEmailStrategy.prototype, 'buildUserEmail')
     const contactSpy = vi.spyOn(ContactEmailStrategy.prototype, 'buildUserEmail')
 
-    strategy.buildDispatch(makeEvent(basePayload))
+    await strategy.buildDispatch(makeEvent(basePayload))
 
     expect(contactSpy).toHaveBeenCalledOnce()
     expect(decisionSpy).not.toHaveBeenCalled()
   })
 
-  it('payload inválido (email ausente): propaga err(InvalidFormPayloadError)', () => {
-    const result = strategy.buildDispatch(makeEvent({ name: 'João', decisaoPorCristo: false }))
+  it('async payload inválido (email ausente): propaga err(InvalidFormPayloadError)', async () => {
+    const result = await strategy.buildDispatch(makeEvent({ name: 'João', decisaoPorCristo: false }))
 
     expect(isErr(result)).toBe(true)
     if (!isErr(result)) return
     expect(result.error).toBeInstanceOf(InvalidFormPayloadError)
   })
 
-  it('falha no e-mail da equipe: propaga o err sem montar o plano', () => {
+  it('async falha no e-mail da equipe: propaga o err sem montar o plano', async () => {
     const staffError = new InvalidFormPayloadError('form.lastName')
-    vi.spyOn(ContactEmailStrategy.prototype, 'buildStaffEmail').mockReturnValueOnce(err(staffError))
+    vi.spyOn(ContactEmailStrategy.prototype, 'buildStaffEmail').mockResolvedValueOnce(err(staffError))
 
-    const result = strategy.buildDispatch(makeEvent(basePayload))
+    const result = await strategy.buildDispatch(makeEvent(basePayload))
 
     expect(isErr(result)).toBe(true)
     if (!isErr(result)) return

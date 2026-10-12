@@ -8,13 +8,13 @@ Added colocated unit specs for every **logic-bearing module** under `src/` that 
 no direct test, then ran the Stryker mutation gauntlet and closed every killable
 survivor in the new coverage.
 
-| | Before | After |
-|---|---|---|
-| `npm run test:unit:all` — spec files run¹ | 80 | 111 |
-| `npm run test:unit:all` — tests | 696 | 974 |
-| New spec files added / removed | — | +26 / −1² |
-| Mutation score, **new-coverage files** (548 valid mutants) | ~48 % | **96.72 %** |
-| Mutation score, full `src/**` (4 616 valid mutants, report only) | 53.01 % | 53.88 % |
+|                                                                  | Before  | After       |
+| ---------------------------------------------------------------- | ------- | ----------- |
+| `npm run test:unit:all` — spec files run¹                        | 80      | 111         |
+| `npm run test:unit:all` — tests                                  | 696     | 974         |
+| New spec files added / removed                                   | —       | +26 / −1²   |
+| Mutation score, **new-coverage files** (548 valid mutants)       | ~48 %   | **96.72 %** |
+| Mutation score, full `src/**` (4 616 valid mutants, report only) | 53.01 % | 53.88 %     |
 
 ¹ Counted per vitest project, so files in overlapping project `dir`s
 (`unit-use-cases` ∩ `unit-churches`, …) are counted more than once.
@@ -41,34 +41,34 @@ vitest project. Two projects were added and registered in lockstep:
 
 ## 2. New unit specs and their mutation score
 
-| File under test | Spec | Mutants | Score |
-|---|---|---|---|
-| `core/shared/result.ts` | `result.spec.ts` (fast-check) | 9 | 100 % |
-| `providers/helpers/precision-helper.ts` | `precision-helper.spec.ts` (fast-check) | 65 | 96.9 % † |
-| `use-cases/users/helpers/token-hash.ts` | `token-hash.spec.ts` (fast-check) | 3 | 100 % |
-| `use-cases/churches/calculate-church-route-distances-use-case.ts` | `…​.spec.ts` | 41 | 100 % |
-| `use-cases/churches/find-nearby-churches-knn-use-case.ts` | `…​.spec.ts` | 28 | 100 % |
-| `use-cases/decorators/transactional-use-case.decorator.ts` | `…​.spec.ts` | 14 | 100 % |
-| `use-cases/outbox-event/outbox-event-use-case.ts` | `…​.spec.ts` | 2 | 100 % |
-| `use-cases/forms/strategies/contact-email-strategy.ts` | `…​.spec.ts` | 49 | 100 % |
-| `use-cases/forms/strategies/decision-for-christ-email-strategy.ts` | `…​.spec.ts` | 52 | 100 % |
-| `providers/geo-provider/location-iq-provider.ts` | `…​.spec.ts` | 21 | 100 % |
-| `providers/geo-provider/nominatim-provider.ts` | `…​.spec.ts` | 36 | 100 % |
-| `providers/address-provider/awesome-api-provider.ts` | `…​.spec.ts` | 19 | 100 % |
-| `providers/address-provider/brasil-api-provider.ts` | `…​.spec.ts` | 25 | 100 % |
-| `providers/address-provider/viaCep-provider.ts` | `…​.spec.ts` | 17 | 100 % |
-| `providers/church-routing-provider/decorators/resilient-church-routing-provider.decorator.ts` | `…​.spec.ts` | 23 | 100 % |
-| `http/presenters/church-presenter.ts` | `church-presenter.spec.ts` | 12 | 100 % |
-| `http/presenters/user-presenter.ts` | `user-presenter.spec.ts` | 6 | 100 % |
-| `http/middlewares/verify-jwt.middleware.ts` | `…​.spec.ts` | 4 | 100 % |
-| `http/middlewares/verify-user-role.middleware.ts` | `…​.spec.ts` | 12 | 100 % |
-| `errors/http-errors/http-error-mapper.ts` | `…​.spec.ts` | 8 | 100 % |
-| `errors/http-errors/http-error-status.mapper.ts` | `…​.spec.ts` | 3 | 100 % |
-| `errors/http-errors/zod-validation-error.ts` | `…​.spec.ts` | 2 | 100 % |
-| `errors/app-error-registry.ts` | `app-error-registry.spec.ts` | 67 | 76.1 % † |
-| `lib/prisma/utils/prisma-error-mapper.ts` | `prisma-error-mapper.spec.ts` | 10 | 100 % |
-| `lib/infra/jobs/make-outbox-dispatch-registry.ts` | `make-outbox-dispatch-registry.spec.ts` | 4 | 100 % |
-| `repositories/prisma/errors/{users,churches,forms,outbox}-error-mapping.ts` | `error-mappings.spec.ts` | 16 | 100 % |
+| File under test                                                                               | Spec                                    | Mutants | Score    |
+| --------------------------------------------------------------------------------------------- | --------------------------------------- | ------- | -------- |
+| `core/shared/result.ts`                                                                       | `result.spec.ts` (fast-check)           | 9       | 100 %    |
+| `providers/helpers/precision-helper.ts`                                                       | `precision-helper.spec.ts` (fast-check) | 65      | 96.9 % † |
+| `use-cases/users/helpers/token-hash.ts`                                                       | `token-hash.spec.ts` (fast-check)       | 3       | 100 %    |
+| `use-cases/churches/calculate-church-route-distances-use-case.ts`                             | `…​.spec.ts`                            | 41      | 100 %    |
+| `use-cases/churches/find-nearby-churches-knn-use-case.ts`                                     | `…​.spec.ts`                            | 28      | 100 %    |
+| `use-cases/decorators/transactional-use-case.decorator.ts`                                    | `…​.spec.ts`                            | 14      | 100 %    |
+| `use-cases/outbox-event/outbox-event-use-case.ts`                                             | `…​.spec.ts`                            | 2       | 100 %    |
+| `use-cases/forms/strategies/contact-email-strategy.ts`                                        | `…​.spec.ts`                            | 49      | 100 %    |
+| `use-cases/forms/strategies/decision-for-christ-email-strategy.ts`                            | `…​.spec.ts`                            | 52      | 100 %    |
+| `providers/geo-provider/location-iq-provider.ts`                                              | `…​.spec.ts`                            | 21      | 100 %    |
+| `providers/geo-provider/nominatim-provider.ts`                                                | `…​.spec.ts`                            | 36      | 100 %    |
+| `providers/address-provider/awesome-api-provider.ts`                                          | `…​.spec.ts`                            | 19      | 100 %    |
+| `providers/address-provider/brasil-api-provider.ts`                                           | `…​.spec.ts`                            | 25      | 100 %    |
+| `providers/address-provider/viaCep-provider.ts`                                               | `…​.spec.ts`                            | 17      | 100 %    |
+| `providers/church-routing-provider/decorators/resilient-church-routing-provider.decorator.ts` | `…​.spec.ts`                            | 23      | 100 %    |
+| `http/presenters/church-presenter.ts`                                                         | `church-presenter.spec.ts`              | 12      | 100 %    |
+| `http/presenters/user-presenter.ts`                                                           | `user-presenter.spec.ts`                | 6       | 100 %    |
+| `http/middlewares/verify-jwt.middleware.ts`                                                   | `…​.spec.ts`                            | 4       | 100 %    |
+| `http/middlewares/verify-user-role.middleware.ts`                                             | `…​.spec.ts`                            | 12      | 100 %    |
+| `errors/http-errors/http-error-mapper.ts`                                                     | `…​.spec.ts`                            | 8       | 100 %    |
+| `errors/http-errors/http-error-status.mapper.ts`                                              | `…​.spec.ts`                            | 3       | 100 %    |
+| `errors/http-errors/zod-validation-error.ts`                                                  | `…​.spec.ts`                            | 2       | 100 %    |
+| `errors/app-error-registry.ts`                                                                | `app-error-registry.spec.ts`            | 67      | 76.1 % † |
+| `lib/prisma/utils/prisma-error-mapper.ts`                                                     | `prisma-error-mapper.spec.ts`           | 10      | 100 %    |
+| `lib/infra/jobs/make-outbox-dispatch-registry.ts`                                             | `make-outbox-dispatch-registry.spec.ts` | 4       | 100 %    |
+| `repositories/prisma/errors/{users,churches,forms,outbox}-error-mapping.ts`                   | `error-mappings.spec.ts`                | 16      | 100 %    |
 
 † = remaining survivors are all **equivalent mutants** — see §4.
 
@@ -82,13 +82,13 @@ was added and a draft duplicate was removed.
 The first full run left 39 survivors across the new-coverage files. All
 genuinely-killable ones were closed by tightening assertions:
 
-| File | Survivor(s) | Fix |
-|---|---|---|
-| `contact-email-strategy.ts` / `decision-for-christ-email-strategy.ts` | `'form.name'` / early-return `ConditionalExpression` in `buildStaffEmail`; `typeof form.ipAddress === 'string'` ternary; `(value as string) \|\| ''` in `getOptionalStringField` | Added: bad-email/bad-name cases for `buildStaffEmail`; a **numeric `ipAddress`** case asserting the value never reaches the rendered body; "absent optional field ≡ empty-string field" deep-equality plus `not.toContain('Stryker'/'undefined')`; assert `lastName`/`location` reach the HTML. |
-| `nominatim-provider.ts` | `searchRaw` params `ObjectLiteral`; `'/search'` `StringLiteral`; `cleanParams` `value !== null` `ConditionalExpression` | Assert `searchRaw` calls `get('/search', { params: { q, format } })`; add a `null`-valued param and assert it is stripped while non-filtered params survive. |
-| `location-iq` / `nominatim` / `awesome-api` / `brasil-api` / `viaCep` providers | constructor config `ObjectLiteral` mutants (`createHttpClient({…})`, `headers`, `agentOptions`, `params`) | Added a "wires the HTTP client" test per provider asserting `createHttpClient` is called with `baseURL`, a numeric `timeout`, `agentOptions.maxSockets`, and the auth-token `params` / `User-Agent` header. |
-| `resilient-church-routing-provider.decorator.ts` | `'routing'` `StringLiteral` on the aborted-signal path; `endTimer?.()` `OptionalChaining` in `catch` | Assert `recordProviderRequest('routing', …)` on the aborted path; add two tests with `collectMetricsProviderLatency.startTimer` returning `undefined` so the optional call is exercised on both success and failure paths. |
-| `app-error-registry.ts` | `InvalidCepError` `/\b\d{8}\b/ \|\| /\d{8}/` fallback + `?.[0]`; `CepToLatLonError` `/\d+/ \|\| ''`; `ServiceBusyError` `data?.body?.provider` optional chaining; `serializeAppError` `.data \|\| err` | Added: 8 digits embedded in text (word-boundary regex fails, fallback matches); a stray single digit next to an 8-digit run (proves the `{8}` quantifier); message with no digits (empty/undefined CEP branch); `data` present but `body` absent (optional-chaining safety); `serializeAppError` on an error that carries an explicit `.data` vs one that does not. |
+| File                                                                            | Survivor(s)                                                                                                                                                                                            | Fix                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contact-email-strategy.ts` / `decision-for-christ-email-strategy.ts`           | `'form.name'` / early-return `ConditionalExpression` in `buildStaffEmail`; `typeof form.ipAddress === 'string'` ternary; `(value as string) \|\| ''` in `getOptionalStringField`                       | Added: bad-email/bad-name cases for `buildStaffEmail`; a **numeric `ipAddress`** case asserting the value never reaches the rendered body; "absent optional field ≡ empty-string field" deep-equality plus `not.toContain('Stryker'/'undefined')`; assert `lastName`/`location` reach the HTML.                                                                     |
+| `nominatim-provider.ts`                                                         | `searchRaw` params `ObjectLiteral`; `'/search'` `StringLiteral`; `cleanParams` `value !== null` `ConditionalExpression`                                                                                | Assert `searchRaw` calls `get('/search', { params: { q, format } })`; add a `null`-valued param and assert it is stripped while non-filtered params survive.                                                                                                                                                                                                        |
+| `location-iq` / `nominatim` / `awesome-api` / `brasil-api` / `viaCep` providers | constructor config `ObjectLiteral` mutants (`createHttpClient({…})`, `headers`, `agentOptions`, `params`)                                                                                              | Added a "wires the HTTP client" test per provider asserting `createHttpClient` is called with `baseURL`, a numeric `timeout`, `agentOptions.maxSockets`, and the auth-token `params` / `User-Agent` header.                                                                                                                                                         |
+| `resilient-church-routing-provider.decorator.ts`                                | `'routing'` `StringLiteral` on the aborted-signal path; `endTimer?.()` `OptionalChaining` in `catch`                                                                                                   | Assert `recordProviderRequest('routing', …)` on the aborted path; add two tests with `collectMetricsProviderLatency.startTimer` returning `undefined` so the optional call is exercised on both success and failure paths.                                                                                                                                          |
+| `app-error-registry.ts`                                                         | `InvalidCepError` `/\b\d{8}\b/ \|\| /\d{8}/` fallback + `?.[0]`; `CepToLatLonError` `/\d+/ \|\| ''`; `ServiceBusyError` `data?.body?.provider` optional chaining; `serializeAppError` `.data \|\| err` | Added: 8 digits embedded in text (word-boundary regex fails, fallback matches); a stray single digit next to an 8-digit run (proves the `{8}` quantifier); message with no digits (empty/undefined CEP branch); `data` present but `body` absent (optional-chaining safety); `serializeAppError` on an error that carries an explicit `.data` vs one that does not. |
 
 Re-run after remediation: new-coverage aggregate **96.72 %** (530 / 548 valid
 mutants killed).
@@ -107,10 +107,10 @@ catalogued here instead.
 
 ### `src/providers/helpers/precision-helper.ts` — 2 equivalents
 
-| Line | Mutator | Mutation | Why equivalent |
-|---|---|---|---|
-| 18 | StringLiteral | `data.type \|\| ''` → `data.type \|\| "Stryker was here!"` | `type` is used **only** as `[...].includes(type)`. For any input where `data.type` is falsy, both `''` and `"Stryker was here!"` are non-members of the lists, so `includes` returns `false` either way. The value is never returned, compared for content, or logged. |
-| 19 | StringLiteral | `data.class \|\| ''` → `data.class \|\| "Stryker was here!"` | Identical reasoning for `category` / `[...].includes(category)`. |
+| Line | Mutator       | Mutation                                                     | Why equivalent                                                                                                                                                                                                                                                         |
+| ---- | ------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 18   | StringLiteral | `data.type \|\| ''` → `data.type \|\| "Stryker was here!"`   | `type` is used **only** as `[...].includes(type)`. For any input where `data.type` is falsy, both `''` and `"Stryker was here!"` are non-members of the lists, so `includes` returns `false` either way. The value is never returned, compared for content, or logged. |
+| 19   | StringLiteral | `data.class \|\| ''` → `data.class \|\| "Stryker was here!"` | Identical reasoning for `category` / `[...].includes(category)`.                                                                                                                                                                                                       |
 
 ### `src/errors/app-error-registry.ts` — 16 equivalents
 

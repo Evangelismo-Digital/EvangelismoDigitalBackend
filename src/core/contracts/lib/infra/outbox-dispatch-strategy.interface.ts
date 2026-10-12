@@ -16,5 +16,5 @@ export interface IOutboxDispatchPlan {
  * OutboxDispatchStrategyRegistry — o processor não conhece tipos concretos.
  */
 export interface IOutboxDispatchStrategy {
-  buildDispatch(event: IOutboxEvent): Result<IOutboxDispatchPlan, AppError>
+  buildDispatch(event: IOutboxEvent): Promise<Result<IOutboxDispatchPlan, AppError>>
 }

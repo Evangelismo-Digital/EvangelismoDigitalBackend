@@ -1,3 +1,4 @@
+import { ZodRequest } from '@http/types/zod-request'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { logger } from '@lib/logger'
 import { UserPresenter } from '@http/presenters/user-presenter'
@@ -29,8 +30,8 @@ export async function getUserProfile(request: FastifyRequest, reply: FastifyRepl
   return reply.code(HTTP_STATUS.OK).send(UserPresenter.toHTTP(user))
 }
 
-export async function getUserByPublicId(request: FastifyRequest, reply: FastifyReply) {
-  const { publicId } = publicIdSchema.parse(request.params)
+export async function getUserByPublicId(request: ZodRequest<{ params: typeof publicIdSchema }>, reply: FastifyReply) {
+  const { publicId } = request.params
 
   const getUserProfileUseCase = makeGetUserProfileUseCase()
 

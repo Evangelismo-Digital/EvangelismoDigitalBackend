@@ -21,6 +21,11 @@ export const OUTBOX_LOGS = {
   SCAN_DONE: 'Varredura de segurança da Outbox concluída.',
   SCHEDULER_CONFIGURED:
     'Agendadores da Outbox configurados: varredura a cada 5 min, segurança à meia-noite e retenção às 03:00.',
+  // maintenance-scheduler / maintenance-worker
+  MAINTENANCE_PHASE_RETRYING: 'Fase de manutenção falhou; o BullMQ fará nova tentativa com backoff antes de desistir.',
+  MAINTENANCE_JOB_UNKNOWN: 'Job de manutenção desconhecido recebido na fila; nada a executar.',
+  MAINTENANCE_WORKER_STARTED: 'Worker de manutenção iniciado e consumindo a fila.',
+  MAINTENANCE_QUEUE_ERROR: 'Erro na fila de manutenção.',
   // outbox-processor
   SKIPPED_ANOTHER_RUNNING: 'processPendingEvents: Processamento ignorado. Outra instância já está rodando.',
   PENDING_FETCH_ERROR: 'Erro de Infra ao buscar eventos pendentes.',

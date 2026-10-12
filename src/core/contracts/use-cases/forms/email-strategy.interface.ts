@@ -4,6 +4,6 @@ import { Result } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 
 export interface IFormEmailStrategy {
-  buildUserEmail(form: FormPayload): Result<IMailJobData, AppError>
-  buildStaffEmail(form: FormPayload): Result<IMailJobData, AppError>
+  buildUserEmail(form: FormPayload): Promise<Result<IMailJobData, AppError>>
+  buildStaffEmail(form: FormPayload): Promise<Result<IMailJobData, AppError>>
 }

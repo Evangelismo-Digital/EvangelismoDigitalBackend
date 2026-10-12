@@ -14,17 +14,47 @@ import { httpRateLimit } from '@http/plugins/rate-limit.plugin'
 import { errorHandler } from '@http/plugins/error-handler.plugin'
 import { requestLifecycle } from '@http/plugins/request-lifecycle.plugin'
 import { requestDeadline } from '@http/plugins/deadline.plugin'
-import { analytics } from '@http/plugins/analytics.plugin'
+import { cookieSigningSecrets } from '@http/cookies/cookie-secrets'
 import metricsPlugin from 'fastify-metrics'
 import promClient from 'prom-client'
 import { getRegistry } from '@lib/metrics'
+import { jsonSchemaTransform, ZodTypeProvider } from 'fastify-type-provider-zod'
+import fastifySwagger from '@fastify/swagger'
+import scalarApiReference from '@scalar/fastify-api-reference'
 
 z.config(z.locales.pt())
 
 export const app = fastify({
   logger: false,
   trustProxy: true,
+  routerOptions: {
+    ignoreTrailingSlash: true,
+  },
   genReqId: () => uuidv7(),
+}).withTypeProvider<ZodTypeProvider>()
+
+app.register(fastifySwagger, {
+  openapi: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Evangelismo Digital API',
+      version: '1.0.0',
+    },
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+        },
+      },
+    },
+  },
+  transform: jsonSchemaTransform,
+})
+
+app.register(scalarApiReference, {
+  routePrefix: '/docs',
 })
 
 // 1. AsyncContext — wraps every request in ALS with requestId from genReqId
@@ -61,13 +91,86 @@ app.register(fastifyCors, {
 // 3. Rate limiting — drops abusive traffic before any crypto/cookie work
 app.register(httpRateLimit)
 
-// Cookies parser & signer
-app.register(fastifyCookie, {
-  secret: env.COOKIE_SECRET,
+// Security headers — strict CSP for JSON APIs
+import fastifyHelmet from '@fastify/helmet'
+app.register(fastifyHelmet, {
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
 })
 
-// Analytics sessions and events tracking
-app.register(analytics)
+// Load shedding and health checks
+import fastifyUnderPressure from '@fastify/under-pressure'
+import { prisma } from '@lib/prisma'
+import { HTTP_RATE_LIMIT_POLICIES } from '@http/policies/rate-limit'
+
+const MAX_EVENT_LOOP_DELAY_TEST = 50
+const MAX_EVENT_LOOP_DELAY_DEFAULT = 1000
+
+app.register(fastifyUnderPressure, {
+  maxEventLoopDelay: env.NODE_ENV === 'test' ? MAX_EVENT_LOOP_DELAY_TEST : MAX_EVENT_LOOP_DELAY_DEFAULT,
+  maxHeapUsedBytes: 1000000000, // 1GB
+  maxRssBytes: 1000000000, // 1GB
+  healthCheckInterval: 5000,
+  exposeStatusRoute: {
+    routeOpts: {
+      config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.health.check },
+      schema: {
+        tags: ['Health'],
+        summary: 'Verifica o status da aplicação',
+        description:
+          'Retorna informações sobre uso de memória e tempo de atividade se o banco de dados estiver acessível.',
+      },
+    },
+    routeResponseSchemaOpts: {
+      status: { type: 'string' },
+      uptime: { type: 'number' },
+      timestamp: { type: 'string' },
+      memory: {
+        type: 'object',
+        properties: {
+          rss: { type: 'string' },
+          heapUsed: { type: 'string' },
+          heapTotal: { type: 'string' },
+          external: { type: 'string' },
+        },
+      },
+    },
+    url: '/health',
+  },
+  healthCheck: async () => {
+    // Moved from health-check.controller.ts
+    const memoryUsage = process.memoryUsage()
+    await prisma.$queryRaw`SELECT 1`
+
+    return {
+      status: 'ok',
+      memory: {
+        rss: `${Math.round(memoryUsage.rss / 1024 / 1024)}MB`,
+        heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`,
+        heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`,
+        external: `${Math.round(memoryUsage.external / 1024 / 1024)}MB`,
+      },
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    }
+  },
+})
+
+// Cookies parser & signer. The secret is an array so a key can be rotated
+// without invalidating cookies already issued — see cookie-secrets.ts.
+app.register(fastifyCookie, {
+  secret: cookieSigningSecrets(env.COOKIE_SECRET, env.COOKIE_SECRET_PREVIOUS),
+})
+
+// Analytics identity is deliberately NOT registered here. It is encapsulated
+// inside `analyticsRoutes`, so cookie reading applies only to /analytics/*.
+// Registered globally, it answered every route — including /health — with
+// Set-Cookie, which made health responses uncacheable and had the load
+// balancer's probe minting a throwaway visitor on every check. See §3.3.
 
 // 4. JWT — decorates app with jwtVerify (no interception)
 app.register(fastifyJwt, {

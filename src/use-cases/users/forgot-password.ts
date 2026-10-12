@@ -8,6 +8,7 @@ import { Result, ok, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { PASSWORD_RESET_CONSTANTS } from 'messages/constants/auth/password-reset'
 import { hashResetToken } from './helpers/token-hash'
+import ms from 'ms'
 
 interface ForgotPasswordUseCaseRequest {
   email: string
@@ -41,7 +42,7 @@ export class ForgotPasswordUseCase {
     }
 
     const rawToken = randomBytes(PASSWORD_RESET_CONSTANTS.TOKEN_LENGTH_BYTES).toString('hex')
-    const tokenExpiresAt = new Date(Date.now() + PASSWORD_RESET_CONSTANTS.TOKEN_EXPIRES_IN_MINUTES * 60 * 1000)
+    const tokenExpiresAt = new Date(Date.now() + ms(`${PASSWORD_RESET_CONSTANTS.TOKEN_EXPIRES_IN_MINUTES}m`))
 
     // Grava apenas o hash; o token cru segue só no payload transitório da outbox
     const updateResult = await this.usersRepository.updatePassword(user.publicId, {

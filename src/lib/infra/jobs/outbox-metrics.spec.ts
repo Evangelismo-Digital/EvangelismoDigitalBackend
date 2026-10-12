@@ -59,9 +59,8 @@ vi.mock('@lib/sentry/capture', () => ({
   captureError: vi.fn(),
 }))
 
-// Evita instanciar o PrismaClient real ao importar outbox-cron (que puxa o
-// PrismaOutboxRepository). startOutboxCron só constrói repos próprios quando
-// nenhum processor/maintenance é passado, e os testes sempre passam stubs.
+// Evita instanciar o PrismaClient real ao importar os módulos de job (que puxam
+// o PrismaOutboxRepository); os testes sempre injetam stubs.
 vi.mock('@lib/prisma', () => ({ prisma: {} }))
 
 // ioredis mockado para OutboxSignal.publishNewItem — status 'ready' evita o connect().
@@ -79,22 +78,15 @@ vi.mock('ioredis', () => {
   return { default: RedisMock, Redis: RedisMock }
 })
 
-// node-cron mockado: captura os callbacks agendados para invocá-los manualmente.
-const scheduledCallbacks: Array<() => Promise<void>> = []
-vi.mock('node-cron', () => ({
-  default: {
-    schedule: (_expr: string, cb: () => Promise<void>) => {
-      scheduledCallbacks.push(cb)
-      return { stop: vi.fn() }
-    },
-  },
-}))
-
 // Imports reais após os mocks
 import type { Metric } from 'prom-client'
+import type { Job } from 'bullmq'
 import { OutboxProcessor } from './outbox-processor'
 import { OutboxMaintenance } from './outbox-maintenance'
-import { startOutboxCron } from './outbox-cron'
+import { AnalyticsRetention } from './analytics-retention'
+import { createMaintenanceJobProcessor } from './maintenance-worker'
+import { QUEUE } from 'messages/constants/queue/queue'
+import type { IMaintenanceJobData } from 'core/contracts/lib/infra/maintenance-job-data.interface'
 import { OutboxSignal } from '@lib/infra/events/outbox-signal'
 import { makeOutboxDispatchStrategyRegistry } from './make-outbox-dispatch-registry'
 import { InMemoryOutboxRepository } from '@repositories/in-memory/in-memory-outbox-repository'
@@ -163,7 +155,6 @@ describe('Outbox metrics instrumentation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getRegistry()?.resetMetrics()
-    scheduledCallbacks.length = 0
 
     repository = new InMemoryOutboxRepository()
     processor = new OutboxProcessor(repository, makeOutboxDispatchStrategyRegistry())
@@ -297,8 +288,14 @@ describe('Outbox metrics instrumentation', () => {
     })
   })
 
-  describe('startOutboxCron', () => {
-    it('counts each cron phase when its scheduled callback runs', async () => {
+  /**
+   * Os rótulos de `phase` são contrato com os painéis do Grafana: eles
+   * sobreviveram à migração do node-cron para os Job Schedulers do BullMQ. A
+   * asserção é por rótulo, não só no contador, porque é o rótulo que quebra o
+   * painel quando alguém o renomeia.
+   */
+  describe('maintenance job processor', () => {
+    it('counts each maintenance phase when its job runs, preserving the Grafana phase labels', async () => {
       const stubProcessor = {
         processStuckSendingEvents: vi.fn().mockResolvedValue(undefined),
         processPendingEvents: vi.fn().mockResolvedValue(undefined),
@@ -307,20 +304,36 @@ describe('Outbox metrics instrumentation', () => {
         sweepExpiredEvents: vi.fn().mockResolvedValue(undefined),
         purgeOldEvents: vi.fn().mockResolvedValue(undefined),
       } as unknown as OutboxMaintenance
+      const stubAnalyticsRetention = {
+        purgeExpiredData: vi.fn().mockResolvedValue(undefined),
+      } as unknown as AnalyticsRetention
 
-      startOutboxCron(stubProcessor, stubMaintenance)
+      const process = createMaintenanceJobProcessor({
+        processor: stubProcessor,
+        maintenance: stubMaintenance,
+        analyticsRetention: stubAnalyticsRetention,
+      })
 
-      // Ordem de registro em outbox-cron.ts: 5min, meia-noite, 03:00.
-      const [fiveMinCb, midnightCb, retentionCb] = scheduledCallbacks
-      await fiveMinCb()
-      await midnightCb()
-      await retentionCb()
+      const job = (name: string) =>
+        ({
+          id: `job-${name}`,
+          name,
+          data: {},
+          attemptsMade: 0,
+          opts: { attempts: 3 },
+        }) as unknown as Job<IMaintenanceJobData>
+
+      await process(job(QUEUE.JOBS.FIVE_MIN_SWEEP))
+      await process(job(QUEUE.JOBS.MIDNIGHT_SCAN))
+      await process(job(QUEUE.JOBS.RETENTION_PURGE))
+      await process(job(QUEUE.JOBS.ANALYTICS_RETENTION))
 
       expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'five_min_sweep' })).toBe(1)
       expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'five_min_pending' })).toBe(1)
       expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'midnight_recovery' })).toBe(1)
       expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'midnight_pending' })).toBe(1)
       expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'retention_purge' })).toBe(1)
+      expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'analytics_retention' })).toBe(1)
     })
   })
 })

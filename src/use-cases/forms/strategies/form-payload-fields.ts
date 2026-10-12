@@ -2,6 +2,8 @@ import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 import { Result, ok, err, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { InvalidFormPayloadError } from '@use-cases/errors/forms/invalid-form-payload-error'
+import { IMailJobData } from 'core/contracts/lib/queue/mail-job-data.interface'
+import { env } from '@env/index'
 
 /**
  * Reading typed fields out of an untyped form payload.
@@ -61,4 +63,66 @@ export function requireSubmitterIdentity(form: FormPayload): Result<SubmitterIde
   if (isErr(nameResult)) return nameResult
 
   return ok({ email: emailResult.value, name: nameResult.value })
+}
+
+export interface UserMailJobContent {
+  type: string
+  subject: string
+  message: string
+  html: string
+}
+
+export async function buildUserMailJob(
+  form: FormPayload,
+  buildContent: (identity: SubmitterIdentity) => Promise<UserMailJobContent> | UserMailJobContent,
+): Promise<Result<IMailJobData, AppError>> {
+  const identityResult = requireSubmitterIdentity(form)
+  if (isErr(identityResult)) return identityResult
+
+  const { email, name } = identityResult.value
+  const { type, subject, message, html } = await buildContent({ email, name })
+
+  return ok({
+    subject,
+    message,
+    html,
+    to: email,
+    context: { type, recipient: 'user' },
+  })
+}
+
+export interface StaffMailJobContent {
+  type: string
+  subject: string
+  message: string
+  html: string
+}
+
+export function buildStaffMailJob(content: StaffMailJobContent): IMailJobData {
+  return {
+    to: env.ADMIN_EMAIL,
+    subject: content.subject,
+    message: content.message,
+    html: content.html,
+    context: { type: content.type, recipient: 'internal' },
+  }
+}
+
+export interface ContactStaffData extends SubmitterIdentity {
+  lastName: string
+  ipAddress?: string
+}
+
+export function extractContactStaffData(form: FormPayload): Result<ContactStaffData, AppError> {
+  const identityResult = requireSubmitterIdentity(form)
+  if (isErr(identityResult)) return identityResult
+
+  const lastNameResult = optionalStringField(form.lastName, 'form.lastName')
+  if (isErr(lastNameResult)) return lastNameResult
+
+  return ok({
+    ...identityResult.value,
+    lastName: lastNameResult.value,
+    ipAddress: optionalIpAddress(form),
+  })
 }

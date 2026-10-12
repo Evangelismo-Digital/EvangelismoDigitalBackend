@@ -6,6 +6,7 @@ import { IOutboxRepository, IOutboxEventStatus } from 'core/contracts/repository
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 import { captureError } from '@lib/sentry/capture'
 import { collectMetricsOutboxMaintenanceDeleted } from '@lib/metrics/outbox-metrics'
+import ms from 'ms'
 
 /**
  * Varreduras de limpeza da Outbox — propósito diferente da máquina de estados
@@ -44,7 +45,7 @@ export class OutboxMaintenance {
       ttlMs: this.LOCK_TTL_MS,
       errorMessage: OUTBOX_LOGS.RETENTION_ERROR,
       work: async (renew) => {
-        const cutoff = new Date(Date.now() - OUTBOX_CONSTANTS.RETENTION.DAYS * 24 * 60 * 60 * 1000)
+        const cutoff = new Date(Date.now() - ms(`${OUTBOX_CONSTANTS.RETENTION.DAYS}d`))
         const { totalDeleted, totalByStatus } = await this.deleteOlderThanInBatches(cutoff, renew)
 
         if (totalDeleted > 0) {

@@ -45,6 +45,24 @@ export const HTTP_RATE_LIMIT_POLICIES = {
       timeWindow: env.HTTP_RATE_LIMIT_FORMS_SUBMIT_TIME_WINDOW,
     },
   },
+  analytics: {
+    session: {
+      max: env.HTTP_RATE_LIMIT_ANALYTICS_SESSION_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_ANALYTICS_SESSION_TIME_WINDOW,
+    },
+    events: {
+      max: env.HTTP_RATE_LIMIT_ANALYTICS_EVENTS_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_ANALYTICS_EVENTS_TIME_WINDOW,
+    },
+    identify: {
+      max: env.HTTP_RATE_LIMIT_ANALYTICS_IDENTIFY_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_ANALYTICS_IDENTIFY_TIME_WINDOW,
+    },
+    read: {
+      max: env.HTTP_RATE_LIMIT_ANALYTICS_READ_MAX,
+      timeWindow: env.HTTP_RATE_LIMIT_ANALYTICS_READ_TIME_WINDOW,
+    },
+  },
   health: {
     check: {
       max: env.HTTP_RATE_LIMIT_HEALTH_CHECK_MAX,

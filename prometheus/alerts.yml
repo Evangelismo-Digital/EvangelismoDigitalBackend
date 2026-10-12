@@ -257,6 +257,36 @@ groups:
           summary: 'Falha ao publicar sinal pub/sub do outbox'
           description: 'Falhas ao publicar o sinal de wakeup do outbox (Redis indisponível); o processamento depende do fallback via cron.'
 
+      # Manutenção agendada (Job Schedulers do BullMQ). O handler engole o erro
+      # na última tentativa para não deixar o job como `failed`, então
+      # bullmq_jobs{state="failed"} NÃO enxerga manutenção — estes dois alertas
+      # são a única visibilidade sobre ela.
+      - alert: MaintenancePhaseExhausted
+        expr: increase(outbox_cron_failures_total{outcome="exhausted"}[1h]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Fase de manutenção esgotou as tentativas ({{ $labels.phase }})'
+          description: 'A fase "{{ $labels.phase }}" falhou em todas as tentativas do BullMQ na última hora; a recuperação agora depende do próximo tique do agendador.'
+
+      - alert: MaintenancePhaseRetrying
+        expr: increase(outbox_cron_failures_total{outcome="retrying"}[30m]) > 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Fase de manutenção repetindo com frequência ({{ $labels.phase }})'
+          description: 'A fase "{{ $labels.phase }}" vem falhando e sendo repetida pelo BullMQ; ela ainda se recupera, mas a causa (Redis/banco instável) deve ser investigada antes de esgotar as tentativas.'
+
+      - alert: MaintenanceSchedulerStalled
+        expr: increase(outbox_cron_runs_total{phase="five_min_sweep"}[30m]) == 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Varredura de manutenção de 5 minutos parou de rodar'
+          description: 'Nenhuma execução da varredura de 5 min em 30 minutos. O Job Scheduler do BullMQ pode ter sido removido do Redis ou nenhum worker está consumindo a fila de manutenção.'
+
   # ---------------------------------------------------------------------------
   - name: providers
     rules:

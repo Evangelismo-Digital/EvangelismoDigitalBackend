@@ -1,4 +1,5 @@
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import { ZodRequest } from '@http/types/zod-request'
+import type { FastifyReply } from 'fastify'
 import { logger } from '@lib/logger'
 import { UserPresenter } from '@http/presenters/user-presenter'
 import { makeUpdateUserUseCase } from '@use-cases/factories/make-update-user-use-case'
@@ -9,8 +10,8 @@ import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { HTTP_STATUS } from '@http/http-status'
 
-export async function updateUser(request: FastifyRequest, reply: FastifyReply) {
-  const { name, username, email } = updateSchema.parse(request.body)
+export async function updateUser(request: ZodRequest<{ body: typeof updateSchema }>, reply: FastifyReply) {
+  const { name, username, email } = request.body
 
   const authUser = request.user
 

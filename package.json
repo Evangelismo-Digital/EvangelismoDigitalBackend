@@ -84,10 +84,16 @@
   "dependencies": {
     "@fastify/cookie": "11.1.2",
     "@fastify/cors": "11.3.0",
-    "@fastify/jwt": "10.2.2",
+    "@fastify/helmet": "13.1.1",
+    "@fastify/jwt": "10.2.4",
     "@fastify/rate-limit": "10.3.0",
+    "@fastify/swagger": "9.8.1",
+    "@fastify/under-pressure": "9.1.0",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
+    "@react-email/components": "1.0.12",
+    "@react-email/render": "2.1.0",
+    "@scalar/fastify-api-reference": "1.67.0",
     "@sentry/node": "10.73.0",
     "@sentry/profiling-node": "10.73.0",
     "axios": "1.20.0",
@@ -97,17 +103,20 @@
     "cockatiel": "4.0.0",
     "cpf-cnpj-validator": "1.0.3",
     "dotenv": "17.4.2",
-    "fastify": "5.12.3",
+    "fastify": "5.12.5",
     "fastify-metrics": "13.2.1",
     "fastify-plugin": "5.1.0",
+    "fastify-type-provider-zod": "7.0.0",
     "ioredis": "5.11.1",
+    "ipaddr.js": "2.2.0",
     "ms": "2.1.3",
-    "node-cron": "4.6.0",
-    "nodemailer": "9.0.6",
+    "nodemailer": "10.1.0",
     "pg": "8.23.0",
     "pino": "9.14.0",
     "prom-client": "15.1.3",
     "rate-limiter-flexible": "9.1.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "uuid": "11.1.1",
     "zod": "4.5.4"
   },
@@ -118,7 +127,7 @@
     "@stryker-mutator/vitest-runner": "10.0.0",
     "@types/ms": "2.1.0",
     "@types/node": "24.13.3",
-    "@types/nodemailer": "8.0.1",
+    "@types/nodemailer": "8.0.2",
     "@types/pg": "8.23.1",
     "@types/supertest": "6.0.3",
     "@vitest/coverage-v8": "4.1.11",
@@ -169,6 +178,6 @@
     "tsup": {
       "esbuild": "0.28.2"
     },
-    "fast-uri": "3.1.7"
+    "fast-uri": "3.1.8"
   }
 }

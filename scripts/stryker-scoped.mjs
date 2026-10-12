@@ -33,7 +33,10 @@ const globArgs = separator === -1 ? argv : argv.slice(0, separator)
 const passthrough = separator === -1 ? [] : argv.slice(separator + 1)
 
 // Accept both `a,b` and `a b`, so either habit works.
-const globs = globArgs.flatMap((arg) => arg.split(',')).map((glob) => glob.trim()).filter(Boolean)
+const globs = globArgs
+  .flatMap((arg) => arg.split(','))
+  .map((glob) => glob.trim())
+  .filter(Boolean)
 
 if (globs.length === 0) {
   console.error('uso: npm run test:mutation:scoped -- "<glob>" ["<glob>" ...] [-- <args do stryker>]')

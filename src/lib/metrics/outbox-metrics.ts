@@ -60,6 +60,21 @@ export const collectMetricsOutboxCronRuns = registry
     })
   : null
 
+/**
+ * Falhas por fase, separadas por desfecho: `retrying` é uma tentativa que o
+ * BullMQ ainda vai repetir, `exhausted` é a desistência. Sem isto, uma fase que
+ * falha e se recupera na segunda tentativa fica idêntica a uma saudável no
+ * painel — `outbox_cron_runs_total` só conta execuções.
+ */
+export const collectMetricsOutboxCronFailures = registry
+  ? new Counter({
+      name: 'outbox_cron_failures_total',
+      help: 'Maintenance phase failures by phase and outcome (retrying | exhausted)',
+      labelNames: ['phase', 'outcome'],
+      registers: [registry],
+    })
+  : null
+
 export const collectMetricsOutboxMaintenanceDeleted = registry
   ? new Counter({
       name: 'outbox_maintenance_deleted_total',

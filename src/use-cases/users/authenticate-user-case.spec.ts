@@ -6,6 +6,7 @@ import { compare } from 'bcryptjs'
 import { UserRole } from 'core/contracts/repository/users-repository.interface'
 import { AuthenticateUserUseCase } from './authenticate-user'
 import { InvalidCredentialsError } from '@use-cases/errors/invalid-credentials-error'
+import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
 import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { AuthenticationAuditUseCase } from '@use-cases/authentication-audit/authentication-audit'
 import { AuthenticationStatus } from '@prisma/client'
@@ -224,7 +225,7 @@ describe('Authenticate User Use Case', () => {
     const usersRepository = new InMemoryUsersRepository()
     const authenticationAuditRepository = {
       create: vi.fn(async () => {
-        return err(new Error('audit unavailable'))
+        return err(new DatabaseQueryError('audit unavailable'))
       }),
     }
     const authenticationAuditUseCase = new AuthenticationAuditUseCase(authenticationAuditRepository as any)

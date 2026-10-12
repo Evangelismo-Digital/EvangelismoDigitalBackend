@@ -5,16 +5,16 @@ import { isOk, isErr } from 'core/shared/result'
 import { InvalidFormPayloadError } from '@use-cases/errors/forms/invalid-form-payload-error'
 import { env } from '@env/index'
 
-describe('DecisionForChristEmailStrategy', () => {
+describe('DecisionForChristEmailStrategy', async () => {
   let strategy: DecisionForChristEmailStrategy
 
   beforeEach(() => {
     strategy = new DecisionForChristEmailStrategy()
   })
 
-  describe('buildUserEmail', () => {
-    it('builds a decision-for-Christ email addressed to the submitter', () => {
-      const result = strategy.buildUserEmail({ name: 'Maria', email: 'maria@test.com' })
+  describe('buildUserEmail', async () => {
+    it('async builds a decision-for-Christ email addressed to the submitter', async () => {
+      const result = await strategy.buildUserEmail({ name: 'Maria', email: 'maria@test.com' })
 
       expect(isOk(result)).toBe(true)
       if (!isOk(result)) return
@@ -24,8 +24,8 @@ describe('DecisionForChristEmailStrategy', () => {
       expect(result.value.html).toContain('Maria')
     })
 
-    it('fails with form.email when email is not a string', () => {
-      const result = strategy.buildUserEmail({ name: 'Maria', email: 1 } as unknown as FormPayload)
+    it('async fails with form.email when email is not a string', async () => {
+      const result = await strategy.buildUserEmail({ name: 'Maria', email: 1 } as unknown as FormPayload)
 
       expect(isErr(result)).toBe(true)
       if (!isErr(result)) return
@@ -33,8 +33,8 @@ describe('DecisionForChristEmailStrategy', () => {
       expect(result.error.message).toContain('form.email')
     })
 
-    it('fails with form.name when name is missing', () => {
-      const result = strategy.buildUserEmail({ email: 'maria@test.com' } as unknown as FormPayload)
+    it('async fails with form.name when name is missing', async () => {
+      const result = await strategy.buildUserEmail({ email: 'maria@test.com' } as unknown as FormPayload)
 
       expect(isErr(result)).toBe(true)
       if (!isErr(result)) return
@@ -42,7 +42,7 @@ describe('DecisionForChristEmailStrategy', () => {
     })
   })
 
-  describe('buildStaffEmail', () => {
+  describe('buildStaffEmail', async () => {
     const complete = {
       name: 'Maria',
       lastName: 'Souza',
@@ -51,8 +51,8 @@ describe('DecisionForChristEmailStrategy', () => {
       ipAddress: '203.0.113.7',
     }
 
-    it('builds an internal email addressed to ADMIN_EMAIL with all fields', () => {
-      const result = strategy.buildStaffEmail(complete)
+    it('async builds an internal email addressed to ADMIN_EMAIL with all fields', async () => {
+      const result = await strategy.buildStaffEmail(complete)
 
       expect(isOk(result)).toBe(true)
       if (!isOk(result)) return
@@ -64,29 +64,29 @@ describe('DecisionForChristEmailStrategy', () => {
       expect(result.value.html).toContain('Recife, PE')
     })
 
-    it('fails with form.email when the staff email address is invalid', () => {
-      const result = strategy.buildStaffEmail({ ...complete, email: 123 } as unknown as FormPayload)
+    it('async fails with form.email when the staff email address is invalid', async () => {
+      const result = await strategy.buildStaffEmail({ ...complete, email: 123 } as unknown as FormPayload)
 
       expect(isErr(result)).toBe(true)
       if (!isErr(result)) return
       expect(result.error.message).toContain('form.email')
     })
 
-    it('requires lastName (not optional here) and fails with form.lastName when missing', () => {
+    it('async requires lastName (not optional here) and fails with form.lastName when missing', async () => {
       const { lastName, ...withoutLastName } = complete
       void lastName
-      const result = strategy.buildStaffEmail(withoutLastName as unknown as FormPayload)
+      const result = await strategy.buildStaffEmail(withoutLastName as unknown as FormPayload)
 
       expect(isErr(result)).toBe(true)
       if (!isErr(result)) return
       expect(result.error.message).toContain('form.lastName')
     })
 
-    it('treats an absent location identically to an empty-string location', () => {
+    it('async treats an absent location identically to an empty-string location', async () => {
       const { location, ...withoutLocation } = complete
       void location
-      const absent = strategy.buildStaffEmail(withoutLocation)
-      const empty = strategy.buildStaffEmail({ ...complete, location: '' })
+      const absent = await strategy.buildStaffEmail(withoutLocation)
+      const empty = await strategy.buildStaffEmail({ ...complete, location: '' })
 
       expect(isOk(absent)).toBe(true)
       expect(isOk(empty)).toBe(true)
@@ -96,8 +96,8 @@ describe('DecisionForChristEmailStrategy', () => {
       expect(absent.value.html).not.toContain('undefined')
     })
 
-    it('rejects a non-string location with form.location', () => {
-      const result = strategy.buildStaffEmail({
+    it('async rejects a non-string location with form.location', async () => {
+      const result = await strategy.buildStaffEmail({
         ...complete,
         location: 99,
       } as unknown as FormPayload)
@@ -107,14 +107,14 @@ describe('DecisionForChristEmailStrategy', () => {
       expect(result.error.message).toContain('form.location')
     })
 
-    it('includes a string ipAddress but never a non-string one', () => {
-      const nullIp = strategy.buildStaffEmail({ ...complete, ipAddress: null })
-      const numericIp = strategy.buildStaffEmail({
+    it('async includes a string ipAddress but never a non-string one', async () => {
+      const nullIp = await strategy.buildStaffEmail({ ...complete, ipAddress: null })
+      const numericIp = await strategy.buildStaffEmail({
         ...complete,
         ipAddress: 20250102,
       } as unknown as FormPayload)
 
-      const stringIp = strategy.buildStaffEmail(complete)
+      const stringIp = await strategy.buildStaffEmail(complete)
 
       expect(isOk(nullIp) && isOk(numericIp) && isOk(stringIp)).toBe(true)
       if (!isOk(nullIp) || !isOk(numericIp) || !isOk(stringIp)) return
@@ -124,8 +124,8 @@ describe('DecisionForChristEmailStrategy', () => {
       expect(numericIp.value.html).not.toContain('20250102')
     })
 
-    it('validates fields in order: email, then name, then lastName', () => {
-      const result = strategy.buildStaffEmail({
+    it('async validates fields in order: email, then name, then lastName', async () => {
+      const result = await strategy.buildStaffEmail({
         email: 'maria@test.com',
         name: 5,
         lastName: 6,

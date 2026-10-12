@@ -1,3 +1,5 @@
+. "$(dirname -- "$0")/use-nvmrc-node.sh"
+
 # Full CI mirror before anything reaches GitHub (~8-15 min; see scripts/ci-local.sh).
 # Escape hatch: git push --no-verify.
 npm run ci:local

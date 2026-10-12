@@ -3,80 +3,42 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { ok } from 'core/shared/result'
 import { getRedisRateLimit } from '@lib/redis/clients/clients'
 
-const { nearestChurchesResponse, rateLimitPolicies, mockExecute, mockMakeFindNearestChurchesUseCase } = vi.hoisted(
-  () => {
-    const nearestChurchesResponse = {
-      nearestChurchesInfo: [],
-      totalFound: 0,
-      precision: 'mocked',
-      providerName: 'mocked-provider',
-    }
+const { nearestChurchesResponse, mockExecute, mockMakeFindNearestChurchesUseCase } = vi.hoisted(() => {
+  const nearestChurchesResponse = {
+    nearestChurchesInfo: [],
+    totalFound: 0,
+    precision: 'mocked',
+    providerName: 'mocked-provider',
+  }
 
-    const rateLimitPolicies = {
-      global: {
-        max: 300,
-        timeWindow: '1 minute',
-      },
-      auth: {
-        session: {
-          max: 30,
-          timeWindow: '1 minute',
-        },
-        register: {
-          max: 1000,
-          timeWindow: '1 minute',
-        },
-        forgotPassword: {
-          max: 100,
-          timeWindow: '1 hour',
-        },
-        resetPassword: {
-          max: 200,
-          timeWindow: '1 hour',
-        },
-      },
-      users: {
-        list: {
-          max: 20,
-          timeWindow: '1 hour',
-        },
-        delete: {
-          max: 10,
-          timeWindow: '1 hour',
-        },
-      },
-      churches: {
-        nearest: {
-          max: 1,
-          timeWindow: '1 minute',
-        },
-      },
-      forms: {
-        submit: {
-          max: 60,
-          timeWindow: '1 minute',
-        },
-      },
-      health: {
-        check: {
-          max: 120,
-          timeWindow: '1 minute',
-        },
-      },
-    } as const
+  const mockExecute = vi.fn(() => Promise.resolve(ok(nearestChurchesResponse)))
+  const mockMakeFindNearestChurchesUseCase = vi.fn(() => ({
+    execute: mockExecute,
+  }))
 
-    const mockExecute = vi.fn(() => Promise.resolve(ok(nearestChurchesResponse)))
-    const mockMakeFindNearestChurchesUseCase = vi.fn(() => ({
-      execute: mockExecute,
-    }))
+  return { nearestChurchesResponse, mockExecute, mockMakeFindNearestChurchesUseCase }
+})
 
-    return { nearestChurchesResponse, rateLimitPolicies, mockExecute, mockMakeFindNearestChurchesUseCase }
-  },
-)
+/**
+ * Overrides ONLY the policy under test, on top of the real ones.
+ *
+ * This used to restate every policy group as a literal, which made the mock a
+ * hand-maintained copy of `HTTP_RATE_LIMIT_POLICIES` — and adding a new group to
+ * the real module (analytics) broke this file at route registration with
+ * `Cannot read properties of undefined`, in a suite that has nothing to do with
+ * analytics. Spreading the real object means a new group is picked up for free
+ * and only `churches.nearest` is deliberately different.
+ */
+vi.mock('@http/policies/rate-limit', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@http/policies/rate-limit')>()
 
-vi.mock('@http/policies/rate-limit', () => ({
-  HTTP_RATE_LIMIT_POLICIES: rateLimitPolicies,
-}))
+  return {
+    HTTP_RATE_LIMIT_POLICIES: {
+      ...actual.HTTP_RATE_LIMIT_POLICIES,
+      churches: { nearest: { max: 1, timeWindow: '1 minute' } },
+    },
+  }
+})
 
 vi.mock('@use-cases/factories/make-find-nearest-churches-use-case', () => ({
   makeFindNearestChurchesUseCase: mockMakeFindNearestChurchesUseCase,

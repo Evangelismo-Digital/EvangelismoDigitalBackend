@@ -72,6 +72,8 @@ model User {
   passwordChangedAt DateTime? @map("password_changed_at")
 
   authenticationAudits AuthenticationAudit[]
+  analyticsVisitors    AnalyticsVisitor[]
+  analyticsSessions    AnalyticsSession[]
 
   @@index([name], name: "idx_user_name")
   @@index([token], name: "idx_user_token")
@@ -94,17 +96,17 @@ model FormSubmission {
 }
 
 model OutboxEvent {
-  id         Int               @id @default(autoincrement())
-  publicId   String            @unique @default(uuid(7)) @map("public_id")
-  type       String
-  status     OutboxEventStatus @default(PENDING) @map("status")
-  payload    Json
-  attempts   Int               @default(0)
-  occurredAt DateTime          @default(now()) @map("ocurred_at")
-  sendingAt  DateTime?         @map("sending_at")
-  expiresAt  DateTime?         @map("expires_at")
+  id                Int               @id @default(autoincrement())
+  publicId          String            @unique @default(uuid(7)) @map("public_id")
+  type              String
+  status            OutboxEventStatus @default(PENDING) @map("status")
+  payload           Json
+  attempts          Int               @default(0)
+  occurredAt        DateTime          @default(now()) @map("ocurred_at")
+  sendingAt         DateTime?         @map("sending_at")
+  expiresAt         DateTime?         @map("expires_at")
   // Vazio = despacha o lote completo; não-vazio = re-tenta apenas estes destinatários (retry seletivo)
-  pendingRecipients String[]   @default([]) @map("pending_recipients")
+  pendingRecipients String[]          @default([]) @map("pending_recipients")
 
   @@index([status, occurredAt])
   @@index([status, sendingAt])
@@ -127,35 +129,110 @@ model Church {
   @@map("churches")
 }
 
+/// Um navegador, ao longo de até 13 meses. Responde diretamente a "quando entrou
+/// pela primeira vez" e "quando voltou" — perguntas que o modelo anterior, com
+/// apenas `createdAt` por sessão, não conseguia responder.
+model AnalyticsVisitor {
+  id        String @id @default(uuid(7))
+  visitorId String @unique @map("visitor_id")
+
+  firstSeenAt  DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt   DateTime @updatedAt @map("last_seen_at")
+  sessionCount Int      @default(1) @map("session_count")
+
+  /// Primeiro toque: preservado para atribuição, imune a UTMs posteriores.
+  firstUtmSource   String? @map("first_utm_source")
+  firstUtmMedium   String? @map("first_utm_medium")
+  firstUtmCampaign String? @map("first_utm_campaign")
+  firstLandingPath String? @map("first_landing_path")
+
+  /// Vinculado no login (identity stitching). `SetNull` e não `Cascade`: excluir
+  /// a conta anonimiza o histórico em vez de apagá-lo — o apagamento completo é
+  /// um ato explícito do titular via DELETE /analytics/me.
+  userId String? @map("user_id")
+  user   User?   @relation(fields: [userId], references: [publicId], onDelete: SetNull)
+
+  sessions AnalyticsSession[]
+
+  @@index([userId])
+  @@index([lastSeenAt])
+  @@map("analytics_visitors")
+}
+
+/// Uma visita: janela de 30 minutos deslizantes, encerrada por inatividade.
 model AnalyticsSession {
-  id          String   @id @default(uuid(7))
-  visitorId   String   @map("visitor_id")
-  sessionId   String   @unique @map("session_id")
-  ipAddress   String?  @map("ip_address")
-  userAgent   String?  @map("user_agent")
-  utmSource   String?  @map("utm_source")
-  utmMedium   String?  @map("utm_medium")
-  utmCampaign String?  @map("utm_campaign")
-  utmTerm     String?  @map("utm_term")
-  utmContent  String?  @map("utm_content")
-  createdAt   DateTime @default(now()) @map("created_at")
+  id        String @id @default(uuid(7))
+  sessionId String @unique @map("session_id")
+
+  visitorId String           @map("visitor_id")
+  visitor   AnalyticsVisitor @relation(fields: [visitorId], references: [visitorId], onDelete: Cascade)
+
+  userId String? @map("user_id")
+  user   User?   @relation(fields: [userId], references: [publicId], onDelete: SetNull)
+
+  startedAt  DateTime  @default(now()) @map("started_at")
+  lastSeenAt DateTime  @updatedAt @map("last_seen_at")
+  endedAt    DateTime? @map("ended_at")
+  durationMs Int?      @map("duration_ms")
+
+  /// Truncado a /24 (IPv4) ou /48 (IPv6) antes de ser gravado — minimização,
+  /// §5.2. O IP completo permanece em AuthenticationAudit, onde há base legal
+  /// de segurança para retê-lo.
+  ipAddress String? @map("ip_address")
+  country   String?
+  region    String?
+  city      String?
+
+  /// User-agent já interpretado. A string crua NÃO é persistida: é um vetor de
+  /// fingerprinting sem ganho analítico sobre estes três campos.
+  browser  String?
+  os       String?
+  device   String?
+  language String?
+
+  referrer      String?
+  landingPath   String? @map("landing_path")
+  exitPath      String? @map("exit_path")
+  pageViewCount Int     @default(0) @map("page_view_count")
+  eventCount    Int     @default(0) @map("event_count")
+  isBounce      Boolean @default(true) @map("is_bounce")
+
+  utmSource   String? @map("utm_source")
+  utmMedium   String? @map("utm_medium")
+  utmCampaign String? @map("utm_campaign")
+  utmTerm     String? @map("utm_term")
+  utmContent  String? @map("utm_content")
 
   events AnalyticsEvent[]
 
   @@index([visitorId])
+  @@index([userId])
+  @@index([startedAt])
+  @@index([utmCampaign])
   @@map("analytics_sessions")
 }
 
+/// Um acontecimento imutável dentro de uma sessão.
 model AnalyticsEvent {
-  id         String           @id @default(uuid(7))
-  sessionId  String           @map("session_id")
-  session    AnalyticsSession @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
-  eventType  String           @map("event_type")
-  path       String
+  id        String           @id @default(uuid(7))
+  sessionId String           @map("session_id")
+  session   AnalyticsSession @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+
+  eventType String  @map("event_type")
+  path      String
+  title     String?
+  /// Referrer interno: de qual página do site o visitante veio.
+  referrer  String?
+
+  /// O núcleo de "quais páginas leu", em oposição a apenas "acessou".
+  durationMs  Int? @map("duration_ms")
+  scrollDepth Int? @map("scroll_depth")
+
   payload    Json?
-  occurredAt DateTime         @default(now()) @map("occurred_at")
+  occurredAt DateTime @default(now()) @map("occurred_at")
 
   @@index([sessionId])
-  @@index([eventType])
+  @@index([eventType, occurredAt])
+  @@index([path])
   @@map("analytics_events")
 }

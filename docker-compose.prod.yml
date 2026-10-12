@@ -4,12 +4,12 @@ services:
     container_name: db_evangelismo_prod
     # Preload pg_stat_statements so `CREATE EXTENSION pg_stat_statements` (migration)
     # succeeds and postgres-exporter can collect query statistics.
-    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements"]
+    command: ['postgres', '-c', 'shared_preload_libraries=pg_stat_statements']
     env_file: .env
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
       interval: 5s
       timeout: 5s
       retries: 5
@@ -17,10 +17,10 @@ services:
     networks:
       - evangelismo-network
     logging:
-      driver: "json-file"
+      driver: 'json-file'
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: '10m'
+        max-file: '3'
 
   redis:
     image: redis:7-alpine
@@ -29,7 +29,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD}', 'ping']
       interval: 5s
       timeout: 5s
       retries: 5
@@ -37,10 +37,10 @@ services:
     networks:
       - evangelismo-network
     logging:
-      driver: "json-file"
+      driver: 'json-file'
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: '10m'
+        max-file: '3'
 
   # One-shot migrator. Built from the `builder` stage because the prisma CLI is a
   # devDependency and is absent from the pruned `runner` image. `prisma.config.ts`
@@ -50,21 +50,21 @@ services:
     build:
       context: .
       target: builder
-    command: ["npx", "prisma", "migrate", "deploy"]
+    command: ['npx', 'prisma', 'migrate', 'deploy']
     env_file: .env
     environment:
       DATABASE_URL_LOCAL: ${DATABASE_URL}
     depends_on:
       db:
         condition: service_healthy
-    restart: "no"
+    restart: 'no'
     networks:
       - evangelismo-network
     logging:
-      driver: "json-file"
+      driver: 'json-file'
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: '10m'
+        max-file: '3'
 
   fastify-backend:
     build:
@@ -86,7 +86,7 @@ services:
       REDIS_HOST: redis
       DATABASE_URL_LOCAL: ${DATABASE_URL}
     ports:
-      - "3333:3333"
+      - '3333:3333'
     depends_on:
       db:
         condition: service_healthy
@@ -97,9 +97,9 @@ services:
     healthcheck:
       test:
         [
-          "CMD",
-          "node",
-          "-e",
+          'CMD',
+          'node',
+          '-e',
           "require('http').get('http://localhost:3333/health/',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
         ]
       interval: 15s
@@ -110,10 +110,10 @@ services:
     networks:
       - evangelismo-network
     logging:
-      driver: "json-file"
+      driver: 'json-file'
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: '10m'
+        max-file: '3'
 
   fastify-worker:
     build:
@@ -121,7 +121,7 @@ services:
       target: runner
     image: evangelismodigital-app:latest
     container_name: fastify-worker
-    command: ["node", "dist/worker.js"]
+    command: ['node', 'dist/worker.js']
     env_file: .env
     # See the fastify-backend NODE_ENV comment above — same env_file leak applies here.
     environment:
@@ -140,9 +140,9 @@ services:
     healthcheck:
       test:
         [
-          "CMD",
-          "node",
-          "-e",
+          'CMD',
+          'node',
+          '-e',
           "require('http').get('http://localhost:9092/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
         ]
       interval: 15s
@@ -153,10 +153,10 @@ services:
     networks:
       - evangelismo-network
     logging:
-      driver: "json-file"
+      driver: 'json-file'
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: '10m'
+        max-file: '3'
 
 volumes:
   pgdata:

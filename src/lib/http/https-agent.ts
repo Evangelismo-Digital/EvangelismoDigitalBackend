@@ -34,13 +34,7 @@ export const getHttpsAgent = (options: https.AgentOptions = {}): https.Agent => 
     agents.set(key, new https.Agent(finalConfig))
   }
 
-  let agent = agents.get(key)
-  if (!agent) {
-    agent = new https.Agent(finalConfig)
-    agents.set(key, agent)
-  }
-
-  return agent
+  return agents.get(key) as https.Agent
 }
 
 // Export the default shared singleton for general use

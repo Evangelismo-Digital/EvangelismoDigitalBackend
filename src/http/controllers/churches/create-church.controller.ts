@@ -1,14 +1,15 @@
+import { ZodRequest } from '@http/types/zod-request'
 import { createChurchBodySchema } from '@http/schemas/churches/create-church-schema'
 import { ChurchPresenter } from '@http/presenters/church-presenter'
 import { logger } from '@lib/logger'
 import { makeCreateChurchUseCase } from '@use-cases/factories/make-create-church-use-case'
-import { FastifyReply, FastifyRequest } from 'fastify'
+import { FastifyReply } from 'fastify'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { HTTP_STATUS } from '@http/http-status'
 
-export async function createChurch(request: FastifyRequest, reply: FastifyReply) {
-  const { name, address, lat, lon } = createChurchBodySchema.parse(request.body)
+export async function createChurch(request: ZodRequest<{ body: typeof createChurchBodySchema }>, reply: FastifyReply) {
+  const { name, address, lat, lon } = request.body
 
   logger.info({
     msg: 'Criando uma nova igreja',

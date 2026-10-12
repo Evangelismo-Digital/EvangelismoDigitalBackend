@@ -1,8 +1,24 @@
 # OSV-Scanner ignore config — Evangelismo Digital Backend
 #
-# Every entry below has a real upstream fix, but not one safe to take right
-# now. Revisit periodically (aim: within ~90 days) rather than treating these
-# as permanent.
+# Revisit periodically (aim: within ~90 days) rather than treating these as
+# permanent. Each entry carries its own reasoning and its own re-check command.
+#
+# REVISIT TRIGGER — two of the three entries clear on the SAME event: a snyk
+# release whose BUNDLED global-agent reaches 4.x. global-agent 4 dropped roarr
+# entirely, and roarr 2.x is what drags in both the vulnerable semver
+# (GHSA-c2qf-rxjj-qqgw) and sprintf-js (GHSA-hp3w-g68c-fv3c). Until then neither
+# can be fixed OR overridden, because snyk declares
+# `bundleDependencies: ["global-agent", "roarr", "boolean"]` and npm cannot
+# rewrite what ships inside a package's own tarball. After any snyk bump:
+#
+#     npm ls sprintf-js semver
+#
+# If both come back clean, delete those two entries. The third
+# (GHSA-6w3j-5fw6-r9vr, @hapi/joi) is independent and tracks
+# cpf-cnpj-validator.
+#
+# Note that two of the three have NO upstream fix at all, so "wait for a patch"
+# is not the plan for them — see each reason block.
 #
 # (The two @hono/node-server entries that used to live here were dropped once
 # prisma 7.9.1 removed that transitive dependency entirely.)
@@ -24,4 +40,52 @@ semver range parsing on input that only ever comes from our own package.json.
 
 Revisit when snyk publishes a build with global-agent updated; check with
 `npm ls semver` after a snyk bump.
+"""
+
+[[IgnoredVulns]]
+id = "GHSA-6w3j-5fw6-r9vr"
+reason = """Prototype pollution in @hapi/joi via a `__proto__` language key in
+CUSTOM MESSAGES. Reached only through cpf-cnpj-validator@1.0.3 -> @hapi/joi@17.1.1,
+which this project calls in exactly one place: src/http/schemas/utils/cpf.ts, as
+`cpf.isValid` and `cpf.format` on a value Zod has already narrowed to 11 digits
+(`.length(CPF_DIGITS)` runs before the `.refine`). No custom message object is
+passed to Joi anywhere in the codebase, so the polluting sink is never fed — the
+library is used purely as a checksum validator over a digit string.
+
+No fixed version exists: @hapi/joi is end-of-life, and the advisory's remedy is
+cpf-cnpj-validator@2.1.2, a semver-MAJOR bump to CPF validation used across
+registration, authentication, password reset and update.
+
+Revisit if cpf-cnpj-validator ships a 1.x patch that moves off @hapi/joi, or when
+the major upgrade is scheduled on its own. Re-check with `npm ls @hapi/joi`."""
+
+[[IgnoredVulns]]
+id = "GHSA-hp3w-g68c-fv3c"
+reason = """
+DoS in sprintf-js (CVE-2026-97058): unvalidated precision specifiers reach
+toFixed/toExponential/toPrecision and can throw an uncaught RangeError when the
+attacker controls the FORMAT STRING.
+
+No fixed version exists. The advisory's affected range is `<= 1.1.3`, and 1.1.3
+is the newest version ever published — OSV-Scanner itself reports "0
+vulnerabilities can be fixed". Upgrading is not an option that exists.
+
+Neither is overriding. The vulnerable copy arrives as
+node_modules/snyk/node_modules/roarr/node_modules/sprintf-js, and snyk declares
+`bundleDependencies: ["global-agent", "roarr", "boolean"]` — 23 lockfile entries
+under snyk carry inBundle: true. Verified: a top-level `roarr` override, a
+nested `snyk > roarr` override, a `snyk > global-agent` override (4.1.3 drops
+roarr entirely) and a full lockfile re-resolution all leave roarr at 2.15.4,
+because it ships inside snyk's own tarball. This is the same mechanism already
+documented for GHSA-c2qf-rxjj-qqgw above.
+
+Accepted because the exposure is nil in practice: snyk is a devDependency, never
+installed into the production image (the Dockerfile installs with --omit=dev and
+the runner stage copies only dist plus @prisma/client/.prisma), and the sink is
+roarr's log formatting inside the snyk CLI, whose format strings are snyk's own
+literals — never our input, let alone a request's.
+
+Revisit when snyk publishes a build whose bundled global-agent is 4.x (which has
+no roarr dependency at all); check with `npm ls sprintf-js` after a snyk bump.
+The same bump should also clear GHSA-c2qf-rxjj-qqgw.
 """

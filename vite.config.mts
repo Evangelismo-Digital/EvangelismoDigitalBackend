@@ -58,6 +58,19 @@ export default defineConfig(({ mode }) => {
         {
           extends: true,
           test: {
+            // Environment parsing had NO project at all, so `src/env` was
+            // unreachable by any suite — which is how a blank optional variable
+            // came to crash the boot with nothing to catch it. Listed in BOTH
+            // the ci.yml and scripts/ci-local.sh allowlists — keep them in
+            // lockstep.
+            name: 'unit-env',
+            dir: 'src/env',
+            include: ['**/*.spec.ts'],
+          },
+        },
+        {
+          extends: true,
+          test: {
             name: 'unit-errors',
             dir: 'src/errors',
           },
@@ -122,8 +135,10 @@ export default defineConfig(({ mode }) => {
               'plugins/**/*.spec.ts',
               'presenters/**/*.spec.ts',
               'middlewares/**/*.spec.ts',
+              'cookies/**/*.spec.ts',
               // Church controllers: the users ones have their own project.
               'controllers/churches/**/*.spec.ts',
+              'controllers/analytics/**/*.spec.ts',
             ],
             exclude: ['**/*.e2e.spec.ts', '**/*.acceptance.spec.mts'],
           },
@@ -213,11 +228,12 @@ export default defineConfig(({ mode }) => {
             // step definitions colocated as *.acceptance.spec.ts, driven through
             // Vitest by @amiceli/vitest-cucumber over the HTTP boundary.
             name: 'acceptance',
-            dir: 'src/http/controllers',
+            dir: 'src/http',
             // ESM (.mts) — @amiceli/vitest-cucumber is an ESM-only package.
             include: ['**/*.acceptance.spec.mts'],
             // Uses Docker database with public schema
             environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
+            fileParallelism: false,
           },
         },
         {
@@ -252,6 +268,26 @@ export default defineConfig(({ mode }) => {
             fileParallelism: false,
             hookTimeout: 30_000,
             testTimeout: 20_000,
+          },
+        },
+        {
+          extends: true,
+          test: {
+            // Redis-only integration suite for the BullMQ maintenance jobs. Same
+            // rationale as `integration-cache`: no Postgres, no Prisma
+            // environment, cheap enough to gate every push. It exists because the
+            // claim of the Job Scheduler migration — N pods upserting one
+            // scheduler id produce ONE job per tick — is only provable against a
+            // real Redis, and a claim that CI never checks is an assumption.
+            // Listed in BOTH the ci.yml and scripts/ci-local.sh allowlists —
+            // keep them in lockstep.
+            name: 'integration-jobs',
+            dir: 'src/lib/infra/jobs',
+            include: ['**/*.redis-integration.spec.ts'],
+            // One shared Redis keyspace; parallel files would collide.
+            fileParallelism: false,
+            hookTimeout: 30_000,
+            testTimeout: 30_000,
           },
         },
         {

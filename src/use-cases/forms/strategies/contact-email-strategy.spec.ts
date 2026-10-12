@@ -5,16 +5,16 @@ import { isOk, isErr } from 'core/shared/result'
 import { InvalidFormPayloadError } from '@use-cases/errors/forms/invalid-form-payload-error'
 import { env } from '@env/index'
 
-describe('ContactEmailStrategy', () => {
+describe('ContactEmailStrategy', async () => {
   let strategy: ContactEmailStrategy
 
   beforeEach(() => {
     strategy = new ContactEmailStrategy()
   })
 
-  describe('buildUserEmail', () => {
-    it('builds a user-facing email addressed to the submitter', () => {
-      const result = strategy.buildUserEmail({ name: 'João', email: 'joao@test.com' })
+  describe('buildUserEmail', async () => {
+    it('async builds a user-facing email addressed to the submitter', async () => {
+      const result = await strategy.buildUserEmail({ name: 'João', email: 'joao@test.com' })
 
       expect(isOk(result)).toBe(true)
       if (!isOk(result)) return
@@ -26,8 +26,8 @@ describe('ContactEmailStrategy', () => {
       expect(result.value.html).toContain('João')
     })
 
-    it('fails with form.email when email is not a string', () => {
-      const result = strategy.buildUserEmail({ name: 'João', email: 123 } as unknown as FormPayload)
+    it('async fails with form.email when email is not a string', async () => {
+      const result = await strategy.buildUserEmail({ name: 'João', email: 123 } as unknown as FormPayload)
 
       expect(isErr(result)).toBe(true)
       if (!isErr(result)) return
@@ -35,16 +35,16 @@ describe('ContactEmailStrategy', () => {
       expect(result.error.message).toContain('form.email')
     })
 
-    it('checks email before name (short-circuits on the first invalid field)', () => {
-      const result = strategy.buildUserEmail({ email: undefined, name: undefined } as unknown as FormPayload)
+    it('async checks email before name (short-circuits on the first invalid field)', async () => {
+      const result = await strategy.buildUserEmail({ email: undefined, name: undefined } as unknown as FormPayload)
 
       expect(isErr(result)).toBe(true)
       if (!isErr(result)) return
       expect(result.error.message).toContain('form.email')
     })
 
-    it('fails with form.name when name is missing but email is valid', () => {
-      const result = strategy.buildUserEmail({ email: 'joao@test.com' } as unknown as FormPayload)
+    it('async fails with form.name when name is missing but email is valid', async () => {
+      const result = await strategy.buildUserEmail({ email: 'joao@test.com' } as unknown as FormPayload)
 
       expect(isErr(result)).toBe(true)
       if (!isErr(result)) return
@@ -52,9 +52,9 @@ describe('ContactEmailStrategy', () => {
     })
   })
 
-  describe('buildStaffEmail', () => {
-    it('builds an internal email addressed to ADMIN_EMAIL', () => {
-      const result = strategy.buildStaffEmail({
+  describe('buildStaffEmail', async () => {
+    it('async builds an internal email addressed to ADMIN_EMAIL', async () => {
+      const result = await strategy.buildStaffEmail({
         name: 'João',
         lastName: 'Silva',
         email: 'joao@test.com',
@@ -70,9 +70,9 @@ describe('ContactEmailStrategy', () => {
       expect(result.value.html).toContain('Silva')
     })
 
-    it('treats an absent lastName identically to an empty-string lastName', () => {
-      const absent = strategy.buildStaffEmail({ name: 'João', email: 'joao@test.com' })
-      const empty = strategy.buildStaffEmail({ name: 'João', email: 'joao@test.com', lastName: '' })
+    it('async treats an absent lastName identically to an empty-string lastName', async () => {
+      const absent = await strategy.buildStaffEmail({ name: 'João', email: 'joao@test.com' })
+      const empty = await strategy.buildStaffEmail({ name: 'João', email: 'joao@test.com', lastName: '' })
 
       expect(isOk(absent)).toBe(true)
       expect(isOk(empty)).toBe(true)
@@ -82,9 +82,9 @@ describe('ContactEmailStrategy', () => {
       expect(absent.value.html).not.toContain('undefined')
     })
 
-    it('checks email, then name, then lastName in order', () => {
-      const badEmail = strategy.buildStaffEmail({ email: 1, name: 2, lastName: 3 } as unknown as FormPayload)
-      const badName = strategy.buildStaffEmail({
+    it('async checks email, then name, then lastName in order', async () => {
+      const badEmail = await strategy.buildStaffEmail({ email: 1, name: 2, lastName: 3 } as unknown as FormPayload)
+      const badName = await strategy.buildStaffEmail({
         email: 'joao@test.com',
         name: 2,
         lastName: 3,
@@ -97,8 +97,8 @@ describe('ContactEmailStrategy', () => {
       expect(badName.error.message).toContain('form.name')
     })
 
-    it('rejects a non-string lastName with form.lastName', () => {
-      const result = strategy.buildStaffEmail({
+    it('async rejects a non-string lastName with form.lastName', async () => {
+      const result = await strategy.buildStaffEmail({
         name: 'João',
         email: 'joao@test.com',
         lastName: 42,
@@ -109,14 +109,14 @@ describe('ContactEmailStrategy', () => {
       expect(result.error.message).toContain('form.lastName')
     })
 
-    it('includes a string ipAddress but never a non-string one', () => {
-      const withIp = strategy.buildStaffEmail({
+    it('async includes a string ipAddress but never a non-string one', async () => {
+      const withIp = await strategy.buildStaffEmail({
         name: 'João',
         email: 'joao@test.com',
         ipAddress: '198.51.100.4',
       })
       // A truthy non-string value would leak into the template if the type guard were removed.
-      const numericIp = strategy.buildStaffEmail({
+      const numericIp = await strategy.buildStaffEmail({
         name: 'João',
         email: 'joao@test.com',
         ipAddress: 20250102,
@@ -130,8 +130,8 @@ describe('ContactEmailStrategy', () => {
       expect(numericIp.value.html).not.toContain('20250102')
     })
 
-    it('fails with form.email when email is invalid', () => {
-      const result = strategy.buildStaffEmail({ name: 'João', email: false } as unknown as FormPayload)
+    it('async fails with form.email when email is invalid', async () => {
+      const result = await strategy.buildStaffEmail({ name: 'João', email: false } as unknown as FormPayload)
 
       expect(isErr(result)).toBe(true)
       if (!isErr(result)) return

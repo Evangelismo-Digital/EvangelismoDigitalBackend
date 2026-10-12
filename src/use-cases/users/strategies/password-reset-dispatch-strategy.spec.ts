@@ -31,11 +31,11 @@ const basePayload = {
   tokenExpiresAt: expiresAt.toISOString(),
 }
 
-describe('PasswordResetDispatchStrategy', () => {
+describe('PasswordResetDispatchStrategy', async () => {
   const strategy = new PasswordResetDispatchStrategy()
 
-  it('monta um único e-mail para o usuário, sem cópia para a equipe', () => {
-    const result = strategy.buildDispatch(makeEvent(basePayload))
+  it('async monta um único e-mail para o usuário, sem cópia para a equipe', async () => {
+    const result = await strategy.buildDispatch(makeEvent(basePayload))
 
     expect(isOk(result)).toBe(true)
     if (!isOk(result)) return
@@ -47,8 +47,8 @@ describe('PasswordResetDispatchStrategy', () => {
     expect(email.context).toEqual({ type: 'password-reset', recipient: 'user' })
   })
 
-  it('o link do e-mail carrega o token cru do payload', () => {
-    const result = strategy.buildDispatch(makeEvent(basePayload))
+  it('async o link do e-mail carrega o token cru do payload', async () => {
+    const result = await strategy.buildDispatch(makeEvent(basePayload))
 
     expect(isOk(result)).toBe(true)
     if (!isOk(result)) return
@@ -58,8 +58,8 @@ describe('PasswordResetDispatchStrategy', () => {
     expect(email.html).toContain('token-cru-abc123')
   })
 
-  it('define jobOptions com orçamento de retry dentro da janela do token (3 × 30s fixo)', () => {
-    const result = strategy.buildDispatch(makeEvent(basePayload))
+  it('async define jobOptions com orçamento de retry dentro da janela do token (3 × 30s fixo)', async () => {
+    const result = await strategy.buildDispatch(makeEvent(basePayload))
 
     expect(isOk(result)).toBe(true)
     if (!isOk(result)) return
@@ -72,11 +72,11 @@ describe('PasswordResetDispatchStrategy', () => {
 
   it.each(['name', 'email', 'token'] as const)(
     'campo obrigatório ausente (%s): retorna err(InvalidPasswordResetPayloadError)',
-    (field) => {
+    async (field) => {
       const payload: Record<string, unknown> = { ...basePayload }
       delete payload[field]
 
-      const result = strategy.buildDispatch(makeEvent(payload))
+      const result = await strategy.buildDispatch(makeEvent(payload))
 
       expect(isErr(result)).toBe(true)
       if (!isErr(result)) return
@@ -85,14 +85,14 @@ describe('PasswordResetDispatchStrategy', () => {
     },
   )
 
-  it('campo com tipo errado (token numérico): retorna err', () => {
-    const result = strategy.buildDispatch(makeEvent({ ...basePayload, token: 12345 }))
+  it('async campo com tipo errado (token numérico): retorna err', async () => {
+    const result = await strategy.buildDispatch(makeEvent({ ...basePayload, token: 12345 }))
 
     expect(isErr(result)).toBe(true)
   })
 
-  it('campo string vazia: retorna err', () => {
-    const result = strategy.buildDispatch(makeEvent({ ...basePayload, email: '' }))
+  it('async campo string vazia: retorna err', async () => {
+    const result = await strategy.buildDispatch(makeEvent({ ...basePayload, email: '' }))
 
     expect(isErr(result)).toBe(true)
   })

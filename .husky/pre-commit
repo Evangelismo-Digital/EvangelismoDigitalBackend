@@ -1,3 +1,5 @@
+. "$(dirname -- "$0")/use-nvmrc-node.sh"
+
 # Fast local gate — mirrors the cheap CI checks on every commit.
 # The full CI mirror (security scans, e2e, build, Docker smoke test) runs on
 # pre-push via `npm run ci:local`. Escape hatch: git commit --no-verify.

@@ -287,7 +287,13 @@ function renderHotspots(hotspots) {
 }
 
 function renderGate(gate) {
-  const lines = ['', `**Status: ${gate.status}**`, '', '| Condição | Real | Limite | Resultado |', '| --- | --- | --- | --- |']
+  const lines = [
+    '',
+    `**Status: ${gate.status}**`,
+    '',
+    '| Condição | Real | Limite | Resultado |',
+    '| --- | --- | --- | --- |',
+  ]
 
   for (const condition of gate.conditions ?? []) {
     const operator = condition.comparator === 'GT' ? '>' : '<'
@@ -302,9 +308,7 @@ function renderGate(gate) {
 async function main() {
   const analysis = await waitForAnalysis()
 
-  const measuresBody = await api(
-    `/api/measures/component?component=${PROJECT_KEY}&metricKeys=${ALL_METRICS.join(',')}`,
-  )
+  const measuresBody = await api(`/api/measures/component?component=${PROJECT_KEY}&metricKeys=${ALL_METRICS.join(',')}`)
   const measures = new Map((measuresBody.component.measures ?? []).map((measure) => [measure.metric, measure.value]))
 
   const issues = await fetchAllPages(

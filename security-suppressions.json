@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "rule": "SNYK-JS-NODEMAILER-19784395",
+    "file": "package.json",
+    "line": 1,
+    "justification": "Nodemailer is used strictly for outbound mail dispatch and does not parse untrusted inbound email headers (CVE-2026-90776 / ReDoS in addressparser). Upgrading to nodemailer >=10.0.5 is currently blocked by the 7-day quarantine policy in .npmrc (min-release-age=7) as v10.0.5+ was released fewer than 7 days ago."
+  }
+]

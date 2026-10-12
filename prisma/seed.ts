@@ -71,9 +71,9 @@ export async function seed() {
       lon: -43.181362869287575,
     },
     {
-      publicId: "71b1d3a3-e39a-4b9b-a737-a5af7da4ac3a",
-      name: "igreja batista carisma",
-      address: "r. atílio vivacqua, 101 - jardim américa, rio de janeiro - rj",
+      publicId: '71b1d3a3-e39a-4b9b-a737-a5af7da4ac3a',
+      name: 'igreja batista carisma',
+      address: 'r. atílio vivacqua, 101 - jardim américa, rio de janeiro - rj',
       lat: -22.80580711046469,
       lon: -43.32448393558175,
     },
