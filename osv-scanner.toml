@@ -42,3 +42,34 @@ registration, authentication, password reset and update.
 
 Revisit if cpf-cnpj-validator ships a 1.x patch that moves off @hapi/joi, or when
 the major upgrade is scheduled on its own. Re-check with `npm ls @hapi/joi`."""
+
+[[IgnoredVulns]]
+id = "GHSA-hp3w-g68c-fv3c"
+reason = """
+DoS in sprintf-js (CVE-2026-97058): unvalidated precision specifiers reach
+toFixed/toExponential/toPrecision and can throw an uncaught RangeError when the
+attacker controls the FORMAT STRING.
+
+No fixed version exists. The advisory's affected range is `<= 1.1.3`, and 1.1.3
+is the newest version ever published — OSV-Scanner itself reports "0
+vulnerabilities can be fixed". Upgrading is not an option that exists.
+
+Neither is overriding. The vulnerable copy arrives as
+node_modules/snyk/node_modules/roarr/node_modules/sprintf-js, and snyk declares
+`bundleDependencies: ["global-agent", "roarr", "boolean"]` — 23 lockfile entries
+under snyk carry inBundle: true. Verified: a top-level `roarr` override, a
+nested `snyk > roarr` override, a `snyk > global-agent` override (4.1.3 drops
+roarr entirely) and a full lockfile re-resolution all leave roarr at 2.15.4,
+because it ships inside snyk's own tarball. This is the same mechanism already
+documented for GHSA-c2qf-rxjj-qqgw above.
+
+Accepted because the exposure is nil in practice: snyk is a devDependency, never
+installed into the production image (the Dockerfile installs with --omit=dev and
+the runner stage copies only dist plus @prisma/client/.prisma), and the sink is
+roarr's log formatting inside the snyk CLI, whose format strings are snyk's own
+literals — never our input, let alone a request's.
+
+Revisit when snyk publishes a build whose bundled global-agent is 4.x (which has
+no roarr dependency at all); check with `npm ls sprintf-js` after a snyk bump.
+The same bump should also clear GHSA-c2qf-rxjj-qqgw.
+"""
