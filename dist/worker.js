@@ -133,11 +133,25 @@ var envSchema = import_zod2.z.object({
   SMTP_PORT: import_zod2.z.coerce.number(),
   SMTP_HOST: import_zod2.z.string().min(1),
   SMTP_SECURE: import_zod2.z.enum(["true", "false"]).transform((val) => val === "true"),
-  SMTP_POOL_MAX_CONNECTIONS: import_zod2.z.coerce.number().int().positive().default(5),
+  // Pooling do nodemailer. Os limites são conservadores de propósito: o alvo é
+  // o SMTP do Gmail, e estourar a cota de envio custa a conta, não só o lote.
+  SMTP_POOL_MAX_CONNECTIONS: import_zod2.z.coerce.number().int().positive().default(3),
   SMTP_POOL_MAX_MESSAGES: import_zod2.z.coerce.number().int().positive().default(100),
   SMTP_POOL_RATE_LIMIT: import_zod2.z.coerce.number().int().positive().default(5),
   SMTP_POOL_RATE_DELTA_MS: import_zod2.z.coerce.number().int().positive().default(1e3),
   // Timeouts defensivos: impedem que um servidor SMTP travado bloqueie o chamador (padrões do Nodemailer chegam a 10 min)
+  // Breaker do SMTP — deliberadamente separado do CIRCUIT_BREAKER_* dos
+  // provedores: o perfil de tráfego não tem nada a ver (um punhado de mensagens
+  // por minuto contra uma consulta por requisição), então uma janela de
+  // amostragem boa para um é errada para o outro. Compartilhar também faria
+  // CIRCUIT_BREAKER_ENABLED=false desligar o breaker do e-mail sem querer.
+  SMTP_CIRCUIT_BREAKER_ENABLED: import_zod2.z.enum(["true", "false"]).transform((v) => v === "true").default(true),
+  SMTP_CIRCUIT_BREAKER_FAILURE_THRESHOLD: import_zod2.z.coerce.number().gt(0).lt(1).default(0.5),
+  SMTP_CIRCUIT_BREAKER_SAMPLING_WINDOW_MS: import_zod2.z.coerce.number().int().positive().default((0, import_ms.default)("60s")),
+  // Vazão mínima baixa porque o envio é esporádico: exigir RPS de provedor aqui
+  // significaria que o breaker nunca abriria num serviço que manda e-mail aos poucos.
+  SMTP_CIRCUIT_BREAKER_MIN_THROUGHPUT: import_zod2.z.coerce.number().int().positive().default(2),
+  SMTP_CIRCUIT_BREAKER_HALF_OPEN_AFTER_MS: import_zod2.z.coerce.number().int().positive().default((0, import_ms.default)("30s")),
   SMTP_CONNECTION_TIMEOUT_MS: import_zod2.z.coerce.number().int().positive().default(5e3),
   SMTP_GREETING_TIMEOUT_MS: import_zod2.z.coerce.number().int().positive().default(5e3),
   SMTP_SOCKET_TIMEOUT_MS: import_zod2.z.coerce.number().int().positive().default(1e4),
@@ -2396,9 +2410,12 @@ var InvalidPasswordResetPayloadError = class extends DomainError {
 // src/messages/constants/email/email.ts
 var EMAIL_CONSTANTS = {
   PASSWORD_RECOVERY_SUBJECT: "Recupera\xE7\xE3o de senha",
-  PASSWORD_RESET_GENERIC_MESSAGE: "Se o usu\xE1rio existir, voc\xEA receber\xE1 um e-mail com instru\xE7\xF5es para redefinir a senha.",
-  // Após N falhas consecutivas de envio, o transportador em cache é descartado e recriado (SMTP instável)
-  SMTP_MAX_CONSECUTIVE_FAILURES: 3
+  PASSWORD_RESET_GENERIC_MESSAGE: "Se o usu\xE1rio existir, voc\xEA receber\xE1 um e-mail com instru\xE7\xF5es para redefinir a senha."
+};
+var EMAIL_LOGS = {
+  SMTP_VERIFIED: "transportador SMTP verificado com sucesso",
+  SMTP_VERIFY_FAILED: "transportador SMTP falhou na verifica\xE7\xE3o",
+  SMTP_CIRCUIT_OPENED: "Circuito do SMTP aberto ap\xF3s falhas consecutivas; envios falhar\xE3o r\xE1pido e o transportador ser\xE1 recriado."
 };
 
 // src/messages/constants/auth/password-reset.ts
@@ -2694,9 +2711,16 @@ var SendEmailUseCase = class {
 
 // src/lib/mail/nodemailer-mail-sender.ts
 var import_nodemailer = __toESM(require("nodemailer"));
+var import_cockatiel = require("cockatiel");
 var NodemailerMailSender = class {
   transporter = null;
-  consecutiveFailures = 0;
+  breaker = createSmtpBreaker();
+  constructor() {
+    this.breaker?.onBreak(() => {
+      logger.warn(EMAIL_LOGS.SMTP_CIRCUIT_OPENED);
+      this.transporter = null;
+    });
+  }
   async getTransporter() {
     if (this.transporter) {
       return this.transporter;
@@ -2709,48 +2733,72 @@ var NodemailerMailSender = class {
         user: env.SMTP_EMAIL,
         pass: env.SMTP_PASSWORD
       },
+      // Pooling: o worker manda em lote, e abrir uma conexão por mensagem é o
+      // que torna um lote lento o bastante para estourar o lock do job. Os
+      // limites vêm do env porque são cota do provedor, não constante de código.
+      pool: true,
+      maxConnections: env.SMTP_POOL_MAX_CONNECTIONS,
+      maxMessages: env.SMTP_POOL_MAX_MESSAGES,
+      rateDelta: env.SMTP_POOL_RATE_DELTA_MS,
+      rateLimit: env.SMTP_POOL_RATE_LIMIT,
       // Sem esses limites, o Nodemailer cai nos timeouts do SO (até ~10 min por socket)
       connectionTimeout: env.SMTP_CONNECTION_TIMEOUT_MS,
       greetingTimeout: env.SMTP_GREETING_TIMEOUT_MS,
       socketTimeout: env.SMTP_SOCKET_TIMEOUT_MS
     });
-    try {
-      await transporter.verify();
-    } catch (error) {
-      logger.error({ error }, "transportador SMTP falhou na verifica\xE7\xE3o");
-      throw error;
-    }
-    logger.info("transportador SMTP verificado com sucesso");
+    await verifyTransporter(transporter);
     this.transporter = transporter;
     return transporter;
   }
-  async send({ to, subject, message, html, attachments }) {
-    const transporter = await this.getTransporter();
-    try {
-      const info = await transporter.sendMail({
-        from: env.SMTP_EMAIL,
-        to,
-        subject,
-        text: message,
-        html,
-        ...attachments ? { attachments } : {}
-      });
-      this.consecutiveFailures = 0;
-      return info;
-    } catch (error) {
-      this.consecutiveFailures++;
-      if (this.consecutiveFailures >= EMAIL_CONSTANTS.SMTP_MAX_CONSECUTIVE_FAILURES) {
-        logger.warn(
-          { consecutiveFailures: this.consecutiveFailures },
-          "Reiniciando transportador SMTP ap\xF3s falhas consecutivas de envio"
-        );
-        this.transporter = null;
-        this.consecutiveFailures = 0;
-      }
-      throw error;
+  async send(request) {
+    if (!this.breaker) {
+      return this.dispatch(request);
     }
+    return this.breaker.execute(() => this.dispatch(request));
+  }
+  /**
+   * Um envio, sem política. A verificação do transportador entra no escopo do
+   * breaker de propósito: um SMTP que não autentica falha aqui exatamente como
+   * um que não entrega, e é a mesma indisponibilidade.
+   */
+  async dispatch({ to, subject, message, html, attachments }) {
+    const transporter = await this.getTransporter();
+    return transporter.sendMail({
+      from: env.SMTP_EMAIL,
+      to,
+      subject,
+      text: message,
+      html,
+      ...attachments ? { attachments } : {}
+    });
+  }
+  /** Estado atual do circuito — exposto para teste e diagnóstico. */
+  get circuitState() {
+    return this.breaker?.state ?? null;
   }
 };
+async function verifyTransporter(transporter) {
+  try {
+    await transporter.verify();
+  } catch (error) {
+    logger.error({ error }, EMAIL_LOGS.SMTP_VERIFY_FAILED);
+    throw error;
+  }
+  logger.info(EMAIL_LOGS.SMTP_VERIFIED);
+}
+function createSmtpBreaker() {
+  if (!env.SMTP_CIRCUIT_BREAKER_ENABLED) {
+    return null;
+  }
+  return (0, import_cockatiel.circuitBreaker)(import_cockatiel.handleAll, {
+    halfOpenAfter: env.SMTP_CIRCUIT_BREAKER_HALF_OPEN_AFTER_MS,
+    breaker: new import_cockatiel.SamplingBreaker({
+      threshold: env.SMTP_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+      duration: env.SMTP_CIRCUIT_BREAKER_SAMPLING_WINDOW_MS,
+      minimumRps: env.SMTP_CIRCUIT_BREAKER_MIN_THROUGHPUT
+    })
+  });
+}
 
 // src/use-cases/factories/make-send-email-use-case.ts
 var mailSender = new NodemailerMailSender();
@@ -3399,7 +3447,6 @@ var import_prom_client7 = require("prom-client");
 var import_node_events = require("events");
 var toError = (reason) => {
   if (reason instanceof Error) return reason;
-  if (typeof reason === "string") return new Error(reason);
   return new Error(String(reason));
 };
 var resolveAbort = (onAbort, resolve, reject) => {
@@ -3419,7 +3466,10 @@ var resolveIfAlreadyAborted = (signal, onAbort) => {
 };
 function abortRace(promise, signal, onAbort) {
   const aborted = resolveIfAlreadyAborted(signal, onAbort);
-  if (aborted) return aborted;
+  if (aborted) {
+    promise.catch(() => void 0);
+    return aborted;
+  }
   return new Promise((resolve, reject) => {
     let settled = false;
     const onResolve = (val) => {

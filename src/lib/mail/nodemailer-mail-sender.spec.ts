@@ -44,6 +44,11 @@ describe('NodemailerMailSender', () => {
         user: env.SMTP_EMAIL,
         pass: env.SMTP_PASSWORD,
       },
+      pool: true,
+      maxConnections: env.SMTP_POOL_MAX_CONNECTIONS,
+      maxMessages: env.SMTP_POOL_MAX_MESSAGES,
+      rateDelta: env.SMTP_POOL_RATE_DELTA_MS,
+      rateLimit: env.SMTP_POOL_RATE_LIMIT,
       connectionTimeout: env.SMTP_CONNECTION_TIMEOUT_MS,
       greetingTimeout: env.SMTP_GREETING_TIMEOUT_MS,
       socketTimeout: env.SMTP_SOCKET_TIMEOUT_MS,
@@ -131,41 +136,47 @@ describe('NodemailerMailSender', () => {
     expect(transporter.verify).toHaveBeenCalledOnce()
   })
 
-  it('should reset the cached transporter after 3 consecutive sendMail failures', async () => {
-    const flapping = makeTransporterMock()
-    flapping.sendMail.mockRejectedValue(new Error('SMTP instável'))
-    const healthy = makeTransporterMock()
-    createTransport.mockReturnValueOnce(flapping).mockReturnValueOnce(healthy)
-
-    const sender = new NodemailerMailSender()
-    await expect(sender.send(request)).rejects.toThrow('SMTP instável')
-    await expect(sender.send(request)).rejects.toThrow('SMTP instável')
-    expect(createTransport).toHaveBeenCalledOnce() // ainda em cache após 2 falhas
-
-    await expect(sender.send(request)).rejects.toThrow('SMTP instável') // 3ª falha descarta o cache
-
-    await expect(sender.send(request)).resolves.toEqual({ messageId: 'mock-id' })
-    expect(createTransport).toHaveBeenCalledTimes(2)
-    expect(healthy.verify).toHaveBeenCalledOnce()
-    expect(healthy.sendMail).toHaveBeenCalledOnce()
-  })
-
-  it('should reset the failure counter on a successful send', async () => {
+  /**
+   * O contador de falhas consecutivas que ficava aqui foi substituído pelo
+   * breaker do cockatiel (A4 do plano de reúso de dependências). Os dois testes
+   * que fixavam o contador — "descarta o cache após 3 falhas" e "o sucesso zera
+   * o contador" — não foram apagados por conveniência: o comportamento que eles
+   * descreviam deixou de existir, e o que o substitui está coberto em
+   * `nodemailer-mail-sender-circuit-breaker.spec.ts`, que exercita abrir o
+   * circuito, falhar rápido e recriar o transportador na abertura.
+   */
+  it('mantém o transportador em cache quando a falha é isolada (sem abrir o circuito)', async () => {
     const transporter = makeTransporterMock()
-    transporter.sendMail
-      .mockRejectedValueOnce(new Error('falha 1'))
-      .mockRejectedValueOnce(new Error('falha 2'))
-      .mockResolvedValueOnce({ messageId: 'mock-id' })
-      .mockRejectedValueOnce(new Error('falha 3'))
+    transporter.sendMail.mockRejectedValueOnce(new Error('falha isolada'))
     createTransport.mockReturnValue(transporter)
 
     const sender = new NodemailerMailSender()
-    await expect(sender.send(request)).rejects.toThrow('falha 1')
-    await expect(sender.send(request)).rejects.toThrow('falha 2')
+    await expect(sender.send(request)).rejects.toThrow('falha isolada')
     await expect(sender.send(request)).resolves.toEqual({ messageId: 'mock-id' })
 
-    // O sucesso zerou o contador: esta falha volta a ser a 1ª, sem descartar o cache.
-    await expect(sender.send(request)).rejects.toThrow('falha 3')
     expect(createTransport).toHaveBeenCalledOnce()
+  })
+
+  /**
+   * O pooling é o outro lado do A4: o worker envia em lote, e abrir uma conexão
+   * por mensagem é o que torna um lote lento o bastante para estourar o lock do
+   * job. Os limites vêm do env porque são cota do provedor, não constante de
+   * código — e estourar a cota do Gmail custa a conta, não só o lote.
+   */
+  it('cria o transportador com pooling e os limites de envio do env', async () => {
+    const transporter = makeTransporterMock()
+    createTransport.mockReturnValueOnce(transporter)
+
+    await new NodemailerMailSender().send(request)
+
+    expect(createTransport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pool: true,
+        maxConnections: env.SMTP_POOL_MAX_CONNECTIONS,
+        maxMessages: env.SMTP_POOL_MAX_MESSAGES,
+        rateDelta: env.SMTP_POOL_RATE_DELTA_MS,
+        rateLimit: env.SMTP_POOL_RATE_LIMIT,
+      }),
+    )
   })
 })

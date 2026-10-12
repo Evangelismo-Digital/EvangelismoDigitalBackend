@@ -133,11 +133,25 @@ var envSchema = import_zod2.z.object({
   SMTP_PORT: import_zod2.z.coerce.number(),
   SMTP_HOST: import_zod2.z.string().min(1),
   SMTP_SECURE: import_zod2.z.enum(["true", "false"]).transform((val) => val === "true"),
-  SMTP_POOL_MAX_CONNECTIONS: import_zod2.z.coerce.number().int().positive().default(5),
+  // Pooling do nodemailer. Os limites são conservadores de propósito: o alvo é
+  // o SMTP do Gmail, e estourar a cota de envio custa a conta, não só o lote.
+  SMTP_POOL_MAX_CONNECTIONS: import_zod2.z.coerce.number().int().positive().default(3),
   SMTP_POOL_MAX_MESSAGES: import_zod2.z.coerce.number().int().positive().default(100),
   SMTP_POOL_RATE_LIMIT: import_zod2.z.coerce.number().int().positive().default(5),
   SMTP_POOL_RATE_DELTA_MS: import_zod2.z.coerce.number().int().positive().default(1e3),
   // Timeouts defensivos: impedem que um servidor SMTP travado bloqueie o chamador (padrões do Nodemailer chegam a 10 min)
+  // Breaker do SMTP — deliberadamente separado do CIRCUIT_BREAKER_* dos
+  // provedores: o perfil de tráfego não tem nada a ver (um punhado de mensagens
+  // por minuto contra uma consulta por requisição), então uma janela de
+  // amostragem boa para um é errada para o outro. Compartilhar também faria
+  // CIRCUIT_BREAKER_ENABLED=false desligar o breaker do e-mail sem querer.
+  SMTP_CIRCUIT_BREAKER_ENABLED: import_zod2.z.enum(["true", "false"]).transform((v) => v === "true").default(true),
+  SMTP_CIRCUIT_BREAKER_FAILURE_THRESHOLD: import_zod2.z.coerce.number().gt(0).lt(1).default(0.5),
+  SMTP_CIRCUIT_BREAKER_SAMPLING_WINDOW_MS: import_zod2.z.coerce.number().int().positive().default((0, import_ms.default)("60s")),
+  // Vazão mínima baixa porque o envio é esporádico: exigir RPS de provedor aqui
+  // significaria que o breaker nunca abriria num serviço que manda e-mail aos poucos.
+  SMTP_CIRCUIT_BREAKER_MIN_THROUGHPUT: import_zod2.z.coerce.number().int().positive().default(2),
+  SMTP_CIRCUIT_BREAKER_HALF_OPEN_AFTER_MS: import_zod2.z.coerce.number().int().positive().default((0, import_ms.default)("30s")),
   SMTP_CONNECTION_TIMEOUT_MS: import_zod2.z.coerce.number().int().positive().default(5e3),
   SMTP_GREETING_TIMEOUT_MS: import_zod2.z.coerce.number().int().positive().default(5e3),
   SMTP_SOCKET_TIMEOUT_MS: import_zod2.z.coerce.number().int().positive().default(1e4),
@@ -2118,9 +2132,7 @@ var OutboxSignal = {
 // src/messages/constants/email/email.ts
 var EMAIL_CONSTANTS = {
   PASSWORD_RECOVERY_SUBJECT: "Recupera\xE7\xE3o de senha",
-  PASSWORD_RESET_GENERIC_MESSAGE: "Se o usu\xE1rio existir, voc\xEA receber\xE1 um e-mail com instru\xE7\xF5es para redefinir a senha.",
-  // Após N falhas consecutivas de envio, o transportador em cache é descartado e recriado (SMTP instável)
-  SMTP_MAX_CONSECUTIVE_FAILURES: 3
+  PASSWORD_RESET_GENERIC_MESSAGE: "Se o usu\xE1rio existir, voc\xEA receber\xE1 um e-mail com instru\xE7\xF5es para redefinir a senha."
 };
 
 // src/http/controllers/users/forgot-password.controller.ts
@@ -3371,7 +3383,6 @@ var Deadline = class _Deadline {
 var import_node_events = require("events");
 var toError = (reason) => {
   if (reason instanceof Error) return reason;
-  if (typeof reason === "string") return new Error(reason);
   return new Error(String(reason));
 };
 var resolveAbort = (onAbort, resolve, reject) => {
@@ -3391,7 +3402,10 @@ var resolveIfAlreadyAborted = (signal, onAbort) => {
 };
 function abortRace(promise, signal, onAbort) {
   const aborted = resolveIfAlreadyAborted(signal, onAbort);
-  if (aborted) return aborted;
+  if (aborted) {
+    promise.catch(() => void 0);
+    return aborted;
+  }
   return new Promise((resolve, reject) => {
     let settled = false;
     const onResolve = (val) => {

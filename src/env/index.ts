@@ -123,11 +123,28 @@ const envSchema = z.object({
   SMTP_PORT: z.coerce.number(),
   SMTP_HOST: z.string().min(1),
   SMTP_SECURE: z.enum(['true', 'false']).transform((val) => val === 'true'),
-  SMTP_POOL_MAX_CONNECTIONS: z.coerce.number().int().positive().default(5),
+  // Pooling do nodemailer. Os limites são conservadores de propósito: o alvo é
+  // o SMTP do Gmail, e estourar a cota de envio custa a conta, não só o lote.
+  SMTP_POOL_MAX_CONNECTIONS: z.coerce.number().int().positive().default(3),
   SMTP_POOL_MAX_MESSAGES: z.coerce.number().int().positive().default(100),
   SMTP_POOL_RATE_LIMIT: z.coerce.number().int().positive().default(5),
   SMTP_POOL_RATE_DELTA_MS: z.coerce.number().int().positive().default(1_000),
   // Timeouts defensivos: impedem que um servidor SMTP travado bloqueie o chamador (padrões do Nodemailer chegam a 10 min)
+  // Breaker do SMTP — deliberadamente separado do CIRCUIT_BREAKER_* dos
+  // provedores: o perfil de tráfego não tem nada a ver (um punhado de mensagens
+  // por minuto contra uma consulta por requisição), então uma janela de
+  // amostragem boa para um é errada para o outro. Compartilhar também faria
+  // CIRCUIT_BREAKER_ENABLED=false desligar o breaker do e-mail sem querer.
+  SMTP_CIRCUIT_BREAKER_ENABLED: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .default(true),
+  SMTP_CIRCUIT_BREAKER_FAILURE_THRESHOLD: z.coerce.number().gt(0).lt(1).default(0.5),
+  SMTP_CIRCUIT_BREAKER_SAMPLING_WINDOW_MS: z.coerce.number().int().positive().default(ms('60s')),
+  // Vazão mínima baixa porque o envio é esporádico: exigir RPS de provedor aqui
+  // significaria que o breaker nunca abriria num serviço que manda e-mail aos poucos.
+  SMTP_CIRCUIT_BREAKER_MIN_THROUGHPUT: z.coerce.number().int().positive().default(2),
+  SMTP_CIRCUIT_BREAKER_HALF_OPEN_AFTER_MS: z.coerce.number().int().positive().default(ms('30s')),
   SMTP_CONNECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
   SMTP_GREETING_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
   SMTP_SOCKET_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
