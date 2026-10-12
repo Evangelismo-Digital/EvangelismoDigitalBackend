@@ -13,7 +13,7 @@
  * horizontalmente. Não era um bug latente em produção com um pod, era um teto.
  *
  * DEFEITO: plano de reúso de dependências, Finding A2 / Fase 3 —
- * `docs/dependency-reuse-refactor-plan.md`.
+ * `docs/history/dependency-reuse-refactor-plan.md`.
  *
  * A CORREÇÃO: os agendamentos passaram a ser Job Schedulers do BullMQ, que
  * vivem no Redis. Todo pod faz upsert do MESMO id; o BullMQ mantém um único

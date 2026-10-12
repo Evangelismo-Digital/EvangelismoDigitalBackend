@@ -374,76 +374,14 @@ considered and is unnecessary once `Deadline` supplies the signal.
 
 ## Category C — evaluated and rejected
 
-Step 4 of the rule permits custom code when libraries were evaluated and found wanting. These are those
-evaluations, recorded so they are not silently redone.
+Step 4 of the rule permits custom code when libraries were evaluated and found wanting. Five such
+evaluations came out of this audit — `neverthrow`, `@epic-web/cachified`, `redlock`, `ua-parser-js`
+and `undici`/native `fetch`, all **rejected**.
 
-### C1. `neverthrow` vs `core/shared/result.ts` — **REJECT**
-
-`neverthrow` is the established Result library for TypeScript. The local implementation is 23 lines
-(`ok`/`err`/`isOk`/`isErr`) and is imported by essentially the whole codebase.
-
-Rejected because: neverthrow's value is its _combinator_ API (`.map`, `.andThen`, `ResultAsync`), which
-is a different programming style from the `if (isErr(x)) return x` propagation `CLAUDE.md` mandates as
-the house convention. Adopting it means either a mechanical rename that gains nothing, or rewriting
-control flow in ~349 files. The 23 lines being replaced have no defect and no maintenance cost.
-
-**Re-evaluate if:** the team decides it wants combinator-style chaining as the convention. That is a
-style decision, not a dependency decision.
-
-### C2. `@epic-web/cachified` vs `ResilientCache` — **REJECT as a replacement**
-
-`@epic-web/cachified` is actively maintained and does TTL, stale-while-revalidate, and parallel-fetch
-protection over any key/value store.
-
-Rejected because `ResilientCache` (565 lines) is not primarily a cache: it is a cache _fused with_ this
-codebase's `Result`/`AppError` vocabulary, `failureMode`-driven negative-TTL policy
-(`cache-failure-policy.ts`), detached-`Deadline` single-flight semantics, and cockatiel breaker/bulkhead
-composition. cachified models none of those. A replacement would keep ~70% of the file as an adapter
-while losing the mutation-tested guarantees around caller cancellation.
-
-**Take the idea, not the dependency:** cachified's stale-while-revalidate is genuinely absent here and
-worth implementing natively if provider latency becomes a problem.
-
-### C3. `redlock` vs `DistributedLock` — **REJECT**
-
-Rejected on two grounds. First, `redlock` implements the multi-node Redlock algorithm; this deployment
-has one Redis instance, so the algorithm's guarantees do not apply and its quorum machinery is pure
-overhead. Second, Redlock's safety is actively disputed in the distributed-systems literature.
-
-The existing implementation is a textbook-correct single-instance lock: `SET NX PX`, ownership token, and
-Lua-atomic compare-and-delete / compare-and-renew. It is right. Only its transport changes (Finding A5).
-
-### C4. `ua-parser-js` vs `user-agent-parser.ts` — **REJECT, and the docblock is now understated**
-
-`user-agent-parser.ts` explains that it is hand-rolled because only three coarse buckets are needed and a
-library would add a monthly-updated regex database.
-
-That reasoning holds, and there is now a second, stronger one the docblock predates: **ua-parser-js v2
-dropped MIT for dual AGPLv3 + commercial "PRO" licensing.** AGPLv3 is incompatible with a closed-source
-backend without a paid licence. v0.7.x/v1.x remain MIT but receive minimal updates — and a
-minimally-updated regex database is the one thing a UA parser must not be. Matteo Collina (Node.js TSC)
-publicly called it a rug pull and forked rather than pin.
-
-**Action: none to the code — but add the licence finding to the docblock**, because "we chose not to" and
-"we cannot without buying a licence" are different facts, and the next reader deserves the second one.
-
-**Better direction if this ever needs to improve:** UA Client Hints (`Sec-CH-UA-Platform`,
-`Sec-CH-UA-Mobile`) — the browser reports platform and mobile-ness as structured headers, no parsing and
-no regex database. Progressive enhancement over the existing fallback.
-
-### C5. `undici` / native `fetch` vs `axios` — **REJECT**
-
-Node 22 ships `fetch` and `undici`, with native pooling and real `AbortSignal` support. But `axios@1.20.0`
-is actively maintained, and this codebase's error classification is built on it —
-`find-nearest-churches-error-mapper.ts` branches on `isAxiosError`, and the provider decorators map
-`AxiosError` shapes to `failureMode`. Switching rewrites the error taxonomy the whole resilient-provider
-chain routes on, for no capability gain. `lib/http/https-agent.ts` already provides keep-alive pooling.
-
-> Unrelated dead code noticed while reading it: `https-agent.ts:37-41` re-checks `agents.get(key)` and
-> rebuilds on `undefined` immediately after `agents.set(key, ...)` on line 34. That branch is
-> unreachable. Sweep it in Phase 1.
-
----
+> **Moved.** The full reasoning and the re-evaluation trigger for each now lives in
+> [`../dependency-decisions.md`](../dependency-decisions.md), which is append-only and is where a new
+> dependency decision belongs. It was duplicated here verbatim; one copy had to be the canonical one,
+> and a finished plan is the wrong place to append to.
 
 ## Phased implementation plan
 
@@ -582,8 +520,8 @@ re-run mutation testing on the whole file rather than the diff.
 
 ### Phase 6 — Standing decisions
 
-Not a refactor. `docs/dependency-decisions.md` becomes the durable record, and each rejection gets an
-explicit re-evaluation trigger:
+Not a refactor. [`../dependency-decisions.md`](../dependency-decisions.md) is the durable record, and
+each rejection carries an explicit re-evaluation trigger there. Repeated here only as a summary:
 
 | Decision          | Re-evaluate when                                                                                 |
 | ----------------- | ------------------------------------------------------------------------------------------------ |

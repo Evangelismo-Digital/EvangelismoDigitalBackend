@@ -22,12 +22,27 @@ npm run db:migrate:dev          # once, if the schema is stale
 npm run test:integration:full   # vitest --project integration
 ```
 
-It is **not** in the CI allowlist (`.github/workflows/ci.yml`) or
-`scripts/ci-local.sh`, and `npm run test:unit` / `npm run verify` do not touch it.
-Files are named `*.integration.spec.ts` and collected by the `integration` vitest
-project (`vite.config.mts`), which uses the Docker prisma environment and runs
-files **serially** (`fileParallelism: false`) because they share one Redis
-keyspace and the Fastify singleton.
+The catch-all `integration` project is **not** in the CI allowlist
+(`.github/workflows/ci.yml`) or `scripts/ci-local.sh`, and `npm run test:unit` /
+`npm run verify` do not touch it. Files are named `*.integration.spec.ts` and
+collected by the `integration` vitest project (`vite.config.mts`), which uses the
+Docker prisma environment and runs files **serially**
+(`fileParallelism: false`) because they share one Redis keyspace and the Fastify
+singleton.
+
+**Three narrower integration projects DO run in CI**, split out because each
+needs only one piece of infrastructure and is therefore cheap enough to gate
+every push. They are listed in **both** allowlists — keep them in lockstep:
+
+| Project                    | Needs         | Scope                 | Pattern                       |
+| -------------------------- | ------------- | --------------------- | ----------------------------- |
+| `integration-cache`        | Redis only    | `src/lib/infra/cache` | `*.redis-integration.spec.ts` |
+| `integration-jobs`         | Redis only    | `src/lib/infra/jobs`  | `*.redis-integration.spec.ts` |
+| `integration-repositories` | Postgres only | `src/repositories`    | `*.integration.spec.ts`       |
+
+So the file suffix decides the project: `*.redis-integration.spec.ts` under a
+scoped directory runs in CI, while a plain `*.integration.spec.ts` outside
+`src/repositories` lands in the opt-in catch-all.
 
 Each spec cleans up after itself (deletes the Postgres rows and Redis keys it
 created); there is no per-test schema isolation, so keep new specs to
@@ -45,3 +60,8 @@ self-cleaning, prefix-scoped keys.
 | `lib/workers/mail-worker.integration.spec.ts`                               | full `createMailJobProcessor` lifecycle: send all → idempotency key `completed` + outbox row deleted, idempotent re-delivery re-deletes without re-sending, expiry gate deletes + skips SMTP, partial failure persists `pendingRecipients` for selective retry + frees the key + rethrows, `processing` key → `JobAlreadyProcessing`                   |
 | `http/controllers/forms/forms.integration.spec.ts`                          | `POST /forms/submit-form`: 201 + form row + `PENDING` outbox event in one transaction (no `ipAddress` in the persisted payload), post-commit `OutboxSignal` publish, 409 on duplicate email, 400 on invalid bodies, **transaction rollback** leaves no orphan form row when the outbox insert fails                                                    |
 | `providers/address-provider/resilient-address-provider.integration.spec.ts` | the address chain + resilient decorators + real Redis rate-limiter: fast path, advance past `RETRYABLE` (HTTP 429) with real backoff, all-404 → `InvalidCepError`, all-429 → last `RETRYABLE` error, a real rate-limit rejection short-circuits a downstream provider — the deterministic counterpart of `api-providers-fallback-strategy.e2e.spec.ts` |
+| `lib/infra/cache/resilient-cache.redis-integration.spec.ts`                 | the Redis-only cache suite that runs in CI (`integration-cache`)                                                                                                                                                                                                                                                                                       |
+| `lib/infra/jobs/maintenance-scheduler.redis-integration.spec.ts`            | **the claim of the Job Scheduler migration**: four schedulers registered with the right cron patterns, two "pods" upserting the same ids keep four and not eight, one job per tick, idempotent re-registration, distinct ids stay distinct (`integration-jobs`, in CI)                                                                                 |
+| `lib/mail/nodemailer-mail-sender.integration.spec.ts`                       | the REAL nodemailer against an in-process SMTP server over `node:net` — verify, delivery, body parts, sequential and parallel sends through the pool, refused connection. Guards the nodemailer 9→10 major and the pooling config; opt-in, not in CI                                                                                                   |
+| `repositories/prisma/prisma-analytics-repository.integration.spec.ts`       | analytics persistence against real Postgres (`integration-repositories`, in CI)                                                                                                                                                                                                                                                                        |
+| `repositories/prisma/prisma-churches-repository.integration.spec.ts`        | the PostGIS nearest-church queries against real Postgres (`integration-repositories`, in CI)                                                                                                                                                                                                                                                           |

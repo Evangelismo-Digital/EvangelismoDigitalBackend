@@ -1,8 +1,8 @@
 # Monitoring Stack Verification (Step 20)
 
 Runbook for validating the full observability stack (Prometheus, Alertmanager, Grafana, exporters)
-end-to-end against the containerized prod app/worker — the closing step of
-[monitoring-implementation-steps.md](monitoring-implementation-steps.md). Pairs with
+end-to-end against the containerized prod app/worker. (It was written as the closing step of a
+`monitoring-implementation-steps.md` that has since been removed; it stands on its own.) Pairs with
 [scripts/verify-monitoring.sh](../scripts/verify-monitoring.sh), which automates everything that can be
 checked from the command line; this doc covers what that script cannot (browser UIs, inbox checks).
 

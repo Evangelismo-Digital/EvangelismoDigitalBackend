@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # End-to-end verification of the monitoring stack (Prometheus, Alertmanager,
-# Grafana, exporters) against the containerized prod app/worker — Step 20 of
-# docs/monitoring-implementation-steps.md. Companion runbook for the manual/
-# visual checks this script can't automate: docs/monitoring-verification.md.
+# Grafana, exporters) against the containerized prod app/worker. Companion
+# runbook for the manual/visual checks this script can't automate:
+# docs/monitoring-verification.md. (It used to cite a
+# docs/monitoring-implementation-steps.md "Step 20"; that file was removed.)
 #
 # Runs typecheck/lint/unit/e2e first (before any prod container exists, so
 # ci-local.sh's own port-3333 guard never collides with our stack). It does

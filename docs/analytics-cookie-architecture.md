@@ -1,6 +1,6 @@
 # Arquitetura de Cookies e Analytics — Especificação de Correção
 
-> **Status:** proposta técnica · **Escopo:** `src/http/plugins/analytics.plugin.ts`, `src/env/index.ts`, `src/app.ts`, `src/http/controllers/analytics/*`, `prisma/schema.prisma` · **Frontend afetado:** Next.js 16 (App Router)
+> **Status:** IMPLEMENTADO (revisado em 2026-10-12) — este documento descreve o subsistema como ele existe hoje, não uma proposta. O modelo `AnalyticsVisitor` está em `prisma/schema.prisma` e os controllers de bootstrap/identify/consent estão em `src/http/controllers/analytics/`. Onde o texto divergir do código, o código vence. · **Escopo:** `src/http/plugins/analytics.plugin.ts`, `src/env/index.ts`, `src/app.ts`, `src/http/controllers/analytics/*`, `prisma/schema.prisma` · **Frontend afetado:** Next.js 16 (App Router)
 
 Este documento fecha os 8 problemas levantados na auditoria da camada de cookies e redesenha o subsistema para o objetivo real do produto: **saber quando um usuário entrou, quando voltou, quais páginas acessou e quanto de cada uma ele efetivamente leu — com identidade vinculada ao `userId` quando autenticado.**
 

@@ -1,5 +1,24 @@
 # Architecture assessment + refactor plan: BullMQ-native jobs & church-routing latency
 
+> **Status — revised 2026-10-12. This document is still live: it is the only record of the open
+> defects below.** Parts of it have been overtaken by the Job Scheduler migration; those are marked
+> inline. Where it disagrees with the code, the code wins.
+>
+> **Still open (verified against the source on 2026-10-12):**
+>
+> | #   | Defect                                                                                | Where                                   |
+> | --- | ------------------------------------------------------------------------------------- | --------------------------------------- |
+> | 5   | **No `claim()`/CAS on the outbox** — the real blocker for a second worker pod         | `prisma-outbox-event-repository.ts`     |
+> | 6+8 | `removeOnComplete`/`removeOnFail: true` discard the evidence a post-mortem would need | `lib/queue/mail-queue.ts:25-26`         |
+> | 7   | `STUCK_SENDING_MS: 900_000` vs the real dispatch budget                               | `messages/constants/outbox/outbox.ts`   |
+> | 9   | `LOCK_DURATION_MS: 300_000` on the mail worker                                        | `messages/constants/workers/workers.ts` |
+>
+> Part 2 (`FlowProducer` + a `mail-finalize` worker) is **not implemented** — there is no
+> `FlowProducer` anywhere in `src/`.
+>
+> **Already resolved:** defect 1 (`cacheSuccessResults`) is fixed, and defect 10's cron half is moot —
+> see §3.2.
+
 ## Context
 
 The question that started this was whether to replace hand-rolled worker/rate-limit machinery with BullMQ
@@ -41,7 +60,7 @@ Decisions taken by the user during planning, recorded here so they aren't reliti
 | `FlowProducer`                              | **Adopt (mail only)** | Mail is a true fan-out/join: N sends, then one "delete the outbox row" step. That is exactly the parent/children model. Church routing is a _linear_ 3-step chain — modelling it as a flow buys Redis round-trips and zero parallelism.                                                                                                                                                                                              |
 | `QueueEvents`                               | **Skip**              | Only needed for `job.waitUntilFinished()` (which we don't want) or as a metrics stream. Metrics already work via lazy `getJobCounts()` per Prometheus scrape, which is cheaper than a persistent stream consumer.                                                                                                                                                                                                                    |
 | BullMQ limiter replacing `RedisRateLimiter` | **Do not**            | Different scope. `RedisRateLimiter` is called _inline in the HTTP request_ ([resilient-geocoding-provider.decorator.ts:45](src/providers/geo-provider/decorators/resilient-geocoding-provider.decorator.ts#L45)); a queue limiter cannot protect a synchronous path. It also isn't hand-rolled — it's `rate-limiter-flexible`'s `RateLimiterRedis` (atomic Lua, distributed-safe). Replacing it would lose per-provider granularity. |
-| `QueueScheduler`                            | **N/A**               | Removed in BullMQ v4+; delayed jobs are handled by the Worker itself.                                                                                                                                                                                                                                                                                                                                                                |
+| `QueueScheduler`                            | **N/A**               | Removed in BullMQ v4+; delayed jobs are handled by the Worker itself. **(2026-10-12: still true, but read it narrowly — the removed `QueueScheduler` class is not the same thing as Job Schedulers, `queue.upsertJobScheduler`, which this project HAS since adopted to replace `node-cron`. See the maintenance scheduler in `src/lib/infra/jobs/maintenance-scheduler.ts`.)**                                                      |
 
 ### 1.2 Should church routing move to a worker? (the trade-off analysis requested)
 
@@ -223,20 +242,28 @@ lock needed.
 Note the recovery sweep re-claims `SENDING` rows, so `processStuckSendingEvents` needs a variant of the
 predicate (`status: SENDING AND sendingAt <= threshold`) rather than `status: PENDING`.
 
-### 3.2 Worker shutdown hygiene (defect 10)
+### 3.2 Worker shutdown hygiene (defect 10) — **mostly resolved**
+
+> **Revised 2026-10-12.** Three of the four bullets below were written against a worker that no longer
+> exists. Kept for the record, each marked with what is actually true now.
 
 In [worker.ts](src/worker.ts):
 
-- Retain the handles returned by `cron.schedule` in `startOutboxCron`
-  ([outbox-cron.ts](src/lib/infra/jobs/outbox-cron.ts)); return them and `.stop()` them first in `cleanup()`.
-- Call `closeAllRedisConnections()` ([clients.ts:37](src/lib/redis/clients/clients.ts#L37)) in `cleanup()`,
-  after the queue/worker closes and before `stopMetricsServer()` — preserving the documented
-  "metrics server stops last" ordering.
-- Close the new `FlowProducer` and the `mail-finalize` worker.
-- Once §3.1 lands, the `@TODO: [ALERTA DE ESCALABILIDADE HORIZONTAL]` block at
-  [worker.ts:54-71](src/worker.ts#L54-L71) can be rewritten: cron contention is already covered by
-  `DistributedLock`, and the pub/sub race is now covered by the CAS. Leader election is no longer a prerequisite
-  for scale-out.
+- ~~Retain the handles returned by `cron.schedule` in `startOutboxCron` (`outbox-cron.ts`); return them
+  and `.stop()` them first in `cleanup()`.~~ **Moot.** `node-cron` and `outbox-cron.ts` are both gone;
+  the schedules are BullMQ Job Schedulers living in Redis, and `cleanup()` closes the maintenance worker
+  and its queue instead. Nothing in-process needs stopping.
+- ~~Call `closeAllRedisConnections()` in `cleanup()`.~~ **Already done** — `worker.ts:141`, after the
+  workers and queues close and before `stopMetricsServer()`, preserving the "metrics server stops last"
+  ordering.
+- Close the new `FlowProducer` and the `mail-finalize` worker. **Still pending** — neither exists yet
+  (Part 2 is unimplemented).
+- ~~Once §3.1 lands, the horizontal-scaling block can be rewritten.~~ **Rewritten already**, though for a
+  different reason than this document anticipated: the scheduled half stopped being a scale-out problem
+  when the cron moved into Redis as a Job Scheduler, so leader election was never needed for it. The
+  block now names the one thing that IS still open — the `OutboxSignal.subscribe` pub/sub fan-out, whose
+  safety today rests on the deterministic BullMQ `jobId` and idempotent `updateStatus`, **not** on the
+  CAS this document proposes. Defect 5 above remains the prerequisite for a second pod.
 
 ---
 
