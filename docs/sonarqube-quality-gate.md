@@ -3,7 +3,7 @@
 Record of what was set up, what it found, what was changed, and — most
 importantly — the places where a tool's advice was **rejected**, with the
 reason. A silenced rule with no recorded reason is indistinguishable from a bug
-someone gave up on.
+someone gave up on. Ok.
 
 ---
 
