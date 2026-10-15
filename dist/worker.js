@@ -139,6 +139,10 @@ var envSchema = import_zod2.z.object({
   SMTP_POOL_MAX_MESSAGES: import_zod2.z.coerce.number().int().positive().default(100),
   SMTP_POOL_RATE_LIMIT: import_zod2.z.coerce.number().int().positive().default(5),
   SMTP_POOL_RATE_DELTA_MS: import_zod2.z.coerce.number().int().positive().default(1e3),
+  // Rate limiter nativo do BullMQ no worker de e-mail (coordenado via Redis entre pods).
+  // Garante vazão global controlada para o SMTP do Gmail independentemente do número de réplicas.
+  MAIL_RATE_LIMIT_MAX: import_zod2.z.coerce.number().int().positive().default(2),
+  MAIL_RATE_LIMIT_DURATION_MS: import_zod2.z.coerce.number().int().positive().default(1e3),
   // Timeouts defensivos: impedem que um servidor SMTP travado bloqueie o chamador (padrões do Nodemailer chegam a 10 min)
   // Breaker do SMTP — deliberadamente separado do CIRCUIT_BREAKER_* dos
   // provedores: o perfil de tráfego não tem nada a ver (um punhado de mensagens
@@ -242,21 +246,25 @@ var CRON_SCHEDULES = {
   /** Every day at 03:00 (off the midnight sweep) */
   DAILY_3AM: "0 0 3 * * *",
   /** Every day at 04:00 — analytics retention, after the outbox purge at 03:00 */
-  DAILY_4AM: "0 0 4 * * *"
+  DAILY_4AM: "0 0 4 * * *",
+  /** Every day at 05:00 — failed outbox events retention, after analytics at 04:00 */
+  DAILY_5AM: "0 0 5 * * *"
 };
 
 // src/messages/constants/queue/queue.ts
 var QUEUE = {
   NAMES: {
     MAIL: "mail-queue",
-    MAINTENANCE: "maintenance-queue"
+    MAINTENANCE: "maintenance-queue",
+    OUTBOX_DISPATCH: "outbox-dispatch-queue"
   },
   JOBS: {
     OUTBOX_DISPATCH: "outbox-dispatch",
     FIVE_MIN_SWEEP: "five-min-sweep",
     MIDNIGHT_SCAN: "midnight-scan",
     RETENTION_PURGE: "retention-purge",
-    ANALYTICS_RETENTION: "analytics-retention"
+    ANALYTICS_RETENTION: "analytics-retention",
+    FAILED_JOBS_CLEANUP: "failed-jobs-cleanup"
   },
   /**
    * Scheduler ids are the dedup key: every pod upserts the same id, so BullMQ
@@ -268,7 +276,8 @@ var QUEUE = {
     FIVE_MIN_SWEEP: "maintenance:five-min-sweep",
     MIDNIGHT_SCAN: "maintenance:midnight-scan",
     RETENTION_PURGE: "maintenance:retention-purge",
-    ANALYTICS_RETENTION: "maintenance:analytics-retention"
+    ANALYTICS_RETENTION: "maintenance:analytics-retention",
+    FAILED_JOBS_CLEANUP: "maintenance:failed-jobs-cleanup"
   }
 };
 
@@ -293,7 +302,7 @@ var OUTBOX_LOGS = {
   PHASE2_DONE: "Fase 2 (eventos PENDING): conclu\xEDda.",
   PHASE2_ERROR: "Fase 2 (eventos PENDING): erro inesperado.",
   SCAN_DONE: "Varredura de seguran\xE7a da Outbox conclu\xEDda.",
-  SCHEDULER_CONFIGURED: "Agendadores da Outbox configurados: varredura a cada 5 min, seguran\xE7a \xE0 meia-noite e reten\xE7\xE3o \xE0s 03:00.",
+  SCHEDULER_CONFIGURED: "Agendadores da Outbox configurados: varredura a cada 5 min, seguran\xE7a \xE0 meia-noite, reten\xE7\xE3o \xE0s 03:00 e limpeza de falhas \xE0s 05:00.",
   // maintenance-scheduler / maintenance-worker
   MAINTENANCE_PHASE_RETRYING: "Fase de manuten\xE7\xE3o falhou; o BullMQ far\xE1 nova tentativa com backoff antes de desistir.",
   MAINTENANCE_JOB_UNKNOWN: "Job de manuten\xE7\xE3o desconhecido recebido na fila; nada a executar.",
@@ -319,6 +328,8 @@ var OUTBOX_LOGS = {
   RETENTION_PURGED: "Reten\xE7\xE3o: eventos antigos removidos da Outbox.",
   RETENTION_PURGED_NON_TERMINAL: "Reten\xE7\xE3o: eventos PENDING/SENDING antigos removidos da Outbox \u2014 investigar por que n\xE3o foram processados.",
   RETENTION_ERROR: "Erro na reten\xE7\xE3o da Outbox.",
+  FAILED_PURGED: "Reten\xE7\xE3o de falhas: eventos com falha definitiva removidos da Outbox.",
+  FAILED_PURGE_ERROR: "Erro na limpeza de eventos com falha definitiva da Outbox.",
   FIVE_MIN_SWEEP_PENDING_ERROR: "Varredura de 5 min: erro inesperado ao processar eventos PENDING.",
   FIVE_MIN_SWEEP_EXPIRY_ERROR: "Varredura de 5 min: erro inesperado na varredura de expira\xE7\xE3o.",
   RETENTION_CRON_ERROR: "Cron de reten\xE7\xE3o: erro inesperado."
@@ -629,31 +640,6 @@ var baseConfig2 = {
   family: 4
   // force IPv4
 };
-var RECONNECT_BACKOFF_STEP_MS2 = 100;
-var RECONNECT_BACKOFF_MAX_MS2 = 5e3;
-function createOutboxPublisherConnection() {
-  const redis = new import_ioredis4.default({
-    ...baseConfig2,
-    enableOfflineQueue: true,
-    commandTimeout: 2e3
-  });
-  attachOutageLogging(redis, "outbox-publisher", OUTBOX_LOGS.PUBLISHER_ERROR);
-  return redis;
-}
-function createOutboxSubscriberConnection() {
-  const redis = new import_ioredis4.default({
-    ...baseConfig2,
-    maxRetriesPerRequest: null,
-    enableOfflineQueue: false,
-    retryStrategy: (times) => {
-      const delay = Math.min(Math.pow(2, times) * RECONNECT_BACKOFF_STEP_MS2, RECONNECT_BACKOFF_MAX_MS2);
-      logger.warn({ times, delay }, "Reconnecting outbox subscriber...");
-      return delay;
-    }
-  });
-  attachOutageLogging(redis, "outbox-subscriber", OUTBOX_LOGS.SUBSCRIBER_ERROR);
-  return redis;
-}
 
 // src/lib/redis/clients/clients.ts
 var redisCacheInstance = null;
@@ -671,14 +657,6 @@ function getRedisForQueue() {
 }
 function createWorkerConnection() {
   return createRedisBullMQConnection();
-}
-function getOutboxPublisher() {
-  redisOutboxPublisherInstance ??= createOutboxPublisherConnection();
-  return redisOutboxPublisherInstance;
-}
-function getOutboxSubscriber() {
-  redisOutboxSubscriberInstance ??= createOutboxSubscriberConnection();
-  return redisOutboxSubscriberInstance;
 }
 async function closeAllRedisConnections() {
   const targets = [
@@ -705,8 +683,21 @@ var import_bullmq = require("bullmq");
 var WORKER_CONSTANTS = {
   MAIL: {
     CONCURRENCY_LIMIT: 5,
-    LOCK_DURATION_MS: 3e5,
-    STALLED_INTERVAL_MS: 3e5
+    LOCK_DURATION_MS: 6e4,
+    STALLED_INTERVAL_MS: 3e4,
+    REMOVE_ON_COMPLETE: {
+      age: 3600,
+      count: 1e3
+    },
+    REMOVE_ON_FAIL: {
+      age: 604800,
+      count: 2e3
+    }
+  },
+  OUTBOX_DISPATCH: {
+    CONCURRENCY_LIMIT: 5,
+    LOCK_DURATION_MS: 3e4,
+    STALLED_INTERVAL_MS: 3e4
   },
   /**
    * Concorrência 1: as varreduras de manutenção são pesadas no banco e já se
@@ -719,7 +710,8 @@ var WORKER_CONSTANTS = {
   QUEUE: {
     JOB_ATTEMPTS: 3,
     BACKOFF_TYPE: "exponential",
-    BACKOFF_DELAY_MS: 1e4
+    BACKOFF_DELAY_MS: 1e4,
+    BACKOFF_JITTER: 0.3
   },
   IDEMPOTENCY_TTL: {
     PROCESSING_SECONDS: 300,
@@ -773,6 +765,11 @@ var MAINTENANCE_SCHEDULES = [
     schedulerId: QUEUE.SCHEDULER_IDS.ANALYTICS_RETENTION,
     jobName: QUEUE.JOBS.ANALYTICS_RETENTION,
     pattern: CRON_SCHEDULES.DAILY_4AM
+  },
+  {
+    schedulerId: QUEUE.SCHEDULER_IDS.FAILED_JOBS_CLEANUP,
+    jobName: QUEUE.JOBS.FAILED_JOBS_CLEANUP,
+    pattern: CRON_SCHEDULES.DAILY_5AM
   }
 ];
 async function startMaintenanceScheduler(queue = getMaintenanceQueue()) {
@@ -828,6 +825,12 @@ var collectMetricsOutboxEventsDispatched = registry2 ? new import_prom_client2.C
   help: "Events successfully enqueued to BullMQ",
   registers: [registry2]
 }) : null;
+var collectMetricsOutboxEventsClaimed = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_events_claimed_total",
+  help: "Outbox CAS claim attempts by outcome (claimed | contention)",
+  labelNames: ["outcome"],
+  registers: [registry2]
+}) : null;
 var collectMetricsOutboxEventsReverted = registry2 ? new import_prom_client2.Counter({
   name: "outbox_events_reverted_total",
   help: "Dispatch failed and the event was successfully reverted to PENDING",
@@ -873,12 +876,22 @@ var collectMetricsOutboxMaintenanceDeleted = registry2 ? new import_prom_client2
 }) : null;
 var collectMetricsOutboxSignalPublished = registry2 ? new import_prom_client2.Counter({
   name: "outbox_signal_published_total",
-  help: "Pub/Sub wakeup signals published after an outbox write",
+  help: "Pub/Sub wakeup signals published after an outbox write (deprecated in favor of outbox_dispatch_enqueued_total)",
   registers: [registry2]
 }) : null;
 var collectMetricsOutboxSignalPublishFailed = registry2 ? new import_prom_client2.Counter({
   name: "outbox_signal_publish_failed_total",
-  help: "Pub/Sub signal publish failures (Redis unavailable)",
+  help: "Pub/Sub signal publish failures (deprecated in favor of outbox_dispatch_enqueue_failed_total)",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxDispatchEnqueued = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_dispatch_enqueued_total",
+  help: "Events successfully enqueued to outbox-dispatch queue",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxDispatchEnqueueFailed = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_dispatch_enqueue_failed_total",
+  help: "Failures enqueuing event to outbox-dispatch queue (Redis down)",
   registers: [registry2]
 }) : null;
 
@@ -960,11 +973,21 @@ function analyticsRetentionPhases({ analyticsRetention }) {
     }
   ];
 }
+function failedJobsCleanupPhases({ maintenance }) {
+  return [
+    {
+      name: "failed_jobs_cleanup",
+      run: () => maintenance.purgeFailedEvents(),
+      errorMessage: OUTBOX_LOGS.FAILED_PURGE_ERROR
+    }
+  ];
+}
 var PHASE_BUILDERS = /* @__PURE__ */ new Map([
   [QUEUE.JOBS.FIVE_MIN_SWEEP, fiveMinSweepPhases],
   [QUEUE.JOBS.MIDNIGHT_SCAN, midnightScanPhases],
   [QUEUE.JOBS.RETENTION_PURGE, retentionPurgePhases],
-  [QUEUE.JOBS.ANALYTICS_RETENTION, analyticsRetentionPhases]
+  [QUEUE.JOBS.ANALYTICS_RETENTION, analyticsRetentionPhases],
+  [QUEUE.JOBS.FAILED_JOBS_CLEANUP, failedJobsCleanupPhases]
 ]);
 function phasesFor(jobName, deps) {
   return PHASE_BUILDERS.get(jobName)?.(deps) ?? [];
@@ -1052,7 +1075,8 @@ var OUTBOX_CONSTANTS = {
     OUTBOX_PROCESSOR: "lock:outbox-processor",
     OUTBOX_RECOVERY: "lock:outbox-recovery",
     OUTBOX_EXPIRY_SWEEP: "lock:outbox-expiry-sweep",
-    OUTBOX_RETENTION: "lock:outbox-retention"
+    OUTBOX_RETENTION: "lock:outbox-retention",
+    OUTBOX_FAILED_PURGE: "lock:outbox-failed-purge"
   },
   LOCK_TTL_MS: {
     DEFAULT: 1e4
@@ -1077,6 +1101,8 @@ var OUTBOX_CONSTANTS = {
   RETENTION: {
     /** Eventos com mais de N dias são removidos pela retenção diária, qualquer status. */
     DAYS: 14,
+    /** Eventos FAILED com mais de N dias são removidos pela limpeza diária de falhas. */
+    FAILED_DAYS: 7,
     /** Um lote por chamada, para renovar o lock distribuído entre lotes. */
     BATCH_SIZE: 1e3
   }
@@ -1091,6 +1117,7 @@ var WORKER_LOGS = {
   BULLMQ_NETWORK_GLITCH: "Falha de rede interna do BullMQ ap\xF3s processamento. Ignorando.",
   GENERIC_WORKER_FAILURE: "Falha gen\xE9rica n\xE3o mapeada no worker",
   MAIL_QUEUE_ERROR: "Erro na MailQueue (Producer)",
+  OUTBOX_DISPATCH_QUEUE_ERROR: "Erro na OutboxDispatchQueue (Producer)",
   OUTBOX_REVERTED_AFTER_FINAL_FAILURE: "Job falhou definitivamente no BullMQ. Evento revertido para PENDING para nova tentativa de despacho.",
   OUTBOX_REVERT_AFTER_FINAL_FAILURE_ERROR: "Falha ao reverter evento para PENDING ap\xF3s falha definitiva do job (linha possivelmente j\xE1 removida).",
   FAILURE_HANDLER_ERROR: "Erro inesperado no tratamento de falha de job do worker.",
@@ -1109,13 +1136,14 @@ function getMailQueue() {
     mailQueueInstance = new import_bullmq3.Queue(QUEUE.NAMES.MAIL, {
       connection: redisForQueue,
       defaultJobOptions: {
-        attempts: 3,
+        attempts: WORKER_CONSTANTS.QUEUE.JOB_ATTEMPTS,
         backoff: {
-          type: "exponential",
-          delay: 1e4
+          type: WORKER_CONSTANTS.QUEUE.BACKOFF_TYPE,
+          delay: WORKER_CONSTANTS.QUEUE.BACKOFF_DELAY_MS,
+          jitter: WORKER_CONSTANTS.QUEUE.BACKOFF_JITTER
         },
-        removeOnComplete: true,
-        removeOnFail: true
+        removeOnComplete: WORKER_CONSTANTS.MAIL.REMOVE_ON_COMPLETE,
+        removeOnFail: WORKER_CONSTANTS.MAIL.REMOVE_ON_FAIL
       }
     });
     mailQueueInstance.on("error", (err2) => {
@@ -1408,12 +1436,12 @@ var OutboxProcessor = class {
         for (const event of stuckEvents) {
           await renew();
           collectMetricsOutboxEventsStuckSendingEventsRecovered?.inc();
-          await this.processSingleEvent(event);
+          await this.processSingleEvent(event, thresholdDate);
         }
       }
     });
   }
-  async processSingleEvent(event) {
+  async processSingleEvent(event, stuckBefore) {
     if (isExpired(event)) {
       await this.discardExpired(event);
       return;
@@ -1422,12 +1450,25 @@ var OutboxProcessor = class {
       await this.markPoisoned(event);
       return;
     }
-    const updateResult = await this.outboxRepository.updateStatus(event.publicId, "SENDING" /* SENDING */);
-    if (isErr(updateResult)) {
-      logger.error({ publicId: event.publicId, error: updateResult.error }, OUTBOX_LOGS.STATUS_UPDATE_FAILED);
+    const claimResult = await this.outboxRepository.claim({
+      publicId: event.publicId,
+      fromStatus: event.status,
+      stuckBefore
+    });
+    if (isErr(claimResult)) {
+      logger.error({ publicId: event.publicId, error: claimResult.error }, OUTBOX_LOGS.STATUS_UPDATE_FAILED);
       return;
     }
+    if (!claimResult.value) {
+      this.recordClaimMetric("contention");
+      logger.info({ publicId: event.publicId }, "Evento n\xE3o reivindicado (j\xE1 em processamento ou em disputa). Pulando.");
+      return;
+    }
+    this.recordClaimMetric("claimed");
     await this.dispatchOrRevert(event);
+  }
+  recordClaimMetric(outcome) {
+    collectMetricsOutboxEventsClaimed?.inc({ outcome });
   }
   /**
    * Gate de expiração — ANTES de qualquer fase: um evento expirado sai da tabela
@@ -1545,6 +1586,21 @@ var OutboxMaintenance = class {
       }
     });
   }
+  async purgeFailedEvents(customCutoff) {
+    await withDistributedLock({
+      lockKey: OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_FAILED_PURGE,
+      ttlMs: this.LOCK_TTL_MS,
+      errorMessage: OUTBOX_LOGS.FAILED_PURGE_ERROR,
+      work: async (renew) => {
+        const cutoff = customCutoff ?? new Date(Date.now() - (0, import_ms2.default)(`${OUTBOX_CONSTANTS.RETENTION.FAILED_DAYS}d`));
+        const totalDeleted = await this.deleteFailedOlderThanInBatches(cutoff, renew);
+        if (totalDeleted > 0) {
+          collectMetricsOutboxMaintenanceDeleted?.inc({ operation: "failed_purge" }, totalDeleted);
+          logger.info({ deleted: totalDeleted }, OUTBOX_LOGS.FAILED_PURGED);
+        }
+      }
+    });
+  }
   /** Um lote por iteração, renovando o lock entre lotes. */
   async deleteExpiredInBatches(now, renew) {
     let totalDeleted = 0;
@@ -1582,6 +1638,22 @@ var OutboxMaintenance = class {
       }
     }
     return { totalDeleted, totalByStatus };
+  }
+  async deleteFailedOlderThanInBatches(cutoff, renew) {
+    let totalDeleted = 0;
+    let lastBatchSize = OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE;
+    while (lastBatchSize === OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE) {
+      await renew();
+      const result = await this.outboxRepository.deleteFailedOlderThan(cutoff, OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE);
+      if (isErr(result)) {
+        logger.error({ error: result.error }, OUTBOX_LOGS.FAILED_PURGE_ERROR);
+        captureError(result.error);
+        return totalDeleted;
+      }
+      lastBatchSize = result.value;
+      totalDeleted += lastBatchSize;
+    }
+    return totalDeleted;
   }
 };
 function reportPurge(totalDeleted, totalByStatus) {
@@ -2855,6 +2927,11 @@ var collectMetricsEmailBatchDuration = registry5 ? new import_prom_client5.Histo
   buckets: [0.5, 1, 2, 5, 10, 30, 60],
   registers: [registry5]
 }) : null;
+var collectMetricsEmailsPermanentRejections = registry5 ? new import_prom_client5.Counter({
+  name: "emails_permanent_rejections_total",
+  help: "Permanent SMTP rejections (RFC 5xx / invalid mailbox) that bypass retries via UnrecoverableError",
+  registers: [registry5]
+}) : null;
 
 // src/lib/workers/mail-worker.ts
 function createMailJobProcessor(outboxRepository) {
@@ -2916,7 +2993,7 @@ async function sendBatch(job, outboxRepository, childLogger, redisCache, idempot
     await redisCache.set(idempotencyKey, "completed", "EX", WORKER_CONSTANTS.IDEMPOTENCY_TTL.COMPLETED_SECONDS);
   } catch (err2) {
     await redisCache.del(idempotencyKey);
-    if (err2 instanceof InfrastructureError) {
+    if (err2 instanceof InfrastructureError || isUnrecoverable(err2)) {
       throw err2;
     }
     throw new SmtpDispatchError(err2);
@@ -2972,8 +3049,45 @@ async function persistSelectiveRetry(job, outboxRepository, childLogger, results
     childLogger.error({ publicId }, WORKER_LOGS.JOB_DATA_UPDATE_FAILED);
   }
 }
+var SMTP_PERMANENT_CODE_MIN = 500;
+var SMTP_PERMANENT_CODE_MAX = 600;
+function has5xxResponseCode(code) {
+  return typeof code === "number" && code >= SMTP_PERMANENT_CODE_MIN && code < SMTP_PERMANENT_CODE_MAX;
+}
+function has5xxResponseText(response) {
+  return typeof response === "string" && /^5\d\d/.test(response.trim());
+}
+function matchesPermanentCriteria(target) {
+  return has5xxResponseCode(target.responseCode) || target.code === "EENVELOPE" || has5xxResponseText(target.response);
+}
+function isObject(val) {
+  return typeof val === "object" && val !== null;
+}
+function extractCandidates(error) {
+  if (!isObject(error)) {
+    return [];
+  }
+  const err2 = error;
+  const candidates = [err2];
+  if (isObject(err2.cause)) {
+    candidates.push(err2.cause);
+  }
+  if (isObject(err2.originalError)) {
+    candidates.push(err2.originalError);
+  }
+  return candidates;
+}
+function isPermanentSmtpError(error) {
+  return extractCandidates(error).some(matchesPermanentCriteria);
+}
 function throwFirstFailure(failures) {
   const firstFailure = failures[0];
+  const firstError = causeOf(firstFailure);
+  if (failures.every((f) => isPermanentSmtpError(causeOf(f)))) {
+    collectMetricsEmailsPermanentRejections?.inc(failures.length);
+    const message = firstError instanceof Error ? firstError.message : String(firstError);
+    throw new import_bullmq4.UnrecoverableError(message);
+  }
   if (firstFailure.status === "rejected") {
     throw firstFailure.reason;
   }
@@ -3007,7 +3121,12 @@ async function handleJobFailure(job, err2, outboxRepository) {
 }
 function isFinalFailure(job, err2) {
   if (job == null) return false;
-  return isStalledFinal(err2) || job.attemptsMade >= (job.opts.attempts ?? 1);
+  return isUnrecoverable(err2) || isStalledFinal(err2) || job.attemptsMade >= (job.opts.attempts ?? 1);
+}
+function isUnrecoverable(err2) {
+  if (err2 instanceof import_bullmq4.UnrecoverableError) return true;
+  if (typeof err2 !== "object" || err2 === null) return false;
+  return "name" in err2 && err2.name === "UnrecoverableError";
 }
 function isStalledFinal(err2) {
   return err2.message.includes("job stalled more than allowable limit");
@@ -3050,7 +3169,11 @@ function startMailWorker(outboxRepository) {
     connection: workerConnection,
     concurrency: WORKER_CONSTANTS.MAIL.CONCURRENCY_LIMIT,
     lockDuration: WORKER_CONSTANTS.MAIL.LOCK_DURATION_MS,
-    stalledInterval: WORKER_CONSTANTS.MAIL.STALLED_INTERVAL_MS
+    stalledInterval: WORKER_CONSTANTS.MAIL.STALLED_INTERVAL_MS,
+    limiter: {
+      max: env.MAIL_RATE_LIMIT_MAX,
+      duration: env.MAIL_RATE_LIMIT_DURATION_MS
+    }
   });
   const onJobFailed = createJobFailureHandler(outboxRepository);
   worker2.on("failed", (job, err2) => {
@@ -3059,122 +3182,62 @@ function startMailWorker(outboxRepository) {
   return worker2;
 }
 
-// src/lib/infra/events/outbox-signal.ts
-function isOutboxSignalPayload(value) {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value;
-  return typeof candidate.publicId === "string" && typeof candidate.event === "object" && candidate.event !== null;
-}
-function getPublisher() {
-  const publisher = getOutboxPublisher();
-  publisher.on("connect", () => {
-    logger.info(OUTBOX_LOGS.PUBLISHER_CONNECTED);
-  });
-  publisher.on("error", (err2) => {
-    logger.error({ err: err2 }, OUTBOX_LOGS.PUBLISHER_ERROR);
-  });
-  publisher.on("close", () => {
-    logger.warn(OUTBOX_LOGS.PUBLISHER_CLOSED);
-  });
-  return publisher;
-}
-function getSubscriber() {
-  const subscriber = getOutboxSubscriber();
-  subscriber.on("connect", () => {
-    logger.info(OUTBOX_LOGS.SUBSCRIBER_CONNECTED);
-  });
-  subscriber.on("error", (err2) => {
-    logger.error({ err: err2 }, OUTBOX_LOGS.SUBSCRIBER_ERROR);
-  });
-  subscriber.on("close", () => {
-    logger.warn(OUTBOX_LOGS.SUBSCRIBER_CLOSED);
-  });
-  return subscriber;
-}
-async function ensureConnected(client, name) {
-  if (client.status === "wait" || client.status === "close" || client.status === "end") {
-    logger.info(`Conectando ${name}...`);
-    await client.connect();
-  }
-}
-var activeMessageListener = null;
-function createMessageHandler(onSignal) {
-  return async (channel, message) => {
-    if (channel !== REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL) {
-      logger.warn({ channel }, OUTBOX_LOGS.UNEXPECTED_CHANNEL);
-      return;
-    }
+// src/lib/workers/outbox-dispatch-worker.ts
+var import_bullmq5 = require("bullmq");
+function createOutboxDispatchJobProcessor(processor) {
+  return async (job) => {
     try {
-      const parsed = JSON.parse(message);
-      if (!isOutboxSignalPayload(parsed)) {
-        logger.warn({ message }, OUTBOX_LOGS.UNEXPECTED_CHANNEL);
-        return;
-      }
-      await onSignal(parsed.publicId, parsed.event);
-    } catch (err2) {
-      logger.error({ err: err2, publicId: message }, OUTBOX_LOGS.SIGNAL_PROCESSING_ERROR);
-      captureError(err2, { publicId: message });
+      await processor.processSingleEvent(job.data.event);
+    } catch (error) {
+      logger.error({ jobId: job.id, publicId: job.data.publicId, error }, "Falha no processamento do evento de outbox");
+      captureError(error, { jobId: job.id, publicId: job.data.publicId });
+      throw error;
     }
   };
 }
-var OutboxSignal = {
-  /**
-   * Publishes a wakeup signal after a successful outbox write.
-   * Fire-and-forget by design: if Redis is unavailable the cron job is the
-   * durable fallback, so we swallow the error here intentionally.
-   *
-   * Call this from your Controller/Service *after* the DB transaction commits.
-   */
-  async publishNewItem(publicId, event) {
-    try {
-      const client = getPublisher();
-      await ensureConnected(client, "OutboxPublisher");
-      await client.publish(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL, JSON.stringify({ publicId, event }));
-      collectMetricsOutboxSignalPublished?.inc();
-    } catch (err2) {
-      collectMetricsOutboxSignalPublishFailed?.inc();
-      logger.warn({ err: err2 }, OUTBOX_LOGS.SIGNAL_PUBLISH_FAILED);
-    }
-  },
-  /**
-   * Subscribes the Worker to the outbox channel.
-   *
-   * Seguro para ser chamado múltiplas vezes: o listener anterior é removido
-   * com precisão via `off` antes de registrar o novo, evitando:
-   *   1. Listeners duplicados (processamento duplo por mensagem)
-   *   2. Memory leak de closures antigas de `onSignal`
-   *   3. Destruição acidental dos listeners de lifecycle do subscriber
-   *
-   * @param onSignal - async callback invoked when a new item is signalled.
-   *                   Errors thrown here are caught and logged — they won't
-   *                   crash the worker process.
-   */
-  async subscribe(onSignal) {
-    try {
-      const client = getSubscriber();
-      await ensureConnected(client, "OutboxSubscriber");
-      if (activeMessageListener !== null) {
-        client.off("message", activeMessageListener);
-        logger.info(OUTBOX_LOGS.LISTENER_REMOVED);
+function startOutboxDispatchWorker(processor) {
+  const workerConnection = createWorkerConnection();
+  attachRedisLogger(workerConnection, "OutboxDispatchWorker");
+  return new import_bullmq5.Worker(QUEUE.NAMES.OUTBOX_DISPATCH, createOutboxDispatchJobProcessor(processor), {
+    connection: workerConnection,
+    concurrency: WORKER_CONSTANTS.OUTBOX_DISPATCH.CONCURRENCY_LIMIT,
+    lockDuration: WORKER_CONSTANTS.OUTBOX_DISPATCH.LOCK_DURATION_MS,
+    stalledInterval: WORKER_CONSTANTS.OUTBOX_DISPATCH.STALLED_INTERVAL_MS
+  });
+}
+
+// src/lib/queue/outbox-dispatch-queue.ts
+var import_bullmq6 = require("bullmq");
+var outboxDispatchQueueInstance = null;
+function getOutboxDispatchQueue() {
+  if (!outboxDispatchQueueInstance) {
+    const redisForQueue = getRedisForQueue();
+    attachRedisLogger(redisForQueue, QUEUE.NAMES.OUTBOX_DISPATCH);
+    outboxDispatchQueueInstance = new import_bullmq6.Queue(QUEUE.NAMES.OUTBOX_DISPATCH, {
+      connection: redisForQueue,
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+          type: "exponential",
+          delay: 5e3
+        },
+        removeOnComplete: true,
+        removeOnFail: true
       }
-      const handleMessage = createMessageHandler(onSignal);
-      activeMessageListener = (channel, message) => {
-        void handleMessage(channel, message);
-      };
-      client.on("message", activeMessageListener);
-      await client.subscribe(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL);
-    } catch (err2) {
-      logger.error({ err: err2 }, OUTBOX_LOGS.SUBSCRIBE_ERROR);
-      captureError(err2);
-    }
-  },
-  disconnect() {
-    if (activeMessageListener !== null) {
-      getOutboxSubscriber().off("message", activeMessageListener);
-      activeMessageListener = null;
-    }
+    });
+    outboxDispatchQueueInstance.on("error", (err2) => {
+      logger.error({ err: err2 }, WORKER_LOGS.OUTBOX_DISPATCH_QUEUE_ERROR);
+    });
   }
-};
+  return outboxDispatchQueueInstance;
+}
+async function closeOutboxDispatchQueue() {
+  if (outboxDispatchQueueInstance) {
+    const queue = outboxDispatchQueueInstance;
+    outboxDispatchQueueInstance = null;
+    await queue.close();
+  }
+}
 
 // src/repositories/prisma/prisma-outbox-event-repository.ts
 var import_client2 = require("@prisma/client");
@@ -3229,12 +3292,61 @@ var PrismaOutboxRepository = class {
       return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
+  async findFailed(limit) {
+    try {
+      const events = await this.dbContext.client.outboxEvent.findMany({
+        where: { status: "FAILED" /* FAILED */ },
+        orderBy: { occurredAt: "desc" },
+        take: limit
+      });
+      return ok(events.map((e) => this.toEntity(e)));
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
+  async retryFailed(publicId) {
+    try {
+      const result = await this.dbContext.client.outboxEvent.updateMany({
+        where: {
+          publicId,
+          status: "FAILED" /* FAILED */
+        },
+        data: {
+          status: "PENDING" /* PENDING */,
+          sendingAt: null,
+          attempts: 0
+        }
+      });
+      return ok(result.count === 1);
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
   async findByPublicId(publicId) {
     try {
       const event = await this.dbContext.client.outboxEvent.findUnique({
         where: { publicId }
       });
       return ok(event ? this.toEntity(event) : null);
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
+  async claim(filter) {
+    try {
+      const result = await this.dbContext.client.outboxEvent.updateMany({
+        where: {
+          publicId: filter.publicId,
+          status: filter.fromStatus,
+          ...filter.stuckBefore ? { sendingAt: { lte: filter.stuckBefore } } : {}
+        },
+        data: {
+          status: "SENDING" /* SENDING */,
+          sendingAt: /* @__PURE__ */ new Date(),
+          attempts: { increment: 1 }
+        }
+      });
+      return ok(result.count === 1);
     } catch (error) {
       return err(this.infraErrorMapper.mapToKnownError(error));
     }
@@ -3317,6 +3429,28 @@ var PrismaOutboxRepository = class {
         byStatus[status] = (byStatus[status] ?? 0) + 1;
       }
       return ok({ deleted: result.count, byStatus });
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
+  async deleteFailedOlderThan(cutoff, batchSize) {
+    try {
+      const batch = await this.dbContext.client.outboxEvent.findMany({
+        where: {
+          status: "FAILED" /* FAILED */,
+          occurredAt: { lt: cutoff }
+        },
+        select: { id: true },
+        orderBy: { occurredAt: "asc" },
+        take: batchSize
+      });
+      if (batch.length === 0) {
+        return ok(0);
+      }
+      const result = await this.dbContext.client.outboxEvent.deleteMany({
+        where: { id: { in: batch.map((e) => e.id) } }
+      });
+      return ok(result.count);
     } catch (error) {
       return err(this.infraErrorMapper.mapToKnownError(error));
     }
@@ -3570,6 +3704,7 @@ async function stopMetricsServer() {
 // src/worker.ts
 initSentry();
 var worker = null;
+var outboxDispatchWorker = null;
 var maintenanceWorker = null;
 async function startMaintenance(outboxRepository, outboxProcessor) {
   maintenanceWorker = startMaintenanceWorker({
@@ -3591,9 +3726,9 @@ async function bootstrap() {
     logger.info("Mail worker iniciado");
     registerQueue(QUEUE.NAMES.MAIL, getMailQueue());
     const outboxProcessor = new OutboxProcessor(outboxRepository, makeOutboxDispatchStrategyRegistry());
-    await OutboxSignal.subscribe(async (_publicId, event) => {
-      await outboxProcessor.processSingleEvent(event);
-    });
+    outboxDispatchWorker = startOutboxDispatchWorker(outboxProcessor);
+    logger.info("Outbox dispatch worker iniciado");
+    registerQueue(QUEUE.NAMES.OUTBOX_DISPATCH, getOutboxDispatchQueue());
     await startMaintenance(outboxRepository, outboxProcessor);
     try {
       await startMetricsServer({ port: env.METRICS_WORKER_PORT });
@@ -3611,9 +3746,15 @@ async function bootstrap() {
 async function cleanup() {
   const tasks = [
     async () => {
-      OutboxSignal.disconnect();
-      logger.info("OutboxSignal desconectado");
-      await Promise.resolve();
+      if (outboxDispatchWorker) {
+        await outboxDispatchWorker.close();
+        logger.info("Outbox dispatch worker finalizado");
+      }
+    },
+    async () => {
+      unregisterQueue(QUEUE.NAMES.OUTBOX_DISPATCH);
+      await closeOutboxDispatchQueue();
+      logger.info("OutboxDispatchQueue finalizada");
     },
     async () => {
       if (worker) {

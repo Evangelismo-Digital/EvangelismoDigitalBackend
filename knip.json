@@ -3,5 +3,6 @@
   "entry": ["prisma/vitest-environment-prisma/*.ts"],
   "project": ["src/**/*.{ts,tsx}"],
   "ignore": ["src/load-test/**"],
+  "ignoreExportsUsedInFile": true,
   "ignoreDependencies": ["pino-pretty", "snyk"]
 }

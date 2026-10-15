@@ -56,6 +56,23 @@ export class OutboxMaintenance {
     })
   }
 
+  async purgeFailedEvents(customCutoff?: Date): Promise<void> {
+    await withDistributedLock({
+      lockKey: OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_FAILED_PURGE,
+      ttlMs: this.LOCK_TTL_MS,
+      errorMessage: OUTBOX_LOGS.FAILED_PURGE_ERROR,
+      work: async (renew) => {
+        const cutoff = customCutoff ?? new Date(Date.now() - ms(`${OUTBOX_CONSTANTS.RETENTION.FAILED_DAYS}d`))
+        const totalDeleted = await this.deleteFailedOlderThanInBatches(cutoff, renew)
+
+        if (totalDeleted > 0) {
+          collectMetricsOutboxMaintenanceDeleted?.inc({ operation: 'failed_purge' }, totalDeleted)
+          logger.info({ deleted: totalDeleted }, OUTBOX_LOGS.FAILED_PURGED)
+        }
+      },
+    })
+  }
+
   /** Um lote por iteração, renovando o lock entre lotes. */
   private async deleteExpiredInBatches(now: Date, renew: () => Promise<void>): Promise<number> {
     let totalDeleted = 0
@@ -113,6 +130,28 @@ export class OutboxMaintenance {
     }
 
     return { totalDeleted, totalByStatus }
+  }
+
+  private async deleteFailedOlderThanInBatches(cutoff: Date, renew: () => Promise<void>): Promise<number> {
+    let totalDeleted = 0
+    let lastBatchSize: number = OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE
+
+    while (lastBatchSize === OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE) {
+      await renew()
+
+      const result = await this.outboxRepository.deleteFailedOlderThan(cutoff, OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE)
+
+      if (isErr(result)) {
+        logger.error({ error: result.error }, OUTBOX_LOGS.FAILED_PURGE_ERROR)
+        captureError(result.error)
+        return totalDeleted
+      }
+
+      lastBatchSize = result.value
+      totalDeleted += lastBatchSize
+    }
+
+    return totalDeleted
   }
 }
 

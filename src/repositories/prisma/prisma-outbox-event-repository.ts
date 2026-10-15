@@ -7,6 +7,7 @@ import {
   IOutboxEvent,
   IOutBoxEventInputData,
   IOutboxEventStatus,
+  OutboxClaimFilter,
 } from 'core/contracts/repository/outbox-repository.interface'
 import { AppError } from 'errors/app-error'
 
@@ -65,6 +66,40 @@ export class PrismaOutboxRepository implements IOutboxRepository {
     }
   }
 
+  async findFailed(limit: number): Promise<Result<IOutboxEvent[], AppError>> {
+    try {
+      const events = await this.dbContext.client.outboxEvent.findMany({
+        where: { status: IOutboxEventStatus.FAILED },
+        orderBy: { occurredAt: 'desc' },
+        take: limit,
+      })
+
+      return ok(events.map((e) => this.toEntity(e)))
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error))
+    }
+  }
+
+  async retryFailed(publicId: string): Promise<Result<boolean, AppError>> {
+    try {
+      const result = await this.dbContext.client.outboxEvent.updateMany({
+        where: {
+          publicId,
+          status: IOutboxEventStatus.FAILED,
+        },
+        data: {
+          status: IOutboxEventStatus.PENDING,
+          sendingAt: null,
+          attempts: 0,
+        },
+      })
+
+      return ok(result.count === 1)
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error))
+    }
+  }
+
   async findByPublicId(publicId: string): Promise<Result<IOutboxEvent | null, AppError>> {
     try {
       const event = await this.dbContext.client.outboxEvent.findUnique({
@@ -72,6 +107,27 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       })
 
       return ok(event ? this.toEntity(event) : null)
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error))
+    }
+  }
+
+  async claim(filter: OutboxClaimFilter): Promise<Result<boolean, AppError>> {
+    try {
+      const result = await this.dbContext.client.outboxEvent.updateMany({
+        where: {
+          publicId: filter.publicId,
+          status: filter.fromStatus,
+          ...(filter.stuckBefore ? { sendingAt: { lte: filter.stuckBefore } } : {}),
+        },
+        data: {
+          status: IOutboxEventStatus.SENDING,
+          sendingAt: new Date(),
+          attempts: { increment: 1 },
+        },
+      })
+
+      return ok(result.count === 1)
     } catch (error) {
       return err(this.infraErrorMapper.mapToKnownError(error))
     }
@@ -176,6 +232,32 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       }
 
       return ok({ deleted: result.count, byStatus })
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error))
+    }
+  }
+
+  async deleteFailedOlderThan(cutoff: Date, batchSize: number): Promise<Result<number, AppError>> {
+    try {
+      const batch = await this.dbContext.client.outboxEvent.findMany({
+        where: {
+          status: IOutboxEventStatus.FAILED,
+          occurredAt: { lt: cutoff },
+        },
+        select: { id: true },
+        orderBy: { occurredAt: 'asc' },
+        take: batchSize,
+      })
+
+      if (batch.length === 0) {
+        return ok(0)
+      }
+
+      const result = await this.dbContext.client.outboxEvent.deleteMany({
+        where: { id: { in: batch.map((e) => e.id) } },
+      })
+
+      return ok(result.count)
     } catch (error) {
       return err(this.infraErrorMapper.mapToKnownError(error))
     }

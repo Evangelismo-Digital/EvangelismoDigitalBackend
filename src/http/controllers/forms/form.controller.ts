@@ -3,7 +3,7 @@ import { FastifyReply } from 'fastify'
 import { formsSchema } from '@http/schemas/forms/forms-schema'
 import { makeFormSubmissionUseCase } from '@use-cases/forms/factories/make-form-submission-use-case'
 import { logger } from '@lib/logger'
-import { OutboxSignal } from '@lib/infra/events/outbox-signal'
+import { enqueueOutboxDispatch } from '@lib/queue/outbox-dispatch-queue'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { HTTP_STATUS } from '@http/http-status'
@@ -29,8 +29,8 @@ export async function formSubmission(request: ZodRequest<{ body: typeof formsSch
   // 5. Sucesso
   const { sanitizedFormSubmission, outboxEvent } = result.value
 
-  // Fire-and-forget: publishNewItem catches and logs its own failures internally.
-  void OutboxSignal.publishNewItem(outboxEvent.publicId, outboxEvent)
+  // Fire-and-forget: enqueueOutboxDispatch catches and logs its own failures internally.
+  void enqueueOutboxDispatch(outboxEvent)
 
   logger.info({ sanitizedFormSubmission }, 'Formulário recebido com sucesso')
 

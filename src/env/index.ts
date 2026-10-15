@@ -129,6 +129,10 @@ const envSchema = z.object({
   SMTP_POOL_MAX_MESSAGES: z.coerce.number().int().positive().default(100),
   SMTP_POOL_RATE_LIMIT: z.coerce.number().int().positive().default(5),
   SMTP_POOL_RATE_DELTA_MS: z.coerce.number().int().positive().default(1_000),
+  // Rate limiter nativo do BullMQ no worker de e-mail (coordenado via Redis entre pods).
+  // Garante vazão global controlada para o SMTP do Gmail independentemente do número de réplicas.
+  MAIL_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(2),
+  MAIL_RATE_LIMIT_DURATION_MS: z.coerce.number().int().positive().default(1_000),
   // Timeouts defensivos: impedem que um servidor SMTP travado bloqueie o chamador (padrões do Nodemailer chegam a 10 min)
   // Breaker do SMTP — deliberadamente separado do CIRCUIT_BREAKER_* dos
   // provedores: o perfil de tráfego não tem nada a ver (um punhado de mensagens

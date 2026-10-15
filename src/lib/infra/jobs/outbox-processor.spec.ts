@@ -62,7 +62,7 @@ import { OutboxProcessor } from './outbox-processor'
 import { makeOutboxDispatchStrategyRegistry } from './make-outbox-dispatch-registry'
 import { InMemoryOutboxRepository } from '@repositories/in-memory/in-memory-outbox-repository'
 import { IOutboxEvent, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
-import { isOk, err } from 'core/shared/result'
+import { isOk, ok, err } from 'core/shared/result'
 import { OUTBOX_CONSTANTS } from 'messages/constants/outbox/outbox'
 import { PASSWORD_RESET_CONSTANTS } from 'messages/constants/auth/password-reset'
 import { ContactEmailStrategy } from '@use-cases/forms/strategies/contact-email-strategy'
@@ -202,9 +202,9 @@ describe('OutboxProcessor', () => {
       expect(contactSpy).toHaveBeenCalledOnce()
     })
 
-    it('falha ao transicionar para SENDING: evento permanece PENDING, nada é enfileirado, sem captura no Sentry (retryable)', async () => {
+    it('falha ao reivindicar CAS (claim falha): evento permanece inalterado, nada é enfileirado', async () => {
       const event = await createEvent(repository)
-      repository.shouldFailOn.updateStatus = true
+      repository.shouldFailOn.claim = true
 
       await processor.processSingleEvent(event)
 
@@ -212,6 +212,15 @@ describe('OutboxProcessor', () => {
       expect(mockQueueAdd).not.toHaveBeenCalled()
       expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.STATUS_UPDATE_FAILED)
       expect(mockCaptureError).not.toHaveBeenCalled()
+    })
+
+    it('disputa de concorrência no CAS (claim retorna false): não enfileira e não altera status', async () => {
+      const event = await createEvent(repository)
+      vi.spyOn(repository, 'claim').mockResolvedValueOnce(ok(false))
+
+      await processor.processSingleEvent(event)
+
+      expect(mockQueueAdd).not.toHaveBeenCalled()
     })
 
     it('falha no queue.add: reverte para PENDING, limpa sendingAt, sem captura no Sentry (retryable)', async () => {

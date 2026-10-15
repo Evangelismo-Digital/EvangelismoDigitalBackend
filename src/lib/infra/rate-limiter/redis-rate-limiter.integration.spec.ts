@@ -118,8 +118,8 @@ vi.mock('@http/policies/rate-limit', () => ({ HTTP_RATE_LIMIT_POLICIES: lowPolic
 vi.mock('@use-cases/forms/factories/make-form-submission-use-case', () => ({
   makeFormSubmissionUseCase: mockFactory,
 }))
-vi.mock('@lib/infra/events/outbox-signal', () => ({
-  OutboxSignal: { publishNewItem: vi.fn().mockResolvedValue(undefined) },
+vi.mock('@lib/queue/outbox-dispatch-queue', () => ({
+  enqueueOutboxDispatch: vi.fn().mockResolvedValue(undefined),
 }))
 
 // eslint-disable-next-line import/first

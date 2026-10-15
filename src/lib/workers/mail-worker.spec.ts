@@ -1,4 +1,26 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
+const mockWorkerConstructor = vi.fn()
+const mockWorkerOn = vi.fn()
+
+vi.mock('@env/index', () => ({
+  env: {
+    MAIL_RATE_LIMIT_MAX: 2,
+    MAIL_RATE_LIMIT_DURATION_MS: 1000,
+  },
+}))
+
+vi.mock('bullmq', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('bullmq')>()
+  return {
+    ...actual,
+    Worker: class {
+      on = mockWorkerOn
+      constructor(name: string, processor: unknown, opts: unknown) {
+        mockWorkerConstructor(name, processor, opts)
+      }
+    },
+  }
+})
 
 vi.mock('@lib/logger', () => {
   const logger = {
@@ -37,8 +59,8 @@ vi.mock('@lib/sentry/capture', () => ({
   captureError: (...args: unknown[]) => mockCaptureError(...args),
 }))
 
-import { Job } from 'bullmq'
-import { createMailJobProcessor, createJobFailureHandler } from './mail-worker'
+import { Job, UnrecoverableError } from 'bullmq'
+import { createMailJobProcessor, createJobFailureHandler, startMailWorker } from './mail-worker'
 import { IOutboxRepository, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { IOutboxDispatchData } from 'core/contracts/lib/infra/outbox-dispatch-data.interface'
 import { ok, err } from 'core/shared/result'
@@ -49,6 +71,8 @@ import { logger } from '@lib/logger'
 import { WORKER_LOGS } from 'messages/constants/logs/worker'
 import { REDIS_CONSTANTS } from 'messages/constants/redis/redis'
 import { WORKER_CONSTANTS } from 'messages/constants/workers/workers'
+import { QUEUE } from 'messages/constants/queue/queue'
+import { attachRedisLogger } from '@lib/redis/connections/redis-bullMQ-connection'
 
 class InfraTestError extends InfrastructureError {
   constructor() {
@@ -331,6 +355,45 @@ describe('createMailJobProcessor', () => {
       expect(mockRedisDel).toHaveBeenCalledWith(IDEMPOTENCY_KEY)
       expect(repository.delete).not.toHaveBeenCalled()
     })
+
+    describe('tratamento de rejeição permanente vs transitória SMTP', () => {
+      it('erro 5xx do SMTP (ex: 550 Mailbox unavailable): lança UnrecoverableError para abortar retries', async () => {
+        const permanentError = Object.assign(new Error('550 Mailbox unavailable'), {
+          responseCode: 550,
+          response: '550 5.1.1 User unknown',
+        })
+        mockSendEmailExecute.mockResolvedValueOnce(err(new SmtpDispatchError(permanentError)))
+
+        const job = makeJob({ emails: [emailUser] })
+        await expect(processor(job)).rejects.toThrow(UnrecoverableError)
+        expect(mockRedisDel).toHaveBeenCalledWith(IDEMPOTENCY_KEY)
+      })
+
+      it('erro EENVELOPE do Nodemailer (destinatário inválido): lança UnrecoverableError', async () => {
+        const envelopeError = Object.assign(new Error('Recipient rejected'), {
+          code: 'EENVELOPE',
+          responseCode: 553,
+        })
+        mockSendEmailExecute.mockResolvedValueOnce(err(new SmtpDispatchError(envelopeError)))
+
+        const job = makeJob({ emails: [emailUser] })
+        await expect(processor(job)).rejects.toThrow(UnrecoverableError)
+        expect(mockRedisDel).toHaveBeenCalledWith(IDEMPOTENCY_KEY)
+      })
+
+      it('erro transitório 4xx (ex: 421 Service not available): lança SmtpDispatchError normal para acionar retry', async () => {
+        const transientError = Object.assign(new Error('421 Service not available'), {
+          responseCode: 421,
+        })
+        mockSendEmailExecute.mockResolvedValueOnce(err(new SmtpDispatchError(transientError)))
+
+        const job = makeJob({ emails: [emailUser] })
+        const thrownError = await processor(job).catch((e: unknown) => e)
+        expect(thrownError).toBeInstanceOf(SmtpDispatchError)
+        expect(thrownError).not.toBeInstanceOf(UnrecoverableError)
+        expect(mockRedisDel).toHaveBeenCalledWith(IDEMPOTENCY_KEY)
+      })
+    })
   })
 
   describe('fase de limpeza do outbox (regressão do envio duplicado)', () => {
@@ -483,5 +546,69 @@ describe('createJobFailureHandler', () => {
     )
     expect(repository.updateStatus).toHaveBeenCalledWith(PUBLIC_ID, IOutboxEventStatus.PENDING)
     expect(mockCaptureError).toHaveBeenCalledWith(infraShaped, { jobId: 'job-1', publicId: PUBLIC_ID })
+  })
+
+  it('UnrecoverableError é tratado como definitivo mesmo com tentativas restantes (reverte outbox e captura Sentry)', async () => {
+    const unrecoverable = new UnrecoverableError('550 Recipient address rejected')
+
+    await handleJobFailure(makeJob({ attemptsMade: 1, attempts: 3 }), unrecoverable)
+
+    expect(repository.updateStatus).toHaveBeenCalledWith(PUBLIC_ID, IOutboxEventStatus.PENDING)
+    expect(mockCaptureError).toHaveBeenCalledWith(unrecoverable, { jobId: 'job-1', publicId: PUBLIC_ID })
+  })
+
+  it('trata erro duck-typed com name === UnrecoverableError como definitivo', async () => {
+    const duckTyped = Object.assign(new Error('fatal error'), { name: 'UnrecoverableError' })
+    await handleJobFailure(makeJob({ attemptsMade: 1 }), duckTyped)
+
+    expect(repository.updateStatus).toHaveBeenCalledWith(PUBLIC_ID, IOutboxEventStatus.PENDING)
+    expect(mockCaptureError).toHaveBeenCalledWith(duckTyped, { jobId: 'job-1', publicId: PUBLIC_ID })
+  })
+
+  it('erro com apenas statusCode ou apenas body: usa log genérico e jobId', async () => {
+    const errorOnlyStatus = Object.assign(new Error('status only'), { statusCode: 500 })
+    await handleJobFailure(makeJob({ attemptsMade: 1 }), errorOnlyStatus)
+
+    expect(logger.error).toHaveBeenCalledWith(
+      { jobId: 'job-1', err: 'status only' },
+      WORKER_LOGS.GENERIC_WORKER_FAILURE,
+    )
+
+    const errorOnlyBody = Object.assign(new Error('body only'), { body: {} })
+    await handleJobFailure(makeJob({ attemptsMade: 1 }), errorOnlyBody)
+
+    expect(logger.error).toHaveBeenCalledWith({ jobId: 'job-1', err: 'body only' }, WORKER_LOGS.GENERIC_WORKER_FAILURE)
+  })
+
+  it('falha definitiva loga warn com jobId e publicId corretos', async () => {
+    await handleJobFailure(makeJob({ attemptsMade: 3 }), new Error('smtp caiu'))
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      { jobId: 'job-1', publicId: PUBLIC_ID },
+      WORKER_LOGS.OUTBOX_REVERTED_AFTER_FINAL_FAILURE,
+    )
+  })
+})
+
+describe('startMailWorker', () => {
+  it('instancia o Worker com queue mail, lockDuration, stalledInterval e rate limiter distribuído', () => {
+    const repository = makeRepository()
+    startMailWorker(repository as unknown as IOutboxRepository)
+
+    expect(attachRedisLogger).toHaveBeenCalledWith(expect.anything(), 'MailWorker')
+    expect(mockWorkerOn).toHaveBeenCalledWith('failed', expect.any(Function))
+    expect(mockWorkerConstructor).toHaveBeenCalledWith(
+      QUEUE.NAMES.MAIL,
+      expect.any(Function),
+      expect.objectContaining({
+        concurrency: WORKER_CONSTANTS.MAIL.CONCURRENCY_LIMIT,
+        lockDuration: WORKER_CONSTANTS.MAIL.LOCK_DURATION_MS,
+        stalledInterval: WORKER_CONSTANTS.MAIL.STALLED_INTERVAL_MS,
+        limiter: {
+          max: 2,
+          duration: 1000,
+        },
+      }),
+    )
   })
 })

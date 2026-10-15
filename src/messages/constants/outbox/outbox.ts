@@ -4,6 +4,7 @@ export const OUTBOX_CONSTANTS = {
     OUTBOX_RECOVERY: 'lock:outbox-recovery',
     OUTBOX_EXPIRY_SWEEP: 'lock:outbox-expiry-sweep',
     OUTBOX_RETENTION: 'lock:outbox-retention',
+    OUTBOX_FAILED_PURGE: 'lock:outbox-failed-purge',
   },
   LOCK_TTL_MS: {
     DEFAULT: 10_000,
@@ -28,6 +29,8 @@ export const OUTBOX_CONSTANTS = {
   RETENTION: {
     /** Eventos com mais de N dias são removidos pela retenção diária, qualquer status. */
     DAYS: 14,
+    /** Eventos FAILED com mais de N dias são removidos pela limpeza diária de falhas. */
+    FAILED_DAYS: 7,
     /** Um lote por chamada, para renovar o lock distribuído entre lotes. */
     BATCH_SIZE: 1000,
   },

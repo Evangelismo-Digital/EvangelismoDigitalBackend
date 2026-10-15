@@ -30,6 +30,7 @@ describe('PrismaOutboxRepository', () => {
   const deleteMock = vi.fn()
   const deleteManyMock = vi.fn()
   const updateMock = vi.fn()
+  const updateManyMock = vi.fn()
   const findManyMock = vi.fn()
 
   const dbContext = {
@@ -39,6 +40,7 @@ describe('PrismaOutboxRepository', () => {
         delete: deleteMock,
         deleteMany: deleteManyMock,
         update: updateMock,
+        updateMany: updateManyMock,
         findMany: findManyMock,
       },
     },
@@ -369,6 +371,210 @@ describe('PrismaOutboxRepository', () => {
       findManyMock.mockRejectedValueOnce(new Error('rede caiu'))
 
       const result = await repository.deleteOlderThan(new Date(), 50)
+
+      expect(isErr(result)).toBe(true)
+      expect(mapToKnownError).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('deleteFailedOlderThan', () => {
+    it('busca um lote de ids com status FAILED e occurredAt < corte, deleta por id e retorna a contagem', async () => {
+      const cutoff = new Date()
+      findManyMock.mockResolvedValueOnce([{ id: 1 }, { id: 2 }])
+      deleteManyMock.mockResolvedValueOnce({ count: 2 })
+
+      const result = await repository.deleteFailedOlderThan(cutoff, 50)
+
+      expect(findManyMock).toHaveBeenCalledWith({
+        where: {
+          status: IOutboxEventStatus.FAILED,
+          occurredAt: { lt: cutoff },
+        },
+        select: { id: true },
+        orderBy: { occurredAt: 'asc' },
+        take: 50,
+      })
+      expect(deleteManyMock).toHaveBeenCalledWith({ where: { id: { in: [1, 2] } } })
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(2)
+    })
+
+    it('lote vazio retorna 0 sem chamar deleteMany', async () => {
+      findManyMock.mockResolvedValueOnce([])
+
+      const result = await repository.deleteFailedOlderThan(new Date(), 50)
+
+      expect(deleteManyMock).not.toHaveBeenCalled()
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(0)
+    })
+
+    it('erro do banco vira err via mapper', async () => {
+      findManyMock.mockRejectedValueOnce(new Error('banco inacessível'))
+
+      const result = await repository.deleteFailedOlderThan(new Date(), 50)
+
+      expect(isErr(result)).toBe(true)
+      expect(mapToKnownError).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('claim (Compare-And-Set otimista)', () => {
+    it('reivindica evento PENDING com sucesso quando count é 1', async () => {
+      updateManyMock.mockResolvedValueOnce({ count: 1 })
+
+      const result = await repository.claim({
+        publicId: 'ev-1',
+        fromStatus: IOutboxEventStatus.PENDING,
+      })
+
+      expect(updateManyMock).toHaveBeenCalledWith({
+        where: {
+          publicId: 'ev-1',
+          status: IOutboxEventStatus.PENDING,
+        },
+        data: {
+          status: IOutboxEventStatus.SENDING,
+          sendingAt: expect.any(Date),
+          attempts: { increment: 1 },
+        },
+      })
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(true)
+    })
+
+    it('retorna false quando count é 0 (disputa de concorrência / já reivindicado)', async () => {
+      updateManyMock.mockResolvedValueOnce({ count: 0 })
+
+      const result = await repository.claim({
+        publicId: 'ev-1',
+        fromStatus: IOutboxEventStatus.PENDING,
+      })
+
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(false)
+    })
+
+    it('reivindica evento SENDING travado respeitando sendingAt <= stuckBefore', async () => {
+      const stuckBefore = new Date(Date.now() - 15 * 60 * 1000)
+      updateManyMock.mockResolvedValueOnce({ count: 1 })
+
+      const result = await repository.claim({
+        publicId: 'ev-stuck',
+        fromStatus: IOutboxEventStatus.SENDING,
+        stuckBefore,
+      })
+
+      expect(updateManyMock).toHaveBeenCalledWith({
+        where: {
+          publicId: 'ev-stuck',
+          status: IOutboxEventStatus.SENDING,
+          sendingAt: { lte: stuckBefore },
+        },
+        data: {
+          status: IOutboxEventStatus.SENDING,
+          sendingAt: expect.any(Date),
+          attempts: { increment: 1 },
+        },
+      })
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(true)
+    })
+
+    it('mapeia falhas de banco para err via infraErrorMapper', async () => {
+      updateManyMock.mockRejectedValueOnce(new Error('conexão perdida'))
+
+      const result = await repository.claim({
+        publicId: 'ev-1',
+        fromStatus: IOutboxEventStatus.PENDING,
+      })
+
+      expect(isErr(result)).toBe(true)
+      expect(mapToKnownError).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('findFailed', () => {
+    it('busca eventos com status FAILED ordenados por occurredAt desc respeitando take', async () => {
+      findManyMock.mockResolvedValueOnce([
+        {
+          id: 1,
+          publicId: 'ev-failed-1',
+          type: 'FormSubmissionCreated',
+          status: IOutboxEventStatus.FAILED,
+          payload: {},
+          attempts: 5,
+          occurredAt: new Date(),
+          sendingAt: null,
+          expiresAt: null,
+          pendingRecipients: [],
+        },
+      ])
+
+      const result = await repository.findFailed(10)
+
+      expect(findManyMock).toHaveBeenCalledWith({
+        where: { status: IOutboxEventStatus.FAILED },
+        orderBy: { occurredAt: 'desc' },
+        take: 10,
+      })
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toHaveLength(1)
+      expect(result.value[0].status).toBe(IOutboxEventStatus.FAILED)
+    })
+
+    it('mapeia falhas de banco para err via infraErrorMapper', async () => {
+      findManyMock.mockRejectedValueOnce(new Error('banco indisponível'))
+
+      const result = await repository.findFailed(10)
+
+      expect(isErr(result)).toBe(true)
+      expect(mapToKnownError).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('retryFailed', () => {
+    it('atualiza evento de FAILED para PENDING com attempts 0 e sendingAt null', async () => {
+      updateManyMock.mockResolvedValueOnce({ count: 1 })
+
+      const result = await repository.retryFailed('ev-retry')
+
+      expect(updateManyMock).toHaveBeenCalledWith({
+        where: {
+          publicId: 'ev-retry',
+          status: IOutboxEventStatus.FAILED,
+        },
+        data: {
+          status: IOutboxEventStatus.PENDING,
+          sendingAt: null,
+          attempts: 0,
+        },
+      })
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(true)
+    })
+
+    it('retorna false quando count === 0 (evento inexistente ou não FAILED)', async () => {
+      updateManyMock.mockResolvedValueOnce({ count: 0 })
+
+      const result = await repository.retryFailed('ev-nao-failed')
+
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(false)
+    })
+
+    it('mapeia falhas de banco para err via infraErrorMapper', async () => {
+      updateManyMock.mockRejectedValueOnce(new Error('erro no banco'))
+
+      const result = await repository.retryFailed('ev-retry')
 
       expect(isErr(result)).toBe(true)
       expect(mapToKnownError).toHaveBeenCalledOnce()

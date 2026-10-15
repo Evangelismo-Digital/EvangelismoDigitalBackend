@@ -1,4 +1,4 @@
-import { Job, Worker } from 'bullmq'
+import { Job, Worker, UnrecoverableError } from 'bullmq'
 import { makeSendEmailUseCase } from '@use-cases/factories/make-send-email-use-case'
 import { attachRedisLogger } from '@lib/redis/connections/redis-bullMQ-connection'
 import { logger } from '@lib/logger'
@@ -14,11 +14,13 @@ import { REDIS_CONSTANTS } from 'messages/constants/redis/redis'
 import { WORKER_CONSTANTS } from 'messages/constants/workers/workers'
 import { WORKER_LOGS } from 'messages/constants/logs/worker'
 import { captureError } from '@lib/sentry/capture'
+import { env } from '@env/index'
 import {
   collectMetricsEmailsSent,
   collectMetricsEmailsFailed,
   collectMetricsEmailsSkipped,
   collectMetricsEmailBatchDuration,
+  collectMetricsEmailsPermanentRejections,
 } from '@lib/metrics/email-metrics'
 
 type JobLogger = typeof logger
@@ -145,7 +147,7 @@ async function sendBatch(
   } catch (err) {
     await redisCache.del(idempotencyKey)
 
-    if (err instanceof InfrastructureError) {
+    if (err instanceof InfrastructureError || isUnrecoverable(err)) {
       throw err
     }
 
@@ -253,8 +255,65 @@ async function persistSelectiveRetry(
   }
 }
 
+interface SmtpErrorLike {
+  responseCode?: number
+  code?: string
+  response?: string
+  cause?: unknown
+  originalError?: unknown
+}
+
+const SMTP_PERMANENT_CODE_MIN = 500
+const SMTP_PERMANENT_CODE_MAX = 600
+
+function has5xxResponseCode(code: unknown): boolean {
+  return typeof code === 'number' && code >= SMTP_PERMANENT_CODE_MIN && code < SMTP_PERMANENT_CODE_MAX
+}
+
+function has5xxResponseText(response: unknown): boolean {
+  return typeof response === 'string' && /^5\d\d/.test(response.trim())
+}
+
+function matchesPermanentCriteria(target: SmtpErrorLike): boolean {
+  return has5xxResponseCode(target.responseCode) || target.code === 'EENVELOPE' || has5xxResponseText(target.response)
+}
+
+function isObject(val: unknown): val is Record<string, unknown> {
+  return typeof val === 'object' && val !== null
+}
+
+function extractCandidates(error: unknown): SmtpErrorLike[] {
+  if (!isObject(error)) {
+    return []
+  }
+
+  const err = error as SmtpErrorLike
+  const candidates: SmtpErrorLike[] = [err]
+
+  if (isObject(err.cause)) {
+    candidates.push(err.cause)
+  }
+
+  if (isObject(err.originalError)) {
+    candidates.push(err.originalError)
+  }
+
+  return candidates
+}
+
+export function isPermanentSmtpError(error: unknown): boolean {
+  return extractCandidates(error).some(matchesPermanentCriteria)
+}
+
 function throwFirstFailure(failures: SendResults): void {
   const firstFailure = failures[0]
+  const firstError = causeOf(firstFailure)
+
+  if (failures.every((f) => isPermanentSmtpError(causeOf(f)))) {
+    collectMetricsEmailsPermanentRejections?.inc(failures.length)
+    const message = firstError instanceof Error ? firstError.message : String(firstError)
+    throw new UnrecoverableError(message)
+  }
 
   if (firstFailure.status === 'rejected') {
     throw firstFailure.reason
@@ -308,7 +367,14 @@ async function handleJobFailure(
 function isFinalFailure(job: MailJob | undefined, err: Error): boolean {
   if (job == null) return false
 
-  return isStalledFinal(err) || job.attemptsMade >= (job.opts.attempts ?? 1)
+  return isUnrecoverable(err) || isStalledFinal(err) || job.attemptsMade >= (job.opts.attempts ?? 1)
+}
+
+function isUnrecoverable(err: unknown): boolean {
+  if (err instanceof UnrecoverableError) return true
+  if (typeof err !== 'object' || err === null) return false
+
+  return 'name' in err && err.name === 'UnrecoverableError'
 }
 
 /** "job stalled more than allowable limit" é falha definitiva mesmo com tentativas restantes. */
@@ -376,6 +442,10 @@ export function startMailWorker(outboxRepository: IOutboxRepository) {
     concurrency: WORKER_CONSTANTS.MAIL.CONCURRENCY_LIMIT,
     lockDuration: WORKER_CONSTANTS.MAIL.LOCK_DURATION_MS,
     stalledInterval: WORKER_CONSTANTS.MAIL.STALLED_INTERVAL_MS,
+    limiter: {
+      max: env.MAIL_RATE_LIMIT_MAX,
+      duration: env.MAIL_RATE_LIMIT_DURATION_MS,
+    },
   })
 
   // Named `onJobFailed`, not `handleJobFailure`: the module already declares a

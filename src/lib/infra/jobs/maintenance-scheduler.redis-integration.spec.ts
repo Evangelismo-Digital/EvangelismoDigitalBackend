@@ -69,7 +69,7 @@ afterAll(async () => {
 })
 
 describe('Job Schedulers de manutenção contra Redis real', () => {
-  it('registra os quatro agendadores no Redis com os padrões cron esperados', async () => {
+  it('registra os cinco agendadores no Redis com os padrões cron esperados', async () => {
     const queue = queues[0]
 
     await startMaintenanceScheduler(queue)
@@ -77,19 +77,20 @@ describe('Job Schedulers de manutenção contra Redis real', () => {
     const schedulers = await queue.getJobSchedulers()
     const byId = new Map(schedulers.map((s) => [s.key, s.pattern]))
 
-    expect(schedulers).toHaveLength(4)
+    expect(schedulers).toHaveLength(5)
     expect(byId.get(QUEUE.SCHEDULER_IDS.FIVE_MIN_SWEEP)).toBe(CRON_SCHEDULES.EVERY_FIVE_MINUTES)
     expect(byId.get(QUEUE.SCHEDULER_IDS.MIDNIGHT_SCAN)).toBe(CRON_SCHEDULES.MIDNIGHT_DAILY)
     expect(byId.get(QUEUE.SCHEDULER_IDS.RETENTION_PURGE)).toBe(CRON_SCHEDULES.DAILY_3AM)
     expect(byId.get(QUEUE.SCHEDULER_IDS.ANALYTICS_RETENTION)).toBe(CRON_SCHEDULES.DAILY_4AM)
+    expect(byId.get(QUEUE.SCHEDULER_IDS.FAILED_JOBS_CLEANUP)).toBe(CRON_SCHEDULES.DAILY_5AM)
   })
 
   /**
    * O teste que a fase 3 existe para passar: dois "pods" (duas conexões, duas
    * instâncias de Queue) fazem o upsert dos mesmos ids. Se o BullMQ duplicasse
-   * por processo — que é o que o node-cron fazia — haveria oito agendadores.
+   * por processo — que é o que o node-cron fazia — haveria dez agendadores.
    */
-  it('dois pods fazendo upsert dos mesmos ids mantêm QUATRO agendadores, não oito', async () => {
+  it('dois pods fazendo upsert dos mesmos ids mantêm CINCO agendadores, não dez', async () => {
     const podA = queues[0]
     const podB = makeQueue()
 
@@ -98,8 +99,8 @@ describe('Job Schedulers de manutenção contra Redis real', () => {
 
     const schedulers = await podA.getJobSchedulers()
 
-    expect(schedulers).toHaveLength(4)
-    expect(await podA.getJobSchedulersCount()).toBe(4)
+    expect(schedulers).toHaveLength(5)
+    expect(await podA.getJobSchedulersCount()).toBe(5)
   })
 
   /**
@@ -151,7 +152,7 @@ describe('Job Schedulers de manutenção contra Redis real', () => {
     await startMaintenanceScheduler(queue)
     await startMaintenanceScheduler(queue)
 
-    expect(await queue.getJobSchedulersCount()).toBe(4)
+    expect(await queue.getJobSchedulersCount()).toBe(5)
   })
 
   /**

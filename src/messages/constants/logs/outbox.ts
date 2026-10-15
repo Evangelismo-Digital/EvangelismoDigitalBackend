@@ -20,7 +20,7 @@ export const OUTBOX_LOGS = {
   PHASE2_ERROR: 'Fase 2 (eventos PENDING): erro inesperado.',
   SCAN_DONE: 'Varredura de segurança da Outbox concluída.',
   SCHEDULER_CONFIGURED:
-    'Agendadores da Outbox configurados: varredura a cada 5 min, segurança à meia-noite e retenção às 03:00.',
+    'Agendadores da Outbox configurados: varredura a cada 5 min, segurança à meia-noite, retenção às 03:00 e limpeza de falhas às 05:00.',
   // maintenance-scheduler / maintenance-worker
   MAINTENANCE_PHASE_RETRYING: 'Fase de manutenção falhou; o BullMQ fará nova tentativa com backoff antes de desistir.',
   MAINTENANCE_JOB_UNKNOWN: 'Job de manutenção desconhecido recebido na fila; nada a executar.',
@@ -48,6 +48,8 @@ export const OUTBOX_LOGS = {
   RETENTION_PURGED_NON_TERMINAL:
     'Retenção: eventos PENDING/SENDING antigos removidos da Outbox — investigar por que não foram processados.',
   RETENTION_ERROR: 'Erro na retenção da Outbox.',
+  FAILED_PURGED: 'Retenção de falhas: eventos com falha definitiva removidos da Outbox.',
+  FAILED_PURGE_ERROR: 'Erro na limpeza de eventos com falha definitiva da Outbox.',
   FIVE_MIN_SWEEP_PENDING_ERROR: 'Varredura de 5 min: erro inesperado ao processar eventos PENDING.',
   FIVE_MIN_SWEEP_EXPIRY_ERROR: 'Varredura de 5 min: erro inesperado na varredura de expiração.',
   RETENTION_CRON_ERROR: 'Cron de retenção: erro inesperado.',

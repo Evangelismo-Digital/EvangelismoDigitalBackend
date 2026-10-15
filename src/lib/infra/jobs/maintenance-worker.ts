@@ -92,6 +92,16 @@ function analyticsRetentionPhases({ analyticsRetention }: MaintenanceDeps): Phas
   ]
 }
 
+function failedJobsCleanupPhases({ maintenance }: MaintenanceDeps): Phase[] {
+  return [
+    {
+      name: 'failed_jobs_cleanup',
+      run: () => maintenance.purgeFailedEvents(),
+      errorMessage: OUTBOX_LOGS.FAILED_PURGE_ERROR,
+    },
+  ]
+}
+
 /**
  * Map, e não objeto indexado: o nome do job vem de fora (do Redis), e indexar
  * um objeto com string externa é exatamente o padrão que o
@@ -105,6 +115,7 @@ const PHASE_BUILDERS = new Map<string, (deps: MaintenanceDeps) => Phase[]>([
   [QUEUE.JOBS.MIDNIGHT_SCAN, midnightScanPhases],
   [QUEUE.JOBS.RETENTION_PURGE, retentionPurgePhases],
   [QUEUE.JOBS.ANALYTICS_RETENTION, analyticsRetentionPhases],
+  [QUEUE.JOBS.FAILED_JOBS_CLEANUP, failedJobsCleanupPhases],
 ])
 
 function phasesFor(jobName: string, deps: MaintenanceDeps): Phase[] {

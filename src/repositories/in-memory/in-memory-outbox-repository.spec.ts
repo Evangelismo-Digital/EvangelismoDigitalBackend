@@ -346,4 +346,237 @@ describe('InMemoryOutboxRepository (contrato da máquina de estados)', () => {
       expect(isErr(result)).toBe(true)
     })
   })
+
+  describe('deleteFailedOlderThan', () => {
+    it('remove apenas eventos FAILED com occurredAt < corte, respeitando batchSize', async () => {
+      const a = await repository.create(makeInput())
+      const b = await repository.create(makeInput())
+      const c = await repository.create(makeInput())
+      const pendingOld = await repository.create(makeInput())
+      const failedRecent = await repository.create(makeInput())
+      if (!isOk(a) || !isOk(b) || !isOk(c) || !isOk(pendingOld) || !isOk(failedRecent)) throw new Error('setup')
+
+      const old = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
+      repository.items[0].occurredAt = old
+      repository.items[1].occurredAt = new Date(old.getTime() + 1000)
+      repository.items[2].occurredAt = new Date(old.getTime() + 2000)
+      repository.items[3].occurredAt = old
+      repository.items[4].occurredAt = new Date()
+
+      await repository.updateStatus(a.value.publicId, IOutboxEventStatus.FAILED)
+      await repository.updateStatus(b.value.publicId, IOutboxEventStatus.FAILED)
+      await repository.updateStatus(c.value.publicId, IOutboxEventStatus.FAILED)
+      await repository.updateStatus(failedRecent.value.publicId, IOutboxEventStatus.FAILED)
+      // pendingOld permanece PENDING
+
+      const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+
+      const firstBatch = await repository.deleteFailedOlderThan(cutoff, 2)
+      expect(isOk(firstBatch)).toBe(true)
+      if (!isOk(firstBatch)) return
+      expect(firstBatch.value).toBe(2)
+
+      const secondBatch = await repository.deleteFailedOlderThan(cutoff, 2)
+      if (!isOk(secondBatch)) throw new Error('setup')
+      expect(secondBatch.value).toBe(1)
+
+      // pendingOld e failedRecent sobrevivem
+      expect(repository.items.map((e) => e.publicId)).toEqual([pendingOld.value.publicId, failedRecent.value.publicId])
+
+      const emptyBatch = await repository.deleteFailedOlderThan(cutoff, 2)
+      if (!isOk(emptyBatch)) throw new Error('setup')
+      expect(emptyBatch.value).toBe(0)
+    })
+
+    it('retorna err quando a falha é injetada', async () => {
+      repository.shouldFailOn.deleteFailedOlderThan = true
+
+      const result = await repository.deleteFailedOlderThan(new Date(), 10)
+
+      expect(isErr(result)).toBe(true)
+    })
+  })
+
+  describe('claim (Compare-And-Set otimista)', () => {
+    it('reivindica evento PENDING com sucesso, incrementa attempts e seta sendingAt', async () => {
+      const created = await repository.create(makeInput())
+      if (!isOk(created)) throw new Error('setup')
+      const { publicId } = created.value
+
+      const result = await repository.claim({
+        publicId,
+        fromStatus: IOutboxEventStatus.PENDING,
+      })
+
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(true)
+
+      const claimed = repository.items.find((e) => e.publicId === publicId)
+      expect(claimed?.status).toBe(IOutboxEventStatus.SENDING)
+      expect(claimed?.attempts).toBe(1)
+      expect(claimed?.sendingAt).toBeInstanceOf(Date)
+    })
+
+    it('retorna false e não incrementa attempts se outro worker já reivindicou (concorrência)', async () => {
+      const created = await repository.create(makeInput())
+      if (!isOk(created)) throw new Error('setup')
+      const { publicId } = created.value
+
+      const firstClaim = await repository.claim({
+        publicId,
+        fromStatus: IOutboxEventStatus.PENDING,
+      })
+      const secondClaim = await repository.claim({
+        publicId,
+        fromStatus: IOutboxEventStatus.PENDING,
+      })
+
+      expect(isOk(firstClaim)).toBe(true)
+      if (!isOk(firstClaim)) return
+      expect(firstClaim.value).toBe(true)
+
+      expect(isOk(secondClaim)).toBe(true)
+      if (!isOk(secondClaim)) return
+      expect(secondClaim.value).toBe(false)
+
+      const claimed = repository.items.find((e) => e.publicId === publicId)
+      expect(claimed?.attempts).toBe(1)
+    })
+
+    it('reivindica evento SENDING travado se sendingAt <= stuckBefore', async () => {
+      const created = await repository.create(makeInput())
+      if (!isOk(created)) throw new Error('setup')
+      const { publicId } = created.value
+
+      await repository.claim({ publicId, fromStatus: IOutboxEventStatus.PENDING })
+      const past = new Date(Date.now() - 30 * 60 * 1000)
+      repository.items[0].sendingAt = past
+
+      const cutoff = new Date(Date.now() - 15 * 60 * 1000)
+      const claimStuck = await repository.claim({
+        publicId,
+        fromStatus: IOutboxEventStatus.SENDING,
+        stuckBefore: cutoff,
+      })
+
+      expect(isOk(claimStuck)).toBe(true)
+      if (!isOk(claimStuck)) return
+      expect(claimStuck.value).toBe(true)
+      expect(repository.items[0].attempts).toBe(2)
+      expect(repository.items[0].sendingAt?.getTime()).toBeGreaterThan(cutoff.getTime())
+    })
+
+    it('recusa reivindicação de evento SENDING se sendingAt for mais recente que stuckBefore', async () => {
+      const created = await repository.create(makeInput())
+      if (!isOk(created)) throw new Error('setup')
+      const { publicId } = created.value
+
+      await repository.claim({ publicId, fromStatus: IOutboxEventStatus.PENDING })
+      repository.items[0].sendingAt = new Date()
+
+      const cutoff = new Date(Date.now() - 15 * 60 * 1000)
+      const claimStuck = await repository.claim({
+        publicId,
+        fromStatus: IOutboxEventStatus.SENDING,
+        stuckBefore: cutoff,
+      })
+
+      expect(isOk(claimStuck)).toBe(true)
+      if (!isOk(claimStuck)) return
+      expect(claimStuck.value).toBe(false)
+      expect(repository.items[0].attempts).toBe(1)
+    })
+
+    it('retorna false para publicId inexistente', async () => {
+      const result = await repository.claim({
+        publicId: 'inexistente',
+        fromStatus: IOutboxEventStatus.PENDING,
+      })
+
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(false)
+    })
+
+    it('retorna err quando a falha é injetada', async () => {
+      repository.shouldFailOn.claim = true
+
+      const result = await repository.claim({
+        publicId: 'qualquer',
+        fromStatus: IOutboxEventStatus.PENDING,
+      })
+
+      expect(isErr(result)).toBe(true)
+    })
+  })
+
+  describe('findFailed', () => {
+    it('retorna apenas eventos FAILED respeitando o limite', async () => {
+      const a = await repository.create(makeInput())
+      const b = await repository.create(makeInput())
+      const c = await repository.create(makeInput())
+      if (!isOk(a) || !isOk(b) || !isOk(c)) throw new Error('setup')
+
+      await repository.updateStatus(a.value.publicId, IOutboxEventStatus.FAILED)
+      await repository.updateStatus(b.value.publicId, IOutboxEventStatus.FAILED)
+
+      const result = await repository.findFailed(10)
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toHaveLength(2)
+      expect(result.value.every((e) => e.status === IOutboxEventStatus.FAILED)).toBe(true)
+    })
+
+    it('retorna err quando a falha é injetada', async () => {
+      repository.shouldFailOn.findFailed = true
+      const result = await repository.findFailed(10)
+      expect(isErr(result)).toBe(true)
+    })
+  })
+
+  describe('retryFailed', () => {
+    it('reseta evento FAILED para PENDING, zera attempts e limpa sendingAt', async () => {
+      const created = await repository.create(makeInput())
+      if (!isOk(created)) throw new Error('setup')
+      const { publicId } = created.value
+
+      await repository.updateStatus(publicId, IOutboxEventStatus.FAILED)
+      repository.items[0].attempts = 5
+      repository.items[0].sendingAt = new Date()
+
+      const result = await repository.retryFailed(publicId)
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(true)
+
+      const updated = repository.items.find((e) => e.publicId === publicId)
+      expect(updated?.status).toBe(IOutboxEventStatus.PENDING)
+      expect(updated?.attempts).toBe(0)
+      expect(updated?.sendingAt).toBeUndefined()
+    })
+
+    it('retorna false para evento que não está em status FAILED (ex: PENDING)', async () => {
+      const created = await repository.create(makeInput())
+      if (!isOk(created)) throw new Error('setup')
+
+      const result = await repository.retryFailed(created.value.publicId)
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(false)
+    })
+
+    it('retorna false para publicId inexistente', async () => {
+      const result = await repository.retryFailed('nao-existe')
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(false)
+    })
+
+    it('retorna err quando a falha é injetada', async () => {
+      repository.shouldFailOn.retryFailed = true
+      const result = await repository.retryFailed('qualquer')
+      expect(isErr(result)).toBe(true)
+    })
+  })
 })

@@ -16,7 +16,8 @@ import { captureError } from '@lib/sentry/capture'
 import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { closeAllRedisConnections } from '@lib/redis/clients/clients'
 import { startMailWorker } from '@lib/workers/mail-worker'
-import { OutboxSignal } from '@lib/infra/events/outbox-signal'
+import { startOutboxDispatchWorker } from '@lib/workers/outbox-dispatch-worker'
+import { getOutboxDispatchQueue, closeOutboxDispatchQueue } from '@lib/queue/outbox-dispatch-queue'
 import { PrismaOutboxRepository } from '@repositories/prisma/prisma-outbox-event-repository'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
 import {
@@ -24,7 +25,6 @@ import {
   outboxInfraPrismaErrorMapping,
 } from '@repositories/prisma/errors/outbox-error-mapping'
 import { Worker } from 'bullmq'
-import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 import { crashShutdown } from '@lib/shutdown/crash-shutdown'
 import closeWithGrace from 'close-with-grace'
 import { env } from '@env/index'
@@ -34,24 +34,16 @@ import { QUEUE } from 'messages/constants/queue/queue'
 import { startMetricsServer, stopMetricsServer } from './metrics-server'
 
 let worker: Worker | null = null
+let outboxDispatchWorker: Worker | null = null
 let maintenanceWorker: Worker | null = null
 
 /**
  * [ESCALABILIDADE HORIZONTAL]
- * A manutenção agendada JÁ É segura com N pods. Os agendamentos deixaram de ser
- * node-cron rodando dentro de cada processo e passaram a ser Job Schedulers do
- * BullMQ, que vivem no Redis: todo pod faz upsert do mesmo id, o BullMQ mantém
- * um único agendador e emite UM job por tique, consumido por um único worker.
- * Não é preciso eleger líder para isto.
- *
- * O QUE CONTINUA EM ABERTO é o handler de Pub/Sub de OutboxSignal.subscribe: o
- * Redis entrega o sinal a TODOS os assinantes, então N pods processariam o
- * mesmo evento concorrentemente. Hoje a segurança vem do jobId determinístico
- * no BullMQ (dedup) e do updateStatus idempotente — não de um lock. É aqui que
- * se deve começar no dia do segundo pod.
- *
- * O worker sobe ANTES do agendador: assim o primeiro tique já encontra
- * consumidor, em vez de esperar o próximo.
+ * A manutenção agendada e o despacho de outbox são totalmente seguros com N pods:
+ * - A fila `outbox-dispatch-queue` substitui o Pub/Sub, garantindo entrega point-to-point
+ *   a apenas 1 pod por evento, além de durabilidade se todos os workers estiverem fora.
+ * - O CAS otimista `claim()` no PostgreSQL impede corrida entre a varredura e o despacho em tempo real.
+ * - Os agendamentos vivem no Redis via Job Schedulers do BullMQ: 1 job por tique para todo o cluster.
  */
 async function startMaintenance(
   outboxRepository: PrismaOutboxRepository,
@@ -79,15 +71,13 @@ async function bootstrap() {
 
     worker = startMailWorker(outboxRepository)
     logger.info('Mail worker iniciado')
-
-    // Register the producer queue so /metrics can report its job counts on scrape.
     registerQueue(QUEUE.NAMES.MAIL, getMailQueue())
 
     const outboxProcessor = new OutboxProcessor(outboxRepository, makeOutboxDispatchStrategyRegistry())
 
-    await OutboxSignal.subscribe(async (_publicId: string, event: IOutboxEvent) => {
-      await outboxProcessor.processSingleEvent(event)
-    })
+    outboxDispatchWorker = startOutboxDispatchWorker(outboxProcessor)
+    logger.info('Outbox dispatch worker iniciado')
+    registerQueue(QUEUE.NAMES.OUTBOX_DISPATCH, getOutboxDispatchQueue())
 
     await startMaintenance(outboxRepository, outboxProcessor)
 
@@ -110,9 +100,15 @@ async function bootstrap() {
 async function cleanup() {
   const tasks: (() => Promise<void> | void)[] = [
     async () => {
-      OutboxSignal.disconnect()
-      logger.info('OutboxSignal desconectado')
-      await Promise.resolve()
+      if (outboxDispatchWorker) {
+        await outboxDispatchWorker.close()
+        logger.info('Outbox dispatch worker finalizado')
+      }
+    },
+    async () => {
+      unregisterQueue(QUEUE.NAMES.OUTBOX_DISPATCH)
+      await closeOutboxDispatchQueue()
+      logger.info('OutboxDispatchQueue finalizada')
     },
     async () => {
       if (worker) {

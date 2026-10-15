@@ -91,12 +91,13 @@ import { OutboxSignal } from '@lib/infra/events/outbox-signal'
 import { makeOutboxDispatchStrategyRegistry } from './make-outbox-dispatch-registry'
 import { InMemoryOutboxRepository } from '@repositories/in-memory/in-memory-outbox-repository'
 import { IOutboxEvent, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
-import { isOk, err } from 'core/shared/result'
+import { isOk, ok, err } from 'core/shared/result'
 import { InfrastructureError } from 'errors/infrastructure-error'
 import { OUTBOX_CONSTANTS } from 'messages/constants/outbox/outbox'
 import { getRegistry } from '@lib/metrics'
 import {
   collectMetricsOutboxEventsDispatched,
+  collectMetricsOutboxEventsClaimed,
   collectMetricsOutboxEventsReverted,
   collectMetricsOutboxEventsRevertFailed,
   collectMetricsOutboxEventsMarkedAsTerminalFail,
@@ -173,6 +174,25 @@ describe('Outbox metrics instrumentation', () => {
 
       expect(await metricValue(collectMetricsOutboxEventsDispatched)).toBe(1)
       expect(await metricValue(collectMetricsOutboxEventsReverted)).toBe(0)
+    })
+
+    it('counts a claimed CAS outcome when event claim succeeds', async () => {
+      const event = await createEvent(repository)
+
+      await processor.processSingleEvent(event)
+
+      expect(await metricValue(collectMetricsOutboxEventsClaimed, { outcome: 'claimed' })).toBe(1)
+      expect(await metricValue(collectMetricsOutboxEventsClaimed, { outcome: 'contention' })).toBe(0)
+    })
+
+    it('counts a contention CAS outcome when event is already claimed', async () => {
+      const event = await createEvent(repository)
+      vi.spyOn(repository, 'claim').mockResolvedValueOnce(ok(false))
+
+      await processor.processSingleEvent(event)
+
+      expect(await metricValue(collectMetricsOutboxEventsClaimed, { outcome: 'contention' })).toBe(1)
+      expect(await metricValue(collectMetricsOutboxEventsClaimed, { outcome: 'claimed' })).toBe(0)
     })
 
     it('counts a revert when dispatch fails and the PENDING write succeeds', async () => {

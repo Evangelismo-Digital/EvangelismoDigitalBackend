@@ -8,8 +8,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import request from 'supertest'
 
-const { publishNewItem } = vi.hoisted(() => ({ publishNewItem: vi.fn().mockResolvedValue(undefined) }))
-vi.mock('@lib/infra/events/outbox-signal', () => ({ OutboxSignal: { publishNewItem } }))
+const { enqueueOutboxDispatch } = vi.hoisted(() => ({ enqueueOutboxDispatch: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@lib/queue/outbox-dispatch-queue', () => ({ enqueueOutboxDispatch }))
 
 import { app } from 'app'
 import { prisma } from '@lib/prisma'
@@ -58,7 +58,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   vi.clearAllMocks()
-  publishNewItem.mockResolvedValue(undefined)
+  enqueueOutboxDispatch.mockResolvedValue(undefined)
   await wipe()
 })
 
@@ -108,9 +108,9 @@ describe('POST /forms/submit-form (integration, real Postgres)', () => {
         email: 'forms-it-signal@example.com',
       })
 
-    expect(publishNewItem).toHaveBeenCalledTimes(1)
-    const [publicId, event] = publishNewItem.mock.calls[0]
-    expect(typeof publicId).toBe('string')
+    expect(enqueueOutboxDispatch).toHaveBeenCalledTimes(1)
+    const [event] = enqueueOutboxDispatch.mock.calls[0]
+    expect(typeof event.publicId).toBe('string')
     expect(event.type).toBe(OUTBOX_EVENT_TYPES.FORM_SUBMISSION_CREATED)
     expect(event.status).toBe('PENDING')
   })
@@ -159,7 +159,7 @@ describe('POST /forms/submit-form (integration, real Postgres)', () => {
 
     // The form insert happened inside the same tx and must have been rolled back.
     expect(await prisma.formSubmission.findUnique({ where: { email: 'forms-it-rollback@example.com' } })).toBeNull()
-    expect(publishNewItem).not.toHaveBeenCalled()
+    expect(enqueueOutboxDispatch).not.toHaveBeenCalled()
 
     spy.mockRestore()
   })

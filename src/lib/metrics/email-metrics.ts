@@ -37,3 +37,11 @@ export const collectMetricsEmailBatchDuration = registry
       registers: [registry],
     })
   : null
+
+export const collectMetricsEmailsPermanentRejections = registry
+  ? new Counter({
+      name: 'emails_permanent_rejections_total',
+      help: 'Permanent SMTP rejections (RFC 5xx / invalid mailbox) that bypass retries via UnrecoverableError',
+      registers: [registry],
+    })
+  : null

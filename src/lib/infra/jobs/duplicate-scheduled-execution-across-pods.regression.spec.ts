@@ -80,23 +80,24 @@ describe('regressão: execução agendada duplicada entre pods', () => {
 
   /**
    * O SINTOMA. Com `node-cron`, três pods produziam três conjuntos de timers —
-   * doze agendamentos no total. Agendadores desduplicados por id mantêm quatro,
+   * quinze agendamentos no total. Agendadores desduplicados por id mantêm cinco,
    * não importa quantos pods subam.
    */
-  it('três pods agendando resultam em QUATRO agendadores, não doze', async () => {
+  it('três pods agendando resultam em CINCO agendadores, não quinze', async () => {
     const { schedulers, makePod } = makeSharedRedis()
 
     await startMaintenanceScheduler(makePod())
     await startMaintenanceScheduler(makePod())
     await startMaintenanceScheduler(makePod())
 
-    expect(schedulers.size).toBe(4)
+    expect(schedulers.size).toBe(5)
     expect([...schedulers.keys()].sort()).toEqual(
       [
         QUEUE.SCHEDULER_IDS.FIVE_MIN_SWEEP,
         QUEUE.SCHEDULER_IDS.MIDNIGHT_SCAN,
         QUEUE.SCHEDULER_IDS.RETENTION_PURGE,
         QUEUE.SCHEDULER_IDS.ANALYTICS_RETENTION,
+        QUEUE.SCHEDULER_IDS.FAILED_JOBS_CLEANUP,
       ].sort(),
     )
   })

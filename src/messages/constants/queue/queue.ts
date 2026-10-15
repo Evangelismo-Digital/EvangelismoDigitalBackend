@@ -2,6 +2,7 @@ export const QUEUE = {
   NAMES: {
     MAIL: 'mail-queue',
     MAINTENANCE: 'maintenance-queue',
+    OUTBOX_DISPATCH: 'outbox-dispatch-queue',
   },
   JOBS: {
     OUTBOX_DISPATCH: 'outbox-dispatch',
@@ -9,6 +10,7 @@ export const QUEUE = {
     MIDNIGHT_SCAN: 'midnight-scan',
     RETENTION_PURGE: 'retention-purge',
     ANALYTICS_RETENTION: 'analytics-retention',
+    FAILED_JOBS_CLEANUP: 'failed-jobs-cleanup',
   },
   /**
    * Scheduler ids are the dedup key: every pod upserts the same id, so BullMQ
@@ -21,5 +23,6 @@ export const QUEUE = {
     MIDNIGHT_SCAN: 'maintenance:midnight-scan',
     RETENTION_PURGE: 'maintenance:retention-purge',
     ANALYTICS_RETENTION: 'maintenance:analytics-retention',
+    FAILED_JOBS_CLEANUP: 'maintenance:failed-jobs-cleanup',
   },
 } as const

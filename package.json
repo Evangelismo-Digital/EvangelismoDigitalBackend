@@ -70,6 +70,7 @@
     "security:scan": "bash scripts/security-scan.sh",
     "security:report": "node scripts/security-report.mjs",
     "test:integration:repositories": "vitest run --project integration-repositories",
+    "outbox:triage": "tsx scripts/outbox-triage.ts",
     "check:duplication": "jscpd src"
   },
   "prisma": {

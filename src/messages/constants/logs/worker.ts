@@ -3,6 +3,7 @@ export const WORKER_LOGS = {
   BULLMQ_NETWORK_GLITCH: 'Falha de rede interna do BullMQ após processamento. Ignorando.',
   GENERIC_WORKER_FAILURE: 'Falha genérica não mapeada no worker',
   MAIL_QUEUE_ERROR: 'Erro na MailQueue (Producer)',
+  OUTBOX_DISPATCH_QUEUE_ERROR: 'Erro na OutboxDispatchQueue (Producer)',
   OUTBOX_REVERTED_AFTER_FINAL_FAILURE:
     'Job falhou definitivamente no BullMQ. Evento revertido para PENDING para nova tentativa de despacho.',
   OUTBOX_REVERT_AFTER_FINAL_FAILURE_ERROR:

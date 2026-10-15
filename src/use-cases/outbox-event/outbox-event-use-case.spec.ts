@@ -15,12 +15,16 @@ function makeRepository(): IOutboxRepository {
     create: vi.fn(),
     findPending: vi.fn(),
     findStuck: vi.fn(),
+    findFailed: vi.fn(),
     findByPublicId: vi.fn(),
+    retryFailed: vi.fn(),
+    claim: vi.fn(),
     updateStatus: vi.fn(),
     updatePendingRecipients: vi.fn(),
     delete: vi.fn(),
     deleteExpired: vi.fn(),
     deleteOlderThan: vi.fn(),
+    deleteFailedOlderThan: vi.fn(),
   }
 }
 

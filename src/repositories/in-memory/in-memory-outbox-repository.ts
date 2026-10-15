@@ -4,6 +4,7 @@ import {
   IOutboxEvent,
   IOutBoxEventInputData,
   IOutboxEventStatus,
+  OutboxClaimFilter,
 } from 'core/contracts/repository/outbox-repository.interface'
 import { Result, ok, err } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
@@ -19,11 +20,15 @@ interface FailureInjection {
   create?: boolean
   findPending?: boolean
   findStuck?: boolean
+  findFailed?: boolean
+  claim?: boolean
+  retryFailed?: boolean
   updateStatus?: boolean
   updatePendingRecipients?: boolean
   delete?: boolean
   deleteExpired?: boolean
   deleteOlderThan?: boolean
+  deleteFailedOlderThan?: boolean
 }
 
 /**
@@ -96,10 +101,67 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
     return ok(stuck)
   }
 
+  async findFailed(limit: number): Promise<Result<IOutboxEvent[], AppError>> {
+    if (this.shouldFailOn.findFailed) {
+      return err(new InMemoryOutboxError('Falha injetada em findFailed'))
+    }
+
+    const failed = this.items
+      .filter((e) => e.status === IOutboxEventStatus.FAILED)
+      .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
+      .slice(0, limit)
+
+    return ok(failed)
+  }
+
+  async retryFailed(publicId: string): Promise<Result<boolean, AppError>> {
+    if (this.shouldFailOn.retryFailed) {
+      return err(new InMemoryOutboxError('Falha injetada em retryFailed'))
+    }
+
+    const event = this.items.find((e) => e.publicId === publicId)
+    if (event?.status !== IOutboxEventStatus.FAILED) {
+      return ok(false)
+    }
+
+    event.status = IOutboxEventStatus.PENDING
+    event.sendingAt = undefined
+    event.attempts = 0
+
+    return ok(true)
+  }
+
   async findByPublicId(publicId: string): Promise<Result<IOutboxEvent | null, AppError>> {
     const event = this.items.find((e) => e.publicId === publicId)
 
     return ok(event ?? null)
+  }
+
+  async claim(filter: OutboxClaimFilter): Promise<Result<boolean, AppError>> {
+    if (this.shouldFailOn.claim) {
+      return err(new InMemoryOutboxError('Falha injetada em claim'))
+    }
+
+    const event = this.items.find((e) => e.publicId === filter.publicId)
+    if (!this.canClaim(event, filter)) {
+      return ok(false)
+    }
+
+    event.status = IOutboxEventStatus.SENDING
+    event.sendingAt = new Date()
+    event.attempts += 1
+
+    return ok(true)
+  }
+
+  private canClaim(event: IOutboxEvent | undefined, filter: OutboxClaimFilter): event is IOutboxEvent {
+    if (event?.status !== filter.fromStatus) {
+      return false
+    }
+    if (filter.stuckBefore !== undefined) {
+      return Boolean(event.sendingAt && event.sendingAt.getTime() <= filter.stuckBefore.getTime())
+    }
+    return true
   }
 
   async updateStatus(publicId: string, status: IOutboxEventStatus): Promise<Result<void, AppError>> {
@@ -192,5 +254,21 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
     this.items = this.items.filter((e) => !batchIds.has(e.id))
 
     return ok({ deleted: batch.length, byStatus })
+  }
+
+  async deleteFailedOlderThan(cutoff: Date, batchSize: number): Promise<Result<number, AppError>> {
+    if (this.shouldFailOn.deleteFailedOlderThan) {
+      return err(new InMemoryOutboxError('Falha injetada em deleteFailedOlderThan'))
+    }
+
+    const batch = this.items
+      .filter((e) => e.status === IOutboxEventStatus.FAILED && e.occurredAt.getTime() < cutoff.getTime())
+      .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
+      .slice(0, batchSize)
+
+    const batchIds = new Set(batch.map((e) => e.id))
+    this.items = this.items.filter((e) => !batchIds.has(e.id))
+
+    return ok(batch.length)
   }
 }

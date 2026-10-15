@@ -37,6 +37,7 @@ function makeDeps() {
     maintenance: {
       sweepExpiredEvents: vi.fn().mockResolvedValue(undefined),
       purgeOldEvents: vi.fn().mockResolvedValue(undefined),
+      purgeFailedEvents: vi.fn().mockResolvedValue(undefined),
     },
     analyticsRetention: {
       purgeExpiredData: vi.fn().mockResolvedValue(undefined),
@@ -166,6 +167,17 @@ describe('createMaintenanceJobProcessor', () => {
       expect(deps.analyticsRetention.purgeExpiredData).toHaveBeenCalledOnce()
       expect(deps.maintenance.purgeOldEvents).not.toHaveBeenCalled()
       expect(mockRunsInc).toHaveBeenCalledWith({ phase: 'analytics_retention' })
+    })
+
+    it('05:00 purga eventos com falha definitiva da outbox', async () => {
+      await process(makeJob(QUEUE.JOBS.FAILED_JOBS_CLEANUP))
+
+      expect(deps.maintenance.purgeFailedEvents).toHaveBeenCalledOnce()
+      expect(deps.maintenance.purgeOldEvents).not.toHaveBeenCalled()
+      expect(deps.maintenance.sweepExpiredEvents).not.toHaveBeenCalled()
+      expect(deps.processor.processPendingEvents).not.toHaveBeenCalled()
+      expect(deps.analyticsRetention.purgeExpiredData).not.toHaveBeenCalled()
+      expect(mockRunsInc).toHaveBeenCalledWith({ phase: 'failed_jobs_cleanup' })
     })
 
     it('na última tentativa, a falha da purga de analytics usa a mensagem de analytics e captura sem contexto', async () => {

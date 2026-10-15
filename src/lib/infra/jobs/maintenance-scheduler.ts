@@ -46,6 +46,11 @@ const MAINTENANCE_SCHEDULES: readonly MaintenanceSchedule[] = [
     jobName: QUEUE.JOBS.ANALYTICS_RETENTION,
     pattern: CRON_SCHEDULES.DAILY_4AM,
   },
+  {
+    schedulerId: QUEUE.SCHEDULER_IDS.FAILED_JOBS_CLEANUP,
+    jobName: QUEUE.JOBS.FAILED_JOBS_CLEANUP,
+    pattern: CRON_SCHEDULES.DAILY_5AM,
+  },
 ]
 
 /**

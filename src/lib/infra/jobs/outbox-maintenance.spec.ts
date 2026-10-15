@@ -41,6 +41,7 @@ function makeRepository() {
   return {
     deleteExpired: vi.fn().mockResolvedValue(ok(0)),
     deleteOlderThan: vi.fn().mockResolvedValue(ok({ deleted: 0, byStatus: {} })),
+    deleteFailedOlderThan: vi.fn().mockResolvedValue(ok(0)),
   }
 }
 
@@ -195,6 +196,42 @@ describe('OutboxMaintenance', () => {
       expect(logger.info).not.toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.RETENTION_PURGED)
     })
 
+    it('purga com apenas SENDING não-terminal também loga warn', async () => {
+      repository.deleteOlderThan.mockResolvedValueOnce(
+        ok({
+          deleted: 1,
+          byStatus: {
+            [IOutboxEventStatus.SENDING]: 1,
+          },
+        }),
+      )
+
+      await maintenance.purgeOldEvents()
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ deleted: 1 }),
+        OUTBOX_LOGS.RETENTION_PURGED_NON_TERMINAL,
+      )
+    })
+
+    it('purga com apenas PENDING não-terminal também loga warn', async () => {
+      repository.deleteOlderThan.mockResolvedValueOnce(
+        ok({
+          deleted: 1,
+          byStatus: {
+            [IOutboxEventStatus.PENDING]: 1,
+          },
+        }),
+      )
+
+      await maintenance.purgeOldEvents()
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ deleted: 1 }),
+        OUTBOX_LOGS.RETENTION_PURGED_NON_TERMINAL,
+      )
+    })
+
     it('nada purgado: não loga resumo', async () => {
       await maintenance.purgeOldEvents()
 
@@ -235,6 +272,85 @@ describe('OutboxMaintenance', () => {
       await expect(maintenance.purgeOldEvents()).resolves.toBeUndefined()
 
       expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.RETENTION_ERROR)
+      expect(mockCaptureError).toHaveBeenCalledOnce()
+      expect(mockRelease).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('purgeFailedEvents', () => {
+    const BATCH = OUTBOX_CONSTANTS.RETENTION.BATCH_SIZE
+
+    it('usa corte de RETENTION.FAILED_DAYS dias e o lock OUTBOX_FAILED_PURGE', async () => {
+      const before = Date.now()
+
+      await maintenance.purgeFailedEvents()
+
+      expect(mockAcquire).toHaveBeenCalledWith(
+        OUTBOX_CONSTANTS.LOCK_KEYS.OUTBOX_FAILED_PURGE,
+        OUTBOX_CONSTANTS.LOCK_TTL_MS.DEFAULT,
+      )
+      const [cutoff, batchSize] = repository.deleteFailedOlderThan.mock.calls[0]
+      const expected = before - OUTBOX_CONSTANTS.RETENTION.FAILED_DAYS * 24 * 60 * 60 * 1000
+      expect(Math.abs(cutoff.getTime() - expected)).toBeLessThan(5_000)
+      expect(batchSize).toBe(BATCH)
+    })
+
+    it('aceita corte customizado quando fornecido', async () => {
+      const customCutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
+
+      await maintenance.purgeFailedEvents(customCutoff)
+
+      const [cutoff] = repository.deleteFailedOlderThan.mock.calls[0]
+      expect(cutoff).toEqual(customCutoff)
+    })
+
+    it('itera em lotes até um lote parcial, renovando o lock a cada lote', async () => {
+      repository.deleteFailedOlderThan
+        .mockResolvedValueOnce(ok(BATCH))
+        .mockResolvedValueOnce(ok(BATCH))
+        .mockResolvedValueOnce(ok(15))
+
+      await maintenance.purgeFailedEvents()
+
+      expect(repository.deleteFailedOlderThan).toHaveBeenCalledTimes(3)
+      expect(mockRenew).toHaveBeenCalledTimes(3)
+      expect(logger.info).toHaveBeenCalledWith({ deleted: 2 * BATCH + 15 }, OUTBOX_LOGS.FAILED_PURGED)
+      expect(mockRelease).toHaveBeenCalledOnce()
+    })
+
+    it('nada purgado: não loga resumo', async () => {
+      await maintenance.purgeFailedEvents()
+
+      expect(logger.info).not.toHaveBeenCalled()
+    })
+
+    it('lock não adquirido: retorna sem consultar o repositório', async () => {
+      mockAcquire.mockResolvedValueOnce(null)
+
+      await maintenance.purgeFailedEvents()
+
+      expect(repository.deleteFailedOlderThan).not.toHaveBeenCalled()
+    })
+
+    it('falha do repositório no meio dos lotes: para o loop, loga, captura e libera o lock', async () => {
+      const infraError = new InfraTestError()
+      repository.deleteFailedOlderThan.mockResolvedValueOnce(ok(BATCH)).mockResolvedValueOnce(err(infraError))
+
+      await maintenance.purgeFailedEvents()
+
+      expect(repository.deleteFailedOlderThan).toHaveBeenCalledTimes(2)
+      expect(logger.error).toHaveBeenCalledWith({ error: infraError }, OUTBOX_LOGS.FAILED_PURGE_ERROR)
+      expect(mockCaptureError).toHaveBeenCalledWith(infraError)
+      expect(logger.info).toHaveBeenCalledWith({ deleted: BATCH }, OUTBOX_LOGS.FAILED_PURGED)
+      expect(mockRelease).toHaveBeenCalledOnce()
+    })
+
+    it('rejeição inesperada: loga, captura e ainda libera o lock', async () => {
+      repository.deleteFailedOlderThan.mockRejectedValueOnce(new Error('banco indisponível'))
+
+      await expect(maintenance.purgeFailedEvents()).resolves.toBeUndefined()
+
+      expect(logger.error).toHaveBeenCalledWith(expect.anything(), OUTBOX_LOGS.FAILED_PURGE_ERROR)
       expect(mockCaptureError).toHaveBeenCalledOnce()
       expect(mockRelease).toHaveBeenCalledOnce()
     })

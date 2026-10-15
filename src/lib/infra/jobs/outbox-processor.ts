@@ -14,6 +14,7 @@ import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 import { captureError } from '@lib/sentry/capture'
 import {
   collectMetricsOutboxEventsDispatched,
+  collectMetricsOutboxEventsClaimed,
   collectMetricsOutboxEventsReverted,
   collectMetricsOutboxEventsRevertFailed,
   collectMetricsOutboxEventsMarkedAsTerminalFail,
@@ -86,13 +87,13 @@ export class OutboxProcessor {
         for (const event of stuckEvents) {
           await renew()
           collectMetricsOutboxEventsStuckSendingEventsRecovered?.inc()
-          await this.processSingleEvent(event)
+          await this.processSingleEvent(event, thresholdDate)
         }
       },
     })
   }
 
-  async processSingleEvent(event: IOutboxEvent): Promise<void> {
+  async processSingleEvent(event: IOutboxEvent, stuckBefore?: Date): Promise<void> {
     if (isExpired(event)) {
       await this.discardExpired(event)
       return
@@ -103,15 +104,30 @@ export class OutboxProcessor {
       return
     }
 
-    // Phase 1: Transition to SENDING
-    const updateResult = await this.outboxRepository.updateStatus(event.publicId, IOutboxEventStatus.SENDING)
+    // Phase 1: Atomic CAS claim transition to SENDING
+    const claimResult = await this.outboxRepository.claim({
+      publicId: event.publicId,
+      fromStatus: event.status,
+      stuckBefore,
+    })
 
-    if (isErr(updateResult)) {
-      logger.error({ publicId: event.publicId, error: updateResult.error }, OUTBOX_LOGS.STATUS_UPDATE_FAILED)
+    if (isErr(claimResult)) {
+      logger.error({ publicId: event.publicId, error: claimResult.error }, OUTBOX_LOGS.STATUS_UPDATE_FAILED)
       return
     }
 
+    if (!claimResult.value) {
+      this.recordClaimMetric('contention')
+      logger.info({ publicId: event.publicId }, 'Evento não reivindicado (já em processamento ou em disputa). Pulando.')
+      return
+    }
+
+    this.recordClaimMetric('claimed')
     await this.dispatchOrRevert(event)
+  }
+
+  private recordClaimMetric(outcome: 'claimed' | 'contention'): void {
+    collectMetricsOutboxEventsClaimed?.inc({ outcome })
   }
 
   /**

@@ -74,6 +74,7 @@ import {
   collectMetricsEmailsFailed,
   collectMetricsEmailsSkipped,
   collectMetricsEmailBatchDuration,
+  collectMetricsEmailsPermanentRejections,
 } from '@lib/metrics/email-metrics'
 
 class InfraTestError extends InfrastructureError {
@@ -212,5 +213,18 @@ describe('mail-worker email metrics', () => {
     await expect(processor(makeJob())).rejects.toBeInstanceOf(JobAlreadyProcessingError)
 
     expect(await metricValue(collectMetricsEmailsSkipped, { reason: 'processing' })).toBe(1)
+  })
+
+  it('permanent SMTP 5xx failure increments emails_permanent_rejections_total', async () => {
+    const permanentError = Object.assign(new Error('550 Mailbox unavailable'), {
+      responseCode: 550,
+      response: '550 User unknown',
+    })
+    mockSendEmailExecute.mockResolvedValueOnce(err(permanentError))
+
+    const job = makeJob({ emails: [emailUser] })
+    await expect(processor(job)).rejects.toBeDefined()
+
+    expect(await metricValue(collectMetricsEmailsPermanentRejections, {})).toBe(1)
   })
 })

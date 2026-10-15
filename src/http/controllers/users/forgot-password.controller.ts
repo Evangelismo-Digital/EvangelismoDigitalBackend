@@ -2,7 +2,7 @@ import { ZodRequest } from '@http/types/zod-request'
 import type { FastifyReply } from 'fastify'
 import { forgotPasswordSchema } from '@http/schemas/users/forgot-password-schema'
 import { makeForgotPasswordUseCase } from '@use-cases/factories/make-forgot-password-use-case'
-import { OutboxSignal } from '@lib/infra/events/outbox-signal'
+import { enqueueOutboxDispatch } from '@lib/queue/outbox-dispatch-queue'
 import { EMAIL_CONSTANTS } from 'messages/constants/email/email'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
@@ -26,7 +26,7 @@ export async function forgotPassword(request: ZodRequest<{ body: typeof forgotPa
   const { outboxEvent } = result.value
 
   if (outboxEvent) {
-    void OutboxSignal.publishNewItem(outboxEvent.publicId, outboxEvent)
+    void enqueueOutboxDispatch(outboxEvent)
   }
 
   return reply.code(HTTP_STATUS.OK).send({ message: EMAIL_CONSTANTS.PASSWORD_RESET_GENERIC_MESSAGE })

@@ -45,7 +45,7 @@ describe('startMaintenanceScheduler', () => {
    * deleções em lote sobrepostas disputam a mesma I/O na única janela em que
    * qualquer uma delas pode se dar ao luxo de ser lenta.
    */
-  it('registra exatamente os quatro agendadores, cada um com seu id estável, padrão e nome de job', async () => {
+  it('registra exatamente os cinco agendadores, cada um com seu id estável, padrão e nome de job', async () => {
     await startMaintenanceScheduler(queue)
 
     expect(upsertCalls(queue).map(([id, opts, template]) => [id, opts.pattern, template?.name])).toEqual([
@@ -53,6 +53,7 @@ describe('startMaintenanceScheduler', () => {
       [QUEUE.SCHEDULER_IDS.MIDNIGHT_SCAN, CRON_SCHEDULES.MIDNIGHT_DAILY, QUEUE.JOBS.MIDNIGHT_SCAN],
       [QUEUE.SCHEDULER_IDS.RETENTION_PURGE, CRON_SCHEDULES.DAILY_3AM, QUEUE.JOBS.RETENTION_PURGE],
       [QUEUE.SCHEDULER_IDS.ANALYTICS_RETENTION, CRON_SCHEDULES.DAILY_4AM, QUEUE.JOBS.ANALYTICS_RETENTION],
+      [QUEUE.SCHEDULER_IDS.FAILED_JOBS_CLEANUP, CRON_SCHEDULES.DAILY_5AM, QUEUE.JOBS.FAILED_JOBS_CLEANUP],
     ])
   })
 
@@ -63,18 +64,20 @@ describe('startMaintenanceScheduler', () => {
   })
 
   /**
-   * Contrapeso do teste acima: a retenção da outbox (03:00) e a de analytics
-   * (04:00) são agendadores SEPARADOS. Juntá-las num só job é a regressão que
-   * este teste existe para pegar.
+   * Contrapeso do teste acima: a retenção da outbox (03:00), a de analytics
+   * (04:00) e a de falhas (05:00) são agendadores SEPARADOS. Juntá-las num só
+   * job é a regressão que este teste existe para pegar.
    */
-  it('mantém a retenção da outbox e a de analytics como agendadores distintos, com uma hora entre elas', async () => {
+  it('mantém as retenções diárias como agendadores distintos, com uma hora entre elas', async () => {
     await startMaintenanceScheduler(queue)
 
     const patternsById = new Map(upsertCalls(queue).map(([id, opts]) => [id, opts.pattern]))
 
     expect(patternsById.get(QUEUE.SCHEDULER_IDS.RETENTION_PURGE)).toBe(CRON_SCHEDULES.DAILY_3AM)
     expect(patternsById.get(QUEUE.SCHEDULER_IDS.ANALYTICS_RETENTION)).toBe(CRON_SCHEDULES.DAILY_4AM)
+    expect(patternsById.get(QUEUE.SCHEDULER_IDS.FAILED_JOBS_CLEANUP)).toBe(CRON_SCHEDULES.DAILY_5AM)
     expect(CRON_SCHEDULES.DAILY_3AM).not.toBe(CRON_SCHEDULES.DAILY_4AM)
+    expect(CRON_SCHEDULES.DAILY_4AM).not.toBe(CRON_SCHEDULES.DAILY_5AM)
   })
 
   /**
@@ -104,14 +107,14 @@ describe('startMaintenanceScheduler', () => {
    * boot de todo pod tem de reescrever a MESMA configuração, nunca acumular
    * agendadores — é isso que substitui a eleição de líder.
    */
-  it('é idempotente: chamar duas vezes reescreve os mesmos quatro ids, sem criar novos', async () => {
+  it('é idempotente: chamar duas vezes reescreve os mesmos cinco ids, sem criar novos', async () => {
     await startMaintenanceScheduler(queue)
     await startMaintenanceScheduler(queue)
 
     const ids = upsertCalls(queue).map(([id]) => id)
 
-    expect(ids).toHaveLength(8)
-    expect(new Set(ids).size).toBe(4)
+    expect(ids).toHaveLength(10)
+    expect(new Set(ids).size).toBe(5)
   })
 
   it('propaga a falha do upsert em vez de anunciar agendadores que não existem', async () => {
@@ -128,6 +131,6 @@ describe('startMaintenanceScheduler', () => {
     await startMaintenanceScheduler()
 
     expect(mockGetMaintenanceQueue).toHaveBeenCalledOnce()
-    expect(queue.upsertJobScheduler).toHaveBeenCalledTimes(4)
+    expect(queue.upsertJobScheduler).toHaveBeenCalledTimes(5)
   })
 })

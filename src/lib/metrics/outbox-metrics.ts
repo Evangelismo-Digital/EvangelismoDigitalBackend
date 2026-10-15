@@ -11,6 +11,15 @@ export const collectMetricsOutboxEventsDispatched = registry
     })
   : null
 
+export const collectMetricsOutboxEventsClaimed = registry
+  ? new Counter({
+      name: 'outbox_events_claimed_total',
+      help: 'Outbox CAS claim attempts by outcome (claimed | contention)',
+      labelNames: ['outcome'],
+      registers: [registry],
+    })
+  : null
+
 export const collectMetricsOutboxEventsReverted = registry
   ? new Counter({
       name: 'outbox_events_reverted_total',
@@ -87,7 +96,7 @@ export const collectMetricsOutboxMaintenanceDeleted = registry
 export const collectMetricsOutboxSignalPublished = registry
   ? new Counter({
       name: 'outbox_signal_published_total',
-      help: 'Pub/Sub wakeup signals published after an outbox write',
+      help: 'Pub/Sub wakeup signals published after an outbox write (deprecated in favor of outbox_dispatch_enqueued_total)',
       registers: [registry],
     })
   : null
@@ -95,7 +104,23 @@ export const collectMetricsOutboxSignalPublished = registry
 export const collectMetricsOutboxSignalPublishFailed = registry
   ? new Counter({
       name: 'outbox_signal_publish_failed_total',
-      help: 'Pub/Sub signal publish failures (Redis unavailable)',
+      help: 'Pub/Sub signal publish failures (deprecated in favor of outbox_dispatch_enqueue_failed_total)',
+      registers: [registry],
+    })
+  : null
+
+export const collectMetricsOutboxDispatchEnqueued = registry
+  ? new Counter({
+      name: 'outbox_dispatch_enqueued_total',
+      help: 'Events successfully enqueued to outbox-dispatch queue',
+      registers: [registry],
+    })
+  : null
+
+export const collectMetricsOutboxDispatchEnqueueFailed = registry
+  ? new Counter({
+      name: 'outbox_dispatch_enqueue_failed_total',
+      help: 'Failures enqueuing event to outbox-dispatch queue (Redis down)',
       registers: [registry],
     })
   : null

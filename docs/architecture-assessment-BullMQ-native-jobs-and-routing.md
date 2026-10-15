@@ -1,358 +1,295 @@
-# Architecture assessment + refactor plan: BullMQ-native jobs & church-routing latency
+# Architecture assessment + refactor plan: BullMQ-native jobs & Outbox scale-out
 
-> **Status — revised 2026-10-12. This document is still live: it is the only record of the open
-> defects below.** Parts of it have been overtaken by the Job Scheduler migration; those are marked
-> inline. Where it disagrees with the code, the code wins.
+> **Status — revised 2026-10-15.** This document is the current architecture reference and execution plan for the
+> `refactor/native-bullmq-functions` branch. It supersedes previous drafts and aligns directly with the
+> source code as of commit `2f90160`.
 >
-> **Still open (verified against the source on 2026-10-12):**
+> ### Summary of Subsystems & Refactor Scope
 >
-> | #   | Defect                                                                                | Where                                   |
-> | --- | ------------------------------------------------------------------------------------- | --------------------------------------- |
-> | 5   | **No `claim()`/CAS on the outbox** — the real blocker for a second worker pod         | `prisma-outbox-event-repository.ts`     |
-> | 6+8 | `removeOnComplete`/`removeOnFail: true` discard the evidence a post-mortem would need | `lib/queue/mail-queue.ts:25-26`         |
-> | 7   | `STUCK_SENDING_MS: 900_000` vs the real dispatch budget                               | `messages/constants/outbox/outbox.ts`   |
-> | 9   | `LOCK_DURATION_MS: 300_000` on the mail worker                                        | `messages/constants/workers/workers.ts` |
->
-> Part 2 (`FlowProducer` + a `mail-finalize` worker) is **not implemented** — there is no
-> `FlowProducer` anywhere in `src/`.
->
-> **Already resolved:** defect 1 (`cacheSuccessResults`) is fixed, and defect 10's cron half is moot —
-> see §3.2.
-
-## Context
-
-The question that started this was whether to replace hand-rolled worker/rate-limit machinery with BullMQ
-native features (`limiter`, `FlowProducer`, `QueueEvents`), and whether the church-routing external API
-calls should be pushed into a worker so they "don't stall the main API".
-
-After tracing both paths end to end, the answer splits cleanly:
-
-- **Church routing does not stall the API** and does not belong in a queue. Awaiting HTTP does not block
-  Node's event loop, and the fan-out that would justify a `FlowProducer` is already collapsed into a single
-  batched Stadia matrix POST. Its real problems are a disabled cache, incoherent timeout budgets, and a
-  missing retry — none of which a queue fixes.
-- **The mail path is the one that genuinely wants BullMQ-native primitives.** Not because of today's volume
-  (max 2 recipients per event) but because bulk/broadcast email is on the roadmap for the next few months,
-  and the current design hand-rolls a fan-out/join that BullMQ's `FlowProducer` models natively.
-- **Separately, the outbox has two real correctness bugs that only bite with more than one worker pod** —
-  and scale-out is planned. These must land before the second pod does.
-
-Decisions taken by the user during planning, recorded here so they aren't relitigated:
-
-| Decision                                  | Choice                                                                    |
-| ----------------------------------------- | ------------------------------------------------------------------------- |
-| Mail refactor depth                       | Full BullMQ-native (`FlowProducer`, per-recipient jobs, worker `limiter`) |
-| Bulk email roadmap                        | Yes, likely within a few months — justifies the above                     |
-| `cacheSuccessResults=false` on CEP→coords | Not deliberate; re-enable caching                                         |
-| Routing provider failure                  | **Keep failing hard.** No straight-line degradation, no second provider   |
-| Production topology                       | 1 API + 1 worker today, scale-out planned                                 |
-| `/churches/nearest` contract              | Undecided — analysis below, recommendation is to keep it synchronous      |
+> | Component                                             | Status          | Action in this Refactor                                                                                                                                                                                                                   |
+> | ----------------------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | **Part 3: Outbox Multi-pod CAS (`claim()`)**          | ✅ **RESOLVED** | **COMPLETED (Phase 1 & 3)**: Atomic `claim()` conditional update (`updateMany`) on `prisma-outbox-event-repository.ts` prevents duplicate attempts and race conditions. Multi-pod integration and scheduler idempotency verified. |
+> | **Part 3.2: Worker Signal Trigger (Pub/Sub → Queue)** | ✅ **RESOLVED** | **COMPLETED (Phase 1 & 3)**: Replaced Redis Pub/Sub `OutboxSignal` with native BullMQ `outbox-dispatch` queue; events are handled by a single worker, queue on downtime, and integrate with BullMQ metrics. Point-to-point dispatch without fan-out verified across multiple worker pods. |
+> | **Part 2A: Mail Queue Hardening & BullMQ Natives**    | ✅ **RESOLVED** | **COMPLETED (Phase 2 & 6)**: Adopted distributed BullMQ worker `limiter` (Gmail SMTP limits), right-sized `lockDuration`/`stalledInterval`, retained forensic jobs (`removeOnComplete/Fail`), added jitter and `UnrecoverableError` on permanent SMTP failures. Global rate limiting strictly honored across worker pods. |
+> | **Failed Jobs DB Cleanup (BullMQ Job Scheduler)**    | ✅ **RESOLVED** | **COMPLETED (Phase 3)**: Added daily scheduled job (`05:00 AM`, 1-hour staggered after analytics retention) purging failed outbox records older than 7 days (`FAILED_DAYS: 7`) from PostgreSQL via `deleteFailedOlderThan`, matching BullMQ's 7-day forensic retention. |
+> | **Part 2B: `FlowProducer` (Per-recipient jobs)**      | ⏸️ **DEFERRED** | **OUT OF SCOPE**: Gated to land alongside the future bulk/broadcast email roadmap (current events have at most 2 recipients and hand-rolled batch is protected by Redis idempotency).                                                     |
+> | **Part 4: Church Routing Latency & Resilience**       | ✅ **RESOLVED** | **OUT OF SCOPE**: All 4 defects resolved in earlier commits (`cacheSuccessResults` removed, `LOCATION_IQ_ADDRESS` removed, `Deadline` threaded, routing uses `runGuardedAttempt` + cockatiel jitter). Kept synchronous.                   |
+> | **Part 6: Multi-Pod Staging Smoke Test**              | ✅ **RESOLVED** | **COMPLETED (Phase 6)**: Staging environment verified with 2 worker pods (`fastify-worker-1`, `fastify-worker-2`). Verified point-to-point dispatch without fan-out, global SMTP limiter (2/s) shared via Redis, and metrics scraping on ports 9091 and 9092. |
 
 ---
 
-## Part 1 — Assessment
+## 1. Context & Architectural Decisions
 
-### 1.1 BullMQ native features: what actually applies
+The goal of this refactor is to modernize the background job processing infrastructure, prepare the system for multi-pod horizontal scaling, and eliminate failure modes in the mail and outbox subsystems.
 
-| Feature                                     | Verdict               | Reasoning                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Worker `limiter`                            | **Adopt (mail)**      | Real win for SMTP throughput control, and mandatory once bulk sending exists. Note: OSS BullMQ has no `limiter.groupKey` (BullMQ Pro only), so it is one rate per queue.                                                                                                                                                                                                                                                             |
-| `FlowProducer`                              | **Adopt (mail only)** | Mail is a true fan-out/join: N sends, then one "delete the outbox row" step. That is exactly the parent/children model. Church routing is a _linear_ 3-step chain — modelling it as a flow buys Redis round-trips and zero parallelism.                                                                                                                                                                                              |
-| `QueueEvents`                               | **Skip**              | Only needed for `job.waitUntilFinished()` (which we don't want) or as a metrics stream. Metrics already work via lazy `getJobCounts()` per Prometheus scrape, which is cheaper than a persistent stream consumer.                                                                                                                                                                                                                    |
-| BullMQ limiter replacing `RedisRateLimiter` | **Do not**            | Different scope. `RedisRateLimiter` is called _inline in the HTTP request_ ([resilient-geocoding-provider.decorator.ts:45](src/providers/geo-provider/decorators/resilient-geocoding-provider.decorator.ts#L45)); a queue limiter cannot protect a synchronous path. It also isn't hand-rolled — it's `rate-limiter-flexible`'s `RateLimiterRedis` (atomic Lua, distributed-safe). Replacing it would lose per-provider granularity. |
-| `QueueScheduler`                            | **N/A**               | Removed in BullMQ v4+; delayed jobs are handled by the Worker itself. **(2026-10-12: still true, but read it narrowly — the removed `QueueScheduler` class is not the same thing as Job Schedulers, `queue.upsertJobScheduler`, which this project HAS since adopted to replace `node-cron`. See the maintenance scheduler in `src/lib/infra/jobs/maintenance-scheduler.ts`.)**                                                      |
+Decisions confirmed for this refactor:
 
-### 1.2 Should church routing move to a worker? (the trade-off analysis requested)
-
-**The premise needs correcting first.** "Stalling the main API" implies event-loop blocking. Nothing in this
-path is CPU-bound — it is `await`ed network I/O plus a small JSON parse. Node handles thousands of
-concurrent awaited sockets fine. The real cost is different: **client-visible latency and availability are
-welded to third-party uptime**, and during provider degradation a request occupies connection slots for up
-to 15s.
-
-Measured shape of the path ([find-nearest-churches-use-case.ts](src/use-cases/churches/find-nearest-churches-use-case.ts)):
-
-| Scenario         | Work                                                                                                                                   |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Cache hit        | 1 Redis GET                                                                                                                            |
-| Cold, happy path | **2** sequential external calls (AwesomeAPI `/cep`, 2s timeout → Stadia matrix, 3s timeout) + 1 PostGIS KNN                            |
-| Cold, degraded   | Up to ~19 sequential HTTP calls (3 address providers × 2 retries, then 3 geocoding strategies × 2 providers × 2 retries, then routing) |
-
-Three options:
-
-**(a) Keep synchronous — recommended.** The happy path is two external calls. Once L1 CEP caching is
-restored (§3.1) the second-and-later request for any CEP skips the address/geocoding leg entirely, and a
-repeat request for the same CEP is a single Redis GET. The cold-miss tail is a _budget_ problem, not an
-architecture problem.
-
-**(b) Enqueue + `job.waitUntilFinished(queueEvents)`.** Strictly worse on every axis: same wall-clock plus
-`queue.add` RTT, worker pickup latency, and QueueEvents notification; the API process _still_ holds the HTTP
-connection open, so it does not achieve the stated goal; and it adds a distributed failure mode (worker down
-= request hangs to timeout). **Rejected.**
-
-**(c) 202 Accepted + polling/SSE.** The only variant that genuinely decouples. Costs: frontend rewrite, two
-round-trips minimum, and it penalises the _majority_ case — a cache hit that would have returned in
-single-digit milliseconds now takes at least two requests. Justified only if post-fix p99 cold latency is
-still unacceptable.
-
-**Recommendation: (a).** Re-measure p99 after Phase 3; revisit (c) only if it's still bad. Phase 3 is written
-to be contract-neutral, so this decision does not block any work.
-
-### 1.3 Real defects found
-
-**Church routing**
-
-1. **CEP→coords caching is switched off for successes.** [make-find-nearest-churches-use-case.ts:87](src/use-cases/factories/make-find-nearest-churches-use-case.ts#L87)
-   passes `cacheSuccessResults = false`, and [cep-to-lat-lon-use-case.ts:54-56](src/use-cases/churches/cep-to-lat-lon-use-case.ts#L54-L56)
-   then explicitly `DEL`s the key on every OK result. The L1 layer therefore retains only _negative_ entries.
-   Every miss on the outer key re-runs the full address + geocoding leg for data (CEP → lat/lon) that is
-   effectively immutable. Confirmed unintentional.
-2. **Nested timeout budgets don't nest.** Outer cache `fetchTimeoutMs` 15s, inner 10s
-   ([cache.ts](src/messages/constants/cache/cache.ts)), and the outer `AbortSignal` is never threaded into the
-   inner call ([find-nearest-churches-use-case.ts:44](src/use-cases/churches/find-nearest-churches-use-case.ts#L44)).
-   They are independent budgets that stack rather than bound each other. 15s is also far past any sane client timeout.
-3. **The routing decorator has no retry loop**, unlike its address and geo counterparts — a single transient
-   blip fails the request.
-4. Minor: `EnumProviderConfig.LOCATION_IQ_ADDRESS` (2 pts/s) is configured but referenced by no provider
-   ([redis-rate-limiter.ts:97-100](src/lib/infra/rate-limiter/redis-rate-limiter.ts#L97-L100)); the
-   `cachedUseCase` module singleton silently ignores its connection arguments after first call
-   ([make-find-nearest-churches-use-case.ts:32-34](src/use-cases/factories/make-find-nearest-churches-use-case.ts#L32-L34)).
-
-**Mail / outbox**
-
-5. **`attempts` inflates once per pod on the pub/sub path.** `OutboxSignal` is Redis pub/sub, so a published
-   signal fans out to _every_ subscribed worker. Each calls `processSingleEvent` with **no lock**
-   ([worker.ts:54-71](src/worker.ts#L54-L71) documents this), and each executes
-   `updateStatus(publicId, SENDING)` — which increments `attempts`
-   ([outbox-processor.ts:148](src/lib/infra/jobs/outbox-processor.ts#L148)). At 5 pods, one signal burns the
-   entire `MAX_DISPATCH_ATTEMPTS = 5` budget and the event goes terminal `FAILED`. **This is the blocker for scale-out.**
-6. **`jobId` dedup is not the safety net it's assumed to be.** It only holds while the job exists in Redis;
-   with `removeOnComplete: true` and `removeOnFail: true` ([mail-queue.ts:25-26](src/lib/queue/mail-queue.ts#L25-L26))
-   a completed job is gone, so re-adding the same `jobId` silently succeeds and re-sends.
-7. **`STUCK_SENDING_MS` has zero safety margin.** 900s, versus a worst-case job lifetime of 3 attempts ×
-   300s `lockDuration` = 900s ([workers.ts:3-5](src/messages/constants/workers/workers.ts#L3-L5)). The recovery
-   sweep can reclaim a job that is still legitimately running — and per (6), dedup won't catch the duplicate.
-8. **`removeOnFail: true` destroys all forensics.** No failed-job archive, no DLQ.
-9. **`lockDuration`/`stalledInterval` of 300s are wildly oversized** for a job whose SMTP socket timeout is 10s.
-10. Shutdown gaps: `closeAllRedisConnections()` is wired only into the API's `onClose`, never the worker;
-    `cron.schedule` handles are never retained or `.stop()`ed, so a tick can fire mid-cleanup.
+| Decision                       | Choice                                     | Rationale                                                                                                                                                              |
+| ------------------------------ | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Outbox concurrency control** | **`claim()` CAS via DB `updateMany`**      | Optimistic lock on `PENDING → SENDING` and `stuck SENDING → SENDING`. Ensures `attempts` increments exactly once across competing pods and sweeps.                     |
+| **Worker event intake**        | **BullMQ `outbox-dispatch` queue**         | Replaces Redis Pub/Sub `OutboxSignal`. Eliminates pub/sub fan-out across multiple pods, prevents lost signals during worker downtime, and unifies queue monitoring.    |
+| **BullMQ Worker `limiter`**    | **Adopt on Mail Worker**                   | Redis-backed distributed rate limit. Unlike Nodemailer's per-process pool limiter, BullMQ's limiter prevents exceeding upstream SMTP quotas when scaling horizontally. |
+| **SMTP Provider Limits**       | **Standard Gmail SMTP settings in `.env`** | Default to conservative Gmail SMTP quotas (`MAIL_RATE_LIMIT_MAX: 2`, `MAIL_RATE_LIMIT_DURATION_MS: 1000`) with guidance for production relays.                         |
+| **BullMQ native retries**      | **Retain + `UnrecoverableError` + Jitter** | Stop retrying fatal SMTP errors (5xx, unresolvable domains) via `UnrecoverableError`; add decorrelated jitter to backoff.                                              |
+| **FlowProducer refactor**      | **Defer to bulk email roadmap**            | With ≤2 recipients per event today, a parent/child flow graph adds unnecessary operational complexity. Deferred until broadcast email arrives.                         |
+| **Church routing calls**       | **Keep synchronous inside HTTP API**       | Keep out of the BullMQ refactor. Routing does not block the Node event loop, and all resilience issues were already solved.                                            |
 
 ---
 
-## Part 2 — Mail/outbox BullMQ-native refactor
+## 2. Assessment of BullMQ Native Features: What Applies and What Doesn't
 
-Goal: replace the hand-rolled batch fan-out + selective-retry bookkeeping with a `FlowProducer` graph, and
-adopt the worker `limiter` that bulk sending will require.
+A critical review of BullMQ's native features against our architecture shows that only specific primitives provide value:
 
-### 2.1 Flow topology
+| Feature                                | Verdict                 | Analysis & Technical Reasoning                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Worker `limiter`**                   | **ADOPT (Mail Worker)** | **High Value.** Nodemailer's `rateLimit` is process-local. Scaling from 1 pod to 3 pods triples the effective rate against the SMTP server. BullMQ's `limiter` coordinates atomically in Redis, maintaining an exact global ceiling across all pods.                                                                                                                                                                                                   |
+| **Exponential Retry**                  | **ADOPT ENHANCEMENTS**  | **Already native** in BullMQ (`attempts: 3`, `backoff: exponential 10s`). Two key enhancements needed:<br>1. **Jitter**: Avoid synchronized thundering herds on recovery by introducing jitter via `settings.backoffStrategy`.<br>2. **Non-retryable errors**: Throwing BullMQ's native `UnrecoverableError` on permanent SMTP rejections (e.g., recipient mailbox not found, invalid address, 5xx non-transient) stops wasting retry attempts.        |
+| **Native Job Timeout**                 | **DO NOT USE (N/A)**    | **Not a native BullMQ configuration property.** BullMQ v5 delegates timeouts to cooperative cancellation via `AbortSignal` in the processor (`job, token, signal`). SMTP network sockets are already bounded by Nodemailer's `connectionTimeout` (5s) and `socketTimeout` (10s). The real issue was oversized `lockDuration`/`stalledInterval` (300s), which will be right-sized.                                                                      |
+| **Native Idempotency / Deduplication** | **PARTIALLY ADOPT**     | BullMQ's `jobId` and `deduplication` option (`{ id, ttl }`) only prevent adding duplicate jobs to the queue. They **cannot** prevent duplicate sends if a worker crashes mid-batch or a job re-runs after a stall. The application-level Redis `SET NX 'processing' → 'completed'` protocol must remain to protect SMTP delivery. However, fixing `removeOnComplete` retention restores the effectiveness of `jobId` deduplication at the queue level. |
+| **`FlowProducer`**                     | **DEFER**               | Excellent for parent-child workflows (fan-out N sends, then execute a finalizer to delete the Outbox row). However, with only 1–2 recipients today, the hand-rolled batch is safe and reliable. Defer to the bulk email roadmap.                                                                                                                                                                                                                       |
+| **`QueueEvents`**                      | **SKIP**                | Only needed for `job.waitUntilFinished()` or push-based monitoring. Prometheus metrics are polled on scrape via `getJobCounts()`, which is significantly cheaper than maintaining persistent Redis stream subscribers.                                                                                                                                                                                                                                 |
 
-Replace the single `queue.add` in `dispatchToBullMQ`
-([outbox-processor.ts:200-209](src/lib/infra/jobs/outbox-processor.ts#L200-L209)) with a `FlowProducer` tree:
+---
+
+## 3. Worker Ingestion Architecture: Moving from Pub/Sub to BullMQ Queue
+
+### 3.1 The Problem with Redis Pub/Sub (`OutboxSignal`)
+
+Currently, when a domain event creates an Outbox row in PostgreSQL, the controller notifies the worker via `OutboxSignal.publishNewItem`:
 
 ```
-parent  queue: 'mail-finalize'  name: 'outbox-finalize'
-        data:  { publicId }
-        opts:  { jobId: `finalize-${publicId}` }
-  └── children (one per recipient), queue: 'mail-queue', name: 'send-email'
-        data:  { publicId, email }
-        opts:  { jobId: `${publicId}-${sha256(email.to).slice(0,16)}`,
-                 attempts, backoff,            // from the strategy's jobOptions
-                 ignoreDependencyOnFailure: true }
+API Pod ──(Redis PUBLISH)──► OutboxSignal Channel ──┬──► Worker Pod 1 (processSingleEvent)
+                                                    └──► Worker Pod 2 (processSingleEvent) [FAN-OUT!]
 ```
 
-Notes that matter for implementation:
+This creates two critical defects:
 
-- **BullMQ custom job ids must not contain `:`** — hence the `-` separator and the hashed recipient. The id
-  must be deterministic across re-dispatch so the idempotency check still dedups.
-- `ignoreDependencyOnFailure: true` is essential: without it a child that exhausts its attempts leaves the
-  parent stuck in `waiting-children` forever. With it, the parent runs once every child is either completed
-  or failed.
-- The parent needs its own queue and Worker (`mail-finalize`), since a parent must live in a queue that has a
-  consumer. Child return values survive `removeOnComplete` — BullMQ persists them in the parent's
-  `:processed` hash.
+1. **Pub/Sub Fan-Out on Multi-Pod Scaling**: Redis Pub/Sub delivers every message to **all** active subscribers. When scaling to $N$ worker pods, all $N$ pods simultaneously invoke `processSingleEvent` for the same event. Because `updateStatus(SENDING)` currently increments `attempts` unconditionally, a 5-pod cluster immediately exhausts the entire `MAX_DISPATCH_ATTEMPTS = 5` threshold on the very first dispatch attempt.
+2. **Signal Loss on Downtime**: If the worker pod is restarting or temporarily disconnected, published messages are discarded by Redis. The outbox item remains unprocessed until the 5-minute fallback sweep runs.
 
-### 2.2 Child processor (`send-email`)
+### 3.2 The Solution: Dedicated `outbox-dispatch` Queue
 
-Rewrite [mail-worker.ts](src/lib/workers/mail-worker.ts) `createMailJobProcessor` to handle **one** email:
+Replace the Pub/Sub bus with a point-to-point BullMQ queue (`outbox-dispatch`):
 
-- Keep the expiration gate (lines 33-44) — still correct, but it no longer deletes the outbox row (that is
-  now the parent's job); it just returns success.
-- Idempotency key becomes per-recipient: `idempotency:email:${childJobId}`. Same `SET NX` / `'processing'` →
-  `'completed'` protocol, same TTLs from `WORKER_CONSTANTS.IDEMPOTENCY_TTL`.
-- Send one email via `makeSendEmailUseCase()`. No `Promise.allSettled`.
-- **Delete outright**: the `updatePendingRecipients` + `job.updateData` selective-retry block (lines 105-131).
-  Per-recipient jobs plus the 24h `'completed'` idempotency key make it redundant — a re-dispatch of an
-  already-sent recipient short-circuits at the idempotency check.
-- Keep per-recipient metrics (`collectMetricsEmailsSent`/`Failed`/`Skipped`); replace
-  `collectMetricsEmailBatchDuration` with a per-send histogram.
+```
+API Pod ──(queue.add)──► BullMQ 'outbox-dispatch' Queue ──► Exactly ONE Worker Pod executes
+```
 
-### 2.3 Parent processor (`outbox-finalize`) — new file
+**Benefits**:
 
-New `src/lib/workers/mail-finalize-worker.ts`, following the shape of `startMailWorker`:
-
-- Use `job.getFailedChildrenValues()` (or compare `getDependenciesCount()` against completed children) to
-  determine outcome.
-- All children succeeded → `outboxRepository.delete(publicId)`.
-- Any child permanently failed → `outboxRepository.updateStatus(publicId, PENDING)` so the outbox re-dispatches;
-  `MAX_DISPATCH_ATTEMPTS` remains the loop breaker.
-- This subsumes `createJobFailureHandler`'s revert-to-PENDING responsibility (lines 210-223). Keep the handler
-  for logging/Sentry on terminal failures, but it should no longer mutate outbox state.
-
-### 2.4 Queue and worker configuration
-
-In [mail-queue.ts](src/lib/queue/mail-queue.ts) and [workers.ts](src/messages/constants/workers/workers.ts):
-
-- `removeOnComplete: { age: 3600, count: 1000 }` and `removeOnFail: { age: 604800, count: 1000 }` — replaces
-  `true`/`true`, restoring forensics (defect 8) and making `jobId` dedup meaningful for a useful window (defect 6).
-- `lockDuration: 60_000`, `stalledInterval: 30_000` — sized to a single SMTP send whose socket timeout is 10s
-  (defect 9). This also retroactively fixes defect 7: worst-case job lifetime drops to roughly
-  3 × 60s + backoff ≈ 210s, giving `STUCK_SENDING_MS = 900_000` a real 4× margin.
-- Add worker `limiter: { max: env.MAIL_RATE_LIMIT_MAX, duration: env.MAIL_RATE_LIMIT_DURATION_MS }`, sized to
-  the SMTP provider's published rate. New env vars in [`src/env/index.ts`](src/env/index.ts) and `.env.example`.
-- Add a `FlowProducer` singleton alongside `getMailQueue()`, reusing `getRedisForQueue()`. It must be closed
-  in the worker's `cleanup()`.
-
-### 2.5 Schema follow-up
-
-`pendingRecipients` becomes dead once §2.2 lands. Stop writing to it in this phase; drop the column and
-`updatePendingRecipients` from `IOutboxRepository` in a separate migration once the new path has soaked.
+- **Point-to-Point Delivery**: BullMQ's Redis Lua scripts ensure exactly one worker acquires and processes the dispatch job.
+- **Durable Buffering**: If workers are restarting or scaling, jobs persist safely in Redis until workers come online.
+- **Unified Observability**: Dispatch latency, queue depth, and retry attempts become visible in standard BullMQ Prometheus metrics (`bullmq_jobs{queue="outbox-dispatch"}`).
+- **Cleaner Architecture**: Deletes `OutboxSignal`, eliminates two dedicated Redis client connections (`OutboxPublisher` and `OutboxSubscriber`), and drops custom payload serialization guards.
 
 ---
 
-## Part 3 — Outbox multi-pod correctness (must land before scale-out)
+## 4. Detailed Specification: In-Scope Refactor Parts
 
-### 3.1 Compare-and-set on the PENDING → SENDING transition
+### Part 3 — Outbox Multi-Pod CAS Correctness (`claim()`)
 
-The root fix for defect 5. In [prisma-outbox-event-repository.ts](src/repositories/prisma/prisma-outbox-event-repository.ts),
-add a `claim(publicId)` method backed by a conditional update:
+Even with point-to-point queues, a Compare-And-Set (CAS) guard at the database layer is mandatory because **the background sweeps (e.g. 5-minute sweep and stuck recovery) run concurrently with normal event dispatches**.
+
+#### 4.1 Database Layer: `IOutboxRepository.claim()`
+
+Add atomic `claim` semantics to `src/core/contracts/repository/outbox-repository.interface.ts`:
 
 ```ts
-updateMany({
-  where: { publicId, status: PENDING },
-  data: { status: SENDING, sendingAt: new Date(), attempts: { increment: 1 } },
+export interface OutboxClaimFilter {
+  readonly publicId: string
+  readonly fromStatus: IOutboxEventStatus
+  readonly stuckBefore?: Date
+}
+
+// In IOutboxRepository:
+claim(filter: OutboxClaimFilter): Promise<Result<boolean, AppError>>
+```
+
+In `PrismaOutboxRepository`:
+
+```ts
+async claim(filter: OutboxClaimFilter): Promise<Result<boolean, AppError>> {
+  try {
+    const where: Prisma.OutboxEventWhereInput = {
+      publicId: filter.publicId,
+      status: filter.fromStatus,
+      ...(filter.stuckBefore ? { sendingAt: { lte: filter.stuckBefore } } : {}),
+    }
+
+    const result = await this.dbContext.client.outboxEvent.updateMany({
+      where,
+      data: {
+        status: IOutboxEventStatus.SENDING,
+        sendingAt: new Date(),
+        attempts: { increment: 1 },
+      },
+    })
+
+    return ok(result.count === 1)
+  } catch (error) {
+    return err(this.infraErrorMapper.mapToKnownError(error))
+  }
+}
+```
+
+#### 4.2 Outbox Processor Integration
+
+In `src/lib/infra/jobs/outbox-processor.ts`:
+
+- Replace unconditional `updateStatus(event.publicId, SENDING)` with `claim({ publicId: event.publicId, fromStatus: PENDING })`.
+- If `claim` returns `ok(false)`, log and exit early: another worker or the sweep has already claimed the event.
+- For `processStuckSendingEvents`, pass `fromStatus: SENDING` and `stuckBefore: thresholdDate`.
+
+---
+
+### Part 2A — Mail Queue Hardening & Sizing
+
+#### 2A.1 Right-Sizing Lock and Stalled Windows (Defects 7 & 9)
+
+In `src/messages/constants/workers/workers.ts`:
+
+- **Lock Duration**: Reduce `LOCK_DURATION_MS` from `300_000` (5 minutes) to `60_000` (60 seconds). A single SMTP send takes $\le 10$ seconds; 60 seconds provides a $6\times$ buffer.
+- **Stalled Interval**: Reduce `STALLED_INTERVAL_MS` from `300_000` to `30_000` (30 seconds).
+
+**Corrected Analysis for `STUCK_SENDING_MS` (Defect 7)**:
+
+- BullMQ automatically extends the lock while a job is running normally (`lockRenewTime = lockDuration / 2`).
+- A job is only stalled if the process abruptly crashes without unlocking.
+- With `lockDuration = 60s` and `stalledInterval = 30s`, a stalled job is picked up by BullMQ in under 90 seconds.
+- Across 3 attempts with exponential backoff ($10\text{s} + 20\text{s} + 40\text{s}$), the absolute worst-case active life is $\approx 250$ seconds.
+- Therefore, `STUCK_SENDING_MS = 900_000` (15 minutes) provides a healthy $\approx 3.6\times$ safety margin and will not prematurely reclaim running jobs.
+
+#### 2A.2 Forensic Job Retention (Defects 6 & 8)
+
+In `src/lib/queue/mail-queue.ts`:
+Replace `removeOnComplete: true` and `removeOnFail: true` with bounded time/count retention:
+
+```ts
+defaultJobOptions: {
+  attempts: 3,
+  backoff: {
+    type: 'exponential',
+    delay: 10_000,
+  },
+  removeOnComplete: {
+    age: 3600,       // Keep completed jobs for 1 hour for deduplication and telemetry
+    count: 1000,     // Retain up to 1000 completed jobs
+  },
+  removeOnFail: {
+    age: 604800,     // Keep failed jobs for 7 days (forensics / DLQ inspection)
+    count: 2000,     // Retain up to 2000 failed jobs
+  },
+}
+```
+
+#### 2A.3 Distributed SMTP Rate Limiter (Gmail Standards)
+
+Add worker-level rate limiting in `src/lib/workers/mail-worker.ts`:
+
+```ts
+const worker = new Worker<IOutboxDispatchData>(QUEUE.NAMES.MAIL, processor, {
+  connection: workerConnection,
+  concurrency: WORKER_CONSTANTS.MAIL.CONCURRENCY_LIMIT,
+  lockDuration: WORKER_CONSTANTS.MAIL.LOCK_DURATION_MS,
+  stalledInterval: WORKER_CONSTANTS.MAIL.STALLED_INTERVAL_MS,
+  limiter: {
+    max: env.MAIL_RATE_LIMIT_MAX,
+    duration: env.MAIL_RATE_LIMIT_DURATION_MS,
+  },
 })
 ```
 
-Return whether `count === 1`. `OutboxProcessor.processSingleEvent` calls `claim` instead of
-`updateStatus(SENDING)` ([outbox-processor.ts:148](src/lib/infra/jobs/outbox-processor.ts#L148)) and returns
-early when the claim is lost. This is a DB-level optimistic lock: exactly one pod dispatches, `attempts`
-increments exactly once, and it fixes the cron path and the pub/sub path with one change — no extra Redis
-lock needed.
-
-Note the recovery sweep re-claims `SENDING` rows, so `processStuckSendingEvents` needs a variant of the
-predicate (`status: SENDING AND sendingAt <= threshold`) rather than `status: PENDING`.
-
-### 3.2 Worker shutdown hygiene (defect 10) — **mostly resolved**
-
-> **Revised 2026-10-12.** Three of the four bullets below were written against a worker that no longer
-> exists. Kept for the record, each marked with what is actually true now.
-
-In [worker.ts](src/worker.ts):
-
-- ~~Retain the handles returned by `cron.schedule` in `startOutboxCron` (`outbox-cron.ts`); return them
-  and `.stop()` them first in `cleanup()`.~~ **Moot.** `node-cron` and `outbox-cron.ts` are both gone;
-  the schedules are BullMQ Job Schedulers living in Redis, and `cleanup()` closes the maintenance worker
-  and its queue instead. Nothing in-process needs stopping.
-- ~~Call `closeAllRedisConnections()` in `cleanup()`.~~ **Already done** — `worker.ts:141`, after the
-  workers and queues close and before `stopMetricsServer()`, preserving the "metrics server stops last"
-  ordering.
-- Close the new `FlowProducer` and the `mail-finalize` worker. **Still pending** — neither exists yet
-  (Part 2 is unimplemented).
-- ~~Once §3.1 lands, the horizontal-scaling block can be rewritten.~~ **Rewritten already**, though for a
-  different reason than this document anticipated: the scheduled half stopped being a scale-out problem
-  when the cron moved into Redis as a Job Scheduler, so leader election was never needed for it. The
-  block now names the one thing that IS still open — the `OutboxSignal.subscribe` pub/sub fan-out, whose
-  safety today rests on the deterministic BullMQ `jobId` and idempotent `updateStatus`, **not** on the
-  CAS this document proposes. Defect 5 above remains the prerequisite for a second pod.
-
----
-
-## Part 4 — Church routing latency
-
-Contract-neutral: none of this changes the response shape, so it is unaffected by the pending §1.2 decision.
-
-### 4.1 Re-enable CEP→coords success caching (defect 1)
-
-- Drop the `false` argument at [make-find-nearest-churches-use-case.ts:87](src/use-cases/factories/make-find-nearest-churches-use-case.ts#L87).
-- Delete the `cacheSuccessResults` field, constructor parameter, and the `redis.del` block at
-  [cep-to-lat-lon-use-case.ts:32,39,42,54-56](src/use-cases/churches/cep-to-lat-lon-use-case.ts#L54-L56) —
-  the flag exists solely to support this behaviour. Check the `unit-churches` specs for call sites passing it.
-- The existing 7-day TTL and 30-min negative TTL are appropriate for CEP→coordinate data.
-
-### 4.2 Make the timeout budgets nest (defect 2)
-
-- Thread the outer `AbortSignal` through: `cepToLatLonUseCase.execute({ cep }, signal)` at
-  [find-nearest-churches-use-case.ts:44](src/use-cases/churches/find-nearest-churches-use-case.ts#L44), and
-  accept it in `CepToLatLonUseCase.execute`.
-- `ResilientCache.getOrFetch` ([resilient-cache.ts](src/lib/infra/cache/resilient-cache.ts)) takes an optional
-  parent signal and combines it with its own via `AbortSignal.any([parent, AbortSignal.timeout(n)])` — Node 20
-  supports `AbortSignal.any`. This preserves the existing per-layer timeout while making the outer budget a
-  hard ceiling.
-- Reduce budgets in [cache.ts](src/messages/constants/cache/cache.ts): `NEAREST_CHURCHES.FETCH_TIMEOUT_MS`
-  15s → 8s, `CEP_COORDS.FETCH_TIMEOUT_MS` 10s → 5s. A client-facing GET should not hold a connection for 15s.
-
-### 4.3 Add a retry loop to the routing decorator (defect 3)
-
-Mirror the existing pattern in
-[resilient-geocoding-provider.decorator.ts:52-80](src/providers/geo-provider/decorators/resilient-geocoding-provider.decorator.ts#L52-L80)
-inside `resilient-church-routing-provider.decorator.ts`, with `MAX_RETRIES`/`BACKOFF_MS` added to
-[stadia.ts](src/messages/constants/providers/stadia.ts). Rate limit is consumed once before the loop, matching
-the other two decorators. This does not conflict with the "fail hard" decision — it only recovers transient blips.
-
-Consider extracting the now thrice-duplicated retry+`sleep` body into a shared helper under
-`src/providers/helpers/`, alongside the existing `precision-helper.ts`.
-
-### 4.4 Cleanup (defect 4)
-
-Remove the unused `EnumProviderConfig.LOCATION_IQ_ADDRESS` entry and its config block. Verify with
-`npm run knip`.
-
----
-
-## Explicitly out of scope (accepted risks)
-
-- **No routing fallback and no second routing provider.** Per the user's decision, a Stadia failure — including
-  a local `ServiceBusyError` from our own 50 req/s limiter — remains a hard error for `/churches/nearest`,
-  even though valid coordinates and 5 ranked churches are already in hand at that point. Documented as an
-  accepted single point of failure.
-- **No `QueueEvents`** (§1.1).
-- **`/churches/nearest` stays a synchronous GET** unless §1.2 is revisited after re-measuring.
-
----
-
-## Verification
-
-**Static / existing suites**
+**Environment Variables for Gmail SMTP** in `src/env/index.ts` and `.env.example`:
 
 ```bash
-npm run typecheck && npm run lint && npm run knip
-npm run test:unit:all
-npm run test:unit:resilient-cache      # §4.2 changes ResilientCache's signature
-npm run test:unit:churches             # §4.1, §4.3
-npm run test:e2e                       # needs docker-compose up
+# BullMQ Distributed Mail Worker Limiter
+# Gmail standard limits: max ~100-500 emails/day, burst rate ~1-2 requests/sec.
+MAIL_RATE_LIMIT_MAX=2
+MAIL_RATE_LIMIT_DURATION_MS=1000
 ```
 
-**New tests required**
+#### 2A.4 Fast Failure for Fatal Errors (`UnrecoverableError`)
 
-- `outbox-processor.spec.ts` — concurrent `processSingleEvent` for the same event increments `attempts`
-  exactly once (§3.1). Use the in-memory outbox repository under
-  [src/repositories/in-memory/](src/repositories/in-memory/), extended with CAS semantics.
-- Child processor — per-recipient idempotency: a second job with the same deterministic `jobId` after a
-  `'completed'` key exists must skip, not re-send.
-- Parent processor — all-children-succeeded deletes the outbox row; any-child-failed reverts it to `PENDING`.
-- `cep-to-lat-lon-use-case.spec.ts` — a second `execute` for the same CEP hits the cache and makes zero
-  provider calls (the regression that defect 1 would reintroduce).
-- Timeout nesting — aborting the outer signal aborts the in-flight inner provider call.
+In `mail-worker.ts`:
+When `makeSendEmailUseCase().execute()` returns an error:
 
-**Manual / integration**
+- Inspect SMTP response codes. Permanent rejections (e.g. RFC 550, 551, 553, 554, or invalid recipient addresses) must throw BullMQ's native `UnrecoverableError`.
+- This immediately moves the job to the failed state without burning through useless exponential retries against an address that will never accept mail.
 
-1. `docker-compose up`, then `npm run dev` and `npm run start:worker`.
-2. `POST /forms` with a decision-for-Christ payload → confirm in Redis that a flow parent plus **two** child
-   jobs are created, that both emails arrive, and that the `outbox_events` row is deleted by the parent.
-3. Force a child failure (point `SMTP_HOST` at a black hole) → confirm the child exhausts its attempts, the
-   parent still runs, the outbox row returns to `PENDING`, and the failed job is still inspectable in Redis
-   (the `removeOnFail` change).
-4. `GET /churches/nearest?cep=01001000` twice → second call should be a single Redis GET. Then flush only
-   `cache:nearest-churches:*` and repeat: the third call must **not** hit AwesomeAPI, proving §4.1.
-5. Scrape `:9092/metrics` and confirm the new per-send histogram and unchanged outbox counters.
-6. `npm run ci:local` before pushing.
+---
+
+## 5. Status of Part 4: Church Routing Latency (Resolved)
+
+All items from Part 4 of the original assessment have been **implemented and verified in the codebase**:
+
+1. **CEP→coords success caching restored**: `cacheSuccessResults = false` was deleted, allowing immutable postal coordinates to be cached for 7 days in Redis.
+2. **Nested timeout budgets implemented**: `Deadline` objects and `AbortSignal.any` are threaded from the outer orchestration use case down through the geocoding and address providers.
+3. **Routing retry loop added**: `ResilientChurchRoutingProviderDecorator` executes via `runGuardedAttempt`, which uses cockatiel's retry policy with decorrelated jitter, bounded by the parent `Deadline`.
+4. **Cleanup complete**: Unused `LOCATION_IQ_ADDRESS` configuration was removed and verified with Knip.
+5. **Architectural boundary preserved**: Church routing remains a synchronous HTTP request and is **explicitly excluded** from background queue processing.
+
+---
+
+## 6. Execution Roadmap
+
+```mermaid
+flowchart TD
+    subgraph Phase 1: Outbox Multi-pod CAS & Dispatch Queue (RESOLVED)
+        P1A["1. Add claim() CAS to IOutboxRepository & Prisma"] --> P1B["2. Integrate claim() in OutboxProcessor"]
+        P1B --> P1C["3. Replace OutboxSignal Pub/Sub with outbox-dispatch Queue"]
+    end
+
+    subgraph Phase 2: Mail Queue Hardening & Observability (RESOLVED)
+        P2A["4. Right-size lockDuration and stalledInterval"] --> P2B["5. Configure forensic retention (removeOnComplete/Fail) & jitter"]
+        P2B --> P2C["6. Add BullMQ distributed limiter with Gmail SMTP env defaults"]
+        P2C --> P2D["7. Add UnrecoverableError mapping for permanent SMTP rejections"]
+        P2D --> P2E["8. Observability: alerts.yml, metrics, and Grafana"]
+    end
+
+    subgraph Phase 3: Integration & Failed Jobs DB Cleanup (RESOLVED)
+        P3A["9. Multi-pod Redis integration suite (5 maintenance schedulers)"] --> P3B["10. Failed jobs DB cleanup cron (05:00 AM daily, 7-day retention)"]
+        P3B --> P3C["11. deleteFailedOlderThan on OutboxRepository & outbox-triage purge-failed"]
+    end
+
+    subgraph Phase 4: Dead-Letter Handling & Operational Triage (RESOLVED)
+        P4A["12. findFailed() and retryFailed() on OutboxRepository"] --> P4B["13. outbox-triage service & npm run outbox:triage CLI"]
+    end
+
+    subgraph Phase 5: Bulk Email FlowProducer (SKIPPED)
+        P5A["Deferred to Bulk Email Roadmap"]
+    end
+
+    subgraph Phase 6: Multi-Pod Staging Smoke Test (RESOLVED)
+        P6A["14. Deploy 2+ worker pods in staging compose"] --> P6B["15. Verify point-to-point dispatch without fan-out"]
+        P6B --> P6C["16. Verify global SMTP limiter (2/s) shared via Redis"]
+        P6C --> P6D["17. Verify metrics scraping on ports 9091 (API) and 9092 (Workers)"]
+    end
+
+    Phase 1 --> Phase 2 --> Phase 3 --> Phase 4 --> Phase 6
+```
+
+### Verification Suite Plan & Results
+
+1. **CAS Concurrency & State Machine (`in-memory-outbox-repository.spec.ts` & `outbox-processor.spec.ts`)**:
+   - `claim()` conditional CAS update via DB `updateMany` guarantees atomic transition `PENDING → SENDING` and `stuck SENDING → SENDING`.
+   - CAS contention returns `ok(false)` and prevents duplicate processing across competing pods.
+2. **Dispatch Queue Tests (`outbox-dispatch-queue.spec.ts` & `outbox-dispatch-worker.spec.ts`)**:
+   - Outbox dispatch jobs enqueued with `jobId = publicId` for automatic BullMQ deduplication.
+   - Point-to-point worker consumption eliminates Redis Pub/Sub broadcast fan-out.
+3. **Mail Worker Hardening Tests (`mail-worker.spec.ts` & `mail-worker-metrics.spec.ts`)**:
+   - Unrecoverable RFC 5xx/`EENVELOPE` errors throw `UnrecoverableError`, increment `emails_permanent_rejections_total`, and abort retries immediately.
+   - Transient SMTP errors (4xx / network) trigger exponential backoff with jitter.
+   - BullMQ worker `limiter` enforces global rate limits (`MAIL_RATE_LIMIT_MAX: 2`, `MAIL_RATE_LIMIT_DURATION_MS: 1000`).
+4. **Dead-Letter Handling & Triage (`outbox-triage.spec.ts`)**:
+   - `findFailed`, `retryFailed`, and `purgeFailedOutboxEvents` allow operational inspection, re-dispatch, and cleanup of poison/failed events.
+   - CLI script `scripts/outbox-triage.ts` exposed via `npm run outbox:triage` (`list`, `retry <id>`, `retry-all`, `purge-failed [days]`).
+5. **Failed Jobs Database Cleanup (`outbox-maintenance.spec.ts` & `maintenance-scheduler.spec.ts`)**:
+   - Automated daily BullMQ Job Scheduler at 05:00 AM (`CRON_SCHEDULES.DAILY_5AM`).
+   - Purges terminal `FAILED` outbox events older than 7 days (`FAILED_DAYS: 7`), perfectly matching BullMQ's 7-day forensic retention window.
+   - Preserves 1-hour staggered separation from outbox retention (03:00) and analytics retention (04:00).
+6. **Multi-Pod Staging Smoke Test (`scripts/smoke-test-multi-pod.sh` & `.mjs`)**:
+   - 2 worker pods (`fastify-worker-1` and `fastify-worker-2`) dynamically scaled via Docker Compose.
+   - Enqueued 4 outbox events: all 4 claimed with `attempts === 1` and 0 duplicate attempts or fan-out across pods.
+   - Redis-backed BullMQ mail-queue rate limiter active across all worker pods.
+   - Scraped metrics from port 9091 (Fastify API, ~15 KB) and port 9092 (both Worker pods, ~14.4 KB and 322 lines).
+
