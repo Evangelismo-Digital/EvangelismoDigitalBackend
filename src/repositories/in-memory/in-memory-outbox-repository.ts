@@ -21,6 +21,7 @@ interface FailureInjection {
   findPending?: boolean
   findStuck?: boolean
   findFailed?: boolean
+  findByPublicId?: boolean
   claim?: boolean
   retryFailed?: boolean
   updateStatus?: boolean
@@ -132,6 +133,10 @@ export class InMemoryOutboxRepository implements IOutboxRepository {
   }
 
   async findByPublicId(publicId: string): Promise<Result<IOutboxEvent | null, AppError>> {
+    if (this.shouldFailOn.findByPublicId) {
+      return err(new InMemoryOutboxError('Falha injetada em findByPublicId'))
+    }
+
     const event = this.items.find((e) => e.publicId === publicId)
 
     return ok(event ?? null)

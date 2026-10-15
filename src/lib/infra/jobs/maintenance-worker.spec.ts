@@ -18,11 +18,35 @@ vi.mock('@lib/metrics/outbox-metrics', () => ({
   collectMetricsOutboxCronFailures: { inc: (...args: unknown[]) => mockFailuresInc(...args) },
 }))
 
-import { createMaintenanceJobProcessor, MaintenanceDeps } from './maintenance-worker'
+const mockWorkerConstructor = vi.fn()
+const mockAttachRedisLogger = vi.fn()
+
+vi.mock('@lib/redis/clients/clients', () => ({
+  createWorkerConnection: vi.fn().mockReturnValue({}),
+}))
+
+vi.mock('@lib/redis/connections/redis-bullMQ-connection', () => ({
+  attachRedisLogger: (...args: unknown[]) => mockAttachRedisLogger(...args),
+}))
+
+vi.mock('bullmq', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('bullmq')>()
+  return {
+    ...actual,
+    Worker: class {
+      constructor(name: string, processor: unknown, opts: unknown) {
+        mockWorkerConstructor(name, processor, opts)
+      }
+    },
+  }
+})
+
+import { createMaintenanceJobProcessor, startMaintenanceWorker, MaintenanceDeps } from './maintenance-worker'
 import { logger } from '@lib/logger'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 import { ANALYTICS_LOGS } from 'messages/constants/analytics/analytics'
 import { QUEUE } from 'messages/constants/queue/queue'
+import { WORKER_CONSTANTS } from 'messages/constants/workers/workers'
 import type { Job } from 'bullmq'
 import type { IMaintenanceJobData } from 'core/contracts/lib/infra/maintenance-job-data.interface'
 
@@ -378,5 +402,24 @@ describe('createMaintenanceJobProcessor', () => {
       expect(deps.analyticsRetention.purgeExpiredData).not.toHaveBeenCalled()
       expect(mockRunsInc).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('startMaintenanceWorker', () => {
+  it('instancia o Worker com queue maintenance e loga início', () => {
+    const deps = makeDeps()
+    const worker = startMaintenanceWorker(deps as unknown as MaintenanceDeps)
+
+    expect(mockAttachRedisLogger).toHaveBeenCalledWith(expect.anything(), 'MaintenanceWorker')
+    expect(mockWorkerConstructor).toHaveBeenCalledWith(
+      QUEUE.NAMES.MAINTENANCE,
+      expect.any(Function),
+      expect.objectContaining({
+        connection: expect.anything(),
+        concurrency: WORKER_CONSTANTS.MAINTENANCE.CONCURRENCY_LIMIT,
+      }),
+    )
+    expect(logger.info).toHaveBeenCalledWith(OUTBOX_LOGS.MAINTENANCE_WORKER_STARTED)
+    expect(worker).toBeDefined()
   })
 })

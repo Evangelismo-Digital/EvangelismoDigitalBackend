@@ -282,7 +282,7 @@ function isObject(val: unknown): val is Record<string, unknown> {
   return typeof val === 'object' && val !== null
 }
 
-function extractCandidates(error: unknown): SmtpErrorLike[] {
+export function extractCandidates(error: unknown): SmtpErrorLike[] {
   if (!isObject(error)) {
     return []
   }
@@ -319,9 +319,7 @@ function throwFirstFailure(failures: SendResults): void {
     throw firstFailure.reason
   }
 
-  if (isErr(firstFailure.value)) {
-    throw firstFailure.value.error
-  }
+  throw (firstFailure.value as { error: unknown }).error
 }
 
 export function createJobFailureHandler(outboxRepository: IOutboxRepository) {
@@ -370,7 +368,7 @@ function isFinalFailure(job: MailJob | undefined, err: Error): boolean {
   return isUnrecoverable(err) || isStalledFinal(err) || job.attemptsMade >= (job.opts.attempts ?? 1)
 }
 
-function isUnrecoverable(err: unknown): boolean {
+export function isUnrecoverable(err: unknown): boolean {
   if (err instanceof UnrecoverableError) return true
   if (typeof err !== 'object' || err === null) return false
 

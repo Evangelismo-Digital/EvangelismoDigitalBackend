@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest'
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 const mockWorkerConstructor = vi.fn()
 const mockWorkerOn = vi.fn()
 
@@ -59,8 +59,43 @@ vi.mock('@lib/sentry/capture', () => ({
   captureError: (...args: unknown[]) => mockCaptureError(...args),
 }))
 
+const { mockSentInc, mockFailedInc, mockSkippedInc, mockDurationStartTimer, mockPermanentRejectionsInc, metricsState } =
+  vi.hoisted(() => ({
+    mockSentInc: vi.fn(),
+    mockFailedInc: vi.fn(),
+    mockSkippedInc: vi.fn(),
+    mockDurationStartTimer: vi.fn(),
+    mockPermanentRejectionsInc: vi.fn(),
+    metricsState: { enabled: true },
+  }))
+
+vi.mock('@lib/metrics/email-metrics', () => ({
+  get collectMetricsEmailsSent() {
+    return metricsState.enabled ? { inc: (...args: unknown[]) => mockSentInc(...args) } : null
+  },
+  get collectMetricsEmailsFailed() {
+    return metricsState.enabled ? { inc: (...args: unknown[]) => mockFailedInc(...args) } : null
+  },
+  get collectMetricsEmailsSkipped() {
+    return metricsState.enabled ? { inc: (...args: unknown[]) => mockSkippedInc(...args) } : null
+  },
+  get collectMetricsEmailBatchDuration() {
+    return metricsState.enabled ? { startTimer: () => mockDurationStartTimer() } : null
+  },
+  get collectMetricsEmailsPermanentRejections() {
+    return metricsState.enabled ? { inc: (...args: unknown[]) => mockPermanentRejectionsInc(...args) } : null
+  },
+}))
+
 import { Job, UnrecoverableError } from 'bullmq'
-import { createMailJobProcessor, createJobFailureHandler, startMailWorker } from './mail-worker'
+import {
+  createMailJobProcessor,
+  createJobFailureHandler,
+  startMailWorker,
+  isPermanentSmtpError,
+  extractCandidates,
+  isUnrecoverable,
+} from './mail-worker'
 import { IOutboxRepository, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { IOutboxDispatchData } from 'core/contracts/lib/infra/outbox-dispatch-data.interface'
 import { ok, err } from 'core/shared/result'
@@ -123,6 +158,8 @@ describe('createMailJobProcessor', () => {
     mockRedisGet.mockResolvedValue(null)
     mockRedisDel.mockResolvedValue(1)
     mockSendEmailExecute.mockResolvedValue(ok({}))
+    metricsState.enabled = true
+    mockDurationStartTimer.mockReturnValue(vi.fn())
   })
 
   describe('gate de expiração', () => {
@@ -155,6 +192,18 @@ describe('createMailJobProcessor', () => {
       expect(mockSendEmailExecute).toHaveBeenCalledTimes(2)
       expect(repository.delete).toHaveBeenCalledWith(PUBLIC_ID)
     })
+
+    it('job com expiresAt exatamente agora: considerado expirado', async () => {
+      vi.useFakeTimers()
+      const now = new Date('2026-10-15T12:00:00.000Z')
+      vi.setSystemTime(now)
+
+      await expect(processor(makeJob({ expiresAt: now.toISOString() }))).resolves.toBeUndefined()
+
+      expect(mockSendEmailExecute).not.toHaveBeenCalled()
+      expect(repository.delete).toHaveBeenCalledWith(PUBLIC_ID)
+      vi.useRealTimers()
+    })
   })
 
   describe('aquisição de idempotência', () => {
@@ -180,6 +229,7 @@ describe('createMailJobProcessor', () => {
       expect(mockSendEmailExecute).not.toHaveBeenCalled()
       expect(repository.delete).toHaveBeenCalledWith(PUBLIC_ID)
       expect(mockRedisDel).not.toHaveBeenCalled()
+      expect(logger.warn).toHaveBeenCalledWith(WORKER_LOGS.BATCH_ALREADY_SENT)
     })
 
     it('chave completed e delete falha: lança para o BullMQ tentar a limpeza de novo, sem apagar a chave', async () => {
@@ -215,6 +265,12 @@ describe('createMailJobProcessor', () => {
   describe('fase de envio', () => {
     it('sucesso: envia todos, grava completed com TTL longo e só então deleta o outbox, sem apagar a chave', async () => {
       await processor(makeJob())
+
+      expect(logger.child).toHaveBeenCalledWith({ jobId: 'job-1', publicId: PUBLIC_ID })
+      expect(logger.info).toHaveBeenCalledWith('Processando lote de 2 e-mails...')
+      expect(logger.info).toHaveBeenCalledWith('Lote de e-mails processado com sucesso.')
+      expect(logger.info).toHaveBeenCalledWith('OutboxEvent deletado com sucesso do banco de dados')
+      expect(mockSentInc).toHaveBeenCalledWith(2)
 
       expect(mockSendEmailExecute).toHaveBeenCalledTimes(2)
       expect(mockRedisSet).toHaveBeenNthCalledWith(
@@ -261,12 +317,13 @@ describe('createMailJobProcessor', () => {
       expect(logger.warn).toHaveBeenCalledWith({ successCount: 1, failureCount: 1 }, WORKER_LOGS.PARTIAL_BATCH_FAILURE)
     })
 
-    it('falha total: não loga o warn de falha parcial', async () => {
+    it('falha total: não loga o warn de falha parcial e não incrementa metric de emails enviados', async () => {
       mockSendEmailExecute.mockResolvedValue(err(new SmtpDispatchError(new Error('smtp caiu'))))
 
       await expect(processor(makeJob())).rejects.toBeInstanceOf(SmtpDispatchError)
 
       expect(logger.warn).not.toHaveBeenCalledWith(expect.anything(), WORKER_LOGS.PARTIAL_BATCH_FAILURE)
+      expect(mockSentInc).not.toHaveBeenCalled()
     })
 
     it('falha parcial: persiste apenas os destinatários que falharam no banco e no payload do BullMQ', async () => {
@@ -393,6 +450,55 @@ describe('createMailJobProcessor', () => {
         expect(thrownError).not.toBeInstanceOf(UnrecoverableError)
         expect(mockRedisDel).toHaveBeenCalledWith(IDEMPOTENCY_KEY)
       })
+
+      it('lote misto (1 permanente 550 e 1 transitório 421): lança SmtpDispatchError pois nem todas as falhas são permanentes', async () => {
+        const permanentError = Object.assign(new Error('550 User unknown'), { responseCode: 550 })
+        const transientError = Object.assign(new Error('421 Service unavailable'), { responseCode: 421 })
+
+        mockSendEmailExecute
+          .mockResolvedValueOnce(err(new SmtpDispatchError(permanentError)))
+          .mockResolvedValueOnce(err(new SmtpDispatchError(transientError)))
+
+        const job = makeJob()
+        const thrownError = await processor(job).catch((e: unknown) => e)
+        expect(thrownError).toBeInstanceOf(SmtpDispatchError)
+        expect(thrownError).not.toBeInstanceOf(UnrecoverableError)
+      })
+
+      it('lote misto (1 transitório 421 e 1 permanente 550): lança SmtpDispatchError', async () => {
+        const permanentError = Object.assign(new Error('550 User unknown'), { responseCode: 550 })
+        const transientError = Object.assign(new Error('421 Service unavailable'), { responseCode: 421 })
+
+        mockSendEmailExecute
+          .mockResolvedValueOnce(err(new SmtpDispatchError(transientError)))
+          .mockResolvedValueOnce(err(new SmtpDispatchError(permanentError)))
+
+        const job = makeJob()
+        const thrownError = await processor(job).catch((e: unknown) => e)
+        expect(thrownError).toBeInstanceOf(SmtpDispatchError)
+        expect(thrownError).not.toBeInstanceOf(UnrecoverableError)
+      })
+
+      it('erro permanente onde a causa não é instância de Error: converte via String()', async () => {
+        const plainObjectError = { responseCode: 550, response: '550 User unknown', toString: () => 'Plain 550 error' }
+        mockSendEmailExecute.mockResolvedValueOnce(err(plainObjectError))
+
+        const job = makeJob({ emails: [emailUser] })
+        const thrownError = await processor(job).catch((e: unknown) => e)
+        expect(thrownError).toBeInstanceOf(UnrecoverableError)
+        expect((thrownError as Error).message).toBe('Plain 550 error')
+      })
+
+      it('falha parcial com promise rejeitada no execute: persiste apenas os destinatários falhos e relança o erro rejeitado', async () => {
+        const networkError = new InfraTestError()
+        mockSendEmailExecute.mockResolvedValueOnce(ok({})).mockRejectedValueOnce(networkError)
+
+        const job = makeJob()
+        await expect(processor(job)).rejects.toBe(networkError)
+
+        expect(repository.updatePendingRecipients).toHaveBeenCalledWith(PUBLIC_ID, [emailStaff.to])
+        expect(job.updateData).toHaveBeenCalledWith({ ...job.data, emails: [emailStaff] })
+      })
     })
   })
 
@@ -436,6 +542,49 @@ describe('createMailJobProcessor', () => {
       await expect(processor(makeJob())).resolves.toBeUndefined()
     })
   })
+
+  describe('quando métricas são nulas (registry desabilitado)', () => {
+    beforeEach(() => {
+      metricsState.enabled = false
+      mockSendEmailExecute.mockResolvedValue(ok({}))
+    })
+
+    afterEach(() => {
+      metricsState.enabled = true
+    })
+
+    it('processa envio com sucesso sem lançar erro quando métricas são null', async () => {
+      await expect(processor(makeJob())).resolves.toBeUndefined()
+    })
+
+    it('processa job expirado sem lançar erro quando métricas são null', async () => {
+      const expiresAt = new Date(Date.now() - 1000).toISOString()
+      await expect(processor(makeJob({ expiresAt }))).resolves.toBeUndefined()
+    })
+
+    it('processa job já em processing sem lançar erro de métricas', async () => {
+      mockRedisSet.mockResolvedValueOnce(null)
+      mockRedisGet.mockResolvedValueOnce('processing')
+      await expect(processor(makeJob())).rejects.toBeInstanceOf(JobAlreadyProcessingError)
+    })
+
+    it('processa job já enviado (completed) sem lançar erro de métricas', async () => {
+      mockRedisSet.mockResolvedValueOnce(null)
+      mockRedisGet.mockResolvedValueOnce('completed')
+      await expect(processor(makeJob())).resolves.toBeUndefined()
+    })
+
+    it('processa falha com erro transitório sem lançar erro de métricas', async () => {
+      mockSendEmailExecute.mockResolvedValueOnce(err(new SmtpDispatchError(new Error('transient'))))
+      await expect(processor(makeJob({ emails: [emailUser] }))).rejects.toBeInstanceOf(SmtpDispatchError)
+    })
+
+    it('processa falha com erro permanente sem lançar erro de métricas', async () => {
+      const permanentError = Object.assign(new Error('550 User unknown'), { responseCode: 550 })
+      mockSendEmailExecute.mockResolvedValueOnce(err(new SmtpDispatchError(permanentError)))
+      await expect(processor(makeJob({ emails: [emailUser] }))).rejects.toThrow(UnrecoverableError)
+    })
+  })
 })
 
 describe('createJobFailureHandler', () => {
@@ -453,7 +602,7 @@ describe('createJobFailureHandler', () => {
     await handleJobFailure(makeJob({ attemptsMade: 1 }), smtpError)
 
     expect(repository.updateStatus).not.toHaveBeenCalled()
-    expect(logger.error).toHaveBeenCalledWith(expect.anything(), WORKER_LOGS.GENERIC_WORKER_FAILURE)
+    expect(logger.error).toHaveBeenCalledWith({ jobId: 'job-1', err: 'smtp caiu' }, WORKER_LOGS.GENERIC_WORKER_FAILURE)
     expect(mockCaptureError).not.toHaveBeenCalled()
   })
 
@@ -462,7 +611,10 @@ describe('createJobFailureHandler', () => {
     await handleJobFailure(makeJob({ attemptsMade: 3 }), smtpError)
 
     expect(repository.updateStatus).toHaveBeenCalledWith(PUBLIC_ID, IOutboxEventStatus.PENDING)
-    expect(logger.warn).toHaveBeenCalledWith(expect.anything(), WORKER_LOGS.OUTBOX_REVERTED_AFTER_FINAL_FAILURE)
+    expect(logger.warn).toHaveBeenCalledWith(
+      { jobId: 'job-1', publicId: PUBLIC_ID },
+      WORKER_LOGS.OUTBOX_REVERTED_AFTER_FINAL_FAILURE,
+    )
     expect(mockCaptureError).toHaveBeenCalledWith(smtpError, { jobId: 'job-1', publicId: PUBLIC_ID })
   })
 
@@ -476,6 +628,8 @@ describe('createJobFailureHandler', () => {
     await expect(handleJobFailure(undefined, new Error('qualquer'))).resolves.toBeUndefined()
 
     expect(repository.updateStatus).not.toHaveBeenCalled()
+    expect(mockCaptureError).not.toHaveBeenCalled()
+    expect(logger.error).toHaveBeenCalledWith({ jobId: undefined, err: 'qualquer' }, WORKER_LOGS.GENERIC_WORKER_FAILURE)
   })
 
   it('job.data sem publicId: não reverte e não lança', async () => {
@@ -494,7 +648,7 @@ describe('createJobFailureHandler', () => {
   it('Missing lock (glitch transitório): warn, nenhuma reversão, sem captura no Sentry', async () => {
     await handleJobFailure(makeJob({ attemptsMade: 3 }), new Error('Missing lock for job job-1'))
 
-    expect(logger.warn).toHaveBeenCalledWith(expect.anything(), WORKER_LOGS.BULLMQ_NETWORK_GLITCH)
+    expect(logger.warn).toHaveBeenCalledWith({ jobId: 'job-1' }, WORKER_LOGS.BULLMQ_NETWORK_GLITCH)
     expect(repository.updateStatus).not.toHaveBeenCalled()
     expect(mockCaptureError).not.toHaveBeenCalled()
   })
@@ -502,7 +656,7 @@ describe('createJobFailureHandler', () => {
   it('job stalled transitório: warn e nenhuma reversão', async () => {
     await handleJobFailure(makeJob({ attemptsMade: 1 }), new Error('job stalled'))
 
-    expect(logger.warn).toHaveBeenCalledWith(expect.anything(), WORKER_LOGS.BULLMQ_NETWORK_GLITCH)
+    expect(logger.warn).toHaveBeenCalledWith({ jobId: 'job-1' }, WORKER_LOGS.BULLMQ_NETWORK_GLITCH)
     expect(repository.updateStatus).not.toHaveBeenCalled()
   })
 
@@ -518,17 +672,21 @@ describe('createJobFailureHandler', () => {
 
     await expect(handleJobFailure(makeJob({ attemptsMade: 3 }), new Error('smtp caiu'))).resolves.toBeUndefined()
 
-    expect(logger.warn).toHaveBeenCalledWith(expect.anything(), WORKER_LOGS.OUTBOX_REVERT_AFTER_FINAL_FAILURE_ERROR)
+    expect(logger.warn).toHaveBeenCalledWith(
+      { jobId: 'job-1', publicId: PUBLIC_ID, error: revertError },
+      WORKER_LOGS.OUTBOX_REVERT_AFTER_FINAL_FAILURE_ERROR,
+    )
     expect(mockCaptureError).toHaveBeenCalledWith(revertError, { jobId: 'job-1', publicId: PUBLIC_ID })
   })
 
   it('exceção inesperada dentro do handler é engolida, logada e capturada no Sentry (nunca vira unhandledRejection)', async () => {
-    repository.updateStatus.mockRejectedValueOnce(new Error('estouro inesperado'))
+    const handlerThrown = new Error('estouro inesperado')
+    repository.updateStatus.mockRejectedValueOnce(handlerThrown)
 
     await expect(handleJobFailure(makeJob({ attemptsMade: 3 }), new Error('smtp caiu'))).resolves.toBeUndefined()
 
-    expect(logger.error).toHaveBeenCalledWith(expect.anything(), WORKER_LOGS.FAILURE_HANDLER_ERROR)
-    expect(mockCaptureError).toHaveBeenCalledWith(expect.any(Error), { jobId: 'job-1' })
+    expect(logger.error).toHaveBeenCalledWith({ jobId: 'job-1', err: handlerThrown }, WORKER_LOGS.FAILURE_HANDLER_ERROR)
+    expect(mockCaptureError).toHaveBeenCalledWith(handlerThrown, { jobId: 'job-1' })
   })
 
   it('erro com formato de infraestrutura (body + statusCode): usa o log de infra e ainda reverte quando definitivo', async () => {
@@ -546,6 +704,21 @@ describe('createJobFailureHandler', () => {
     )
     expect(repository.updateStatus).toHaveBeenCalledWith(PUBLIC_ID, IOutboxEventStatus.PENDING)
     expect(mockCaptureError).toHaveBeenCalledWith(infraShaped, { jobId: 'job-1', publicId: PUBLIC_ID })
+  })
+
+  it('erro com formato de infraestrutura quando job é undefined: loga com jobId undefined sem lançar TypeError', async () => {
+    const infraShaped = Object.assign(new Error('falha de infra'), {
+      body: { code: 'INFRA_CODE' },
+      statusCode: 500,
+      cause: 'root',
+    })
+
+    await expect(handleJobFailure(undefined, infraShaped)).resolves.toBeUndefined()
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: undefined, code: 'INFRA_CODE' }),
+      expect.stringContaining('Falha de Infraestrutura'),
+    )
   })
 
   it('UnrecoverableError é tratado como definitivo mesmo com tentativas restantes (reverte outbox e captura Sentry)', async () => {
@@ -610,5 +783,118 @@ describe('startMailWorker', () => {
         },
       }),
     )
+
+    const onFailedCall = mockWorkerOn.mock.calls.find((call) => call[0] === 'failed')
+    expect(onFailedCall).toBeDefined()
+    if (!onFailedCall) throw new Error('onFailedCall not found')
+    const onFailedHandler = onFailedCall[1]
+    onFailedHandler(makeJob({ attemptsMade: 1 }), new Error('worker failed'))
+    expect(logger.error).toHaveBeenCalledWith(
+      { jobId: 'job-1', err: 'worker failed' },
+      WORKER_LOGS.GENERIC_WORKER_FAILURE,
+    )
+  })
+})
+
+describe('extractCandidates', () => {
+  it('retorna array vazio para primitivos e null', () => {
+    expect(extractCandidates(null)).toEqual([])
+    expect(extractCandidates(undefined)).toEqual([])
+    expect(extractCandidates('some string')).toEqual([])
+    expect(extractCandidates(123)).toEqual([])
+    expect(extractCandidates(true)).toEqual([])
+  })
+
+  it('retorna array com o próprio objeto e causas / originalErrors aninhados', () => {
+    const root = { responseCode: 500, cause: { code: 'EENVELOPE' }, originalError: { response: '550' } }
+    expect(extractCandidates(root)).toEqual([root, { code: 'EENVELOPE' }, { response: '550' }])
+  })
+})
+
+describe('isUnrecoverable', () => {
+  it('retorna true para instâncias de UnrecoverableError mesmo com name customizado', () => {
+    class CustomUnrecoverable extends UnrecoverableError {
+      constructor() {
+        super('custom')
+        this.name = 'CustomUnrecoverable'
+      }
+    }
+    expect(isUnrecoverable(new CustomUnrecoverable())).toBe(true)
+  })
+
+  it('retorna false para valores que não são objetos ou são null/undefined', () => {
+    expect(isUnrecoverable(null)).toBe(false)
+    expect(isUnrecoverable(undefined)).toBe(false)
+    expect(isUnrecoverable('UnrecoverableError')).toBe(false)
+    expect(isUnrecoverable(123)).toBe(false)
+    expect(isUnrecoverable(true)).toBe(false)
+  })
+
+  it('retorna true para objetos duck-typed com name === UnrecoverableError', () => {
+    expect(isUnrecoverable({ name: 'UnrecoverableError' })).toBe(true)
+  })
+
+  it('retorna false para objetos com outro name ou sem name', () => {
+    expect(isUnrecoverable({ name: 'OtherError' })).toBe(false)
+    expect(isUnrecoverable({})).toBe(false)
+    expect(isUnrecoverable(new Error('regular error'))).toBe(false)
+  })
+})
+
+describe('isPermanentSmtpError', () => {
+  it('retorna false para valores que não são objetos (primitivos, null, undefined)', () => {
+    expect(isPermanentSmtpError(null)).toBe(false)
+    expect(isPermanentSmtpError(undefined)).toBe(false)
+    expect(isPermanentSmtpError('string error')).toBe(false)
+    expect(isPermanentSmtpError(123)).toBe(false)
+    expect(isPermanentSmtpError(true)).toBe(false)
+  })
+
+  it('avalia responseCode estritamente no intervalo 5xx [500, 600)', () => {
+    expect(isPermanentSmtpError({ responseCode: 499 })).toBe(false)
+    expect(isPermanentSmtpError({ responseCode: 500 })).toBe(true)
+    expect(isPermanentSmtpError({ responseCode: 550 })).toBe(true)
+    expect(isPermanentSmtpError({ responseCode: 599 })).toBe(true)
+    expect(isPermanentSmtpError({ responseCode: 600 })).toBe(false)
+    expect(isPermanentSmtpError({ responseCode: 601 })).toBe(false)
+    expect(isPermanentSmtpError({ responseCode: '550' })).toBe(false)
+    expect(isPermanentSmtpError({ responseCode: null })).toBe(false)
+    expect(isPermanentSmtpError({ responseCode: NaN })).toBe(false)
+  })
+
+  it('avalia code === EENVELOPE', () => {
+    expect(isPermanentSmtpError({ code: 'EENVELOPE' })).toBe(true)
+    expect(isPermanentSmtpError({ code: 'ECONNRESET' })).toBe(false)
+    expect(isPermanentSmtpError({ code: '' })).toBe(false)
+    expect(isPermanentSmtpError({ code: undefined })).toBe(false)
+  })
+
+  it('avalia response text com regex ^5\\d\\d considerando trim', () => {
+    expect(isPermanentSmtpError({ response: '550 5.1.1 User unknown' })).toBe(true)
+    expect(isPermanentSmtpError({ response: '  550 Recipient rejected  ' })).toBe(true)
+    expect(isPermanentSmtpError({ response: '500 Syntax error' })).toBe(true)
+    expect(isPermanentSmtpError({ response: '599 Unknown' })).toBe(true)
+    expect(isPermanentSmtpError({ response: '450 Mailbox busy' })).toBe(false)
+    expect(isPermanentSmtpError({ response: '250 OK' })).toBe(false)
+    expect(isPermanentSmtpError({ response: 'Response: 550 not at start' })).toBe(false)
+    expect(isPermanentSmtpError({ response: '5a0 Invalid' })).toBe(false)
+    expect(isPermanentSmtpError({ response: 550 })).toBe(false)
+    expect(isPermanentSmtpError({ response: null })).toBe(false)
+  })
+
+  it('extrai candidatos de err.cause e err.originalError quando são objetos', () => {
+    expect(isPermanentSmtpError({ cause: { responseCode: 550 } })).toBe(true)
+    expect(isPermanentSmtpError({ cause: { code: 'EENVELOPE' } })).toBe(true)
+    expect(isPermanentSmtpError({ cause: { response: '550 User unknown' } })).toBe(true)
+    expect(isPermanentSmtpError({ originalError: { responseCode: 550 } })).toBe(true)
+    expect(isPermanentSmtpError({ originalError: { code: 'EENVELOPE' } })).toBe(true)
+    expect(isPermanentSmtpError({ cause: 'not an object' })).toBe(false)
+    expect(isPermanentSmtpError({ originalError: null })).toBe(false)
+    expect(isPermanentSmtpError({ cause: 123, originalError: false })).toBe(false)
+  })
+
+  it('retorna false quando o objeto não tem nenhum critério permanente', () => {
+    expect(isPermanentSmtpError({})).toBe(false)
+    expect(isPermanentSmtpError(new Error('generic error'))).toBe(false)
   })
 })

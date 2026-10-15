@@ -306,6 +306,20 @@ describe('Outbox metrics instrumentation', () => {
 
       expect(await metricValue(collectMetricsOutboxMaintenanceDeleted, { operation: 'retention_purge' })).toBe(4)
     })
+
+    it('counts failed-purge deletions by the number of events removed', async () => {
+      const maintenance = new OutboxMaintenance(repository)
+      const old = new Date(Date.now() - (OUTBOX_CONSTANTS.RETENTION.FAILED_DAYS + 1) * 24 * 60 * 60 * 1000)
+      for (let i = 0; i < 3; i++) {
+        const event = await createEvent(repository)
+        event.status = IOutboxEventStatus.FAILED
+        event.occurredAt = old
+      }
+
+      await maintenance.purgeFailedEvents()
+
+      expect(await metricValue(collectMetricsOutboxMaintenanceDeleted, { operation: 'failed_purge' })).toBe(3)
+    })
   })
 
   /**
@@ -323,6 +337,7 @@ describe('Outbox metrics instrumentation', () => {
       const stubMaintenance = {
         sweepExpiredEvents: vi.fn().mockResolvedValue(undefined),
         purgeOldEvents: vi.fn().mockResolvedValue(undefined),
+        purgeFailedEvents: vi.fn().mockResolvedValue(undefined),
       } as unknown as OutboxMaintenance
       const stubAnalyticsRetention = {
         purgeExpiredData: vi.fn().mockResolvedValue(undefined),
@@ -347,6 +362,7 @@ describe('Outbox metrics instrumentation', () => {
       await process(job(QUEUE.JOBS.MIDNIGHT_SCAN))
       await process(job(QUEUE.JOBS.RETENTION_PURGE))
       await process(job(QUEUE.JOBS.ANALYTICS_RETENTION))
+      await process(job(QUEUE.JOBS.FAILED_JOBS_CLEANUP))
 
       expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'five_min_sweep' })).toBe(1)
       expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'five_min_pending' })).toBe(1)
@@ -354,6 +370,7 @@ describe('Outbox metrics instrumentation', () => {
       expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'midnight_pending' })).toBe(1)
       expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'retention_purge' })).toBe(1)
       expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'analytics_retention' })).toBe(1)
+      expect(await metricValue(collectMetricsOutboxCronRuns, { phase: 'failed_jobs_cleanup' })).toBe(1)
     })
   })
 })

@@ -8,7 +8,7 @@ vi.mock('@lib/queue/outbox-dispatch-queue', () => ({
 
 import { InMemoryOutboxRepository } from '@repositories/in-memory/in-memory-outbox-repository'
 import { IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
-import { isErr, isOk } from 'core/shared/result'
+import { isErr, isOk, ok } from 'core/shared/result'
 import {
   listFailedOutboxEvents,
   retryFailedOutboxEvent,
@@ -46,6 +46,13 @@ describe('outbox-triage', () => {
       expect(result.value[0].publicId).toBe(created1.value.publicId)
       expect(result.value[0].type).toBe('FormSubmissionCreated')
       expect(result.value[0].status).toBe(IOutboxEventStatus.FAILED)
+      expect(result.value[0]).not.toHaveProperty('payload')
+    })
+
+    it('usa limite padrão 50 quando omitido', async () => {
+      const spy = vi.spyOn(repository, 'findFailed')
+      await listFailedOutboxEvents(repository)
+      expect(spy).toHaveBeenCalledWith(50)
     })
 
     it('propaga erro quando o repositório falha', async () => {
@@ -104,6 +111,40 @@ describe('outbox-triage', () => {
 
       expect(isErr(result)).toBe(true)
     })
+
+    it('retorna err quando findByPublicId falha após o retry', async () => {
+      const created = await repository.create({
+        status: IOutboxEventStatus.FAILED,
+        type: 'FormSubmissionCreated',
+        payload: {},
+      })
+      if (!isOk(created)) throw new Error('setup')
+
+      repository.shouldFailOn.findByPublicId = true
+
+      const result = await retryFailedOutboxEvent(repository, created.value.publicId)
+
+      expect(isErr(result)).toBe(true)
+      expect(mockEnqueueOutboxDispatch).not.toHaveBeenCalled()
+    })
+
+    it('retorna ok(true) mas não enfileira se findByPublicId retornar null', async () => {
+      const created = await repository.create({
+        status: IOutboxEventStatus.FAILED,
+        type: 'FormSubmissionCreated',
+        payload: {},
+      })
+      if (!isOk(created)) throw new Error('setup')
+
+      vi.spyOn(repository, 'findByPublicId').mockResolvedValueOnce(ok(null))
+
+      const result = await retryFailedOutboxEvent(repository, created.value.publicId)
+
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(true)
+      expect(mockEnqueueOutboxDispatch).not.toHaveBeenCalled()
+    })
   })
 
   describe('retryAllFailedOutboxEvents', () => {
@@ -127,6 +168,29 @@ describe('outbox-triage', () => {
       expect(result.value).toBe(2)
       expect(mockEnqueueOutboxDispatch).toHaveBeenCalledTimes(2)
       expect(repository.items.every((e) => e.status === IOutboxEventStatus.PENDING)).toBe(true)
+    })
+
+    it('usa limite padrão 50 quando omitido', async () => {
+      const spy = vi.spyOn(repository, 'findFailed')
+      await retryAllFailedOutboxEvents(repository)
+      expect(spy).toHaveBeenCalledWith(50)
+    })
+
+    it('não incrementa contador se retryFailed retornar false', async () => {
+      const ev = await repository.create({
+        status: IOutboxEventStatus.FAILED,
+        type: 'FormSubmissionCreated',
+        payload: {},
+      })
+      if (!isOk(ev)) throw new Error('setup')
+
+      vi.spyOn(repository, 'retryFailed').mockResolvedValueOnce(ok(false))
+
+      const result = await retryAllFailedOutboxEvents(repository, 10)
+
+      expect(isOk(result)).toBe(true)
+      if (!isOk(result)) return
+      expect(result.value).toBe(0)
     })
 
     it('propaga erro quando findFailed falha no repositório', async () => {
@@ -177,6 +241,13 @@ describe('outbox-triage', () => {
       expect(result.value).toBe(1)
       expect(repository.items).toHaveLength(1)
       expect(repository.items[0].publicId).toBe(recentFailed.value.publicId)
+    })
+
+    it('usa batchSize padrão 1000 quando omitido', async () => {
+      const spy = vi.spyOn(repository, 'deleteFailedOlderThan')
+      const cutoff = new Date()
+      await purgeFailedOutboxEvents(repository, cutoff)
+      expect(spy).toHaveBeenCalledWith(cutoff, 1000)
     })
   })
 })
