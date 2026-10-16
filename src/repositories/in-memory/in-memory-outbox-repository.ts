@@ -7,8 +7,7 @@ import {
   OutboxClaimFilter,
 } from 'core/contracts/repository/outbox-repository.interface'
 import { Result, ok, err } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { InfrastructureError } from 'errors/infrastructure-error'
+import { AppError, InfrastructureError } from 'errors'
 
 class InMemoryOutboxError extends InfrastructureError {
   constructor(message: string) {

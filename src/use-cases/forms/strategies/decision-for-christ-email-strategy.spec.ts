@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { DecisionForChristEmailStrategy } from './decision-for-christ-email-strategy'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 import { isOk, isErr } from 'core/shared/result'
-import { InvalidFormPayloadError } from '@use-cases/errors/forms/invalid-form-payload-error'
+import { InvalidFormPayloadError } from 'errors'
 import { env } from '@env/index'
 
 describe('DecisionForChristEmailStrategy', async () => {

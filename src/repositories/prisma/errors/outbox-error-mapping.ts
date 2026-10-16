@@ -1,11 +1,11 @@
 import {
+  AppError,
   OutboxEventNotFoundHttpError,
   OutboxEventNotFoundInfraError,
   OutboxOperationFailedHttpError,
   OutboxOperationFailedInfraError,
-} from '@use-cases/errors/outbox/outbox-errors'
+} from 'errors'
 import { PrismaErrorMappingConfig } from '@lib/prisma/utils/prisma-error-mapper'
-import { AppError } from 'errors/app-error'
 import { Prisma } from '@prisma/client'
 
 export const outboxHttpPrismaErrorMapping: PrismaErrorMappingConfig<AppError> = {

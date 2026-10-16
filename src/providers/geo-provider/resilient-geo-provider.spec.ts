@@ -23,12 +23,14 @@ import {
   EnumGeoPrecision,
   IGeoSearchOptions,
 } from 'core/contracts/use-cases/providers/geo-provider.interface'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
-import { NoGeoProviderError } from './error/no-geo-provider-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
+import {
+  CoordinatesNotFoundError,
+  DeadlineExceededError,
+  NoGeoProviderError,
+  ProviderFailureError,
+  ServiceBusyError,
+  TimeoutExceededError,
+} from 'errors'
 import { Deadline } from 'core/shared/deadline'
 import { logger } from '@lib/logger'
 import { ok, err, isOk, isErr } from 'core/shared/result'

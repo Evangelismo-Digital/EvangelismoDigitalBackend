@@ -2,10 +2,9 @@ import { InMemoryUsersRepository } from '@repositories/in-memory/in-memory-users
 import { describe, it, expect, vi } from 'vitest'
 import { RegisterUserUseCase } from './register-user'
 import { compare } from 'bcryptjs'
-import { UserAlreadyExistsError } from '@use-cases/errors/user-already-exists-error'
+import { UserAlreadyExistsError, UserNotCreatedError } from 'errors'
 import { UserRole } from 'core/contracts/repository/users-repository.interface'
 import { cpf as cpfValidator } from 'cpf-cnpj-validator'
-import { UserNotCreatedError } from '@use-cases/errors/user-not-created-error'
 import { isOk, isErr, ok, err } from 'core/shared/result'
 
 describe('Register Use Case', () => {

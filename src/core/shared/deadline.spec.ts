@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import fc from 'fast-check'
 import { Deadline, DEADLINE_EXPIRED_REASON } from './deadline'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
+import { DeadlineExceededError } from 'errors'
 import { ErrorType } from 'core/types/error-type/error-type'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 import { TelemetryReason } from 'core/types/telemetry/telemetry-reason.enum'

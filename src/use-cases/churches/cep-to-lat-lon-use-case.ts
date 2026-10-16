@@ -1,7 +1,5 @@
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
+import { AppError, CepToLatLonError, CoordinatesNotFoundError, InvalidCepError } from 'errors'
 import { logger } from '@lib/logger'
-import { CepToLatLonError } from '@use-cases/errors/cep-to-lat-lon-error'
 import {
   IGeocodingProvider,
   IGeoCoordinates,
@@ -10,7 +8,6 @@ import {
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { Deadline } from 'core/shared/deadline'
 import { Result, ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 import { CHURCH_CONSTANTS } from 'messages/constants/churches/churches'
 

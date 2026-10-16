@@ -2,7 +2,7 @@ import { IAddressProvider, IAddressData } from 'core/contracts/use-cases/provide
 import { IRawAddressProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
 import { Deadline } from 'core/shared/deadline'
 import { Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 import { runGuardedAttempt } from 'providers/helpers/guarded-attempt'
 import Redis from 'ioredis'
 

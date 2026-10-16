@@ -67,7 +67,7 @@ import { OUTBOX_CONSTANTS } from 'messages/constants/outbox/outbox'
 import { PASSWORD_RESET_CONSTANTS } from 'messages/constants/auth/password-reset'
 import { ContactEmailStrategy } from '@use-cases/forms/strategies/contact-email-strategy'
 import { DecisionForChristEmailStrategy } from '@use-cases/forms/strategies/decision-for-christ-email-strategy'
-import { InfrastructureError } from 'errors/infrastructure-error'
+import { InfrastructureError } from 'errors'
 import { logger } from '@lib/logger'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 

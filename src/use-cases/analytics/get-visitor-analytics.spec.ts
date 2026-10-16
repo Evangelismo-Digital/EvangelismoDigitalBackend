@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { InMemoryAnalyticsRepository } from '@repositories/in-memory/in-memory-analytics-repository'
 import { err, isErr, isOk } from 'core/shared/result'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
-import { VisitorNotFoundError } from '@use-cases/errors/visitor-not-found-error'
+import { DatabaseQueryError, VisitorNotFoundError } from 'errors'
 import { GetVisitorAnalyticsUseCase } from './get-visitor-analytics'
 
 let repository: InMemoryAnalyticsRepository

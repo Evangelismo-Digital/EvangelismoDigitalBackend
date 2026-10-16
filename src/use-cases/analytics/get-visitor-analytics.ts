@@ -5,8 +5,7 @@ import {
   IAnalyticsVisitor,
 } from 'core/contracts/repository/analytics-repository.interface'
 import { Result, ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { VisitorNotFoundError } from '@use-cases/errors/visitor-not-found-error'
+import { AppError, VisitorNotFoundError } from 'errors'
 
 export interface GetVisitorAnalyticsRequest {
   visitorId: string

@@ -6,7 +6,7 @@ import {
 } from 'core/contracts/repository/outbox-repository.interface'
 import { OutboxEventInput } from 'core/types/outbox/outbox-event-input'
 import { Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 
 /**
  * Registro genérico de eventos na Outbox. A montagem do payload é

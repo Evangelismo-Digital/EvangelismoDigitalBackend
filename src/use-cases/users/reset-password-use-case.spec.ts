@@ -5,13 +5,12 @@ import { OutboxEventUseCase } from '@use-cases/outbox-event/outbox-event-use-cas
 import { RegisterUserUseCase } from './register-user'
 import { ForgotPasswordUseCase } from './forgot-password'
 import { ResetPasswordUseCase } from './reset-password'
-import { InvalidTokenError } from '@use-cases/errors/invalid-token-error'
+import { InfrastructureError, InvalidTokenError } from 'errors'
 import { UserRole } from 'core/contracts/repository/users-repository.interface'
 import { PasswordResetRequestedPayload } from 'core/types/outbox/outbox-event-input'
 import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { compare } from 'bcryptjs'
 import { isOk, isErr, err } from 'core/shared/result'
-import { InfrastructureError } from 'errors/infrastructure-error'
 
 class InfraTestError extends InfrastructureError {
   constructor() {

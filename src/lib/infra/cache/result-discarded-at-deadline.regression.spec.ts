@@ -32,9 +32,7 @@ vi.mock('@lib/metrics/cache-metrics', () => ({
 import { ResilientCache } from './resilient-cache'
 import { Deadline } from 'core/shared/deadline'
 import { ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
+import { AppError, DeadlineExceededError, InvalidCepError } from 'errors'
 
 describe('regression: work that finished must not be discarded by the clock', () => {
   let cache: ResilientCache<AppError>

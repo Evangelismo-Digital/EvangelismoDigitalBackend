@@ -24,7 +24,7 @@ import { NearbyChurch } from 'core/contracts/repository/churches-repository.inte
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { ROUTING_MAX_DISTANCE_KM } from 'messages/constants/churches/churches'
 import { ok, isOk, isErr } from 'core/shared/result'
-import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
+import { NoNearbyChurchesFoundError } from 'errors'
 
 const user = { userLat: -23.5505, userLon: -46.6333 }
 

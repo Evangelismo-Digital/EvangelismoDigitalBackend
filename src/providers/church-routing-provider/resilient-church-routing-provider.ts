@@ -1,6 +1,5 @@
 import { logger } from '@lib/logger'
-import { NoRoutingProviderError } from './error/no-routing-provider-error'
-import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
+import { AppError, NoNearbyChurchesFoundError, NoRoutingProviderError } from 'errors'
 import {
   IChurchRoutingProvider,
   RouteDistanceResult,
@@ -9,7 +8,6 @@ import {
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { Deadline } from 'core/shared/deadline'
 import { Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 import { ProviderChainNarrator, runProviderChain } from 'providers/helpers/provider-chain'
 
 /**

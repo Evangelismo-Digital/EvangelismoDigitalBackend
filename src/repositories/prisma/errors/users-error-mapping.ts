@@ -1,7 +1,5 @@
-import { UserAlreadyExistsError } from '@use-cases/errors/user-already-exists-error'
-import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
+import { AppError, UserAlreadyExistsError, UserNotFoundError } from 'errors'
 import { PrismaErrorMappingConfig } from '@lib/prisma/utils/prisma-error-mapper'
-import { AppError } from 'errors/app-error'
 
 export const userPrismaErrorMapping: PrismaErrorMappingConfig<AppError> = {
   P2002: () => new UserAlreadyExistsError(), // Unique constraint violation (create)

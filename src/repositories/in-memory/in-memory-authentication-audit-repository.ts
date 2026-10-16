@@ -5,7 +5,7 @@ import {
   AuthenticationAuditRepository,
 } from 'core/contracts/repository/authentication-audit-repository.interface'
 import { Result, ok } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 
 export class InMemoryAuthenticationAuditRepository implements AuthenticationAuditRepository {
   public items: AuthenticationAudit[] = []

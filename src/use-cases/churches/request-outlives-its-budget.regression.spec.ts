@@ -37,7 +37,7 @@ import { CalculateChurchRouteDistancesUseCase } from './calculate-church-route-d
 import { makeNearestChurchesCacheOptions } from './church-lookup-cache-policy'
 import { Deadline } from 'core/shared/deadline'
 import { isErr } from 'core/shared/result'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
+import { DeadlineExceededError } from 'errors'
 import { HTTP_DEADLINE_POLICIES } from '@http/policies/deadline'
 import { CACHE_CONFIG } from 'messages/constants/cache/cache'
 

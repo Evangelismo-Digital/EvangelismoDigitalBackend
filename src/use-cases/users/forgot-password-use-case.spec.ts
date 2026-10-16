@@ -10,7 +10,7 @@ import { PasswordResetRequestedPayload } from 'core/types/outbox/outbox-event-in
 import { PASSWORD_RESET_CONSTANTS } from 'messages/constants/auth/password-reset'
 import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { isOk, isErr, err } from 'core/shared/result'
-import { InfrastructureError } from 'errors/infrastructure-error'
+import { InfrastructureError } from 'errors'
 
 class InfraTestError extends InfrastructureError {
   constructor() {

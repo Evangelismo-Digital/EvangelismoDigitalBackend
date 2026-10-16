@@ -1,6 +1,5 @@
 import { Prisma } from '@prisma/client'
-import { AppError } from 'errors/app-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { AppError, DatabaseQueryError } from 'errors'
 import { IErrorMapper } from 'core/contracts/errors/error-mapper.interface'
 import { safeLookup } from 'core/shared/safe-lookup'
 

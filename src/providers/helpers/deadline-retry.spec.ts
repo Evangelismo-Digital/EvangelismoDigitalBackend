@@ -11,10 +11,7 @@ import { logger } from '@lib/logger'
 import { Deadline } from 'core/shared/deadline'
 import { isOk, isErr } from 'core/shared/result'
 import { AxiosError } from 'axios'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
+import { DeadlineExceededError, InvalidCepError, ProviderFailureError, ServiceBusyError } from 'errors'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 /** A 429 maps to ServiceBusyError, which is RETRYABLE. */

@@ -1,8 +1,6 @@
 import { ChurchesRepository } from 'core/contracts/repository/churches-repository.interface'
-import { ChurchAlreadyExistsError } from '@use-cases/errors/church-already-exists-error'
-import { NoAddressError } from '@use-cases/errors/no-address-error'
+import { AppError, ChurchAlreadyExistsError, NoAddressError } from 'errors'
 import { Result, ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 
 interface CreateChurchUseCaseRequest {
   name: string

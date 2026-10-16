@@ -30,7 +30,7 @@ import { ResilientGeocodingProviderDecorator } from 'providers/geo-provider/deco
 import { Deadline } from 'core/shared/deadline'
 import { isErr } from 'core/shared/result'
 import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
+import { DeadlineExceededError } from 'errors'
 import type Redis from 'ioredis'
 
 const redis = {} as Redis

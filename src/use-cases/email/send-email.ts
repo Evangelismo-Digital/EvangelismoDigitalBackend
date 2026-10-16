@@ -1,8 +1,7 @@
 import { Attachment } from 'nodemailer/lib/mailer'
 import type { SentMessageInfo } from 'core/contracts/lib/mail/mail-sender.interface'
 import { Result, ok, err } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { SmtpDispatchError } from '@lib/errors/queue/smtp-dispatch-error'
+import { AppError, SmtpDispatchError } from 'errors'
 import { MailSender } from 'core/contracts/lib/mail/mail-sender.interface'
 
 interface SendEmailUseCaseRequest {

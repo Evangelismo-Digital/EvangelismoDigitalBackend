@@ -1,9 +1,7 @@
 import { ChurchesRepository, NearbyChurch } from 'core/contracts/repository/churches-repository.interface'
-import { LatitudeRangeError } from '@use-cases/errors/latitude-range-error'
-import { LongitudeRangeError } from '@use-cases/errors/longitude-range-error'
+import { AppError, LatitudeRangeError, LongitudeRangeError } from 'errors'
 import { Deadline } from 'core/shared/deadline'
 import { Result, ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 import { CHURCH_CONSTANTS } from 'messages/constants/churches/churches'
 import { MAX_LATITUDE, MAX_LONGITUDE, MIN_LATITUDE, MIN_LONGITUDE } from 'core/constants/geo'
 

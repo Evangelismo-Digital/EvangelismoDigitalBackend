@@ -1,10 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Prisma } from '@prisma/client'
 import { PrismaErrorMapper } from './prisma-error-mapper'
-import { AppError } from 'errors/app-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
-import { UserAlreadyExistsError } from '@use-cases/errors/user-already-exists-error'
-import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
+import { AppError, DatabaseQueryError, UserAlreadyExistsError, UserNotFoundError } from 'errors'
 
 function knownError(code: string) {
   return new Prisma.PrismaClientKnownRequestError(`prisma ${code}`, {

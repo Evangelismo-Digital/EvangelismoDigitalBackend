@@ -35,12 +35,14 @@ vi.mock('@lib/metrics/cache-metrics', () => ({
 
 import { ResilientCache } from './resilient-cache'
 import { err } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import {
+  AppError,
+  DatabaseQueryError,
+  DeadlineExceededError,
+  InvalidCepError,
+  NoNearbyChurchesFoundError,
+} from 'errors'
 import { ErrorType } from 'core/types/error-type/error-type'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
 
 /** An InfrastructureError with no failureMode — the shape that used to be cached. */
 class UntaggedInfraError extends AppError {

@@ -22,11 +22,8 @@ import { IRawChurchRoutingProvider } from 'core/contracts/use-cases/providers/ra
 import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { isOk, isErr } from 'core/shared/result'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { DeadlineExceededError, ProviderFailureError, ServiceBusyError, TimeoutExceededError } from 'errors'
 import { Deadline } from 'core/shared/deadline'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
 
 function makeRaw(overrides: Partial<IRawChurchRoutingProvider> = {}): IRawChurchRoutingProvider {
   return {

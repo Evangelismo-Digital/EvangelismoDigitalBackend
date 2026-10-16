@@ -1,6 +1,6 @@
 import { Church, ChurchesRepository } from 'core/contracts/repository/churches-repository.interface'
 import { Result, ok, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 
 interface DeleteChurchUseCaseRequest {
   publicId: string

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { InMemoryAnalyticsRepository } from '@repositories/in-memory/in-memory-analytics-repository'
 import { err, isErr, isOk } from 'core/shared/result'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { DatabaseQueryError } from 'errors'
 import { StartAnalyticsSessionUseCase } from './start-analytics-session'
 
 let repository: InMemoryAnalyticsRepository

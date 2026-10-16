@@ -7,7 +7,7 @@ import { IRawChurchRoutingProvider } from 'core/contracts/use-cases/providers/ra
 import { Deadline } from 'core/shared/deadline'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 import { runGuardedAttempt } from 'providers/helpers/guarded-attempt'
 import Redis from 'ioredis'
 

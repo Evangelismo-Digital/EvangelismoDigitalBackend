@@ -1,7 +1,7 @@
 import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { Deadline } from 'core/shared/deadline'
 import { Result, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 import { runWithRetries } from 'providers/helpers/deadline-retry'
 import { checkAdmission } from 'providers/helpers/provider-admission'
 import Redis from 'ioredis'

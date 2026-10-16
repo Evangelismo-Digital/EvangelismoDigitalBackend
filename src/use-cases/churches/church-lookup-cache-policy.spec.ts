@@ -4,17 +4,19 @@ import {
   negativeTtlForChurchLookup,
   makeNearestChurchesCacheOptions,
 } from './church-lookup-cache-policy'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
-import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
-import { EmptyChurchListError } from '@use-cases/errors/empty-church-list-error'
-import { CepToLatLonError } from '@use-cases/errors/cep-to-lat-lon-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
+import {
+  AppError,
+  CepToLatLonError,
+  CoordinatesNotFoundError,
+  DeadlineExceededError,
+  EmptyChurchListError,
+  InvalidCepError,
+  NoNearbyChurchesFoundError,
+  ServiceBusyError,
+} from 'errors'
 import { ResilientCache } from '@lib/infra/cache/resilient-cache'
 import { CACHE_CONFIG } from 'messages/constants/cache/cache'
 import { err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 
 vi.mock('@lib/logger', () => ({
   logger: { warn: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },

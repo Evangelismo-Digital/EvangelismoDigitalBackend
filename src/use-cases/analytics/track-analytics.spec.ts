@@ -2,7 +2,7 @@ import { InMemoryAnalyticsRepository } from '@repositories/in-memory/in-memory-a
 import { TrackAnalyticsUseCase } from './track-analytics'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { err, isErr, isOk } from 'core/shared/result'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { DatabaseQueryError } from 'errors'
 
 let analyticsRepository: InMemoryAnalyticsRepository
 let trackAnalyticsUseCase: TrackAnalyticsUseCase

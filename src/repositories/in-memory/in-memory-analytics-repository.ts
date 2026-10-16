@@ -11,7 +11,7 @@ import {
   UpsertVisitorInput,
 } from 'core/contracts/repository/analytics-repository.interface'
 import { Result, ok } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 import {
   toEventAttributes,
   toSessionAttributes,

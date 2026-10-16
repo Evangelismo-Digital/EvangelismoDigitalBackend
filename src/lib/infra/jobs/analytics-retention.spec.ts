@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InMemoryAnalyticsRepository } from '@repositories/in-memory/in-memory-analytics-repository'
 import { logger } from '@lib/logger'
 import { err, ok } from 'core/shared/result'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { DatabaseQueryError } from 'errors'
 import { AnalyticsRetention } from './analytics-retention'
 
 const { lockMock } = vi.hoisted(() => ({ lockMock: vi.fn() }))

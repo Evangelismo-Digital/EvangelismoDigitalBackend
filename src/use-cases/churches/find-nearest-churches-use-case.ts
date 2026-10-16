@@ -8,7 +8,7 @@ import { NearbyChurch } from 'core/contracts/repository/churches-repository.inte
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { Deadline } from 'core/shared/deadline'
 import { Result, ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 
 export interface FindNearestChurchesRequest {
   cep: string

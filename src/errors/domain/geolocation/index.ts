@@ -1,0 +1,6 @@
+export { CepToLatLonError } from './cep-to-lat-lon-error'
+export { CoordinatesNotFoundError } from './coordinates-not-found-error'
+export { InvalidCepError } from './invalid-cep-error'
+export { LatitudeRangeError } from './latitude-range-error'
+export { LongitudeRangeError } from './longitude-range-error'
+export { NoAddressError } from './no-address-error'

@@ -9,8 +9,7 @@ vi.mock('@lib/infra/rate-limiter/redis-rate-limiter', () => ({
 import { checkAdmission } from './provider-admission'
 import { Deadline } from 'core/shared/deadline'
 import { isOk, isErr } from 'core/shared/result'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { DeadlineExceededError, ServiceBusyError } from 'errors'
 import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import type Redis from 'ioredis'
 

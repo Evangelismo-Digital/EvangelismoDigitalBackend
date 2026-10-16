@@ -7,7 +7,7 @@ import {
 } from 'core/contracts/repository/outbox-repository.interface'
 import { OUTBOX_EVENT_TYPES } from 'core/types/outbox/outbox-event-input'
 import { ok, err, isErr } from 'core/shared/result'
-import { OutboxOperationFailedInfraError } from '@use-cases/errors/outbox/outbox-errors'
+import { OutboxOperationFailedInfraError } from 'errors'
 import { Prisma } from '@prisma/client'
 
 function makeRepository(): IOutboxRepository {

@@ -8,7 +8,7 @@ import { DecisionForChristStaffEmail } from '@templates/react/decision-for-chris
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 import { IMailJobData } from 'core/contracts/lib/queue/mail-job-data.interface'
 import { Result, ok, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 import {
   buildStaffMailJob,
   buildUserMailJob,

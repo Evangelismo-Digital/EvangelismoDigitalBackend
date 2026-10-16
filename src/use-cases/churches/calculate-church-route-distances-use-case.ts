@@ -7,9 +7,7 @@ import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { ROUTING_MAX_DISTANCE_KM } from 'messages/constants/churches/churches'
 import { Deadline } from 'core/shared/deadline'
 import { Result, ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { EmptyChurchListError } from '@use-cases/errors/empty-church-list-error'
-import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
+import { AppError, EmptyChurchListError, NoNearbyChurchesFoundError } from 'errors'
 
 /* =======================
    Input Types

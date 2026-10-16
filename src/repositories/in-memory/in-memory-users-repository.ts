@@ -7,8 +7,7 @@ import {
   UserWhereUniqueInput,
 } from 'core/contracts/repository/users-repository.interface'
 import { Result, ok, err } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
+import { AppError, UserNotFoundError } from 'errors'
 import { randomUUID } from 'node:crypto'
 import { USERS_PAGE_SIZE } from 'core/constants/pagination'
 

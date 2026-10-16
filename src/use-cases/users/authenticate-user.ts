@@ -1,11 +1,10 @@
 import { emailSchema } from 'core/validation/email'
 import { User, AuthenticationStatus } from '@prisma/client'
 import { UsersRepository } from 'core/contracts/repository/users-repository.interface'
-import { InvalidCredentialsError } from '@use-cases/errors/invalid-credentials-error'
+import { AppError, InvalidCredentialsError } from 'errors'
 import { compare } from 'bcryptjs'
 import { AuthenticationAuditUseCase } from '@use-cases/authentication-audit/authentication-audit'
 import { Result, ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 
 interface AuthenticationAuditContext {
   ipAddress: string

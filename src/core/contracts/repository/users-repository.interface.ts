@@ -1,6 +1,6 @@
 import { User } from '@prisma/client'
 import { Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 
 export enum UserRole {
   ADMIN = 'ADMIN',

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { ChurchesRepository } from 'core/contracts/repository/churches-repository.interface'
 import { isOk, isErr } from 'core/shared/result'
-import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
+import { ChurchNotFoundError } from 'errors'
 
 /**
  * The behaviour every `ChurchesRepository` must exhibit, run against **both**

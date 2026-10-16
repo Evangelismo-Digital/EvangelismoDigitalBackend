@@ -1,17 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import { serializeAppError, deserializeAppError, AppErrorRegistry } from './app-error-registry'
 import { AppError } from './app-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
-import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
-import { CepToLatLonError } from '@use-cases/errors/cep-to-lat-lon-error'
-import { EmptyChurchListError } from '@use-cases/errors/empty-church-list-error'
-import { ServiceBusyError } from './infrastructure/service-busy-error'
-import { ServiceOverloadError } from './infrastructure/service-overload-error'
-import { TimeoutExceededError } from './infrastructure/timeout-exceeded-error'
-import { DeadlineExceededError } from './infrastructure/deadline-exceeded-error'
-import { ProviderFailureError } from './infrastructure/provider-failure-error'
-import { CircuitOpenError } from './infrastructure/circuit-open-error'
+import {
+  CepToLatLonError,
+  CircuitOpenError,
+  CoordinatesNotFoundError,
+  DeadlineExceededError,
+  EmptyChurchListError,
+  InvalidCepError,
+  NoNearbyChurchesFoundError,
+  ProviderFailureError,
+  ServiceBusyError,
+  ServiceOverloadError,
+  TimeoutExceededError,
+} from 'errors'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 describe('serializeAppError', () => {

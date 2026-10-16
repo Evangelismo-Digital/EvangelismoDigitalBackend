@@ -16,7 +16,10 @@
     "paths": {
       "app": ["./src/app.ts"],
       "core/*": ["./src/core/*"],
+      "errors": ["./src/errors/index.ts"],
       "errors/*": ["./src/errors/*"],
+      "@errors": ["./src/errors/index.ts"],
+      "@errors/*": ["./src/errors/*"],
       "messages/*": ["./src/messages/*"],
       "providers/*": ["./src/providers/*"],
       "@env/*": ["./src/env/*"],

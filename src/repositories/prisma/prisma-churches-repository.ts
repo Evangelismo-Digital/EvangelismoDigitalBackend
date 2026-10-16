@@ -7,9 +7,7 @@ import {
   ChurchAlreadyExists,
 } from '../../core/contracts/repository/churches-repository.interface'
 import { Result, ok, err } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
-import { CreateChurchError } from '@use-cases/errors/create-church-error'
+import { AppError, ChurchNotFoundError, CreateChurchError } from 'errors'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
 import { DISTANCE_DECIMAL_PLACES, METERS_PER_KILOMETER } from 'core/constants/geo'
 

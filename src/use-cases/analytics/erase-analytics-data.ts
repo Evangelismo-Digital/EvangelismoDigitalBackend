@@ -1,6 +1,6 @@
 import { AnalyticsRepository } from 'core/contracts/repository/analytics-repository.interface'
 import { Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 
 /**
  * Erases a data subject's analytics record (§5.1, §5.3).

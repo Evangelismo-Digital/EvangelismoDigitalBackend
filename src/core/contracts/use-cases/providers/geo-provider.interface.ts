@@ -1,6 +1,6 @@
 import { Deadline } from 'core/shared/deadline'
 import { Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 
 export enum EnumGeoPrecision {
   ROOFTOP = 'ROOFTOP',

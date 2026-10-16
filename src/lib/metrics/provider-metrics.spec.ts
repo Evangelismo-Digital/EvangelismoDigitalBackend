@@ -30,11 +30,7 @@ import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/provide
 import { IGeoCoordinates, IGeocodingProvider } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IRawChurchRoutingProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
 import { Result, ok, err } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import { AppError, DeadlineExceededError, ProviderFailureError, ServiceBusyError, TimeoutExceededError } from 'errors'
 import { getRegistry } from '@lib/metrics'
 import {
   collectMetricsProviderRequest,

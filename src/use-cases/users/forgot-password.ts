@@ -5,7 +5,7 @@ import { IOutboxEventRegistration } from 'core/contracts/use-cases/outbox-event/
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 import { OUTBOX_EVENT_TYPES } from 'core/types/outbox/outbox-event-input'
 import { Result, ok, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 import { PASSWORD_RESET_CONSTANTS } from 'messages/constants/auth/password-reset'
 import { hashResetToken } from './helpers/token-hash'
 import ms from 'ms'

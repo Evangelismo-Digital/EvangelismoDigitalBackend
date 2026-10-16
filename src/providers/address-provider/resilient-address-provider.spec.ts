@@ -10,12 +10,14 @@ vi.mock('@lib/logger', () => ({
 }))
 
 import { ResilientAddressProvider } from './resilient-address-provider'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { NoAddressProviderError } from './error/no-address-provider-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
+import {
+  DeadlineExceededError,
+  InvalidCepError,
+  NoAddressProviderError,
+  ProviderFailureError,
+  ServiceBusyError,
+  TimeoutExceededError,
+} from 'errors'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { Deadline } from 'core/shared/deadline'
 import { logger } from '@lib/logger'

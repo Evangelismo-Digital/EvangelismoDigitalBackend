@@ -1,7 +1,7 @@
 import { Counter, Histogram } from 'prom-client'
 import { getRegistry } from './index'
 import { Result, isOk } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 import { TelemetryReason } from 'core/types/telemetry/telemetry-reason.enum'
 
 const registry = getRegistry()

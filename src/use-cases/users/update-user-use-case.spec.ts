@@ -1,11 +1,10 @@
 import { InMemoryUsersRepository } from '@repositories/in-memory/in-memory-users-repository'
 import { describe, it, expect, vi } from 'vitest'
 import { RegisterUserUseCase } from './register-user'
-import { UserAlreadyExistsError } from '@use-cases/errors/user-already-exists-error'
+import { UserAlreadyExistsError, UserNotFoundError } from 'errors'
 import { UserRole } from 'core/contracts/repository/users-repository.interface'
 import { UpdateUserUseCase } from './update-user'
 import { cpf as cpfValidator } from 'cpf-cnpj-validator'
-import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
 import { isOk, isErr, ok, err } from 'core/shared/result'
 
 describe('Update Use Case', () => {

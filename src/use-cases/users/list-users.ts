@@ -1,7 +1,7 @@
 import { User } from '@prisma/client'
 import { UsersRepository } from 'core/contracts/repository/users-repository.interface'
 import { Result, ok, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 
 type ListUsersUseCaseResponse = {
   users: User[]

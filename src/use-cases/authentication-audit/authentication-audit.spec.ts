@@ -16,7 +16,7 @@ import { AuthenticationAuditUseCase } from './authentication-audit'
 import { AuthenticationAuditRepository } from 'core/contracts/repository/authentication-audit-repository.interface'
 import { AuthenticationAudit } from '@prisma/client'
 import { ok, err, isOk, isErr } from 'core/shared/result'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { DatabaseQueryError } from 'errors'
 import { logger } from '@lib/logger'
 
 describe('AuthenticationAuditUseCase', () => {

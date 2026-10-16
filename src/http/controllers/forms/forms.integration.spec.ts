@@ -16,7 +16,7 @@ import { prisma } from '@lib/prisma'
 import { closeAllRedisConnections } from '@lib/redis/clients/clients'
 import { PrismaOutboxRepository } from '@repositories/prisma/prisma-outbox-event-repository'
 import { err } from 'core/shared/result'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { DatabaseQueryError } from 'errors'
 import { OUTBOX_EVENT_TYPES } from 'core/types/outbox/outbox-event-input'
 
 import { OutboxProcessor } from '@lib/infra/jobs/outbox-processor'

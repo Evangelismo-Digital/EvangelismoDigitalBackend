@@ -12,17 +12,19 @@ vi.mock('@lib/logger', () => ({
 }))
 
 import { ResilientChurchRoutingProvider } from './resilient-church-routing-provider'
-import { NoRoutingProviderError } from './error/no-routing-provider-error'
+import {
+  CoordinatesNotFoundError,
+  DeadlineExceededError,
+  NoNearbyChurchesFoundError,
+  NoRoutingProviderError,
+  ProviderFailureError,
+  ServiceBusyError,
+} from 'errors'
 import {
   IChurchRoutingProvider,
   RouteDistanceResult,
 } from 'core/contracts/use-cases/providers/church-routing-provider.interface'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
-import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
 import { Deadline } from 'core/shared/deadline'
 import { logger } from '@lib/logger'
 import { ok, err, isOk, isErr } from 'core/shared/result'

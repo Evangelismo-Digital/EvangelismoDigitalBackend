@@ -1,8 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { FastifyReply } from 'fastify'
 import { HttpErrorMapper } from './http-error-mapper'
-import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { DatabaseQueryError, UserNotFoundError } from 'errors'
 import { ZodValidationError } from './zod-validation-error'
 
 function makeReply(sent = false) {

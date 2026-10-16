@@ -29,8 +29,7 @@ import { ResilientAddressProvider } from './resilient-address-provider'
 import { RedisRateLimiter, EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { getRedisCache, closeAllRedisConnections } from '@lib/redis/clients/clients'
 import { isOk, isErr } from 'core/shared/result'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { InvalidCepError, ServiceBusyError } from 'errors'
 
 const CEP = '01310100'
 

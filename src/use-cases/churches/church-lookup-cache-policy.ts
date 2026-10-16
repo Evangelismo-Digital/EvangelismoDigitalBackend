@@ -1,5 +1,5 @@
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 import { serializeAppError, deserializeAppError } from 'errors/app-error-registry'
 import { CacheCircuitBreakerOptions, ResilientCacheOptions } from '@lib/infra/cache/resilient-cache'
 import { CACHE_CONFIG } from 'messages/constants/cache/cache'

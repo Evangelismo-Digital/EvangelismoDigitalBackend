@@ -31,8 +31,7 @@ import { IGeocodingProvider, EnumGeoPrecision } from 'core/contracts/use-cases/p
 import { IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { Deadline } from 'core/shared/deadline'
 import { ok, err, isErr } from 'core/shared/result'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { DeadlineExceededError, ServiceBusyError } from 'errors'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 const coords = { lat: -23.55, lon: -46.63, precision: EnumGeoPrecision.ROOFTOP }

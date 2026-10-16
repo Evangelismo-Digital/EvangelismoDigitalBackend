@@ -61,11 +61,13 @@ vi.mock('@lib/logger', () => ({
 }))
 
 import { errorHandler } from './error-handler.plugin'
-import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
-import { DatabaseQueryError } from '../../errors/infrastructure/database-query-error'
-import { ServiceBusyError } from '../../errors/infrastructure/service-busy-error'
-import { DeadlineExceededError } from '../../errors/infrastructure/deadline-exceeded-error'
-import { TimeoutExceededError } from '../../errors/infrastructure/timeout-exceeded-error'
+import {
+  DatabaseQueryError,
+  DeadlineExceededError,
+  ServiceBusyError,
+  TimeoutExceededError,
+  UserNotFoundError,
+} from 'errors'
 
 // ----- Test helpers -----
 function createMockReply(overrides: Record<string, unknown> = {}) {

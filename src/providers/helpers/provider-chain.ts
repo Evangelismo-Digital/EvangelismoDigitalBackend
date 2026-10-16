@@ -1,8 +1,7 @@
 import { Deadline } from 'core/shared/deadline'
 import { Result, ok, err, isOk } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError, ProviderFailureError } from 'errors'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import {
   collectMetricsProviderLatency,
   collectMetricsProviderFallback,

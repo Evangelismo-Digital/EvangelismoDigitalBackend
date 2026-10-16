@@ -1,4 +1,4 @@
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 /**

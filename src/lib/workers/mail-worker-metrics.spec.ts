@@ -66,8 +66,7 @@ import { createMailJobProcessor } from './mail-worker'
 import { IOutboxRepository } from 'core/contracts/repository/outbox-repository.interface'
 import { IOutboxDispatchData } from 'core/contracts/lib/infra/outbox-dispatch-data.interface'
 import { ok, err } from 'core/shared/result'
-import { InfrastructureError } from 'errors/infrastructure-error'
-import { JobAlreadyProcessingError } from '@lib/errors/queue/job-already-processing-error'
+import { InfrastructureError, JobAlreadyProcessingError } from 'errors'
 import { getRegistry } from '@lib/metrics'
 import {
   collectMetricsEmailsSent,

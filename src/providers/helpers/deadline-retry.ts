@@ -1,6 +1,6 @@
 import { Deadline } from 'core/shared/deadline'
 import { Result, ok, err } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError, CircuitOpenError } from 'errors'
 import { abortRace } from 'core/shared/abort-race'
 import { FindNearestChurchesErrorMapper } from 'errors/mappings/find-nearest-churches-error-mapper'
 import { logger } from '@lib/logger'
@@ -15,7 +15,6 @@ import {
 } from 'cockatiel'
 import { getProviderCircuitBreaker } from './provider-circuit-breaker'
 import { isRetryableFailure } from './retryable-failure'
-import { CircuitOpenError } from 'errors/infrastructure/circuit-open-error'
 
 /**
  * Below this much remaining budget an attempt is not worth starting: the

@@ -5,7 +5,7 @@ import { OUTBOX_EVENT_TYPES } from 'core/types/outbox/outbox-event-input'
 import { FormSubmissionDispatchStrategy } from '@use-cases/forms/strategies/form-submission-dispatch-strategy'
 import { PasswordResetDispatchStrategy } from '@use-cases/users/strategies/password-reset-dispatch-strategy'
 import { isOk, isErr } from 'core/shared/result'
-import { UnknownOutboxEventTypeError } from '@lib/errors/outbox/unknown-outbox-event-type-error'
+import { UnknownOutboxEventTypeError } from 'errors'
 
 describe('makeOutboxDispatchStrategyRegistry', () => {
   it('returns an OutboxDispatchStrategyRegistry instance', () => {

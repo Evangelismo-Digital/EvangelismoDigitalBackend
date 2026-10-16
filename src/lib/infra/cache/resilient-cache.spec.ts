@@ -76,19 +76,21 @@ vi.mock('ioredis', () => {
 // // Imports reais
 import Redis from 'ioredis'
 import { ResilientCache } from './resilient-cache'
-import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import {
+  AppError,
+  DeadlineExceededError,
+  InvalidCepError,
+  ProviderFailureError,
+  ServiceBusyError,
+  ServiceOverloadError as InfraServiceOverloadError,
+  TimeoutExceededError,
+} from 'errors'
 import { Result, ok, err, isOk, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 import { AppErrorRegistry } from 'errors/app-error-registry'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 import { logger } from '@lib/logger'
 import { Deadline } from 'core/shared/deadline'
 import { CACHE_CONFIG } from 'messages/constants/cache/cache'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
 import {
   collectMetricsCacheHits,
   collectMetricsCacheMisses,

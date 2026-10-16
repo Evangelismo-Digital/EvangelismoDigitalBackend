@@ -1,6 +1,5 @@
 import { logger } from '@lib/logger'
-import { NoGeoProviderError } from './error/no-geo-provider-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
+import { AppError, CoordinatesNotFoundError, NoGeoProviderError } from 'errors'
 import {
   IGeocodingProvider,
   IGeoCoordinates,
@@ -8,7 +7,6 @@ import {
 } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { Deadline } from 'core/shared/deadline'
 import { Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 import { ProviderChainNarrator, runProviderChain } from 'providers/helpers/provider-chain'
 
 /**

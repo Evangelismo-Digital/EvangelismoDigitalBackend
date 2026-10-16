@@ -27,13 +27,15 @@ vi.mock('@lib/metrics/cache-metrics', () => ({
 
 import { ResilientCache } from './resilient-cache'
 import { ok, err, isOk, isErr, Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import {
+  AppError,
+  DeadlineExceededError,
+  ProviderFailureError,
+  ServiceOverloadError,
+  TimeoutExceededError,
+} from 'errors'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
-import { ServiceOverloadError } from 'errors/infrastructure/service-overload-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { Deadline } from 'core/shared/deadline'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
 
 class TestAppError extends AppError {
   constructor(failureMode: FailureMode = FailureMode.NOT_FOUND) {

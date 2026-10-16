@@ -1,6 +1,6 @@
 import { IOutboxRepository, IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 import { Result, ok, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 import { enqueueOutboxDispatch } from '@lib/queue/outbox-dispatch-queue'
 
 export interface FailedEventSummary {

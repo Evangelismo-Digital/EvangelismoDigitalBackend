@@ -14,8 +14,7 @@ vi.mock('@lib/logger', () => ({
 import { searchUsersController } from './search-users.controller'
 import { logger } from '@lib/logger'
 import { err, ok } from 'core/shared/result'
-import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { DatabaseQueryError, UserNotFoundError } from 'errors'
 
 function makeRequest(query = 'maria', page = 2) {
   return { query: { query, page } } as any

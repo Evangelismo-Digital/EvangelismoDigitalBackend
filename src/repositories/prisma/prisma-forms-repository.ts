@@ -1,13 +1,12 @@
 import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
-import { FormsNotFoundError } from '@use-cases/errors/forms/forms-not-found-error'
+import { AppError, FormsNotFoundError } from 'errors'
 import {
   FormsRepository,
   IFormSubmission,
   IFormSubmissionInputData,
 } from 'core/contracts/repository/forms-repository.interface'
 import { err, ok, Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 
 export class PrismaFormsRepository implements FormsRepository {
   constructor(

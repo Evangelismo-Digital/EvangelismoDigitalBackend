@@ -7,9 +7,7 @@ import {
 import { NearbyChurch } from 'core/contracts/repository/churches-repository.interface'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { ok, err, isOk, isErr } from 'core/shared/result'
-import { EmptyChurchListError } from '@use-cases/errors/empty-church-list-error'
-import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
+import { EmptyChurchListError, NoNearbyChurchesFoundError, ServiceBusyError } from 'errors'
 import { Deadline } from 'core/shared/deadline'
 
 function church(overrides: Partial<NearbyChurch> = {}): NearbyChurch {

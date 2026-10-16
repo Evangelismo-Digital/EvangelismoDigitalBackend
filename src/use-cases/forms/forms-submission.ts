@@ -1,9 +1,8 @@
 import { IOutboxEventRegistration } from 'core/contracts/use-cases/outbox-event/outbox-event.interface'
 import { FormsRepository, IFormSubmissionInputData } from 'core/contracts/repository/forms-repository.interface'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
-import { FormsAlreadyExistsError } from '@use-cases/errors/forms/forms-already-exists-error'
+import { AppError, FormsAlreadyExistsError } from 'errors'
 import { ok, err, isOk, isErr, Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 import { OUTBOX_EVENT_TYPES } from 'core/types/outbox/outbox-event-input'
 

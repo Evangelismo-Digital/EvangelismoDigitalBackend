@@ -9,7 +9,7 @@ import {
   UserWhereUniqueInput,
 } from 'core/contracts/repository/users-repository.interface'
 import { Result, ok, err } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
 import { USERS_PAGE_SIZE } from 'core/constants/pagination'
 

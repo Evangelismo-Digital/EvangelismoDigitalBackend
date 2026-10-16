@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { SendEmailUseCase } from './send-email'
 import { isOk, isErr } from 'core/shared/result'
-import { SmtpDispatchError } from '@lib/errors/queue/smtp-dispatch-error'
+import { SmtpDispatchError } from 'errors'
 import { MailSender } from 'core/contracts/lib/mail/mail-sender.interface'
 
 function makeMailSenderFake() {

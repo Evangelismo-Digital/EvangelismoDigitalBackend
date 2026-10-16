@@ -6,8 +6,7 @@ import {
   FindNearbyParams,
 } from 'core/contracts/repository/churches-repository.interface'
 import { Result, ok, err } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
+import { AppError, ChurchNotFoundError } from 'errors'
 import { randomUUID } from 'node:crypto'
 import {
   COORDINATE_DECIMAL_PLACES,

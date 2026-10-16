@@ -1,10 +1,8 @@
 import { logger } from '@lib/logger'
-import { NoAddressProviderError } from './error/no-address-provider-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
+import { AppError, InvalidCepError, NoAddressProviderError } from 'errors'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { Deadline } from 'core/shared/deadline'
 import { Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 import { ProviderChainNarrator, runProviderChain } from 'providers/helpers/provider-chain'
 
 /**

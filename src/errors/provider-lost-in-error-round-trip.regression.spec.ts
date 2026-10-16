@@ -19,8 +19,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { serializeAppError, deserializeAppError } from './app-error-registry'
-import { CircuitOpenError } from './infrastructure/circuit-open-error'
-import { ServiceBusyError } from './infrastructure/service-busy-error'
+import { CircuitOpenError, ServiceBusyError } from 'errors'
 
 function roundTrip(error: CircuitOpenError | ServiceBusyError) {
   const serialized = serializeAppError(error)

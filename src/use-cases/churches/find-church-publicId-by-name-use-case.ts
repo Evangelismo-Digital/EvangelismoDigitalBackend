@@ -1,7 +1,6 @@
 import { ChurchesRepository } from 'core/contracts/repository/churches-repository.interface'
-import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
+import { AppError, ChurchNotFoundError } from 'errors'
 import { Result, ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 
 interface FindChurchPublicIdByNameUseCaseRequest {
   name: string

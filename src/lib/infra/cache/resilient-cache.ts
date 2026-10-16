@@ -6,10 +6,12 @@ import { CACHE_CONFIG } from 'messages/constants/cache/cache'
 import { Deadline } from 'core/shared/deadline'
 import { abortRace } from 'core/shared/abort-race'
 import { Result, ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
-import { CircuitOpenError } from 'errors/infrastructure/circuit-open-error'
+import {
+  AppError,
+  CircuitOpenError,
+  ProviderFailureError,
+  ServiceOverloadError as InfraServiceOverloadError,
+} from 'errors'
 import {
   bulkhead,
   circuitBreaker,

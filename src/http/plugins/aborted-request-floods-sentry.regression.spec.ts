@@ -39,9 +39,7 @@ vi.mock('@lib/logger', () => ({
 }))
 
 import { errorHandler } from './error-handler.plugin'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { DatabaseQueryError, DeadlineExceededError, TimeoutExceededError } from 'errors'
 
 type Handler = (error: unknown, request: unknown, reply: unknown) => Promise<unknown>
 

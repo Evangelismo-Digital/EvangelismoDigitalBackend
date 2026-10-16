@@ -1,8 +1,7 @@
 import { User } from '@prisma/client'
 import { UsersRepository } from 'core/contracts/repository/users-repository.interface'
-import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
+import { AppError, UserNotFoundError } from 'errors'
 import { Result, ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 
 interface GetUserProfileUseCaseRequest {
   publicId: string

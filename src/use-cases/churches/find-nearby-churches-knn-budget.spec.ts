@@ -4,7 +4,7 @@ import { ChurchesRepository, FindNearbyParams } from 'core/contracts/repository/
 import { Deadline } from 'core/shared/deadline'
 import { ok, isErr } from 'core/shared/result'
 import { CHURCH_CONSTANTS } from 'messages/constants/churches/churches'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
+import { DeadlineExceededError } from 'errors'
 
 /**
  * The KNN leg is the one step the driver cannot cancel once it is running, so

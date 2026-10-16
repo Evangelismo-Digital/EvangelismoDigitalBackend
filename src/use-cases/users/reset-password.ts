@@ -1,11 +1,10 @@
 import { User } from '@prisma/client'
 import { hash } from 'bcryptjs'
-import { InvalidTokenError } from '../errors/invalid-token-error'
 import { UsersRepository } from 'core/contracts/repository/users-repository.interface'
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
 import { Result, ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError, InvalidTokenError } from 'errors'
 import { hashResetToken } from './helpers/token-hash'
 
 interface ResetPasswordUseCaseCaseRequest {

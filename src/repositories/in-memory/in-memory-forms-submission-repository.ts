@@ -4,8 +4,7 @@ import {
   IFormSubmissionInputData,
 } from 'core/contracts/repository/forms-repository.interface'
 import { Result, ok, err } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { FormsNotFoundError } from '@use-cases/errors/forms/forms-not-found-error'
+import { AppError, FormsNotFoundError } from 'errors'
 import { randomUUID } from 'node:crypto'
 
 export class InMemoryFormsSubmissionRepository implements FormsRepository {

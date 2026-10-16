@@ -1,7 +1,6 @@
 import { IOutboxDispatchStrategy } from 'core/contracts/lib/infra/outbox-dispatch-strategy.interface'
-import { UnknownOutboxEventTypeError } from '@lib/errors/outbox/unknown-outbox-event-type-error'
+import { AppError, UnknownOutboxEventTypeError } from 'errors'
 import { Result, ok, err } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 
 /**
  * Registro de estratégias de despacho por tipo de evento da Outbox.

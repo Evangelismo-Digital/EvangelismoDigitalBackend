@@ -23,10 +23,8 @@ vi.mock('@lib/metrics/cache-metrics', () => ({
 
 import { ResilientCache, ResilientCacheOptions } from './resilient-cache'
 import { ok, err, isOk, isErr, Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError, CircuitOpenError, ServiceOverloadError } from 'errors'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
-import { ServiceOverloadError } from 'errors/infrastructure/service-overload-error'
-import { CircuitOpenError } from 'errors/infrastructure/circuit-open-error'
 
 class TestAppError extends AppError {
   constructor(failureMode: FailureMode) {

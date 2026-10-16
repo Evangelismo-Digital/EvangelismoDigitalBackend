@@ -26,9 +26,7 @@ import { PrismaChurchesRepository } from './prisma-churches-repository'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
 import { churchPrismaErrorMapping } from './errors/churches-error-mapping'
 import { isOk, isErr } from 'core/shared/result'
-import { CreateChurchError } from '@use-cases/errors/create-church-error'
-import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { ChurchNotFoundError, CreateChurchError, DatabaseQueryError } from 'errors'
 
 const storedChurch = {
   id: 1,

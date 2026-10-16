@@ -2,15 +2,17 @@ import { describe, it, expect } from 'vitest'
 import { AxiosError } from 'axios'
 import { Prisma } from '@prisma/client'
 import { FindNearestChurchesErrorMapper } from './find-nearest-churches-error-mapper'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import {
+  CircuitOpenError,
+  CoordinatesNotFoundError,
+  DatabaseQueryError,
+  InvalidCepError,
+  ProviderFailureError,
+  ServiceBusyError,
+  ServiceOverloadError,
+  TimeoutExceededError,
+} from 'errors'
 import { deserializeAppError } from 'errors/app-error-registry'
-import { CircuitOpenError } from 'errors/infrastructure/circuit-open-error'
-import { ServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { BrokenCircuitError, BulkheadRejectedError } from 'cockatiel'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 

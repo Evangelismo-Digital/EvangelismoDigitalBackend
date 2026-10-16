@@ -9,7 +9,7 @@ import {
   IOutboxEventStatus,
   OutboxClaimFilter,
 } from 'core/contracts/repository/outbox-repository.interface'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 
 export class PrismaOutboxRepository implements IOutboxRepository {
   constructor(

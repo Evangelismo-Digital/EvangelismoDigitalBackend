@@ -14,13 +14,16 @@ import Redis from 'ioredis'
 import { createRedisCacheConnection } from '@lib/redis/connections/redis-cache-connection'
 import { ResilientCache, CacheEnvelope, ResilientCacheOptions } from './resilient-cache'
 import { ok, err, isOk, isErr, Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
-import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
+import {
+  AppError,
+  CoordinatesNotFoundError,
+  DeadlineExceededError,
+  InvalidCepError,
+  NoNearbyChurchesFoundError,
+  ProviderFailureError,
+  ServiceBusyError,
+  TimeoutExceededError,
+} from 'errors'
 import { serializeAppError, deserializeAppError } from 'errors/app-error-registry'
 import {
   isRetryableChurchLookupError,
@@ -29,7 +32,6 @@ import {
 } from '@use-cases/churches/church-lookup-cache-policy'
 import { CACHE_CONFIG } from 'messages/constants/cache/cache'
 import { Deadline } from 'core/shared/deadline'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
 
 const PREFIX = 'cache:it:redis:'
 

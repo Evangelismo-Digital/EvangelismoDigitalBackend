@@ -2,7 +2,7 @@ import type { JobsOptions } from 'bullmq'
 import { IMailJobData } from 'core/contracts/lib/queue/mail-job-data.interface'
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 import { Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 
 export interface IOutboxDispatchPlan {
   emails: IMailJobData[]

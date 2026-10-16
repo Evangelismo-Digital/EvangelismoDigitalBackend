@@ -2,8 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { TransactionalUseCaseDecorator } from './transactional-use-case.decorator'
 import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { ok, err, isOk, isErr, Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { AppError, DatabaseQueryError } from 'errors'
 
 /** Minimal DatabaseContext double: runs the callback, surfacing thrown errors. */
 function fakeDbContext(): DatabaseContext {

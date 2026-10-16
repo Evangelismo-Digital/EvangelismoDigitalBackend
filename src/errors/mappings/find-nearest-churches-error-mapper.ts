@@ -1,15 +1,17 @@
 import { Result, err } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import {
+  AppError,
+  CircuitOpenError,
+  CoordinatesNotFoundError,
+  DatabaseQueryError,
+  InvalidCepError,
+  ProviderFailureError,
+  ServiceBusyError,
+  ServiceOverloadError,
+  TimeoutExceededError,
+} from 'errors'
 import { AxiosError, isAxiosError } from 'axios'
 import { Prisma } from '@prisma/client'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
-import { CircuitOpenError } from 'errors/infrastructure/circuit-open-error'
-import { ServiceOverloadError } from 'errors/infrastructure/service-overload-error'
 import { BrokenCircuitError, BulkheadRejectedError } from 'cockatiel'
 import { UPSTREAM_STATUS } from 'core/constants/upstream-http-status'
 

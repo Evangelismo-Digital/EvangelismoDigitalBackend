@@ -33,7 +33,7 @@ import { deserializeAppError, serializeAppError, AppErrorRegistry } from './app-
 import { toHttpStatus } from './http-errors/http-error-status.mapper'
 import { AppError } from './app-error'
 import { ErrorType } from 'core/types/error-type/error-type'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
+import { InvalidCepError } from 'errors'
 
 /** Members every plain object inherits, and that neither table declares. */
 const INHERITED_KEYS = ['constructor', 'toString', 'valueOf', 'hasOwnProperty', 'isPrototypeOf']

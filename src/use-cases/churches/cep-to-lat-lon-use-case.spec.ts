@@ -1,14 +1,16 @@
 import { describe, it, expect, vi, beforeEach, Mock } from 'vitest'
 import { CepToLatLonUseCase } from './cep-to-lat-lon-use-case'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { CepToLatLonError } from '@use-cases/errors/cep-to-lat-lon-error'
+import {
+  CepToLatLonError,
+  CoordinatesNotFoundError,
+  InvalidCepError,
+  ProviderFailureError,
+  ServiceBusyError,
+  TimeoutExceededError,
+} from 'errors'
 import { IGeocodingProvider, EnumGeoPrecision } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { ok, err, isOk, isErr } from 'core/shared/result'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
 import { logger } from '@lib/logger'
 import { Deadline } from 'core/shared/deadline'
 

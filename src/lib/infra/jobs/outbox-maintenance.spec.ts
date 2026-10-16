@@ -29,7 +29,7 @@ import { ok, err } from 'core/shared/result'
 import { OUTBOX_CONSTANTS } from 'messages/constants/outbox/outbox'
 import { OUTBOX_LOGS } from 'messages/constants/logs/outbox'
 import { logger } from '@lib/logger'
-import { InfrastructureError } from 'errors/infrastructure-error'
+import { InfrastructureError } from 'errors'
 
 class InfraTestError extends InfrastructureError {
   constructor() {

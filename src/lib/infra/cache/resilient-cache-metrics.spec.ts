@@ -38,7 +38,7 @@ import Redis from 'ioredis'
 import type { Metric } from 'prom-client'
 import { ResilientCache } from './resilient-cache'
 import { ok, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 import { getRegistry } from '@lib/metrics'
 import {
   collectMetricsCacheHits,

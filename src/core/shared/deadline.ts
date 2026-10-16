@@ -1,4 +1,4 @@
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
+import { DeadlineExceededError } from 'errors'
 
 /**
  * Abort reason attached when a deadline's own timer fires. A reason arriving

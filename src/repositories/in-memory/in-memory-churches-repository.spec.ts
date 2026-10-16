@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { InMemoryChurchesRepository } from './in-memory-chuches-repository'
 import { isOk, isErr } from 'core/shared/result'
-import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
+import { ChurchNotFoundError } from 'errors'
 
 /**
  * The double is only useful while it behaves like the real repository.

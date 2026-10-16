@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ResilientAddressProviderDecorator } from './resilient-address-provider.decorator'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
+import { DeadlineExceededError, ServiceBusyError } from 'errors'
 import { Deadline } from 'core/shared/deadline'
 import { logger } from '@lib/logger'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
 import Redis from 'ioredis'
 import { err, isOk, isErr } from 'core/shared/result'
 

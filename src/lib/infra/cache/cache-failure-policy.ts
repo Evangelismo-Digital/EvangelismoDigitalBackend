@@ -1,6 +1,5 @@
-import { AppError } from 'errors/app-error'
+import { AppError, ProviderFailureError } from 'errors'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
 
 /**
  * How a failure is stored in the cache and rebuilt from it.

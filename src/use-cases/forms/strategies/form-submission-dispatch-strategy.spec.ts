@@ -4,7 +4,7 @@ import { ContactEmailStrategy } from './contact-email-strategy'
 import { DecisionForChristEmailStrategy } from './decision-for-christ-email-strategy'
 import { IOutboxEvent, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { isOk, isErr, err } from 'core/shared/result'
-import { InvalidFormPayloadError } from '@use-cases/errors/forms/invalid-form-payload-error'
+import { InvalidFormPayloadError } from 'errors'
 
 function makeEvent(payload: Record<string, unknown>): IOutboxEvent {
   return {

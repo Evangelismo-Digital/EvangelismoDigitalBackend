@@ -4,7 +4,7 @@ import { RegisterUserUseCase } from './register-user'
 import { UserRole } from 'core/contracts/repository/users-repository.interface'
 import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { DeleteUserUseCase } from './delete-user'
-import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
+import { UserNotFoundError } from 'errors'
 import { isOk, isErr, ok } from 'core/shared/result'
 
 describe('Delete User Use Case', () => {

@@ -1,5 +1,5 @@
 import { Result } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 
 /**
  * A browser, tracked across visits for up to 13 months.

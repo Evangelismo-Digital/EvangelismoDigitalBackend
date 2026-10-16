@@ -244,14 +244,6 @@ var import_fastify = __toESM(require("fastify"));
 var import_node_async_hooks = require("async_hooks");
 var asyncLocalStorage = new import_node_async_hooks.AsyncLocalStorage();
 
-// src/messages/errors/system.ts
-var SYSTEM_ERRORS = {
-  ASYNC_LOCAL_STORAGE_NOT_INITIALIZED: {
-    code: "ASYNC_LOCAL_STORAGE_NOT_INITIALIZED",
-    message: "Async Local Storage is not initialized."
-  }
-};
-
 // src/errors/app-error.ts
 var AppError = class extends Error {
   type;
@@ -290,6 +282,26 @@ var AppError = class extends Error {
   }
 };
 
+// src/errors/domain-error.ts
+var DomainError = class extends AppError {
+  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
+  constructor(detail, type, failureMode, telemetryReason) {
+    super(detail, type, failureMode, telemetryReason);
+  }
+};
+
+// src/errors/infrastructure-error.ts
+var InfrastructureError = class extends AppError {
+  originalError;
+  constructor(detail, originalError, type = "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */, failureMode, telemetryReason) {
+    super(detail, type, failureMode, telemetryReason);
+    this.originalError = originalError;
+    if (originalError) {
+      this.cause = originalError;
+    }
+  }
+};
+
 // src/errors/system-error.ts
 var SystemError = class extends AppError {
   // eslint-disable-next-line @typescript-eslint/no-useless-constructor
@@ -298,10 +310,610 @@ var SystemError = class extends AppError {
   }
 };
 
-// src/lib/errors/async-local-storage/async-local-storage-not-initialized-error.ts
+// src/core/shared/safe-lookup.ts
+function safeLookup(table, key) {
+  return Object.hasOwn(table, key) ? table[key] : void 0;
+}
+
+// src/messages/errors/churches.ts
+var CHURCH_ERRORS = {
+  NOT_FOUND: {
+    code: "CHURCH_NOT_FOUND",
+    message: "Igreja n\xE3o encontrada."
+  },
+  ALREADY_EXISTS: {
+    code: "CHURCH_ALREADY_EXISTS",
+    message: "J\xE1 existe uma igreja cadastrada com este nome e/ou coordenadas"
+  },
+  INVALID_CEP: {
+    code: "INVALID_CEP",
+    message: "O CEP fornecido n\xE3o existe."
+  },
+  COORDINATES_NOT_FOUND: {
+    code: "COORDINATES_NOT_FOUND",
+    message: "Coordenadas n\xE3o encontradas para o endere\xE7o fornecido."
+  },
+  NO_ADDRESS_PROVIDED: {
+    code: "NO_ADDRESS_PROVIDED",
+    message: "Nenhum endere\xE7o fornecido para convers\xE3o de CEP."
+  },
+  LATITUDE_OUT_OF_RANGE: {
+    code: "LATITUDE_OUT_OF_RANGE",
+    message: "A Latitude deve estar entre -90 e 90 graus."
+  },
+  LONGITUDE_OUT_OF_RANGE: {
+    code: "LONGITUDE_OUT_OF_RANGE",
+    message: "A longitude deve estar entre -180 e 180 graus."
+  },
+  CREATE_FAILED: {
+    code: "CREATE_CHURCH_FAILED",
+    message: "Falha ao criar a igreja."
+  },
+  EMPTY_LIST: {
+    code: "EMPTY_CHURCH_LIST",
+    message: "Lista de igrejas vazia!"
+  },
+  NO_NEARBY_FOUND: {
+    code: "NO_NEARBY_CHURCHES_FOUND",
+    message: "Nenhuma igreja encontrada nas proximidades."
+  },
+  CEP_TO_LAT_LON_FAILED: {
+    code: "CEP_TO_LAT_LON_FAILED",
+    message: "Falha ao processar o CEP"
+  }
+};
+var INVALID_CEP_ERROR_FN = (cep) => ({
+  code: "INVALID_CEP",
+  message: cep ? `O CEP fornecido ${cep} n\xE3o existe.` : "O CEP fornecido n\xE3o existe."
+});
+
+// src/errors/domain/geolocation/invalid-cep-error.ts
+var InvalidCepError = class extends DomainError {
+  constructor(cep) {
+    super(INVALID_CEP_ERROR_FN(cep), "NOT_FOUND" /* NOT_FOUND */, "NOT_FOUND" /* NOT_FOUND */, "not_found" /* NOT_FOUND */);
+  }
+};
+
+// src/errors/domain/geolocation/coordinates-not-found-error.ts
+var CoordinatesNotFoundError = class extends DomainError {
+  constructor() {
+    super(CHURCH_ERRORS.COORDINATES_NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */, "NOT_FOUND" /* NOT_FOUND */, "not_found" /* NOT_FOUND */);
+  }
+};
+
+// src/errors/domain/churches/no-nearby-churches-found-error.ts
+var NoNearbyChurchesFoundError = class extends DomainError {
+  constructor() {
+    super(CHURCH_ERRORS.NO_NEARBY_FOUND, "NOT_FOUND" /* NOT_FOUND */, "PERMANENT" /* PERMANENT */);
+  }
+};
+
+// src/errors/domain/churches/empty-church-list-error.ts
+var EmptyChurchListError = class extends DomainError {
+  constructor() {
+    super(CHURCH_ERRORS.EMPTY_LIST, "NOT_FOUND" /* NOT_FOUND */, "PERMANENT" /* PERMANENT */);
+  }
+};
+
+// src/errors/domain/geolocation/cep-to-lat-lon-error.ts
+var CepToLatLonError = class extends SystemError {
+  constructor(cep) {
+    super(
+      {
+        code: CHURCH_ERRORS.CEP_TO_LAT_LON_FAILED.code,
+        message: `${CHURCH_ERRORS.CEP_TO_LAT_LON_FAILED.message} ${cep ?? ""}.`
+      },
+      "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */
+    );
+  }
+};
+
+// src/messages/errors/infrastructure.ts
+var INFRA_ERRORS = {
+  SERVICE_BUSY: {
+    code: "SERVICE_BUSY",
+    message: "Servi\xE7o temporariamente indispon\xEDvel devido ao limite de requisi\xE7\xF5es."
+  },
+  PROVIDER_FAILURE: {
+    code: "PROVIDER_FAILURE",
+    message: "Falha de sistema ao processar dados no provedor de servi\xE7os externos."
+  },
+  DATABASE_QUERY_FAILURE: {
+    code: "DATABASE_QUERY_FAILURE",
+    message: "Falha de sistema ao processar consulta no banco de dados."
+  },
+  DEADLINE_EXCEEDED: {
+    code: "DEADLINE_EXCEEDED",
+    message: "O tempo limite total da requisi\xE7\xE3o foi atingido antes da conclus\xE3o da opera\xE7\xE3o."
+  },
+  CIRCUIT_OPEN: {
+    code: "CIRCUIT_OPEN",
+    message: "Provedor externo temporariamente suspenso ap\xF3s falhas repetidas."
+  },
+  SERVICE_OVERLOAD: {
+    code: "SERVICE_OVERLOAD",
+    message: "N\xFAmero de requisi\xE7\xF5es simult\xE2neas excedeu o limite de maxPendingFetches na mem\xF3ria cache do Redis."
+  }
+};
+
+// src/errors/infrastructure/resilience/service-busy-error.ts
+var ServiceBusyError = class extends InfrastructureError {
+  provider;
+  constructor(provider) {
+    super(
+      INFRA_ERRORS.SERVICE_BUSY,
+      void 0,
+      "TOO_MANY_REQUESTS" /* TOO_MANY_REQUESTS */,
+      "RETRYABLE" /* RETRYABLE */,
+      "rate_limited" /* RATE_LIMITED */
+    );
+    this.name = "ServiceBusyError";
+    this.provider = provider;
+  }
+};
+
+// src/errors/infrastructure/resilience/service-overload-error.ts
+var ServiceOverloadError = class extends InfrastructureError {
+  constructor() {
+    super(INFRA_ERRORS.SERVICE_OVERLOAD, void 0, "TOO_MANY_REQUESTS" /* TOO_MANY_REQUESTS */);
+    this.name = "ServiceOverloadError";
+  }
+};
+
+// src/messages/errors/geolocation.ts
+var GEO_ERRORS = {
+  NO_PROVIDER: {
+    code: "NO_GEO_PROVIDER",
+    message: "Provedor resiliente de geolocaliza\xE7\xE3o requer pelo menos um provedor de geolocaliza\xE7\xE3o configurado."
+  },
+  NO_ADDRESS_PROVIDER: {
+    code: "NO_ADDRESS_PROVIDER",
+    message: "Provedor resiliente de endere\xE7o requer pelo menos um provedor de endere\xE7o configurado."
+  },
+  ADDRESS_PROVIDER_FAILURE: {
+    code: "ADDRESS_PROVIDER_FAILURE",
+    message: "Falha no provedor de endere\xE7os."
+  },
+  TIMEOUT_EXCEEDED: {
+    code: "TIMEOUT_EXCEEDED",
+    message: "Tempo limite excedido ao buscar dados nos provedores externos."
+  }
+};
+
+// src/errors/infrastructure/resilience/timeout-exceeded-error.ts
+var TimeoutExceededError = class extends InfrastructureError {
+  constructor(reason) {
+    super(
+      GEO_ERRORS.TIMEOUT_EXCEEDED,
+      reason,
+      "SERVICE_UNAVAILABLE" /* SERVICE_UNAVAILABLE */,
+      "RETRYABLE" /* RETRYABLE */,
+      "timeout" /* TIMEOUT */
+    );
+    this.name = "TimeoutExceededError";
+  }
+};
+
+// src/errors/infrastructure/resilience/deadline-exceeded-error.ts
+var DeadlineExceededError = class extends InfrastructureError {
+  constructor(reason) {
+    super(
+      INFRA_ERRORS.DEADLINE_EXCEEDED,
+      reason,
+      "SERVICE_UNAVAILABLE" /* SERVICE_UNAVAILABLE */,
+      "ABORTED" /* ABORTED */,
+      "deadline_exceeded" /* DEADLINE_EXCEEDED */
+    );
+    this.name = "DeadlineExceededError";
+  }
+};
+
+// src/errors/infrastructure/providers/provider-failure-error.ts
+var ProviderFailureError = class extends InfrastructureError {
+  constructor(originalError) {
+    super(
+      {
+        code: INFRA_ERRORS.PROVIDER_FAILURE.code,
+        message: INFRA_ERRORS.PROVIDER_FAILURE.message
+      },
+      originalError,
+      "SERVICE_UNAVAILABLE" /* SERVICE_UNAVAILABLE */,
+      "RETRYABLE" /* RETRYABLE */,
+      "provider_error" /* PROVIDER_ERROR */
+    );
+    this.name = "ProviderFailureError";
+  }
+};
+
+// src/errors/infrastructure/resilience/circuit-open-error.ts
+var CircuitOpenError = class extends InfrastructureError {
+  provider;
+  constructor(provider, reason) {
+    super(
+      INFRA_ERRORS.CIRCUIT_OPEN,
+      reason,
+      "SERVICE_UNAVAILABLE" /* SERVICE_UNAVAILABLE */,
+      "RETRYABLE" /* RETRYABLE */,
+      "circuit_open" /* CIRCUIT_OPEN */
+    );
+    this.name = "CircuitOpenError";
+    this.provider = provider;
+  }
+};
+
+// src/errors/app-error-registry.ts
+var UNKNOWN_PROVIDER = "Unknown Provider";
+function readProvider(data) {
+  return data?.provider || data?.body?.provider;
+}
+var AppErrorRegistry = {
+  InvalidCepError: (msg) => {
+    const cep = /\b\d{8}\b/.exec(msg)?.[0] || /\d{8}/.exec(msg)?.[0];
+    return new InvalidCepError(cep);
+  },
+  CoordinatesNotFoundError: () => new CoordinatesNotFoundError(),
+  NoNearbyChurchesFoundError: () => new NoNearbyChurchesFoundError(),
+  EmptyChurchListError: () => new EmptyChurchListError(),
+  CepToLatLonError: (msg) => {
+    const cep = /\d+/.exec(msg)?.[0] || "";
+    return new CepToLatLonError(cep);
+  },
+  ServiceBusyError: (msg, data) => {
+    const provider = readProvider(data) || msg.replace("Servi\xE7o temporariamente indispon\xEDvel: ", "");
+    return new ServiceBusyError(provider);
+  },
+  ServiceOverloadError: () => new ServiceOverloadError(),
+  TimeoutExceededError: (msg) => new TimeoutExceededError(msg),
+  DeadlineExceededError: (msg) => new DeadlineExceededError(msg),
+  CircuitOpenError: (_msg, data) => {
+    return new CircuitOpenError(readProvider(data) || UNKNOWN_PROVIDER);
+  },
+  ProviderFailureError: (_msg, data) => new ProviderFailureError(data?.originalError)
+};
+function serializeAppError(err2) {
+  return {
+    type: err2.constructor.name,
+    message: err2.message,
+    data: err2.data || err2
+  };
+}
+var UnknownDeserializationError = class extends InfrastructureError {
+  constructor(message) {
+    super({
+      code: "UNKNOWN_DESERIALIZATION_ERROR",
+      message
+    });
+  }
+};
+function deserializeAppError(type, message, data) {
+  const factory = safeLookup(AppErrorRegistry, type);
+  if (factory) {
+    try {
+      return factory(message, data);
+    } catch {
+    }
+  }
+  return new UnknownDeserializationError(message);
+}
+
+// src/errors/domain/churches/church-already-exists-error.ts
+var ChurchAlreadyExistsError = class extends DomainError {
+  constructor() {
+    super(CHURCH_ERRORS.ALREADY_EXISTS, "CONFLICT" /* CONFLICT */);
+  }
+};
+
+// src/errors/domain/churches/church-not-found-error.ts
+var ChurchNotFoundError = class extends DomainError {
+  constructor() {
+    super(CHURCH_ERRORS.NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
+  }
+};
+
+// src/errors/domain/churches/create-church-error.ts
+var CreateChurchError = class extends DomainError {
+  constructor() {
+    super(CHURCH_ERRORS.CREATE_FAILED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+  }
+};
+
+// src/messages/errors/forms.ts
+var FORM_ERRORS = {
+  SUBMISSION: {
+    code: "FORM_SUBMISSION_ERROR",
+    message: "Ocorreu um erro ao submeter o formul\xE1rio."
+  },
+  ALREADY_EXISTS: {
+    code: "FORM_ALREADY_EXISTS",
+    message: "J\xE1 existe um formul\xE1rio submetido com este email."
+  },
+  NOT_FOUND: {
+    code: "FORM_NOT_FOUND",
+    message: "Nenhum formul\xE1rio encontrado para o email fornecido."
+  }
+};
+
+// src/errors/domain/forms/forms-already-exists-error.ts
+var FormsAlreadyExistsError = class extends DomainError {
+  constructor() {
+    super(FORM_ERRORS.ALREADY_EXISTS, "CONFLICT" /* CONFLICT */);
+  }
+};
+
+// src/errors/domain/forms/forms-not-found-error.ts
+var FormsNotFoundError = class extends DomainError {
+  constructor() {
+    super(FORM_ERRORS.NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
+  }
+};
+
+// src/errors/domain/forms/forms-submission-error.ts
+var FormsSubmissionError = class extends DomainError {
+  constructor() {
+    super(FORM_ERRORS.SUBMISSION, "BAD_REQUEST" /* BAD_REQUEST */);
+  }
+};
+
+// src/errors/domain/geolocation/latitude-range-error.ts
+var LatitudeRangeError = class extends DomainError {
+  constructor() {
+    super(CHURCH_ERRORS.LATITUDE_OUT_OF_RANGE, "BAD_REQUEST" /* BAD_REQUEST */);
+  }
+};
+
+// src/errors/domain/geolocation/longitude-range-error.ts
+var LongitudeRangeError = class extends DomainError {
+  constructor() {
+    super(CHURCH_ERRORS.LONGITUDE_OUT_OF_RANGE, "BAD_REQUEST" /* BAD_REQUEST */);
+  }
+};
+
+// src/errors/domain/geolocation/no-address-error.ts
+var NoAddressError = class extends DomainError {
+  constructor() {
+    super(CHURCH_ERRORS.NO_ADDRESS_PROVIDED, "BAD_REQUEST" /* BAD_REQUEST */);
+  }
+};
+
+// src/messages/errors/outbox.ts
+var OUTBOX_ERRORS = {
+  EVENT_NOT_FOUND: {
+    code: "OUTBOX_EVENT_NOT_FOUND",
+    message: "O evento de outbox solicitado n\xE3o foi encontrado no banco de dados."
+  },
+  OPERATION_FAILED: {
+    code: "OUTBOX_OPERATION_FAILED",
+    message: "Falha ao processar opera\xE7\xE3o da outbox no banco de dados."
+  }
+};
+
+// src/errors/domain/outbox/outbox-errors.ts
+var OutboxEventNotFoundHttpError = class extends DomainError {
+  constructor() {
+    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
+  }
+};
+var OutboxOperationFailedHttpError = class extends SystemError {
+  constructor() {
+    super(OUTBOX_ERRORS.OPERATION_FAILED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+  }
+};
+var OutboxEventNotFoundInfraError = class extends InfrastructureError {
+  constructor(originalError) {
+    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, originalError);
+  }
+};
+var OutboxOperationFailedInfraError = class extends InfrastructureError {
+  constructor(originalError) {
+    super(OUTBOX_ERRORS.OPERATION_FAILED, originalError);
+  }
+};
+
+// src/messages/errors/auth.ts
+var AUTH_ERRORS = {
+  UNAUTHORIZED: {
+    code: "UNAUTHORIZED",
+    message: "N\xE3o autorizado!"
+  },
+  FORBIDDEN: {
+    code: "FORBIDDEN",
+    message: "Acesso negado!"
+  },
+  INVALID_CREDENTIALS: {
+    code: "INVALID_CREDENTIALS",
+    message: "Credenciais inv\xE1lidas!"
+  },
+  INVALID_TOKEN: {
+    code: "INVALID_TOKEN",
+    message: "Token inv\xE1lido ou expirado!"
+  },
+  PASSWORD_CHANGE_REQUIRED: {
+    code: "PASSWORD_CHANGE_REQUIRED",
+    message: "\xC9 necess\xE1rio alterar a senha antes de acessar o sistema!"
+  }
+};
+
+// src/errors/domain/users/invalid-credentials-error.ts
+var InvalidCredentialsError = class extends DomainError {
+  constructor() {
+    super(AUTH_ERRORS.INVALID_CREDENTIALS, "UNAUTHORIZED" /* UNAUTHORIZED */);
+  }
+};
+
+// src/errors/domain/users/invalid-token-error.ts
+var InvalidTokenError = class extends DomainError {
+  constructor() {
+    super(AUTH_ERRORS.INVALID_TOKEN, "UNAUTHORIZED" /* UNAUTHORIZED */);
+  }
+};
+
+// src/messages/errors/users.ts
+var USER_ERRORS = {
+  NOT_FOUND: {
+    code: "USER_NOT_FOUND",
+    message: "Usu\xE1rio n\xE3o encontrado."
+  },
+  ALREADY_EXISTS: {
+    code: "USER_ALREADY_EXISTS",
+    message: "Usu\xE1rio j\xE1 existe !"
+  },
+  NOT_CREATED: {
+    code: "USER_NOT_CREATED",
+    message: "Falha ao criar o usu\xE1rio."
+  },
+  NOT_FOUND_FOR_PASSWORD_RESET: {
+    code: "USER_NOT_FOUND_FOR_PASSWORD_RESET",
+    message: "Se o usu\xE1rio existir, voc\xEA receber\xE1 um e-mail com instru\xE7\xF5es para redefinir a senha."
+  }
+};
+
+// src/errors/domain/users/user-already-exists-error.ts
+var UserAlreadyExistsError = class extends DomainError {
+  constructor() {
+    super(USER_ERRORS.ALREADY_EXISTS, "CONFLICT" /* CONFLICT */);
+  }
+};
+
+// src/errors/domain/users/user-not-created-error.ts
+var UserNotCreatedError = class extends DomainError {
+  constructor() {
+    super(USER_ERRORS.NOT_CREATED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+  }
+};
+
+// src/errors/domain/users/user-not-found-error.ts
+var UserNotFoundError = class extends DomainError {
+  constructor() {
+    super(USER_ERRORS.NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
+  }
+};
+
+// src/messages/errors/analytics.ts
+var ANALYTICS_ERRORS = {
+  PROXY_REQUIRED: {
+    code: "ANALYTICS_PROXY_REQUIRED",
+    message: "N\xE3o autorizado!"
+  },
+  VISITOR_NOT_FOUND: {
+    code: "ANALYTICS_VISITOR_NOT_FOUND",
+    message: "Visitante n\xE3o encontrado!"
+  }
+};
+
+// src/errors/domain/users/visitor-not-found-error.ts
+var VisitorNotFoundError = class extends DomainError {
+  constructor() {
+    super(ANALYTICS_ERRORS.VISITOR_NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
+  }
+};
+
+// src/errors/infrastructure/database/database-query-error.ts
+var DatabaseQueryError = class extends InfrastructureError {
+  constructor(originalError) {
+    super(INFRA_ERRORS.DATABASE_QUERY_FAILURE, originalError, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+    this.name = "DatabaseQueryError";
+  }
+};
+
+// src/errors/infrastructure/providers/no-address-provider-error.ts
+var NoAddressProviderError = class extends InfrastructureError {
+  constructor() {
+    super(GEO_ERRORS.NO_ADDRESS_PROVIDER);
+  }
+};
+
+// src/errors/infrastructure/providers/no-geo-provider-error.ts
+var NoGeoProviderError = class extends InfrastructureError {
+  constructor() {
+    super(GEO_ERRORS.NO_PROVIDER);
+  }
+};
+
+// src/messages/errors/system.ts
+var SYSTEM_ERRORS = {
+  ASYNC_LOCAL_STORAGE_NOT_INITIALIZED: {
+    code: "ASYNC_LOCAL_STORAGE_NOT_INITIALIZED",
+    message: "Async Local Storage is not initialized."
+  }
+};
+
+// src/errors/system/async-local-storage-not-initialized-error.ts
 var AsyncLocalStorageNotInitializedError = class extends SystemError {
   constructor() {
     super(SYSTEM_ERRORS.ASYNC_LOCAL_STORAGE_NOT_INITIALIZED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+  }
+};
+
+// src/http/http-status.ts
+var HTTP_STATUS = {
+  OK: 200,
+  CREATED: 201,
+  NO_CONTENT: 204,
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  CONFLICT: 409,
+  UNPROCESSABLE_ENTITY: 422,
+  TOO_MANY_REQUESTS: 429,
+  INTERNAL_SERVER_ERROR: 500,
+  SERVICE_UNAVAILABLE: 503
+};
+
+// src/errors/http-errors/http-error-status.mapper.ts
+var STATUS_MAP = {
+  ["OK" /* OK */]: HTTP_STATUS.OK,
+  ["BAD_REQUEST" /* BAD_REQUEST */]: HTTP_STATUS.BAD_REQUEST,
+  ["UNAUTHORIZED" /* UNAUTHORIZED */]: HTTP_STATUS.UNAUTHORIZED,
+  ["FORBIDDEN" /* FORBIDDEN */]: HTTP_STATUS.FORBIDDEN,
+  ["NOT_FOUND" /* NOT_FOUND */]: HTTP_STATUS.NOT_FOUND,
+  ["CONFLICT" /* CONFLICT */]: HTTP_STATUS.CONFLICT,
+  ["UNPROCESSABLE_ENTITY" /* UNPROCESSABLE_ENTITY */]: HTTP_STATUS.UNPROCESSABLE_ENTITY,
+  ["INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */]: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+  ["TOO_MANY_REQUESTS" /* TOO_MANY_REQUESTS */]: HTTP_STATUS.TOO_MANY_REQUESTS,
+  ["SERVICE_UNAVAILABLE" /* SERVICE_UNAVAILABLE */]: HTTP_STATUS.SERVICE_UNAVAILABLE
+};
+function toHttpStatus(type) {
+  return safeLookup(STATUS_MAP, type) ?? HTTP_STATUS.INTERNAL_SERVER_ERROR;
+}
+
+// src/messages/errors/validation.ts
+var VALIDATION_ERRORS = {
+  ZOD_VALIDATION: {
+    code: "VALIDATION_ERROR",
+    message: "Dados de registro inv\xE1lidos!"
+  }
+};
+
+// src/errors/http-errors/zod-validation-error.ts
+var ZodValidationError = class extends AppError {
+  constructor(issues) {
+    super(
+      {
+        code: VALIDATION_ERRORS.ZOD_VALIDATION.code,
+        message: VALIDATION_ERRORS.ZOD_VALIDATION.message,
+        issues
+      },
+      "BAD_REQUEST" /* BAD_REQUEST */
+    );
+  }
+};
+
+// src/errors/http-errors/http-error-mapper.ts
+var HttpErrorMapper = class {
+  static map(error, reply) {
+    if (reply.sent) {
+      throw error;
+    }
+    if (error instanceof DomainError) {
+      const httpCode = toHttpStatus(error.type);
+      return reply.code(httpCode).send({
+        message: error.body.message,
+        code: error.body.code,
+        issues: error.body.issues
+      });
+    }
+    throw error;
   }
 };
 
@@ -520,61 +1132,6 @@ function buildLookupConditions(where) {
 
 // src/lib/prisma/utils/prisma-error-mapper.ts
 var import_client2 = require("@prisma/client");
-
-// src/errors/infrastructure-error.ts
-var InfrastructureError = class extends AppError {
-  originalError;
-  constructor(detail, originalError, type = "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */, failureMode, telemetryReason) {
-    super(detail, type, failureMode, telemetryReason);
-    this.originalError = originalError;
-    if (originalError) {
-      this.cause = originalError;
-    }
-  }
-};
-
-// src/messages/errors/infrastructure.ts
-var INFRA_ERRORS = {
-  SERVICE_BUSY: {
-    code: "SERVICE_BUSY",
-    message: "Servi\xE7o temporariamente indispon\xEDvel devido ao limite de requisi\xE7\xF5es."
-  },
-  PROVIDER_FAILURE: {
-    code: "PROVIDER_FAILURE",
-    message: "Falha de sistema ao processar dados no provedor de servi\xE7os externos."
-  },
-  DATABASE_QUERY_FAILURE: {
-    code: "DATABASE_QUERY_FAILURE",
-    message: "Falha de sistema ao processar consulta no banco de dados."
-  },
-  DEADLINE_EXCEEDED: {
-    code: "DEADLINE_EXCEEDED",
-    message: "O tempo limite total da requisi\xE7\xE3o foi atingido antes da conclus\xE3o da opera\xE7\xE3o."
-  },
-  CIRCUIT_OPEN: {
-    code: "CIRCUIT_OPEN",
-    message: "Provedor externo temporariamente suspenso ap\xF3s falhas repetidas."
-  },
-  SERVICE_OVERLOAD: {
-    code: "SERVICE_OVERLOAD",
-    message: "N\xFAmero de requisi\xE7\xF5es simult\xE2neas excedeu o limite de maxPendingFetches na mem\xF3ria cache do Redis."
-  }
-};
-
-// src/errors/infrastructure/database-query-error.ts
-var DatabaseQueryError = class extends InfrastructureError {
-  constructor(originalError) {
-    super(INFRA_ERRORS.DATABASE_QUERY_FAILURE, originalError, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
-    this.name = "DatabaseQueryError";
-  }
-};
-
-// src/core/shared/safe-lookup.ts
-function safeLookup(table, key) {
-  return Object.hasOwn(table, key) ? table[key] : void 0;
-}
-
-// src/lib/prisma/utils/prisma-error-mapper.ts
 var PrismaErrorMapper = class {
   constructor(errorMapping) {
     this.errorMapping = errorMapping;
@@ -594,48 +1151,6 @@ var PrismaErrorMapper = class {
   }
 };
 
-// src/errors/domain-error.ts
-var DomainError = class extends AppError {
-  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
-  constructor(detail, type, failureMode, telemetryReason) {
-    super(detail, type, failureMode, telemetryReason);
-  }
-};
-
-// src/messages/errors/users.ts
-var USER_ERRORS = {
-  NOT_FOUND: {
-    code: "USER_NOT_FOUND",
-    message: "Usu\xE1rio n\xE3o encontrado."
-  },
-  ALREADY_EXISTS: {
-    code: "USER_ALREADY_EXISTS",
-    message: "Usu\xE1rio j\xE1 existe !"
-  },
-  NOT_CREATED: {
-    code: "USER_NOT_CREATED",
-    message: "Falha ao criar o usu\xE1rio."
-  },
-  NOT_FOUND_FOR_PASSWORD_RESET: {
-    code: "USER_NOT_FOUND_FOR_PASSWORD_RESET",
-    message: "Se o usu\xE1rio existir, voc\xEA receber\xE1 um e-mail com instru\xE7\xF5es para redefinir a senha."
-  }
-};
-
-// src/use-cases/errors/user-already-exists-error.ts
-var UserAlreadyExistsError = class extends DomainError {
-  constructor() {
-    super(USER_ERRORS.ALREADY_EXISTS, "CONFLICT" /* CONFLICT */);
-  }
-};
-
-// src/use-cases/errors/user-not-found-error.ts
-var UserNotFoundError = class extends DomainError {
-  constructor() {
-    super(USER_ERRORS.NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
-  }
-};
-
 // src/repositories/prisma/errors/users-error-mapping.ts
 var userPrismaErrorMapping = {
   P2002: () => new UserAlreadyExistsError(),
@@ -646,37 +1161,6 @@ var userPrismaErrorMapping = {
 
 // src/use-cases/users/reset-password.ts
 var import_bcryptjs = require("bcryptjs");
-
-// src/messages/errors/auth.ts
-var AUTH_ERRORS = {
-  UNAUTHORIZED: {
-    code: "UNAUTHORIZED",
-    message: "N\xE3o autorizado!"
-  },
-  FORBIDDEN: {
-    code: "FORBIDDEN",
-    message: "Acesso negado!"
-  },
-  INVALID_CREDENTIALS: {
-    code: "INVALID_CREDENTIALS",
-    message: "Credenciais inv\xE1lidas!"
-  },
-  INVALID_TOKEN: {
-    code: "INVALID_TOKEN",
-    message: "Token inv\xE1lido ou expirado!"
-  },
-  PASSWORD_CHANGE_REQUIRED: {
-    code: "PASSWORD_CHANGE_REQUIRED",
-    message: "\xC9 necess\xE1rio alterar a senha antes de acessar o sistema!"
-  }
-};
-
-// src/use-cases/errors/invalid-token-error.ts
-var InvalidTokenError = class extends DomainError {
-  constructor() {
-    super(AUTH_ERRORS.INVALID_TOKEN, "UNAUTHORIZED" /* UNAUTHORIZED */);
-  }
-};
 
 // src/lib/logger/index.ts
 var import_pino = __toESM(require("pino"));
@@ -822,57 +1306,6 @@ function makeResetPasswordUseCase() {
   return new ResetPasswordUseCase(usersRepository);
 }
 
-// src/http/http-status.ts
-var HTTP_STATUS = {
-  OK: 200,
-  CREATED: 201,
-  NO_CONTENT: 204,
-  BAD_REQUEST: 400,
-  UNAUTHORIZED: 401,
-  FORBIDDEN: 403,
-  NOT_FOUND: 404,
-  CONFLICT: 409,
-  UNPROCESSABLE_ENTITY: 422,
-  TOO_MANY_REQUESTS: 429,
-  INTERNAL_SERVER_ERROR: 500,
-  SERVICE_UNAVAILABLE: 503
-};
-
-// src/errors/http-errors/http-error-status.mapper.ts
-var STATUS_MAP = {
-  ["OK" /* OK */]: HTTP_STATUS.OK,
-  ["BAD_REQUEST" /* BAD_REQUEST */]: HTTP_STATUS.BAD_REQUEST,
-  ["UNAUTHORIZED" /* UNAUTHORIZED */]: HTTP_STATUS.UNAUTHORIZED,
-  ["FORBIDDEN" /* FORBIDDEN */]: HTTP_STATUS.FORBIDDEN,
-  ["NOT_FOUND" /* NOT_FOUND */]: HTTP_STATUS.NOT_FOUND,
-  ["CONFLICT" /* CONFLICT */]: HTTP_STATUS.CONFLICT,
-  ["UNPROCESSABLE_ENTITY" /* UNPROCESSABLE_ENTITY */]: HTTP_STATUS.UNPROCESSABLE_ENTITY,
-  ["INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */]: HTTP_STATUS.INTERNAL_SERVER_ERROR,
-  ["TOO_MANY_REQUESTS" /* TOO_MANY_REQUESTS */]: HTTP_STATUS.TOO_MANY_REQUESTS,
-  ["SERVICE_UNAVAILABLE" /* SERVICE_UNAVAILABLE */]: HTTP_STATUS.SERVICE_UNAVAILABLE
-};
-function toHttpStatus(type) {
-  return safeLookup(STATUS_MAP, type) ?? HTTP_STATUS.INTERNAL_SERVER_ERROR;
-}
-
-// src/errors/http-errors/http-error-mapper.ts
-var HttpErrorMapper = class {
-  static map(error, reply) {
-    if (reply.sent) {
-      throw error;
-    }
-    if (error instanceof DomainError) {
-      const httpCode = toHttpStatus(error.type);
-      return reply.code(httpCode).send({
-        message: error.body.message,
-        code: error.body.code,
-        issues: error.body.issues
-      });
-    }
-    throw error;
-  }
-};
-
 // src/messages/constants/auth/auth.ts
 var AUTH_CONSTANTS = {
   PASSWORD_CHANGED_SUCCESS: "Password changed successfully!"
@@ -893,15 +1326,6 @@ async function resetPassword(request, reply) {
 
 // src/use-cases/users/register-user.ts
 var import_bcryptjs2 = require("bcryptjs");
-
-// src/use-cases/errors/user-not-created-error.ts
-var UserNotCreatedError = class extends DomainError {
-  constructor() {
-    super(USER_ERRORS.NOT_CREATED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
-  }
-};
-
-// src/use-cases/users/register-user.ts
 var RegisterUserUseCase = class {
   constructor(usersRepository) {
     this.usersRepository = usersRepository;
@@ -1077,15 +1501,6 @@ var emailSchema = import_zod3.default.email().transform((email) => email.toLower
 
 // src/use-cases/users/authenticate-user.ts
 var import_client3 = require("@prisma/client");
-
-// src/use-cases/errors/invalid-credentials-error.ts
-var InvalidCredentialsError = class extends DomainError {
-  constructor() {
-    super(AUTH_ERRORS.INVALID_CREDENTIALS, "UNAUTHORIZED" /* UNAUTHORIZED */);
-  }
-};
-
-// src/use-cases/users/authenticate-user.ts
 var import_bcryptjs3 = require("bcryptjs");
 var AuthenticateUserUseCase = class {
   constructor(usersRepository, authenticationAuditUseCase) {
@@ -1517,40 +1932,6 @@ var PrismaOutboxRepository = class {
       expiresAt: raw.expiresAt || void 0,
       pendingRecipients: raw.pendingRecipients
     };
-  }
-};
-
-// src/messages/errors/outbox.ts
-var OUTBOX_ERRORS = {
-  EVENT_NOT_FOUND: {
-    code: "OUTBOX_EVENT_NOT_FOUND",
-    message: "O evento de outbox solicitado n\xE3o foi encontrado no banco de dados."
-  },
-  OPERATION_FAILED: {
-    code: "OUTBOX_OPERATION_FAILED",
-    message: "Falha ao processar opera\xE7\xE3o da outbox no banco de dados."
-  }
-};
-
-// src/use-cases/errors/outbox/outbox-errors.ts
-var OutboxEventNotFoundHttpError = class extends DomainError {
-  constructor() {
-    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
-  }
-};
-var OutboxOperationFailedHttpError = class extends SystemError {
-  constructor() {
-    super(OUTBOX_ERRORS.OPERATION_FAILED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
-  }
-};
-var OutboxEventNotFoundInfraError = class extends InfrastructureError {
-  constructor(originalError) {
-    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, originalError);
-  }
-};
-var OutboxOperationFailedInfraError = class extends InfrastructureError {
-  constructor(originalError) {
-    super(OUTBOX_ERRORS.OPERATION_FAILED, originalError);
   }
 };
 
@@ -2724,29 +3105,6 @@ function registerAdminRoutes(appInst) {
   );
 }
 
-// src/messages/errors/forms.ts
-var FORM_ERRORS = {
-  SUBMISSION: {
-    code: "FORM_SUBMISSION_ERROR",
-    message: "Ocorreu um erro ao submeter o formul\xE1rio."
-  },
-  ALREADY_EXISTS: {
-    code: "FORM_ALREADY_EXISTS",
-    message: "J\xE1 existe um formul\xE1rio submetido com este email."
-  },
-  NOT_FOUND: {
-    code: "FORM_NOT_FOUND",
-    message: "Nenhum formul\xE1rio encontrado para o email fornecido."
-  }
-};
-
-// src/use-cases/errors/forms/forms-not-found-error.ts
-var FormsNotFoundError = class extends DomainError {
-  constructor() {
-    super(FORM_ERRORS.NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
-  }
-};
-
 // src/repositories/prisma/prisma-forms-repository.ts
 var PrismaFormsRepository = class {
   constructor(dbContext, errorMapper) {
@@ -2779,13 +3137,6 @@ var PrismaFormsRepository = class {
     } catch (error) {
       return err(this.errorMapper.mapToKnownError(error));
     }
-  }
-};
-
-// src/use-cases/errors/forms/forms-already-exists-error.ts
-var FormsAlreadyExistsError = class extends DomainError {
-  constructor() {
-    super(FORM_ERRORS.ALREADY_EXISTS, "CONFLICT" /* CONFLICT */);
   }
 };
 
@@ -2857,13 +3208,6 @@ function sanitize(formSubmission2) {
   };
 }
 
-// src/use-cases/errors/forms/forms-submission-error.ts
-var FormsSubmissionError = class extends DomainError {
-  constructor() {
-    super(FORM_ERRORS.SUBMISSION, "BAD_REQUEST" /* BAD_REQUEST */);
-  }
-};
-
 // src/repositories/prisma/errors/forms-error-mapping.ts
 var formsPrismaErrorMapping = {
   P2002: () => new FormsAlreadyExistsError(),
@@ -2929,85 +3273,6 @@ async function formsRoutes(appInst) {
     formSubmission
   );
 }
-
-// src/messages/errors/churches.ts
-var CHURCH_ERRORS = {
-  NOT_FOUND: {
-    code: "CHURCH_NOT_FOUND",
-    message: "Igreja n\xE3o encontrada."
-  },
-  ALREADY_EXISTS: {
-    code: "CHURCH_ALREADY_EXISTS",
-    message: "J\xE1 existe uma igreja cadastrada com este nome e/ou coordenadas"
-  },
-  INVALID_CEP: {
-    code: "INVALID_CEP",
-    message: "O CEP fornecido n\xE3o existe."
-  },
-  COORDINATES_NOT_FOUND: {
-    code: "COORDINATES_NOT_FOUND",
-    message: "Coordenadas n\xE3o encontradas para o endere\xE7o fornecido."
-  },
-  NO_ADDRESS_PROVIDED: {
-    code: "NO_ADDRESS_PROVIDED",
-    message: "Nenhum endere\xE7o fornecido para convers\xE3o de CEP."
-  },
-  LATITUDE_OUT_OF_RANGE: {
-    code: "LATITUDE_OUT_OF_RANGE",
-    message: "A Latitude deve estar entre -90 e 90 graus."
-  },
-  LONGITUDE_OUT_OF_RANGE: {
-    code: "LONGITUDE_OUT_OF_RANGE",
-    message: "A longitude deve estar entre -180 e 180 graus."
-  },
-  CREATE_FAILED: {
-    code: "CREATE_CHURCH_FAILED",
-    message: "Falha ao criar a igreja."
-  },
-  EMPTY_LIST: {
-    code: "EMPTY_CHURCH_LIST",
-    message: "Lista de igrejas vazia!"
-  },
-  NO_NEARBY_FOUND: {
-    code: "NO_NEARBY_CHURCHES_FOUND",
-    message: "Nenhuma igreja encontrada nas proximidades."
-  },
-  CEP_TO_LAT_LON_FAILED: {
-    code: "CEP_TO_LAT_LON_FAILED",
-    message: "Falha ao processar o CEP"
-  }
-};
-var INVALID_CEP_ERROR_FN = (cep) => ({
-  code: "INVALID_CEP",
-  message: cep ? `O CEP fornecido ${cep} n\xE3o existe.` : "O CEP fornecido n\xE3o existe."
-});
-
-// src/use-cases/errors/coordinates-not-found-error.ts
-var CoordinatesNotFoundError = class extends DomainError {
-  constructor() {
-    super(CHURCH_ERRORS.COORDINATES_NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */, "NOT_FOUND" /* NOT_FOUND */, "not_found" /* NOT_FOUND */);
-  }
-};
-
-// src/use-cases/errors/invalid-cep-error.ts
-var InvalidCepError = class extends DomainError {
-  constructor(cep) {
-    super(INVALID_CEP_ERROR_FN(cep), "NOT_FOUND" /* NOT_FOUND */, "NOT_FOUND" /* NOT_FOUND */, "not_found" /* NOT_FOUND */);
-  }
-};
-
-// src/use-cases/errors/cep-to-lat-lon-error.ts
-var CepToLatLonError = class extends SystemError {
-  constructor(cep) {
-    super(
-      {
-        code: CHURCH_ERRORS.CEP_TO_LAT_LON_FAILED.code,
-        message: `${CHURCH_ERRORS.CEP_TO_LAT_LON_FAILED.message} ${cep}.`
-      },
-      "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */
-    );
-  }
-};
 
 // src/messages/constants/churches/churches.ts
 var ROUTING_MAX_DISTANCE_KM = {
@@ -3160,20 +3425,6 @@ var CepToLatLonUseCase = class {
   }
 };
 
-// src/use-cases/errors/empty-church-list-error.ts
-var EmptyChurchListError = class extends DomainError {
-  constructor() {
-    super(CHURCH_ERRORS.EMPTY_LIST, "NOT_FOUND" /* NOT_FOUND */, "PERMANENT" /* PERMANENT */);
-  }
-};
-
-// src/use-cases/errors/no-nearby-churches-found-error.ts
-var NoNearbyChurchesFoundError = class extends DomainError {
-  constructor() {
-    super(CHURCH_ERRORS.NO_NEARBY_FOUND, "NOT_FOUND" /* NOT_FOUND */, "PERMANENT" /* PERMANENT */);
-  }
-};
-
 // src/use-cases/churches/calculate-church-route-distances-use-case.ts
 function maxDistanceFor(profile) {
   return ROUTING_MAX_DISTANCE_KM[profile ?? "pedestrian" /* PEDESTRIAN */];
@@ -3287,20 +3538,6 @@ var CACHE_CONFIG = {
      * put the real ceiling near 17s for a synchronous client-facing GET.
      */
     FETCH_TIMEOUT_MS: 7500
-  }
-};
-
-// src/errors/infrastructure/deadline-exceeded-error.ts
-var DeadlineExceededError = class extends InfrastructureError {
-  constructor(reason) {
-    super(
-      INFRA_ERRORS.DEADLINE_EXCEEDED,
-      reason,
-      "SERVICE_UNAVAILABLE" /* SERVICE_UNAVAILABLE */,
-      "ABORTED" /* ABORTED */,
-      "deadline_exceeded" /* DEADLINE_EXCEEDED */
-    );
-    this.name = "DeadlineExceededError";
   }
 };
 
@@ -3447,47 +3684,6 @@ function abortRace(promise, signal, onAbort) {
     promise.then(onResolve, onReject);
   });
 }
-
-// src/errors/infrastructure/service-overload-error.ts
-var ServiceOverloadError = class extends InfrastructureError {
-  constructor() {
-    super(INFRA_ERRORS.SERVICE_OVERLOAD, void 0, "TOO_MANY_REQUESTS" /* TOO_MANY_REQUESTS */);
-    this.name = "ServiceOverloadError";
-  }
-};
-
-// src/errors/infrastructure/provider-failure-error.ts
-var ProviderFailureError = class extends InfrastructureError {
-  constructor(originalError) {
-    super(
-      {
-        code: INFRA_ERRORS.PROVIDER_FAILURE.code,
-        message: INFRA_ERRORS.PROVIDER_FAILURE.message
-      },
-      originalError,
-      "SERVICE_UNAVAILABLE" /* SERVICE_UNAVAILABLE */,
-      "RETRYABLE" /* RETRYABLE */,
-      "provider_error" /* PROVIDER_ERROR */
-    );
-    this.name = "ProviderFailureError";
-  }
-};
-
-// src/errors/infrastructure/circuit-open-error.ts
-var CircuitOpenError = class extends InfrastructureError {
-  provider;
-  constructor(provider, reason) {
-    super(
-      INFRA_ERRORS.CIRCUIT_OPEN,
-      reason,
-      "SERVICE_UNAVAILABLE" /* SERVICE_UNAVAILABLE */,
-      "RETRYABLE" /* RETRYABLE */,
-      "circuit_open" /* CIRCUIT_OPEN */
-    );
-    this.name = "CircuitOpenError";
-    this.provider = provider;
-  }
-};
 
 // src/lib/infra/cache/resilient-cache.ts
 var import_cockatiel = require("cockatiel");
@@ -3963,20 +4159,6 @@ var FindNearestChurchesUseCase = class {
   }
 };
 
-// src/use-cases/errors/latitude-range-error.ts
-var LatitudeRangeError = class extends DomainError {
-  constructor() {
-    super(CHURCH_ERRORS.LATITUDE_OUT_OF_RANGE, "BAD_REQUEST" /* BAD_REQUEST */);
-  }
-};
-
-// src/use-cases/errors/longitude-range-error.ts
-var LongitudeRangeError = class extends DomainError {
-  constructor() {
-    super(CHURCH_ERRORS.LONGITUDE_OUT_OF_RANGE, "BAD_REQUEST" /* BAD_REQUEST */);
-  }
-};
-
 // src/core/constants/geo.ts
 var MIN_LATITUDE = -90;
 var MAX_LATITUDE = 90;
@@ -4032,20 +4214,6 @@ var FindNearbyChurchesKnnUseCase = class {
       churches,
       totalFound: churches.length
     });
-  }
-};
-
-// src/use-cases/errors/church-not-found-error.ts
-var ChurchNotFoundError = class extends DomainError {
-  constructor() {
-    super(CHURCH_ERRORS.NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
-  }
-};
-
-// src/use-cases/errors/create-church-error.ts
-var CreateChurchError = class extends DomainError {
-  constructor() {
-    super(CHURCH_ERRORS.CREATE_FAILED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
   }
 };
 
@@ -4242,46 +4410,12 @@ var PrismaChurchesRepository = class {
   }
 };
 
-// src/use-cases/errors/church-already-exists-error.ts
-var ChurchAlreadyExistsError = class extends DomainError {
-  constructor() {
-    super(CHURCH_ERRORS.ALREADY_EXISTS, "CONFLICT" /* CONFLICT */);
-  }
-};
-
 // src/repositories/prisma/errors/churches-error-mapping.ts
 var churchPrismaErrorMapping = {
   P2002: () => new ChurchAlreadyExistsError(),
   // Unique constraint violation (create)
   P2025: () => new ChurchNotFoundError()
   // Record not found (delete/update)
-};
-
-// src/messages/errors/geolocation.ts
-var GEO_ERRORS = {
-  NO_PROVIDER: {
-    code: "NO_GEO_PROVIDER",
-    message: "Provedor resiliente de geolocaliza\xE7\xE3o requer pelo menos um provedor de geolocaliza\xE7\xE3o configurado."
-  },
-  NO_ADDRESS_PROVIDER: {
-    code: "NO_ADDRESS_PROVIDER",
-    message: "Provedor resiliente de endere\xE7o requer pelo menos um provedor de endere\xE7o configurado."
-  },
-  ADDRESS_PROVIDER_FAILURE: {
-    code: "ADDRESS_PROVIDER_FAILURE",
-    message: "Falha no provedor de endere\xE7os."
-  },
-  TIMEOUT_EXCEEDED: {
-    code: "TIMEOUT_EXCEEDED",
-    message: "Tempo limite excedido ao buscar dados nos provedores externos."
-  }
-};
-
-// src/providers/address-provider/error/no-address-provider-error.ts
-var NoAddressProviderError = class extends InfrastructureError {
-  constructor() {
-    super(GEO_ERRORS.NO_ADDRESS_PROVIDER);
-  }
 };
 
 // src/lib/metrics/provider-metrics.ts
@@ -5149,13 +5283,6 @@ var LocationIqProvider = class {
   }
 };
 
-// src/providers/geo-provider/error/no-geo-provider-error.ts
-var NoGeoProviderError = class extends InfrastructureError {
-  constructor() {
-    super(GEO_ERRORS.NO_PROVIDER);
-  }
-};
-
 // src/providers/geo-provider/resilient-geo-provider.ts
 var perProviderEvents2 = {
   success(providerName) {
@@ -5314,38 +5441,6 @@ var StadiaChurchRoutingProvider = class {
 // src/errors/mappings/find-nearest-churches-error-mapper.ts
 var import_axios4 = require("axios");
 var import_client6 = require("@prisma/client");
-
-// src/errors/infrastructure/service-busy-error.ts
-var ServiceBusyError = class extends InfrastructureError {
-  provider;
-  constructor(provider) {
-    super(
-      INFRA_ERRORS.SERVICE_BUSY,
-      void 0,
-      "TOO_MANY_REQUESTS" /* TOO_MANY_REQUESTS */,
-      "RETRYABLE" /* RETRYABLE */,
-      "rate_limited" /* RATE_LIMITED */
-    );
-    this.name = "ServiceBusyError";
-    this.provider = provider;
-  }
-};
-
-// src/errors/infrastructure/timeout-exceeded-error.ts
-var TimeoutExceededError = class extends InfrastructureError {
-  constructor(reason) {
-    super(
-      GEO_ERRORS.TIMEOUT_EXCEEDED,
-      reason,
-      "SERVICE_UNAVAILABLE" /* SERVICE_UNAVAILABLE */,
-      "RETRYABLE" /* RETRYABLE */,
-      "timeout" /* TIMEOUT */
-    );
-    this.name = "TimeoutExceededError";
-  }
-};
-
-// src/errors/mappings/find-nearest-churches-error-mapper.ts
 var import_cockatiel2 = require("cockatiel");
 var PROVIDER_BY_URL_FRAGMENT = [
   ["viacep", "ViaCEP"],
@@ -5687,61 +5782,6 @@ var ResilientChurchRoutingProviderDecorator = class {
   }
 };
 
-// src/errors/app-error-registry.ts
-var UNKNOWN_PROVIDER = "Unknown Provider";
-function readProvider(data) {
-  return data?.provider || data?.body?.provider;
-}
-var AppErrorRegistry = {
-  InvalidCepError: (msg) => {
-    const cep = /\b\d{8}\b/.exec(msg)?.[0] || /\d{8}/.exec(msg)?.[0];
-    return new InvalidCepError(cep);
-  },
-  CoordinatesNotFoundError: () => new CoordinatesNotFoundError(),
-  NoNearbyChurchesFoundError: () => new NoNearbyChurchesFoundError(),
-  EmptyChurchListError: () => new EmptyChurchListError(),
-  CepToLatLonError: (msg) => {
-    const cep = /\d+/.exec(msg)?.[0] || "";
-    return new CepToLatLonError(cep);
-  },
-  ServiceBusyError: (msg, data) => {
-    const provider = readProvider(data) || msg.replace("Servi\xE7o temporariamente indispon\xEDvel: ", "");
-    return new ServiceBusyError(provider);
-  },
-  ServiceOverloadError: () => new ServiceOverloadError(),
-  TimeoutExceededError: (msg) => new TimeoutExceededError(msg),
-  DeadlineExceededError: (msg) => new DeadlineExceededError(msg),
-  CircuitOpenError: (_msg, data) => {
-    return new CircuitOpenError(readProvider(data) || UNKNOWN_PROVIDER);
-  },
-  ProviderFailureError: (_msg, data) => new ProviderFailureError(data?.originalError)
-};
-function serializeAppError(err2) {
-  return {
-    type: err2.constructor.name,
-    message: err2.message,
-    data: err2.data || err2
-  };
-}
-var UnknownDeserializationError = class extends InfrastructureError {
-  constructor(message) {
-    super({
-      code: "UNKNOWN_DESERIALIZATION_ERROR",
-      message
-    });
-  }
-};
-function deserializeAppError(type, message, data) {
-  const factory = safeLookup(AppErrorRegistry, type);
-  if (factory) {
-    try {
-      return factory(message, data);
-    } catch {
-    }
-  }
-  return new UnknownDeserializationError(message);
-}
-
 // src/use-cases/churches/church-lookup-cache-policy.ts
 function isRetryableChurchLookupError(error) {
   return error.failureMode !== "NOT_FOUND" /* NOT_FOUND */ && error.failureMode !== "PERMANENT" /* PERMANENT */;
@@ -5886,13 +5926,6 @@ function toHTTPChurch(input) {
     updatedAt: input.updatedAt
   };
 }
-
-// src/use-cases/errors/no-address-error.ts
-var NoAddressError = class extends DomainError {
-  constructor() {
-    super(CHURCH_ERRORS.NO_ADDRESS_PROVIDED, "BAD_REQUEST" /* BAD_REQUEST */);
-  }
-};
 
 // src/use-cases/churches/create-church-use-case.ts
 var CreateChurchUseCase = class {
@@ -6256,20 +6289,6 @@ var analyticsIdentity = (0, import_fastify_plugin.default)(analyticsIdentityPlug
 
 // src/http/middlewares/verify-analytics-proxy.middleware.ts
 var import_node_crypto4 = require("crypto");
-
-// src/messages/errors/analytics.ts
-var ANALYTICS_ERRORS = {
-  PROXY_REQUIRED: {
-    code: "ANALYTICS_PROXY_REQUIRED",
-    message: "N\xE3o autorizado!"
-  },
-  VISITOR_NOT_FOUND: {
-    code: "ANALYTICS_VISITOR_NOT_FOUND",
-    message: "Visitante n\xE3o encontrado!"
-  }
-};
-
-// src/http/middlewares/verify-analytics-proxy.middleware.ts
 var ANALYTICS_PROXY_HEADER = "x-analytics-proxy";
 function secretsMatch(presented, expected) {
   const presentedDigest = (0, import_node_crypto4.createHash)("sha256").update(presented).digest();
@@ -6716,13 +6735,6 @@ var AnalyticsPresenter = class {
       utmCampaign: session.utmCampaign,
       previousVisitAt: sessions[index + 1]?.startedAt ?? null
     }));
-  }
-};
-
-// src/use-cases/errors/visitor-not-found-error.ts
-var VisitorNotFoundError = class extends DomainError {
-  constructor() {
-    super(ANALYTICS_ERRORS.VISITOR_NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
   }
 };
 
@@ -7413,28 +7425,6 @@ var HTTP_ERRORS = {
   SERVICE_UNAVAILABLE: {
     code: "SERVICE_UNAVAILABLE",
     message: "Servi\xE7o temporariamente indispon\xEDvel. Por favor, tente novamente mais tarde."
-  }
-};
-
-// src/messages/errors/validation.ts
-var VALIDATION_ERRORS = {
-  ZOD_VALIDATION: {
-    code: "VALIDATION_ERROR",
-    message: "Dados de registro inv\xE1lidos!"
-  }
-};
-
-// src/errors/http-errors/zod-validation-error.ts
-var ZodValidationError = class extends AppError {
-  constructor(issues) {
-    super(
-      {
-        code: VALIDATION_ERRORS.ZOD_VALIDATION.code,
-        message: VALIDATION_ERRORS.ZOD_VALIDATION.message,
-        issues
-      },
-      "BAD_REQUEST" /* BAD_REQUEST */
-    );
   }
 };
 

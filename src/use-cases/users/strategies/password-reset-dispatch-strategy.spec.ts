@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { PasswordResetDispatchStrategy } from './password-reset-dispatch-strategy'
 import { IOutboxEvent, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { isOk, isErr } from 'core/shared/result'
-import { InvalidPasswordResetPayloadError } from '@use-cases/errors/invalid-password-reset-payload-error'
+import { InvalidPasswordResetPayloadError } from 'errors'
 import { EMAIL_CONSTANTS } from 'messages/constants/email/email'
 import { PASSWORD_RESET_CONSTANTS } from 'messages/constants/auth/password-reset'
 

@@ -1,6 +1,6 @@
 import { Result } from 'core/shared/result'
 import { OutboxEventInput } from 'core/types/outbox/outbox-event-input'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 
 /**
  * Status do evento na Outbox.

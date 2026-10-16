@@ -1828,6 +1828,14 @@ var AppError = class extends Error {
   }
 };
 
+// src/errors/domain-error.ts
+var DomainError = class extends AppError {
+  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
+  constructor(detail, type, failureMode, telemetryReason) {
+    super(detail, type, failureMode, telemetryReason);
+  }
+};
+
 // src/errors/infrastructure-error.ts
 var InfrastructureError = class extends AppError {
   originalError;
@@ -1839,6 +1847,19 @@ var InfrastructureError = class extends AppError {
     }
   }
 };
+
+// src/errors/system-error.ts
+var SystemError = class extends AppError {
+  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
+  constructor(detail, type) {
+    super(detail, type);
+  }
+};
+
+// src/core/shared/safe-lookup.ts
+function safeLookup(table, key) {
+  return Object.hasOwn(table, key) ? table[key] : void 0;
+}
 
 // src/messages/errors/infrastructure.ts
 var INFRA_ERRORS = {
@@ -1868,12 +1889,154 @@ var INFRA_ERRORS = {
   }
 };
 
-// src/errors/infrastructure/database-query-error.ts
+// src/messages/errors/forms.ts
+var INVALID_FORM_PAYLOAD_ERROR_FN = (fieldName) => ({
+  code: "INVALID_FORM_PAYLOAD",
+  message: fieldName ? `Payload do formul\xE1rio inv\xE1lido: campo '${fieldName}' possui valor inesperado.` : "Payload do formul\xE1rio inv\xE1lido: um ou mais campos possuem valores inesperados."
+});
+
+// src/errors/domain/forms/invalid-form-payload-error.ts
+var InvalidFormPayloadError = class extends DomainError {
+  constructor(fieldName) {
+    super(INVALID_FORM_PAYLOAD_ERROR_FN(fieldName), "BAD_REQUEST" /* BAD_REQUEST */);
+  }
+};
+
+// src/messages/errors/outbox.ts
+var OUTBOX_ERRORS = {
+  EVENT_NOT_FOUND: {
+    code: "OUTBOX_EVENT_NOT_FOUND",
+    message: "O evento de outbox solicitado n\xE3o foi encontrado no banco de dados."
+  },
+  OPERATION_FAILED: {
+    code: "OUTBOX_OPERATION_FAILED",
+    message: "Falha ao processar opera\xE7\xE3o da outbox no banco de dados."
+  }
+};
+var UNKNOWN_OUTBOX_EVENT_TYPE_ERROR_FN = (eventType) => ({
+  code: "UNKNOWN_OUTBOX_EVENT_TYPE",
+  message: `Nenhuma estrat\xE9gia de despacho registrada para o tipo de evento '${eventType}'.`
+});
+
+// src/errors/domain/outbox/outbox-errors.ts
+var OutboxEventNotFoundHttpError = class extends DomainError {
+  constructor() {
+    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
+  }
+};
+var OutboxOperationFailedHttpError = class extends SystemError {
+  constructor() {
+    super(OUTBOX_ERRORS.OPERATION_FAILED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+  }
+};
+var OutboxEventNotFoundInfraError = class extends InfrastructureError {
+  constructor(originalError) {
+    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, originalError);
+  }
+};
+var OutboxOperationFailedInfraError = class extends InfrastructureError {
+  constructor(originalError) {
+    super(OUTBOX_ERRORS.OPERATION_FAILED, originalError);
+  }
+};
+
+// src/errors/domain/outbox/unknown-outbox-event-type-error.ts
+var UnknownOutboxEventTypeError = class extends InfrastructureError {
+  constructor(eventType) {
+    super(UNKNOWN_OUTBOX_EVENT_TYPE_ERROR_FN(eventType));
+  }
+};
+
+// src/messages/errors/password-reset.ts
+var INVALID_PASSWORD_RESET_PAYLOAD_ERROR_FN = (fieldName) => ({
+  code: "INVALID_PASSWORD_RESET_PAYLOAD",
+  message: fieldName ? `Payload de reset de senha inv\xE1lido: campo '${fieldName}' possui valor inesperado.` : "Payload de reset de senha inv\xE1lido: um ou mais campos possuem valores inesperados."
+});
+
+// src/errors/domain/users/invalid-password-reset-payload-error.ts
+var InvalidPasswordResetPayloadError = class extends DomainError {
+  constructor(fieldName) {
+    super(INVALID_PASSWORD_RESET_PAYLOAD_ERROR_FN(fieldName), "BAD_REQUEST" /* BAD_REQUEST */);
+  }
+};
+
+// src/errors/infrastructure/database/database-query-error.ts
 var DatabaseQueryError = class extends InfrastructureError {
   constructor(originalError) {
     super(INFRA_ERRORS.DATABASE_QUERY_FAILURE, originalError, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
     this.name = "DatabaseQueryError";
   }
+};
+
+// src/messages/errors/queue.ts
+var QUEUE_ERRORS = {
+  JOB_ALREADY_PROCESSING: {
+    code: "JOB_ALREADY_PROCESSING",
+    message: "Bloqueio de Idempot\xEAncia: Job em processamento simult\xE2neo por outra thread."
+  },
+  SMTP_DISPATCH_FAILED: {
+    code: "SMTP_DISPATCH_FAILED",
+    message: "Falha cr\xEDtica ao despachar os e-mails via servidor SMTP."
+  }
+};
+
+// src/errors/infrastructure/queue/job-already-processing-error.ts
+var JobAlreadyProcessingError = class extends InfrastructureError {
+  constructor() {
+    super(QUEUE_ERRORS.JOB_ALREADY_PROCESSING);
+  }
+};
+
+// src/errors/infrastructure/queue/smtp-dispatch-error.ts
+var SmtpDispatchError = class extends InfrastructureError {
+  constructor(originalError) {
+    super(QUEUE_ERRORS.SMTP_DISPATCH_FAILED, originalError);
+  }
+};
+
+// src/messages/errors/system.ts
+var SYSTEM_ERRORS = {
+  ASYNC_LOCAL_STORAGE_NOT_INITIALIZED: {
+    code: "ASYNC_LOCAL_STORAGE_NOT_INITIALIZED",
+    message: "Async Local Storage is not initialized."
+  }
+};
+
+// src/errors/system/async-local-storage-not-initialized-error.ts
+var AsyncLocalStorageNotInitializedError = class extends SystemError {
+  constructor() {
+    super(SYSTEM_ERRORS.ASYNC_LOCAL_STORAGE_NOT_INITIALIZED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
+  }
+};
+
+// src/http/http-status.ts
+var HTTP_STATUS = {
+  OK: 200,
+  CREATED: 201,
+  NO_CONTENT: 204,
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  CONFLICT: 409,
+  UNPROCESSABLE_ENTITY: 422,
+  TOO_MANY_REQUESTS: 429,
+  INTERNAL_SERVER_ERROR: 500,
+  SERVICE_UNAVAILABLE: 503
+};
+
+// src/errors/http-errors/http-error-status.mapper.ts
+var STATUS_MAP = {
+  ["OK" /* OK */]: HTTP_STATUS.OK,
+  ["BAD_REQUEST" /* BAD_REQUEST */]: HTTP_STATUS.BAD_REQUEST,
+  ["UNAUTHORIZED" /* UNAUTHORIZED */]: HTTP_STATUS.UNAUTHORIZED,
+  ["FORBIDDEN" /* FORBIDDEN */]: HTTP_STATUS.FORBIDDEN,
+  ["NOT_FOUND" /* NOT_FOUND */]: HTTP_STATUS.NOT_FOUND,
+  ["CONFLICT" /* CONFLICT */]: HTTP_STATUS.CONFLICT,
+  ["UNPROCESSABLE_ENTITY" /* UNPROCESSABLE_ENTITY */]: HTTP_STATUS.UNPROCESSABLE_ENTITY,
+  ["INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */]: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+  ["TOO_MANY_REQUESTS" /* TOO_MANY_REQUESTS */]: HTTP_STATUS.TOO_MANY_REQUESTS,
+  ["SERVICE_UNAVAILABLE" /* SERVICE_UNAVAILABLE */]: HTTP_STATUS.SERVICE_UNAVAILABLE
 };
 
 // src/core/projections/analytics-session-attributes.ts
@@ -2222,27 +2385,6 @@ function ContactStaffEmail({ name, lastName, email, ipAddress }) {
   ] });
 }
 
-// src/errors/domain-error.ts
-var DomainError = class extends AppError {
-  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
-  constructor(detail, type, failureMode, telemetryReason) {
-    super(detail, type, failureMode, telemetryReason);
-  }
-};
-
-// src/messages/errors/forms.ts
-var INVALID_FORM_PAYLOAD_ERROR_FN = (fieldName) => ({
-  code: "INVALID_FORM_PAYLOAD",
-  message: fieldName ? `Payload do formul\xE1rio inv\xE1lido: campo '${fieldName}' possui valor inesperado.` : "Payload do formul\xE1rio inv\xE1lido: um ou mais campos possuem valores inesperados."
-});
-
-// src/use-cases/errors/forms/invalid-form-payload-error.ts
-var InvalidFormPayloadError = class extends DomainError {
-  constructor(fieldName) {
-    super(INVALID_FORM_PAYLOAD_ERROR_FN(fieldName), "BAD_REQUEST" /* BAD_REQUEST */);
-  }
-};
-
 // src/use-cases/forms/strategies/form-payload-fields.ts
 function requireStringField(value, fieldName) {
   if (typeof value === "string") {
@@ -2466,19 +2608,6 @@ var FormSubmissionDispatchStrategy = class {
   }
 };
 
-// src/messages/errors/password-reset.ts
-var INVALID_PASSWORD_RESET_PAYLOAD_ERROR_FN = (fieldName) => ({
-  code: "INVALID_PASSWORD_RESET_PAYLOAD",
-  message: fieldName ? `Payload de reset de senha inv\xE1lido: campo '${fieldName}' possui valor inesperado.` : "Payload de reset de senha inv\xE1lido: um ou mais campos possuem valores inesperados."
-});
-
-// src/use-cases/errors/invalid-password-reset-payload-error.ts
-var InvalidPasswordResetPayloadError = class extends DomainError {
-  constructor(fieldName) {
-    super(INVALID_PASSWORD_RESET_PAYLOAD_ERROR_FN(fieldName), "BAD_REQUEST" /* BAD_REQUEST */);
-  }
-};
-
 // src/messages/constants/email/email.ts
 var EMAIL_CONSTANTS = {
   PASSWORD_RECOVERY_SUBJECT: "Recupera\xE7\xE3o de senha",
@@ -2618,29 +2747,6 @@ var PasswordResetDispatchStrategy = class {
   }
 };
 
-// src/messages/errors/outbox.ts
-var OUTBOX_ERRORS = {
-  EVENT_NOT_FOUND: {
-    code: "OUTBOX_EVENT_NOT_FOUND",
-    message: "O evento de outbox solicitado n\xE3o foi encontrado no banco de dados."
-  },
-  OPERATION_FAILED: {
-    code: "OUTBOX_OPERATION_FAILED",
-    message: "Falha ao processar opera\xE7\xE3o da outbox no banco de dados."
-  }
-};
-var UNKNOWN_OUTBOX_EVENT_TYPE_ERROR_FN = (eventType) => ({
-  code: "UNKNOWN_OUTBOX_EVENT_TYPE",
-  message: `Nenhuma estrat\xE9gia de despacho registrada para o tipo de evento '${eventType}'.`
-});
-
-// src/lib/errors/outbox/unknown-outbox-event-type-error.ts
-var UnknownOutboxEventTypeError = class extends InfrastructureError {
-  constructor(eventType) {
-    super(UNKNOWN_OUTBOX_EVENT_TYPE_ERROR_FN(eventType));
-  }
-};
-
 // src/lib/infra/jobs/outbox-dispatch-strategy-registry.ts
 var OutboxDispatchStrategyRegistry = class {
   strategies;
@@ -2663,29 +2769,6 @@ function makeOutboxDispatchStrategyRegistry() {
     [OUTBOX_EVENT_TYPES.PASSWORD_RESET_REQUESTED, new PasswordResetDispatchStrategy()]
   ]);
 }
-
-// src/messages/errors/system.ts
-var SYSTEM_ERRORS = {
-  ASYNC_LOCAL_STORAGE_NOT_INITIALIZED: {
-    code: "ASYNC_LOCAL_STORAGE_NOT_INITIALIZED",
-    message: "Async Local Storage is not initialized."
-  }
-};
-
-// src/errors/system-error.ts
-var SystemError = class extends AppError {
-  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
-  constructor(detail, type) {
-    super(detail, type);
-  }
-};
-
-// src/lib/errors/async-local-storage/async-local-storage-not-initialized-error.ts
-var AsyncLocalStorageNotInitializedError = class extends SystemError {
-  constructor() {
-    super(SYSTEM_ERRORS.ASYNC_LOCAL_STORAGE_NOT_INITIALIZED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
-  }
-};
 
 // src/lib/prisma/helpers/database-context.ts
 var DatabaseContext = class {
@@ -2744,25 +2827,6 @@ var DatabaseContext = class {
 
 // src/lib/workers/mail-worker.ts
 var import_bullmq4 = require("bullmq");
-
-// src/messages/errors/queue.ts
-var QUEUE_ERRORS = {
-  JOB_ALREADY_PROCESSING: {
-    code: "JOB_ALREADY_PROCESSING",
-    message: "Bloqueio de Idempot\xEAncia: Job em processamento simult\xE2neo por outra thread."
-  },
-  SMTP_DISPATCH_FAILED: {
-    code: "SMTP_DISPATCH_FAILED",
-    message: "Falha cr\xEDtica ao despachar os e-mails via servidor SMTP."
-  }
-};
-
-// src/lib/errors/queue/smtp-dispatch-error.ts
-var SmtpDispatchError = class extends InfrastructureError {
-  constructor(originalError) {
-    super(QUEUE_ERRORS.SMTP_DISPATCH_FAILED, originalError);
-  }
-};
 
 // src/use-cases/email/send-email.ts
 var SendEmailUseCase = class {
@@ -2882,13 +2946,6 @@ var mailSender = new NodemailerMailSender();
 function makeSendEmailUseCase() {
   return new SendEmailUseCase(mailSender);
 }
-
-// src/lib/errors/queue/job-already-processing-error.ts
-var JobAlreadyProcessingError = class extends InfrastructureError {
-  constructor() {
-    super(QUEUE_ERRORS.JOB_ALREADY_PROCESSING);
-  }
-};
 
 // src/messages/constants/redis/redis.ts
 var REDIS_CONSTANTS = {
@@ -3091,9 +3148,7 @@ function throwFirstFailure(failures) {
   if (firstFailure.status === "rejected") {
     throw firstFailure.reason;
   }
-  if (isErr(firstFailure.value)) {
-    throw firstFailure.value.error;
-  }
+  throw firstFailure.value.error;
 }
 function createJobFailureHandler(outboxRepository) {
   return async (job, err2) => {
@@ -3474,13 +3529,6 @@ var PrismaOutboxRepository = class {
 
 // src/lib/prisma/utils/prisma-error-mapper.ts
 var import_client3 = require("@prisma/client");
-
-// src/core/shared/safe-lookup.ts
-function safeLookup(table, key) {
-  return Object.hasOwn(table, key) ? table[key] : void 0;
-}
-
-// src/lib/prisma/utils/prisma-error-mapper.ts
 var PrismaErrorMapper = class {
   constructor(errorMapping) {
     this.errorMapping = errorMapping;
@@ -3497,28 +3545,6 @@ var PrismaErrorMapper = class {
       }
     }
     return new DatabaseQueryError(error);
-  }
-};
-
-// src/use-cases/errors/outbox/outbox-errors.ts
-var OutboxEventNotFoundHttpError = class extends DomainError {
-  constructor() {
-    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, "NOT_FOUND" /* NOT_FOUND */);
-  }
-};
-var OutboxOperationFailedHttpError = class extends SystemError {
-  constructor() {
-    super(OUTBOX_ERRORS.OPERATION_FAILED, "INTERNAL_SERVER_ERROR" /* INTERNAL_SERVER_ERROR */);
-  }
-};
-var OutboxEventNotFoundInfraError = class extends InfrastructureError {
-  constructor(originalError) {
-    super(OUTBOX_ERRORS.EVENT_NOT_FOUND, originalError);
-  }
-};
-var OutboxOperationFailedInfraError = class extends InfrastructureError {
-  constructor(originalError) {
-    super(OUTBOX_ERRORS.OPERATION_FAILED, originalError);
   }
 };
 
@@ -3633,22 +3659,6 @@ function abortRace(promise, signal, onAbort) {
     promise.then(onResolve, onReject);
   });
 }
-
-// src/http/http-status.ts
-var HTTP_STATUS = {
-  OK: 200,
-  CREATED: 201,
-  NO_CONTENT: 204,
-  BAD_REQUEST: 400,
-  UNAUTHORIZED: 401,
-  FORBIDDEN: 403,
-  NOT_FOUND: 404,
-  CONFLICT: 409,
-  UNPROCESSABLE_ENTITY: 422,
-  TOO_MANY_REQUESTS: 429,
-  INTERNAL_SERVER_ERROR: 500,
-  SERVICE_UNAVAILABLE: 503
-};
 
 // src/metrics-server.ts
 var METRICS_COLLECTION_TIMEOUT_MS = 2e3;

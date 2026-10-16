@@ -2,9 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { FindNearbyChurchesKnnUseCase } from './find-nearby-churches-knn-use-case'
 import { ChurchesRepository, NearbyChurch } from 'core/contracts/repository/churches-repository.interface'
 import { ok, err, isOk, isErr } from 'core/shared/result'
-import { LatitudeRangeError } from '@use-cases/errors/latitude-range-error'
-import { LongitudeRangeError } from '@use-cases/errors/longitude-range-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { DatabaseQueryError, LatitudeRangeError, LongitudeRangeError } from 'errors'
 import { CHURCH_CONSTANTS } from 'messages/constants/churches/churches'
 
 function nearby(id: number): NearbyChurch {

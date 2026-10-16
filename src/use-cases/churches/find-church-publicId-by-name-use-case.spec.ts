@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { FindChurchPublicIdByNameUseCase } from './find-church-publicId-by-name-use-case'
 import { CreateChurchUseCase } from './create-church-use-case'
 import { InMemoryChurchesRepository } from '@repositories/in-memory/in-memory-chuches-repository'
-import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
+import { ChurchNotFoundError } from 'errors'
 import { isOk, isErr, ok } from 'core/shared/result'
 
 describe('Find Church PublicId By Name Use Case', () => {

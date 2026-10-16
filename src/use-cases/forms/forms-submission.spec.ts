@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { FormsSubmissionUseCase } from './forms-submission'
 import { InMemoryFormsSubmissionRepository } from '@repositories/in-memory/in-memory-forms-submission-repository'
-import { FormSubmissionError } from '@use-cases/errors/form-submission-error'
+import { FormSubmissionError } from 'errors'
 import { ok, err } from 'core/shared/result'
 
 describe('Forms Submission Use Case', async () => {

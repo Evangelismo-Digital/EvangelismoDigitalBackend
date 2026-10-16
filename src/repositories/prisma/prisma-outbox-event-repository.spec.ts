@@ -9,8 +9,7 @@ import { DatabaseContext } from '@lib/prisma/helpers/database-context'
 import { PrismaErrorMapper } from '@lib/prisma/utils/prisma-error-mapper'
 import { IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { isErr, isOk } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { InfrastructureError } from 'errors/infrastructure-error'
+import { AppError, InfrastructureError } from 'errors'
 
 class MappedTestError extends InfrastructureError {
   constructor() {

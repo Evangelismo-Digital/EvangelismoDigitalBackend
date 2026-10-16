@@ -1,10 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { CreateChurchUseCase } from './create-church-use-case'
 import { InMemoryChurchesRepository } from '@repositories/in-memory/in-memory-chuches-repository'
-import { ChurchAlreadyExistsError } from '@use-cases/errors/church-already-exists-error'
-import { CreateChurchError } from '@use-cases/errors/create-church-error'
-import { NoAddressError } from '@use-cases/errors/no-address-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { ChurchAlreadyExistsError, CreateChurchError, DatabaseQueryError, NoAddressError } from 'errors'
 import { isOk, isErr, err } from 'core/shared/result'
 
 describe('Create Church Use Case', () => {

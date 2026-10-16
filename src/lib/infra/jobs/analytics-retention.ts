@@ -1,6 +1,6 @@
 import { AnalyticsRepository } from 'core/contracts/repository/analytics-repository.interface'
 import { Result, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 import { env } from '@env/index'
 import { logger } from '@lib/logger'
 import { withDistributedLock } from '@lib/infra/distributed-lock/with-distributed-lock'

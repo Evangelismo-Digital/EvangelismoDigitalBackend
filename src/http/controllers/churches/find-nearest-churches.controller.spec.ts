@@ -15,8 +15,7 @@ import { findNearestChurches } from './find-nearest-churches.controller'
 import { logger } from '@lib/logger'
 import { Deadline } from 'core/shared/deadline'
 import { ok, err } from 'core/shared/result'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+import { DatabaseQueryError, InvalidCepError } from 'errors'
 
 const response = {
   nearestChurchesInfo: [],

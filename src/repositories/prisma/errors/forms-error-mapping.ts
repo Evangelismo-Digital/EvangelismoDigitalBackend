@@ -1,8 +1,5 @@
-import { FormsAlreadyExistsError } from '@use-cases/errors/forms/forms-already-exists-error'
-import { FormsSubmissionError } from '@use-cases/errors/forms/forms-submission-error'
-import { FormsNotFoundError } from '@use-cases/errors/forms/forms-not-found-error'
+import { AppError, FormsAlreadyExistsError, FormsNotFoundError, FormsSubmissionError } from 'errors'
 import { PrismaErrorMappingConfig } from '@lib/prisma/utils/prisma-error-mapper'
-import { AppError } from 'errors/app-error'
 
 export const formsPrismaErrorMapping: PrismaErrorMappingConfig<AppError> = {
   P2002: () => new FormsAlreadyExistsError(),

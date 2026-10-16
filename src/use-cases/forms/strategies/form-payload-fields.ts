@@ -1,7 +1,6 @@
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 import { Result, ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
-import { InvalidFormPayloadError } from '@use-cases/errors/forms/invalid-form-payload-error'
+import { AppError, InvalidFormPayloadError } from 'errors'
 import { IMailJobData } from 'core/contracts/lib/queue/mail-job-data.interface'
 import { env } from '@env/index'
 

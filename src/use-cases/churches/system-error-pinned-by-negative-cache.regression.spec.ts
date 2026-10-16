@@ -1,17 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { isRetryableChurchLookupError, makeNearestChurchesCacheOptions } from './church-lookup-cache-policy'
-import { CepToLatLonError } from '@use-cases/errors/cep-to-lat-lon-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
-import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
-import { EmptyChurchListError } from '@use-cases/errors/empty-church-list-error'
-import { LatitudeRangeError } from '@use-cases/errors/latitude-range-error'
-import { LongitudeRangeError } from '@use-cases/errors/longitude-range-error'
-import { ServiceBusyError } from 'errors/infrastructure/service-busy-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { ProviderFailureError } from 'errors/infrastructure/provider-failure-error'
+import {
+  AppError,
+  CepToLatLonError,
+  CoordinatesNotFoundError,
+  EmptyChurchListError,
+  InvalidCepError,
+  LatitudeRangeError,
+  LongitudeRangeError,
+  NoNearbyChurchesFoundError,
+  ProviderFailureError,
+  ServiceBusyError,
+  TimeoutExceededError,
+} from 'errors'
 import { ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 import { ResilientCache } from '@lib/infra/cache/resilient-cache'
 
 vi.mock('@lib/logger', () => ({

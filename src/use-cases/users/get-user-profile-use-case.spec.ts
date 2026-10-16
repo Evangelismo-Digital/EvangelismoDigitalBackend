@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { RegisterUserUseCase } from './register-user'
 import { UserRole } from 'core/contracts/repository/users-repository.interface'
 import { cpf as cpfValidator } from 'cpf-cnpj-validator'
-import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
+import { UserNotFoundError } from 'errors'
 import { GetUserProfileUseCase } from './get-user-profile'
 import { isOk, isErr, ok } from 'core/shared/result'
 

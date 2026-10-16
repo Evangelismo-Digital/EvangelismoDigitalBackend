@@ -92,7 +92,7 @@ import { makeOutboxDispatchStrategyRegistry } from './make-outbox-dispatch-regis
 import { InMemoryOutboxRepository } from '@repositories/in-memory/in-memory-outbox-repository'
 import { IOutboxEvent, IOutboxEventStatus } from 'core/contracts/repository/outbox-repository.interface'
 import { isOk, ok, err } from 'core/shared/result'
-import { InfrastructureError } from 'errors/infrastructure-error'
+import { InfrastructureError } from 'errors'
 import { OUTBOX_CONSTANTS } from 'messages/constants/outbox/outbox'
 import { getRegistry } from '@lib/metrics'
 import {

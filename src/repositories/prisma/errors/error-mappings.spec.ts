@@ -7,20 +7,20 @@ import { churchPrismaErrorMapping } from './churches-error-mapping'
 import { formsPrismaErrorMapping } from './forms-error-mapping'
 import { outboxHttpPrismaErrorMapping, outboxInfraPrismaErrorMapping } from './outbox-error-mapping'
 
-import { UserAlreadyExistsError } from '@use-cases/errors/user-already-exists-error'
-import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
-import { ChurchAlreadyExistsError } from '@use-cases/errors/church-already-exists-error'
-import { ChurchNotFoundError } from '@use-cases/errors/church-not-found-error'
-import { FormsAlreadyExistsError } from '@use-cases/errors/forms/forms-already-exists-error'
-import { FormsNotFoundError } from '@use-cases/errors/forms/forms-not-found-error'
-import { FormsSubmissionError } from '@use-cases/errors/forms/forms-submission-error'
 import {
+  ChurchAlreadyExistsError,
+  ChurchNotFoundError,
+  DatabaseQueryError,
+  FormsAlreadyExistsError,
+  FormsNotFoundError,
+  FormsSubmissionError,
   OutboxEventNotFoundHttpError,
-  OutboxOperationFailedHttpError,
   OutboxEventNotFoundInfraError,
+  OutboxOperationFailedHttpError,
   OutboxOperationFailedInfraError,
-} from '@use-cases/errors/outbox/outbox-errors'
-import { DatabaseQueryError } from 'errors/infrastructure/database-query-error'
+  UserAlreadyExistsError,
+  UserNotFoundError,
+} from 'errors'
 
 function prismaError(code: string) {
   return new Prisma.PrismaClientKnownRequestError(`prisma ${code}`, {

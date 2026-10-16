@@ -5,12 +5,14 @@ import { FindNearbyChurchesKnnUseCase } from './find-nearby-churches-knn-use-cas
 import { CalculateChurchRouteDistancesUseCase } from './calculate-church-route-distances-use-case'
 import { ChurchPresenter } from '@http/presenters/church-presenter'
 import { isOk, ok, isErr, err } from 'core/shared/result'
-import { ServiceOverloadError as InfraServiceOverloadError } from 'errors/infrastructure/service-overload-error'
-import { TimeoutExceededError } from 'errors/infrastructure/timeout-exceeded-error'
-import { InvalidCepError } from '@use-cases/errors/invalid-cep-error'
-import { CoordinatesNotFoundError } from '@use-cases/errors/coordinates-not-found-error'
-import { NoNearbyChurchesFoundError } from '@use-cases/errors/no-nearby-churches-found-error'
-import { LatitudeRangeError } from '@use-cases/errors/latitude-range-error'
+import {
+  CoordinatesNotFoundError,
+  InvalidCepError,
+  LatitudeRangeError,
+  NoNearbyChurchesFoundError,
+  ServiceOverloadError as InfraServiceOverloadError,
+  TimeoutExceededError,
+} from 'errors'
 import { Deadline } from 'core/shared/deadline'
 
 const mockGetOrFetch = vi.fn()

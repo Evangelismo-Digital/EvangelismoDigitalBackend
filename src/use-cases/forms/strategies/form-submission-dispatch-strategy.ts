@@ -5,7 +5,7 @@ import {
 import { IOutboxEvent } from 'core/contracts/repository/outbox-repository.interface'
 import { FormPayload } from 'core/types/use-cases/forms/form-payload'
 import { Result, ok, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 import { ContactEmailStrategy } from './contact-email-strategy'
 import { DecisionForChristEmailStrategy } from './decision-for-christ-email-strategy'
 

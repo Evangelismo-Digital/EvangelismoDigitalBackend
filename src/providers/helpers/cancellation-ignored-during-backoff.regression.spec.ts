@@ -33,7 +33,7 @@ import { runWithRetries } from './deadline-retry'
 import { Deadline } from 'core/shared/deadline'
 import { isErr, isOk } from 'core/shared/result'
 import { AxiosError } from 'axios'
-import { DeadlineExceededError } from 'errors/infrastructure/deadline-exceeded-error'
+import { DeadlineExceededError } from 'errors'
 import { FailureMode } from 'core/types/failure-mode/failure-mode.enum'
 
 /** A 429 maps to ServiceBusyError, which is RETRYABLE — so it triggers a backoff. */

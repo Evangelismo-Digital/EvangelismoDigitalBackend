@@ -1,9 +1,7 @@
 import { User } from '@prisma/client'
 import { UsersRepository, UserUpdateInput } from 'core/contracts/repository/users-repository.interface'
-import { UserNotFoundError } from '@use-cases/errors/user-not-found-error'
-import { UserAlreadyExistsError } from '@use-cases/errors/user-already-exists-error'
+import { AppError, UserAlreadyExistsError, UserNotFoundError } from 'errors'
 import { Result, ok, err, isErr } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
 
 interface UpdateUserUseCaseRequest {
   publicId: string

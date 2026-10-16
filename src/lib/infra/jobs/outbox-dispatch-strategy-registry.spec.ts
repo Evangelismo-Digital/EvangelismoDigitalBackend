@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { OutboxDispatchStrategyRegistry } from './outbox-dispatch-strategy-registry'
-import { UnknownOutboxEventTypeError } from '@lib/errors/outbox/unknown-outbox-event-type-error'
+import { UnknownOutboxEventTypeError } from 'errors'
 import { IOutboxDispatchStrategy } from 'core/contracts/lib/infra/outbox-dispatch-strategy.interface'
 import { isOk, isErr, ok } from 'core/shared/result'
 

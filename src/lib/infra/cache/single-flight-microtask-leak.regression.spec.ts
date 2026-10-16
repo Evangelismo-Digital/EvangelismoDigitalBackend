@@ -34,7 +34,7 @@ vi.mock('@lib/metrics/cache-metrics', () => ({
 import { ResilientCache } from './resilient-cache'
 import { Deadline } from 'core/shared/deadline'
 import { Result, ok, isOk } from 'core/shared/result'
-import { AppError } from 'errors/app-error'
+import { AppError } from 'errors'
 
 /**
  * Lets every parked caller advance to its next await point.

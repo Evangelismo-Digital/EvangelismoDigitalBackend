@@ -2,8 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { FindNearbyChurchesKnnUseCase } from './find-nearby-churches-knn-use-case'
 import { CreateChurchUseCase } from './create-church-use-case'
 import { InMemoryChurchesRepository } from '@repositories/in-memory/in-memory-chuches-repository'
-import { LatitudeRangeError } from '@use-cases/errors/latitude-range-error'
-import { LongitudeRangeError } from '@use-cases/errors/longitude-range-error'
+import { LatitudeRangeError, LongitudeRangeError } from 'errors'
 import { isOk, isErr } from 'core/shared/result'
 
 describe('Find Nearby Churches Knn Use Case Spec', () => {
