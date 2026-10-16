@@ -78,6 +78,7 @@ export enum EnumProviderConfig {
   NOMINATIM_GEOCODING = 'nominatimGeocodingProvider',
   LOCATION_IQ_GEOCODING = 'locationIqGeocodingProvider',
   STADIA_ROUTING = 'stadiaRoutingProvider',
+  OPENROUTESERVICE_ROUTING = 'openRouteServiceRoutingProvider',
 }
 
 /**
@@ -144,6 +145,12 @@ export class RedisRateLimiter {
     [EnumProviderConfig.STADIA_ROUTING]: {
       points: 50,
       windowSeconds: 1,
+    },
+    // Free (Standard) plan: 40 matrix requests per minute. The 500/day quota is
+    // not mirrored here — ORS answers 429 once it is spent, which is RETRYABLE.
+    [EnumProviderConfig.OPENROUTESERVICE_ROUTING]: {
+      points: 40,
+      windowSeconds: 60,
     },
   }
 

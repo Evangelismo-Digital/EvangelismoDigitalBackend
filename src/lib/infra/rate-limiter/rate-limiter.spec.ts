@@ -246,6 +246,24 @@ describe('RedisRateLimiter Unit Tests', () => {
       )
     })
 
+    it('builds the OpenRouteService bucket per minute, matching its free-plan matrix quota', async () => {
+      // ORS publishes its limit per minute (40 matrix requests), not per second:
+      // `points: 40, duration: 1` would allow 2 400/min and burn the 500/day quota.
+      const limiter = RedisRateLimiter.getInstance(redisClient)
+      mockConsume.mockResolvedValue({})
+
+      await limiter.tryConsume(EnumProviderConfig.OPENROUTESERVICE_ROUTING)
+
+      expect(EnumProviderConfig.OPENROUTESERVICE_ROUTING).toBe('openRouteServiceRoutingProvider')
+      expect(RateLimiterRedis).toHaveBeenCalledWith(
+        expect.objectContaining({
+          keyPrefix: 'ratelimit:v1:openRouteServiceRoutingProvider',
+          points: 40,
+          duration: 60,
+        }),
+      )
+    })
+
     it('lets a caller use its allowance immediately and never blocks beyond the window', async () => {
       // `execEvenly: false` — a caller may spend its points as soon as it wants
       // rather than being paced across the window, which matters because this

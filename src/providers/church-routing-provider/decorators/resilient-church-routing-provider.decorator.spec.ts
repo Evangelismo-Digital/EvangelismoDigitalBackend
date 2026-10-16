@@ -56,7 +56,7 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
     expect(decorator.providerName).toBe('Stadia')
   })
 
-  it('returns ServiceBusyError (and records it) when the rate limiter rejects', async () => {
+  it('returns ServiceBusyError without recording it when the rate limiter rejects', async () => {
     mockTryConsume.mockResolvedValue(false)
     const raw = makeRaw()
     const decorator = new ResilientChurchRoutingProviderDecorator(raw, {} as Redis)
@@ -66,7 +66,8 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
     expect(isErr(result)).toBe(true)
     if (isErr(result)) expect(result.error).toBeInstanceOf(ServiceBusyError)
     expect(raw.fetchRawDistances).not.toHaveBeenCalled()
-    expect(mockRecordProviderRequest).toHaveBeenCalledWith('routing', 'Stadia', result)
+    // The chain above records it; recording here too would double every count.
+    expect(mockRecordProviderRequest).not.toHaveBeenCalled()
   })
 
   it('returns a terminal ABORTED failure when the deadline is already expired', async () => {
@@ -84,7 +85,8 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
     expect(isErr(result)).toBe(true)
     if (isErr(result)) expect(result.error).toBeInstanceOf(DeadlineExceededError)
     expect(raw.fetchRawDistances).not.toHaveBeenCalled()
-    expect(mockRecordProviderRequest).toHaveBeenCalledWith('routing', 'Stadia', result)
+    // The chain above records it; recording here too would double every count.
+    expect(mockRecordProviderRequest).not.toHaveBeenCalled()
   })
 
   it('passes the caller profile through to the raw provider', async () => {
@@ -130,7 +132,7 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
     )
   })
 
-  it('wraps a successful raw call in ok() and records success', async () => {
+  it('wraps a successful raw call in ok() and leaves the metrics to the chain', async () => {
     const raw = makeRaw()
     const rawResults = [{ distance: 3.2, status: 0 }]
     vi.mocked(raw.fetchRawDistances).mockResolvedValue(rawResults)
@@ -140,12 +142,11 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
 
     expect(isOk(result)).toBe(true)
     if (isOk(result)) expect(result.value).toBe(rawResults)
-    expect(mockRecordProviderRequest).toHaveBeenCalledWith('routing', 'Stadia', result)
+    // The chain above records it; recording here too would double every count.
+    expect(mockRecordProviderRequest).not.toHaveBeenCalled()
   })
 
-  it('maps a thrown raw error through FindNearestChurchesErrorMapper and stops the timer', async () => {
-    const stop = vi.fn()
-    mockStartTimer.mockReturnValue(stop)
+  it('maps a thrown raw error through FindNearestChurchesErrorMapper without timing it', async () => {
     const raw = makeRaw()
     vi.mocked(raw.fetchRawDistances).mockRejectedValue(new Error('network blew up'))
     const decorator = new ResilientChurchRoutingProviderDecorator(raw, {} as Redis)
@@ -154,31 +155,9 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
 
     expect(isErr(result)).toBe(true)
     if (isErr(result)) expect(result.error).toBeInstanceOf(ProviderFailureError)
-    expect(stop).toHaveBeenCalled()
-    expect(mockRecordProviderRequest).toHaveBeenCalledWith('routing', 'Stadia', result)
-  })
-
-  it('tolerates a missing latency timer on the success path (optional chaining on endTimer)', async () => {
-    mockStartTimer.mockReturnValue(undefined as never)
-    const raw = makeRaw()
-    vi.mocked(raw.fetchRawDistances).mockResolvedValue([{ distance: 1 }])
-    const decorator = new ResilientChurchRoutingProviderDecorator(raw, {} as Redis)
-
-    const result = await decorator.getDistances({ origin, destinations })
-
-    expect(isOk(result)).toBe(true)
-  })
-
-  it('tolerates a missing latency timer on the failure path (optional chaining on endTimer)', async () => {
-    mockStartTimer.mockReturnValue(undefined as never)
-    const raw = makeRaw()
-    vi.mocked(raw.fetchRawDistances).mockRejectedValue(new Error('kaboom'))
-    const decorator = new ResilientChurchRoutingProviderDecorator(raw, {} as Redis)
-
-    const result = await decorator.getDistances({ origin, destinations })
-
-    expect(isErr(result)).toBe(true)
-    if (isErr(result)) expect(result.error).toBeInstanceOf(ProviderFailureError)
+    expect(mockStartTimer).not.toHaveBeenCalled()
+    // The chain above records it; recording here too would double every count.
+    expect(mockRecordProviderRequest).not.toHaveBeenCalled()
   })
 
   describe('retry loop (docs §4.3 — previously absent)', () => {
@@ -221,7 +200,7 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
       expect(mockTryConsume).toHaveBeenCalledTimes(1)
     })
 
-    it('still fails hard once the attempts are exhausted — there is no second routing provider', async () => {
+    it('returns the RETRYABLE error once the attempts are exhausted, for the chain to fall through on', async () => {
       mockTryConsume.mockResolvedValue(true)
       const raw = makeRaw()
       vi.mocked(raw.fetchRawDistances).mockRejectedValue(axios429())

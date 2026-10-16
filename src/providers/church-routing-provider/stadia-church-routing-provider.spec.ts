@@ -326,6 +326,20 @@ describe('StadiaChurchRoutingProvider', () => {
       expect(results[1]).toEqual({ distance: 7, status: 0 })
     })
 
+    it('treats a hole in the row as unreachable without throwing', async () => {
+      mockedPost.mockResolvedValueOnce({
+        status: 200,
+        data: { sources_to_targets: [[undefined, { distance: 2, time: 2 }]] },
+      })
+
+      const results = await rawProvider().fetchRawDistances(origin, three.slice(0, 2))
+
+      expect(results).toEqual([
+        { distance: null, status: 0 },
+        { distance: 2, status: 0 },
+      ])
+    })
+
     it('returns one result per destination even when the row is short', async () => {
       // A provider that answers about fewer targets than we asked about must not
       // silently shorten the list — the caller zips it against its churches.

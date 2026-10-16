@@ -9,6 +9,10 @@ export const GEO_ERRORS = {
     code: 'NO_ADDRESS_PROVIDER',
     message: 'Provedor resiliente de endereço requer pelo menos um provedor de endereço configurado.',
   },
+  NO_ROUTING_PROVIDER: {
+    code: 'NO_ROUTING_PROVIDER',
+    message: 'Provedor resiliente de rotas requer pelo menos um provedor de rotas configurado.',
+  },
   ADDRESS_PROVIDER_FAILURE: {
     code: 'ADDRESS_PROVIDER_FAILURE',
     message: 'Falha no provedor de endereços.',

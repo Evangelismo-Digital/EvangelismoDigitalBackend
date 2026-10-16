@@ -5,11 +5,8 @@ import { EnumProviderConfig } from '@lib/infra/rate-limiter/redis-rate-limiter'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { IRawChurchRoutingProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
 import { STADIA_CONFIG } from 'messages/constants/providers/stadia'
-import {
-  UPSTREAM_STATUS,
-  UPSTREAM_SUCCESS_MIN,
-  UPSTREAM_SUCCESS_MAX_EXCLUSIVE,
-} from 'core/constants/upstream-http-status'
+import { UPSTREAM_STATUS } from 'core/constants/upstream-http-status'
+import { acceptsMatrixStatus, allUnreachable, readDistanceRow } from './routing-matrix'
 
 interface StadiaChurchRoutingProviderConfig {
   /** Batch matrix endpoint — the only Stadia route this provider calls. */
@@ -25,28 +22,12 @@ interface StadiaMatrixEntry {
 }
 
 interface StadiaMatrixResponse {
-  sources_to_targets: StadiaMatrixEntry[][]
+  sources_to_targets: Array<Array<StadiaMatrixEntry | undefined> | undefined>
 }
 
 /** A 404, or a response carrying no rows at all, means nothing is reachable. */
 function isEmptyMatrix(status: number, data: StadiaMatrixResponse | undefined): boolean {
   return status === UPSTREAM_STATUS.NOT_FOUND || !data?.sources_to_targets.length
-}
-
-/**
- * Reads one matrix row into a per-destination result, treating a missing or
- * distance-less entry as unreachable rather than as an error.
- */
-function readMatrixRow(row: StadiaMatrixEntry[] | undefined, destinationCount: number): RouteDistanceResult[] {
-  return Array.from({ length: destinationCount }, (_, index) => {
-    const entry = row?.[index]
-
-    if (entry?.distance == null) {
-      return { distance: null, status: 0 }
-    }
-
-    return { distance: entry.distance, status: 0 }
-  })
 }
 
 export class StadiaChurchRoutingProvider implements IRawChurchRoutingProvider {
@@ -100,11 +81,7 @@ export class StadiaChurchRoutingProvider implements IRawChurchRoutingProvider {
           Authorization: `${STADIA_CONFIG.AUTH_PREFIX} ${this.config.apiToken}`,
           'Content-Type': STADIA_CONFIG.CONTENT_TYPE,
         },
-        // A 404 is a real answer here ("nothing reachable"), not a transport
-        // failure, so axios must not throw on it.
-        validateStatus: (status) =>
-          (status >= UPSTREAM_SUCCESS_MIN && status < UPSTREAM_SUCCESS_MAX_EXCLUSIVE) ||
-          status === UPSTREAM_STATUS.NOT_FOUND,
+        validateStatus: acceptsMatrixStatus,
         signal,
       },
     )
@@ -121,10 +98,15 @@ export class StadiaChurchRoutingProvider implements IRawChurchRoutingProvider {
     const matrix = response.data
 
     if (!matrix || isEmptyMatrix(response.status, matrix)) {
-      return destinations.map(() => ({ distance: null, status: UPSTREAM_STATUS.NOT_FOUND }))
+      return allUnreachable(destinations.length)
     }
 
     // sources_to_targets[0] = results from source[0] to all targets
-    return readMatrixRow(matrix.sources_to_targets[0], destinations.length)
+    const row = matrix.sources_to_targets.at(0)
+
+    return readDistanceRow(
+      row?.map((entry) => entry?.distance),
+      destinations.length,
+    )
   }
 }

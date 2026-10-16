@@ -25,6 +25,7 @@ import type { Metric } from 'prom-client'
 import { ResilientAddressProvider } from 'providers/address-provider/resilient-address-provider'
 import { ResilientGeoProvider } from 'providers/geo-provider/resilient-geo-provider'
 import { ResilientChurchRoutingProviderDecorator } from 'providers/church-routing-provider/decorators/resilient-church-routing-provider.decorator'
+import { ResilientChurchRoutingProvider } from 'providers/church-routing-provider/resilient-church-routing-provider'
 import { IAddressData, IAddressProvider } from 'core/contracts/use-cases/providers/address-provider.interface'
 import { IGeoCoordinates, IGeocodingProvider } from 'core/contracts/use-cases/providers/geo-provider.interface'
 import { IRawChurchRoutingProvider } from 'core/contracts/use-cases/providers/raw-providers.interface'
@@ -248,25 +249,34 @@ describe('Provider metrics instrumentation', () => {
     })
   })
 
-  describe('routing decorator', () => {
-    function makeRawRouting(): IRawChurchRoutingProvider {
+  describe('routing chain', () => {
+    function makeRawRouting(providerName: string, outcome?: unknown): IRawChurchRoutingProvider {
+      const fetchRawDistances = outcome
+        ? vi.fn().mockRejectedValue(outcome)
+        : vi.fn().mockResolvedValue([{ distance: 100 }])
+
       return {
-        providerName: 'Stadia Maps',
+        providerName,
         rateLimitConfig: 'stadiaRoutingProvider',
         timeoutMs: 1000,
-        maxRetries: 2,
-        backoffMs: 10,
-        fetchRawDistances: vi.fn().mockResolvedValue([{ distance: 100 }]),
+        maxRetries: 1,
+        backoffMs: 0,
+        fetchRawDistances,
       } as unknown as IRawChurchRoutingProvider
+    }
+
+    function chainOf(...raws: IRawChurchRoutingProvider[]) {
+      return new ResilientChurchRoutingProvider(
+        raws.map((raw) => new ResilientChurchRoutingProviderDecorator(raw, null as never)),
+      )
     }
 
     const params = { origin: { lat: 0, lon: 0 }, destinations: [{ lat: 1, lon: 1 }] }
 
-    it('records success + latency when the raw call resolves', async () => {
+    it('records success + latency exactly once — the decorator no longer counts as well', async () => {
       mockTryConsume.mockResolvedValue(true)
-      const decorator = new ResilientChurchRoutingProviderDecorator(makeRawRouting(), null as never)
 
-      await decorator.getDistances(params)
+      await chainOf(makeRawRouting('Stadia Maps')).getDistances(params)
 
       expect(
         await metricValue(collectMetricsProviderRequest, {
@@ -280,17 +290,40 @@ describe('Provider metrics instrumentation', () => {
       ).toBe(1)
     })
 
-    it('records rate_limited when the limiter rejects', async () => {
+    it('records rate_limited exactly once when the limiter rejects', async () => {
       mockTryConsume.mockResolvedValue(false)
-      const decorator = new ResilientChurchRoutingProviderDecorator(makeRawRouting(), null as never)
 
-      await decorator.getDistances(params)
+      await chainOf(makeRawRouting('Stadia Maps')).getDistances(params)
 
       expect(
         await metricValue(collectMetricsProviderRequest, {
           provider: 'Stadia Maps',
           layer: 'routing',
           result: 'rate_limited',
+        }),
+      ).toBe(1)
+    })
+
+    it('records the fallback from Stadia to OpenRouteService', async () => {
+      mockTryConsume.mockResolvedValue(true)
+
+      await chainOf(
+        makeRawRouting('Stadia Maps', new Error('403 plan without matrix access')),
+        makeRawRouting('OpenRouteService'),
+      ).getDistances(params)
+
+      expect(
+        await metricValue(collectMetricsProviderFallback, {
+          layer: 'routing',
+          from_provider: 'Stadia Maps',
+          to_provider: 'OpenRouteService',
+        }),
+      ).toBe(1)
+      expect(
+        await metricValue(collectMetricsProviderRequest, {
+          provider: 'OpenRouteService',
+          layer: 'routing',
+          result: 'success',
         }),
       ).toBe(1)
     })

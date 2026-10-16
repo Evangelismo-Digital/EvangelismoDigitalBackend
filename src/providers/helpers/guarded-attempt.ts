@@ -4,11 +4,6 @@ import { Result, isErr } from 'core/shared/result'
 import { AppError } from 'errors/app-error'
 import { runWithRetries } from 'providers/helpers/deadline-retry'
 import { checkAdmission } from 'providers/helpers/provider-admission'
-import {
-  collectMetricsProviderLatency,
-  recordProviderRequest,
-  ProviderMetricLayer,
-} from '@lib/metrics/provider-metrics'
 import Redis from 'ioredis'
 
 /**
@@ -22,8 +17,9 @@ import Redis from 'ioredis'
  * is why a copy-paste detector found ~31 duplicated lines across them, and why
  * a change to how providers are admitted had to be made in three places.
  *
- * The only genuine difference is metrics: routing has no chain above it to
- * record them, so it records its own. That is a parameter here, not a fork.
+ * Metrics are not recorded here: every layer now has a resilient chain above
+ * it, and the chain times and counts each provider. Recording here as well
+ * would double every measurement.
  */
 
 /** The settings every raw provider exposes for its own resilience policy. */
@@ -41,18 +37,10 @@ export interface GuardedAttemptParams<T> {
   deadline: Deadline
   action: (attemptDeadline: Deadline) => Promise<T>
   logContext?: Record<string, unknown>
-  /**
-   * Record provider metrics from here.
-   *
-   * Set only by layers with no resilient chain above them. Where a chain exists
-   * it already times and counts each provider, and doing it here as well would
-   * double every measurement.
-   */
-  metricsLayer?: ProviderMetricLayer
 }
 
 export async function runGuardedAttempt<T>(params: GuardedAttemptParams<T>): Promise<Result<T, AppError>> {
-  const { rawProvider, redis, deadline, metricsLayer } = params
+  const { rawProvider, redis, deadline, action, logContext } = params
 
   const admission = await checkAdmission({
     providerName: rawProvider.providerName,
@@ -62,27 +50,10 @@ export async function runGuardedAttempt<T>(params: GuardedAttemptParams<T>): Pro
   })
 
   if (isErr(admission)) {
-    // A refusal is still a request as far as the metrics are concerned: it is
-    // the rate limiter's answer about this provider, and hiding it would make
-    // a throttled provider look idle.
-    if (metricsLayer) {
-      recordProviderRequest(metricsLayer, rawProvider.providerName, admission)
-    }
-
     return admission
   }
 
-  return await attemptWithRetries(params)
-}
-
-async function attemptWithRetries<T>(params: GuardedAttemptParams<T>): Promise<Result<T, AppError>> {
-  const { rawProvider, deadline, action, logContext, metricsLayer } = params
-
-  const endTimer = metricsLayer
-    ? collectMetricsProviderLatency?.startTimer({ provider: rawProvider.providerName, layer: metricsLayer })
-    : undefined
-
-  const outcome = await runWithRetries({
+  return await runWithRetries({
     providerName: rawProvider.providerName,
     maxAttempts: rawProvider.maxRetries,
     backoffMs: rawProvider.backoffMs,
@@ -91,12 +62,4 @@ async function attemptWithRetries<T>(params: GuardedAttemptParams<T>): Promise<R
     logContext,
     action,
   })
-
-  endTimer?.()
-
-  if (metricsLayer) {
-    recordProviderRequest(metricsLayer, rawProvider.providerName, outcome)
-  }
-
-  return outcome
 }

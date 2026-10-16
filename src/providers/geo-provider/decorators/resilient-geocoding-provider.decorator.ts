@@ -39,7 +39,7 @@ export class ResilientGeocodingProviderDecorator implements IGeocodingProvider {
     )
   }
 
-  // No `metricsLayer`: ResilientGeoProvider records them while walking the chain.
+  // Metrics are recorded by ResilientGeoProvider while walking the chain.
   private async executeResiliently(
     action: (attemptDeadline: Deadline) => Promise<IGeoCoordinates | null>,
     logContext: Record<string, unknown>,

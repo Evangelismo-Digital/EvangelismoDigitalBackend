@@ -16,13 +16,17 @@ import { NominatimGeoProvider } from 'providers/geo-provider/nominatim-provider'
 import { LocationIqProvider } from 'providers/geo-provider/location-iq-provider'
 import { ResilientGeoProvider } from 'providers/geo-provider/resilient-geo-provider'
 import { StadiaChurchRoutingProvider } from 'providers/church-routing-provider/stadia-church-routing-provider'
+import { OpenRouteServiceChurchRoutingProvider } from 'providers/church-routing-provider/openrouteservice-church-routing-provider'
+import { ResilientChurchRoutingProvider } from 'providers/church-routing-provider/resilient-church-routing-provider'
 import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { ResilientAddressProviderDecorator } from 'providers/address-provider/decorators/resilient-address-provider.decorator'
 import { ResilientGeocodingProviderDecorator } from 'providers/geo-provider/decorators/resilient-geocoding-provider.decorator'
 import { ResilientChurchRoutingProviderDecorator } from 'providers/church-routing-provider/decorators/resilient-church-routing-provider.decorator'
 import { Redis } from 'ioredis'
+import { IChurchRoutingProvider } from 'core/contracts/use-cases/providers/church-routing-provider.interface'
 import { makeNearestChurchesCacheOptions } from '@use-cases/churches/church-lookup-cache-policy'
 import { STADIA_CONFIG } from 'messages/constants/providers/stadia'
+import { OPENROUTESERVICE_CONFIG } from 'messages/constants/providers/openrouteservice'
 
 let cachedUseCase: FindNearestChurchesUseCase | null = null
 
@@ -65,22 +69,33 @@ function makeResilientAddressProvider(redisRateLimitConnection: Redis): Resilien
   return new ResilientAddressProvider([awesomeApiProvider, brasilApiProvider, viaCepProvider])
 }
 
-function makeCalculateChurchRouteDistancesUseCase(
-  redisRateLimitConnection: Redis,
-): CalculateChurchRouteDistancesUseCase {
-  // Setup Raw Routing Provider (batch matrix API)
-  const rawRoutingProvider = new StadiaChurchRoutingProvider({
+/**
+ * Stadia first, OpenRouteService when Stadia fails with a RETRYABLE error — an
+ * outage, a quota, or a plan without matrix access (403), which is what made
+ * every nearest-church lookup answer 503 while routing had a single provider.
+ *
+ * Each raw provider is wrapped in its resilient decorator (rate limiting + error
+ * mapping only); caching happens once, at the FindNearestChurchesUseCase layer.
+ */
+export function makeChurchRoutingProvider(redisRateLimitConnection: Redis): IChurchRoutingProvider {
+  const rawStadiaProvider = new StadiaChurchRoutingProvider({
     matrixApiUrl: env.STADIA_MAPS_MATRIX_API_URL,
     apiToken: env.STADIA_API_TOKEN,
     defaultCosting: RoutingProfile.PEDESTRIAN,
     timeoutMs: STADIA_CONFIG.DEFAULT_TIMEOUT_MS,
   })
 
-  // Wrap with Resilient Decorator (rate limiting + error mapping only; caching
-  // happens once, at the FindNearestChurchesUseCase layer)
-  const routingProvider = new ResilientChurchRoutingProviderDecorator(rawRoutingProvider, redisRateLimitConnection)
+  const rawOpenRouteServiceProvider = new OpenRouteServiceChurchRoutingProvider({
+    matrixApiUrl: env.OPENROUTESERVICE_MATRIX_API_URL,
+    apiToken: env.OPENROUTESERVICE_API_TOKEN,
+    defaultCosting: RoutingProfile.PEDESTRIAN,
+    timeoutMs: OPENROUTESERVICE_CONFIG.DEFAULT_TIMEOUT_MS,
+  })
 
-  return new CalculateChurchRouteDistancesUseCase(routingProvider)
+  return new ResilientChurchRoutingProvider([
+    new ResilientChurchRoutingProviderDecorator(rawStadiaProvider, redisRateLimitConnection),
+    new ResilientChurchRoutingProviderDecorator(rawOpenRouteServiceProvider, redisRateLimitConnection),
+  ])
 }
 
 /**
@@ -123,7 +138,7 @@ export function makeFindNearestChurchesUseCase(
   cachedUseCase = new FindNearestChurchesUseCase(
     cepToLatLonUseCase,
     findNearbyChurchesKnnUseCase,
-    makeCalculateChurchRouteDistancesUseCase(redisRateLimitConnection),
+    new CalculateChurchRouteDistancesUseCase(makeChurchRoutingProvider(redisRateLimitConnection)),
     {
       redis: redisCacheConnection,
       options: makeNearestChurchesCacheOptions(cacheCircuitBreakerSettings()),

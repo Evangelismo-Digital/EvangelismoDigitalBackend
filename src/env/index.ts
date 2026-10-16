@@ -176,6 +176,11 @@ const envSchema = z.object({
   // endpoint went away with the unused `fetchRawDistance`.
   STADIA_MAPS_MATRIX_API_URL: z.url().default('https://api.stadiamaps.com/sources_to_targets'),
   STADIA_API_TOKEN: z.string().min(1, 'STADIA_API_TOKEN is required'),
+
+  // OpenRouteService — routing fallback after Stadia. The profile is appended
+  // to this base URL per request (`/foot-walking`, `/driving-car`, ...).
+  OPENROUTESERVICE_MATRIX_API_URL: z.url().default('https://api.openrouteservice.org/v2/matrix'),
+  OPENROUTESERVICE_API_TOKEN: z.string().min(1, 'OPENROUTESERVICE_API_TOKEN is required'),
   // No `.default(...)`, deliberately. The value that used to sit here was
   // committed to the repository and applied in every NODE_ENV, so forgetting the
   // variable in a deploy did not fail the boot — it silently signed production

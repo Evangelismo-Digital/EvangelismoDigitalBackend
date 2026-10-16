@@ -21,6 +21,7 @@ const PROVIDER_BY_URL_FRAGMENT: ReadonlyArray<readonly [string, string]> = [
   ['nominatim', 'Nominatim'],
   ['locationiq', 'LocationIQ'],
   ['stadia', 'Stadia Maps'],
+  ['openrouteservice', 'OpenRouteService'],
 ]
 
 /** Providers that resolve a CEP, so a 404 from them means the CEP is invalid. */

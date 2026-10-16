@@ -22,7 +22,7 @@ export class ResilientAddressProviderDecorator implements IAddressProvider {
   ): Promise<Result<IAddressData | null, AppError>> {
     const cleanCep = cep.replace(/\D/g, '')
 
-    // No `metricsLayer`: ResilientAddressProvider times and counts each provider
+    // No metrics here: ResilientAddressProvider times and counts each provider
     // as it walks the chain, so recording here as well would double it.
     return await runGuardedAttempt({
       rawProvider: this.rawProvider,

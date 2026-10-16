@@ -21,11 +21,7 @@ export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingPr
     this.providerName = rawProvider.providerName
   }
 
-  /**
-   * Unlike the address and geocoding layers there is no chain above this one —
-   * routing has a single provider by design — so this decorator asks
-   * {@link runGuardedAttempt} to record its own provider metrics.
-   */
+  // Metrics are recorded by ResilientChurchRoutingProvider while walking the chain.
   async getDistances(params: {
     origin: RoutingPoint
     destinations: RoutingPoint[]
@@ -38,7 +34,6 @@ export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingPr
     return await runGuardedAttempt({
       rawProvider: this.rawProvider,
       redis: this.redisRateLimiterConnection,
-      metricsLayer: 'routing',
       action: async (attempt) =>
         await this.rawProvider.fetchRawDistances(params.origin, params.destinations, costing, attempt.signal),
       deadline,
