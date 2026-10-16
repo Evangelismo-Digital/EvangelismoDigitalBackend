@@ -150,6 +150,8 @@ export default defineConfig(({ mode }) => {
             dir: 'src/http/controllers/users',
             environment: 'node',
             include: ['**/*.spec.ts'],
+            // e2e specs here need Docker Postgres; they run in the `e2e` project.
+            exclude: ['**/*.e2e.spec.ts'],
           },
         },
         {
@@ -219,6 +221,10 @@ export default defineConfig(({ mode }) => {
             ],
             // Uses Docker database with public schema
             environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
+            // Serial, like the other projects sharing `public`: analytics truncates
+            // `users` per test, and its ACCESS EXCLUSIVE lock stalled
+            // search-users.e2e.spec.ts past the test timeout when run alongside.
+            fileParallelism: false,
           },
         },
         {

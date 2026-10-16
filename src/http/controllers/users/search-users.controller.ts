@@ -2,6 +2,7 @@ import { ZodRequest } from '@http/types/zod-request'
 import { logger } from '@lib/logger'
 import { makeSearchUsersUseCase } from '@use-cases/factories/make-search-users-use-case'
 import { FastifyReply } from 'fastify'
+import { UserPresenter } from '@http/presenters/user-presenter'
 import { isErr } from 'core/shared/result'
 import { HttpErrorMapper } from 'errors/http-errors/http-error-mapper'
 import { searchUsersSchema } from '@http/schemas/users/search-users-schema'
@@ -28,5 +29,5 @@ export async function searchUsersController(
 
   logger.info(`Encontrados ${users.length} usuários para a consulta: "${query}" na página ${page}.`)
 
-  return reply.code(HTTP_STATUS.OK).send({ users })
+  return reply.code(HTTP_STATUS.OK).send({ users: UserPresenter.toHTTP(users) })
 }
