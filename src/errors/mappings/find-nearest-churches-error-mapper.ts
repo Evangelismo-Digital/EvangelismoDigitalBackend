@@ -27,7 +27,9 @@ const PROVIDER_BY_URL_FRAGMENT: ReadonlyArray<readonly [string, string]> = [
 /** Providers that resolve a CEP, so a 404 from them means the CEP is invalid. */
 const ADDRESS_URL_FRAGMENTS = ['viacep', 'awesomeapi', 'brasilapi']
 
-const TIMEOUT_CODES = new Set(['ERR_CANCELED', 'ECONNABORTED'])
+// Typed to admit `undefined` so an axios error without a code is simply not a
+// member, instead of being looked up under a placeholder string.
+const TIMEOUT_CODES = new Set<string | undefined>(['ERR_CANCELED', 'ECONNABORTED'])
 
 export class FindNearestChurchesErrorMapper {
   private static readonly PROVIDER_UNKNOWN = 'Unknown Provider'
@@ -102,9 +104,9 @@ export class FindNearestChurchesErrorMapper {
    * geocoder it means the address could not be placed on the map.
    */
   private static mapNotFound(error: AxiosError): AppError {
-    const url = error.config?.url || ''
+    const url = error.config?.url
 
-    if (ADDRESS_URL_FRAGMENTS.some((fragment) => url.includes(fragment))) {
+    if (url && ADDRESS_URL_FRAGMENTS.some((fragment) => url.includes(fragment))) {
       return new InvalidCepError(FindNearestChurchesErrorMapper.extractCep(url))
     }
 
@@ -116,12 +118,12 @@ export class FindNearestChurchesErrorMapper {
   }
 
   private static isTimeout(error: AxiosError): boolean {
-    return TIMEOUT_CODES.has(error.code ?? '') || error.message.toLowerCase().includes('timeout')
+    return TIMEOUT_CODES.has(error.code) || error.message.toLowerCase().includes('timeout')
   }
 
   private static detectProvider(error: AxiosError): string {
-    const url = error.config?.url || ''
-    const match = PROVIDER_BY_URL_FRAGMENT.find(([fragment]) => url.includes(fragment))
+    const url = error.config?.url
+    const match = PROVIDER_BY_URL_FRAGMENT.find(([fragment]) => url?.includes(fragment))
 
     return match ? match[1] : FindNearestChurchesErrorMapper.PROVIDER_UNKNOWN
   }

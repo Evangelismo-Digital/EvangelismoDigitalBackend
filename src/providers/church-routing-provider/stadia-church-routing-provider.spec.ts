@@ -7,6 +7,7 @@ import { RoutingProfile } from 'core/types/routing-profile/routing-profile-enum'
 import { ResilientChurchRoutingProviderDecorator } from './decorators/resilient-church-routing-provider.decorator'
 import { IChurchRoutingProvider } from 'core/contracts/use-cases/providers/church-routing-provider.interface'
 import { Deadline } from 'core/shared/deadline'
+import { createHttpClient } from '@lib/http/axios'
 
 const { mockedPost, mockTryConsume } = vi.hoisted(() => {
   return {
@@ -268,6 +269,8 @@ describe('StadiaChurchRoutingProvider', () => {
     it('identifies itself and honours the configured timeout', () => {
       expect(rawProvider().providerName).toBe('Stadia Maps')
       expect(rawProvider({ timeoutMs: 1234 }).timeoutMs).toBe(1234)
+      // The HTTP client must enforce the same ceiling, not just advertise it.
+      expect(createHttpClient).toHaveBeenLastCalledWith({ timeout: 1234 })
     })
 
     it('falls back to the default timeout when none is configured', () => {

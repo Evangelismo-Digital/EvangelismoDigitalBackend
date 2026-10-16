@@ -47,6 +47,19 @@ describe('FindNearestChurchesErrorMapper', () => {
     expect(mapped.message).toContain('12345678')
   })
 
+  it('names the 8-digit CEP even when the URL carries other, shorter numbers', () => {
+    const err = createFakeAxiosError(404, undefined, 'https://viacep.com.br/ws/2/12345678/json')
+    const mapped = FindNearestChurchesErrorMapper.map(err)
+    expect(mapped.message).toBe('O CEP fornecido 12345678 não existe.')
+  })
+
+  it('maps a 404 with no request URL to CoordinatesNotFoundError, not to an invalid CEP', () => {
+    const err = createFakeAxiosError(404, undefined)
+    Object.assign(err, { config: undefined })
+    const mapped = FindNearestChurchesErrorMapper.map(err)
+    expect(mapped).toBeInstanceOf(CoordinatesNotFoundError)
+  })
+
   it('should format InvalidCepError message with CEP when provided', () => {
     const err = new InvalidCepError('99392978')
     expect(err.message).toBe('O CEP fornecido 99392978 não existe.')

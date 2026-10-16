@@ -26,8 +26,8 @@ interface StadiaMatrixResponse {
 }
 
 /** A 404, or a response carrying no rows at all, means nothing is reachable. */
-function isEmptyMatrix(status: number, data: StadiaMatrixResponse | undefined): boolean {
-  return status === UPSTREAM_STATUS.NOT_FOUND || !data?.sources_to_targets.length
+function isEmptyMatrix(status: number, data: StadiaMatrixResponse): boolean {
+  return status === UPSTREAM_STATUS.NOT_FOUND || !data.sources_to_targets.length
 }
 
 export class StadiaChurchRoutingProvider implements IRawChurchRoutingProvider {
