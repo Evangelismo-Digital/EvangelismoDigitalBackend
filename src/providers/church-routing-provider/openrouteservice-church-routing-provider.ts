@@ -25,17 +25,24 @@ interface OpenRouteServiceMatrixResponse {
  * The app speaks Valhalla costings (Stadia's vocabulary); ORS has its own,
  * smaller set of profiles. Each costing maps to the closest one ORS offers.
  */
-const ORS_PROFILE_BY_COSTING: Record<RoutingProfile, string> = {
-  [RoutingProfile.PEDESTRIAN]: 'foot-walking',
-  [RoutingProfile.BICYCLE]: 'cycling-regular',
-  [RoutingProfile.BIKESHARE]: 'cycling-regular',
-  [RoutingProfile.AUTO]: 'driving-car',
-  [RoutingProfile.TAXI]: 'driving-car',
-  [RoutingProfile.BUS]: 'driving-car',
-  [RoutingProfile.MOTORCYCLE]: 'driving-car',
-  [RoutingProfile.MOTOR_SCOOTER]: 'driving-car',
-  [RoutingProfile.LOW_SPEED_VEHICLE]: 'driving-car',
-  [RoutingProfile.TRUCK]: 'driving-hgv',
+const ORS_PROFILE = {
+  WALKING: 'foot-walking',
+  CYCLING: 'cycling-regular',
+  CAR: 'driving-car',
+  HGV: 'driving-hgv',
+} as const
+
+const ORS_PROFILE_BY_COSTING: Record<RoutingProfile, (typeof ORS_PROFILE)[keyof typeof ORS_PROFILE]> = {
+  [RoutingProfile.PEDESTRIAN]: ORS_PROFILE.WALKING,
+  [RoutingProfile.BICYCLE]: ORS_PROFILE.CYCLING,
+  [RoutingProfile.BIKESHARE]: ORS_PROFILE.CYCLING,
+  [RoutingProfile.AUTO]: ORS_PROFILE.CAR,
+  [RoutingProfile.TAXI]: ORS_PROFILE.CAR,
+  [RoutingProfile.BUS]: ORS_PROFILE.CAR,
+  [RoutingProfile.MOTORCYCLE]: ORS_PROFILE.CAR,
+  [RoutingProfile.MOTOR_SCOOTER]: ORS_PROFILE.CAR,
+  [RoutingProfile.LOW_SPEED_VEHICLE]: ORS_PROFILE.CAR,
+  [RoutingProfile.TRUCK]: ORS_PROFILE.HGV,
 }
 
 /** ORS takes `[lon, lat]`, not `{ lat, lon }`. */
