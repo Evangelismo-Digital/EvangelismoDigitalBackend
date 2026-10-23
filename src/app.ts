@@ -1,23 +1,23 @@
 import fastify from 'fastify'
-import { env } from '@env/index'
-import { appRoutes } from '@http/routes'
-import { logger } from '@lib/logger'
+import { env } from '@config/env/index'
+import { appModule } from './app.module'
+import { logger } from '@infra/logger'
 import { v7 as uuidv7 } from 'uuid'
 import z from 'zod'
 import fastifyJwt from '@fastify/jwt'
 import fastifyCors from '@fastify/cors'
 import fastifyCookie from '@fastify/cookie'
-import { RedisRateLimiter } from '@lib/infra/rate-limiter/redis-rate-limiter'
-import { asyncContext } from '@http/plugins/async-context.plugin'
-import { closeAllRedisConnections } from '@lib/redis/clients/clients'
-import { httpRateLimit } from '@http/plugins/rate-limit.plugin'
-import { errorHandler } from '@http/plugins/error-handler.plugin'
-import { requestLifecycle } from '@http/plugins/request-lifecycle.plugin'
-import { requestDeadline } from '@http/plugins/deadline.plugin'
-import { cookieSigningSecrets } from '@http/cookies/cookie-secrets'
+import { RedisRateLimiter } from '@infra/rate-limiter/redis-rate-limiter'
+import { asyncContext } from '@common/plugins/async-context.plugin'
+import { closeAllRedisConnections } from '@infra/redis/clients/clients'
+import { httpRateLimit } from '@common/plugins/rate-limit.plugin'
+import { errorHandler } from '@common/filters/error-handler.filter'
+import { requestLifecycle } from '@common/plugins/request-lifecycle.plugin'
+import { requestDeadline } from '@common/plugins/deadline.plugin'
+import { cookieSigningSecrets } from '@common/plugins/cookies/cookie-secrets'
 import metricsPlugin from 'fastify-metrics'
 import promClient from 'prom-client'
-import { getRegistry } from '@lib/metrics'
+import { getRegistry } from '@infra/metrics'
 import { jsonSchemaTransform, ZodTypeProvider } from 'fastify-type-provider-zod'
 import fastifySwagger from '@fastify/swagger'
 import scalarApiReference from '@scalar/fastify-api-reference'
@@ -103,62 +103,8 @@ app.register(fastifyHelmet, {
 })
 
 // Load shedding and health checks
-import fastifyUnderPressure from '@fastify/under-pressure'
-import { prisma } from '@lib/prisma'
-import { HTTP_RATE_LIMIT_POLICIES } from '@http/policies/rate-limit'
-
-const MAX_EVENT_LOOP_DELAY_TEST = 50
-const MAX_EVENT_LOOP_DELAY_DEFAULT = 1000
-
-app.register(fastifyUnderPressure, {
-  maxEventLoopDelay: env.NODE_ENV === 'test' ? MAX_EVENT_LOOP_DELAY_TEST : MAX_EVENT_LOOP_DELAY_DEFAULT,
-  maxHeapUsedBytes: 1000000000, // 1GB
-  maxRssBytes: 1000000000, // 1GB
-  healthCheckInterval: 5000,
-  exposeStatusRoute: {
-    routeOpts: {
-      config: { rateLimit: HTTP_RATE_LIMIT_POLICIES.health.check },
-      schema: {
-        tags: ['Health'],
-        summary: 'Verifica o status da aplicação',
-        description:
-          'Retorna informações sobre uso de memória e tempo de atividade se o banco de dados estiver acessível.',
-      },
-    },
-    routeResponseSchemaOpts: {
-      status: { type: 'string' },
-      uptime: { type: 'number' },
-      timestamp: { type: 'string' },
-      memory: {
-        type: 'object',
-        properties: {
-          rss: { type: 'string' },
-          heapUsed: { type: 'string' },
-          heapTotal: { type: 'string' },
-          external: { type: 'string' },
-        },
-      },
-    },
-    url: '/health',
-  },
-  healthCheck: async () => {
-    // Moved from health-check.controller.ts
-    const memoryUsage = process.memoryUsage()
-    await prisma.$queryRaw`SELECT 1`
-
-    return {
-      status: 'ok',
-      memory: {
-        rss: `${Math.round(memoryUsage.rss / 1024 / 1024)}MB`,
-        heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`,
-        heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`,
-        external: `${Math.round(memoryUsage.external / 1024 / 1024)}MB`,
-      },
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString(),
-    }
-  },
-})
+import { healthModule } from '@modules/health/health.module'
+app.register(healthModule)
 
 // Cookies parser & signer. The secret is an array so a key can be rotated
 // without invalidating cookies already issued — see cookie-secrets.ts.
@@ -189,7 +135,7 @@ app.register(requestDeadline)
 app.register(errorHandler)
 
 // 7. Routes
-app.register(appRoutes)
+app.register(appModule)
 
 // Graceful shutdown — application-level resource cleanup
 app.addHook('onClose', async () => {

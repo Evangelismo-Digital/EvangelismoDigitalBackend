@@ -1,0 +1,279 @@
+import { randomUUID } from 'node:crypto'
+import {
+  IOutboxRepository,
+  IOutboxEvent,
+  IOutBoxEventInputData,
+  IOutboxEventStatus,
+  OutboxClaimFilter,
+} from '@infra/outbox/repositories/outbox-repository.interface'
+import { Result, ok, err } from '@common/utils/result'
+import { AppError } from '@common/errors/app-error'
+import { InfrastructureError } from '@common/errors/infrastructure-error'
+
+class InMemoryOutboxError extends InfrastructureError {
+  constructor(message: string) {
+    super({ code: 'IN_MEMORY_OUTBOX_ERROR', message })
+  }
+}
+
+interface FailureInjection {
+  create?: boolean
+  findPending?: boolean
+  findStuck?: boolean
+  findFailed?: boolean
+  findByPublicId?: boolean
+  claim?: boolean
+  retryFailed?: boolean
+  updateStatus?: boolean
+  updatePendingRecipients?: boolean
+  delete?: boolean
+  deleteExpired?: boolean
+  deleteOlderThan?: boolean
+  deleteFailedOlderThan?: boolean
+}
+
+/**
+ * Dublê de teste com a mesma semântica do PrismaOutboxRepository:
+ * - updateStatus(SENDING) seta sendingAt e incrementa attempts
+ * - updateStatus(PENDING | FAILED) limpa sendingAt
+ * - delete é idempotente (linha inexistente = sucesso, semântica P2025)
+ * Use `shouldFailOn` para injetar falhas de infraestrutura por método.
+ */
+export class InMemoryOutboxRepository implements IOutboxRepository {
+  public items: IOutboxEvent[] = []
+  public shouldFailOn: FailureInjection = {}
+
+  private nextId = 1
+
+  async create(data: IOutBoxEventInputData): Promise<Result<IOutboxEvent, AppError>> {
+    if (this.shouldFailOn.create) {
+      return err(new InMemoryOutboxError('Falha injetada em create'))
+    }
+
+    const id = this.nextId
+    this.nextId += 1
+
+    const event: IOutboxEvent = {
+      id,
+      publicId: randomUUID(),
+      type: data.type,
+      status: data.status,
+      payload: data.payload,
+      attempts: 0,
+      occurredAt: new Date(),
+      sendingAt: undefined,
+      expiresAt: data.expiresAt ?? undefined,
+      pendingRecipients: [],
+    }
+
+    this.items.push(event)
+
+    return ok(event)
+  }
+
+  async findPending(limit: number): Promise<Result<IOutboxEvent[], AppError>> {
+    if (this.shouldFailOn.findPending) {
+      return err(new InMemoryOutboxError('Falha injetada em findPending'))
+    }
+
+    const pending = this.items
+      .filter((e) => e.status === IOutboxEventStatus.PENDING)
+      .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
+      .slice(0, limit)
+
+    return ok(pending)
+  }
+
+  async findStuck(stuckBefore: Date, limit: number): Promise<Result<IOutboxEvent[], AppError>> {
+    if (this.shouldFailOn.findStuck) {
+      return err(new InMemoryOutboxError('Falha injetada em findStuck'))
+    }
+
+    const stuck = this.items
+      .filter(
+        (e) =>
+          e.status === IOutboxEventStatus.SENDING &&
+          e.sendingAt !== undefined &&
+          e.sendingAt.getTime() <= stuckBefore.getTime(),
+      )
+      .sort((a, b) => (a.sendingAt?.getTime() ?? 0) - (b.sendingAt?.getTime() ?? 0))
+      .slice(0, limit)
+
+    return ok(stuck)
+  }
+
+  async findFailed(limit: number): Promise<Result<IOutboxEvent[], AppError>> {
+    if (this.shouldFailOn.findFailed) {
+      return err(new InMemoryOutboxError('Falha injetada em findFailed'))
+    }
+
+    const failed = this.items
+      .filter((e) => e.status === IOutboxEventStatus.FAILED)
+      .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
+      .slice(0, limit)
+
+    return ok(failed)
+  }
+
+  async retryFailed(publicId: string): Promise<Result<boolean, AppError>> {
+    if (this.shouldFailOn.retryFailed) {
+      return err(new InMemoryOutboxError('Falha injetada em retryFailed'))
+    }
+
+    const event = this.items.find((e) => e.publicId === publicId)
+    if (event?.status !== IOutboxEventStatus.FAILED) {
+      return ok(false)
+    }
+
+    event.status = IOutboxEventStatus.PENDING
+    event.sendingAt = undefined
+    event.attempts = 0
+
+    return ok(true)
+  }
+
+  async findByPublicId(publicId: string): Promise<Result<IOutboxEvent | null, AppError>> {
+    if (this.shouldFailOn.findByPublicId) {
+      return err(new InMemoryOutboxError('Falha injetada em findByPublicId'))
+    }
+
+    const event = this.items.find((e) => e.publicId === publicId)
+
+    return ok(event ?? null)
+  }
+
+  async claim(filter: OutboxClaimFilter): Promise<Result<boolean, AppError>> {
+    if (this.shouldFailOn.claim) {
+      return err(new InMemoryOutboxError('Falha injetada em claim'))
+    }
+
+    const event = this.items.find((e) => e.publicId === filter.publicId)
+    if (!this.canClaim(event, filter)) {
+      return ok(false)
+    }
+
+    event.status = IOutboxEventStatus.SENDING
+    event.sendingAt = new Date()
+    event.attempts += 1
+
+    return ok(true)
+  }
+
+  private canClaim(event: IOutboxEvent | undefined, filter: OutboxClaimFilter): event is IOutboxEvent {
+    if (event?.status !== filter.fromStatus) {
+      return false
+    }
+    if (filter.stuckBefore !== undefined) {
+      return Boolean(event.sendingAt && event.sendingAt.getTime() <= filter.stuckBefore.getTime())
+    }
+    return true
+  }
+
+  async updateStatus(publicId: string, status: IOutboxEventStatus): Promise<Result<void, AppError>> {
+    if (this.shouldFailOn.updateStatus) {
+      return err(new InMemoryOutboxError('Falha injetada em updateStatus'))
+    }
+
+    const event = this.items.find((e) => e.publicId === publicId)
+
+    if (!event) {
+      return err(new InMemoryOutboxError('Evento não encontrado para atualização de status'))
+    }
+
+    event.status = status
+
+    if (status === IOutboxEventStatus.SENDING) {
+      event.sendingAt = new Date()
+      event.attempts += 1
+    } else {
+      event.sendingAt = undefined
+    }
+
+    return ok(undefined)
+  }
+
+  async updatePendingRecipients(publicId: string, pendingRecipients: string[]): Promise<Result<void, AppError>> {
+    if (this.shouldFailOn.updatePendingRecipients) {
+      return err(new InMemoryOutboxError('Falha injetada em updatePendingRecipients'))
+    }
+
+    const event = this.items.find((e) => e.publicId === publicId)
+
+    if (!event) {
+      return err(new InMemoryOutboxError('Evento não encontrado para atualização de destinatários pendentes'))
+    }
+
+    event.pendingRecipients = pendingRecipients
+
+    return ok(undefined)
+  }
+
+  async delete(publicId: string): Promise<Result<void, AppError>> {
+    if (this.shouldFailOn.delete) {
+      return err(new InMemoryOutboxError('Falha injetada em delete'))
+    }
+
+    // Idempotente: deletar evento inexistente é sucesso (semântica P2025 do Prisma)
+    this.items = this.items.filter((e) => e.publicId !== publicId)
+
+    return ok(undefined)
+  }
+
+  async deleteExpired(now: Date, batchSize: number): Promise<Result<number, AppError>> {
+    if (this.shouldFailOn.deleteExpired) {
+      return err(new InMemoryOutboxError('Falha injetada em deleteExpired'))
+    }
+
+    // Um lote por chamada, como no PrismaOutboxRepository
+    const batch = this.items
+      .filter((e) => e.expiresAt !== undefined && e.expiresAt.getTime() <= now.getTime())
+      .sort((a, b) => (a.expiresAt?.getTime() ?? 0) - (b.expiresAt?.getTime() ?? 0))
+      .slice(0, batchSize)
+
+    const batchIds = new Set(batch.map((e) => e.id))
+    this.items = this.items.filter((e) => !batchIds.has(e.id))
+
+    return ok(batch.length)
+  }
+
+  async deleteOlderThan(
+    cutoff: Date,
+    batchSize: number,
+  ): Promise<Result<{ deleted: number; byStatus: Partial<Record<IOutboxEventStatus, number>> }, AppError>> {
+    if (this.shouldFailOn.deleteOlderThan) {
+      return err(new InMemoryOutboxError('Falha injetada em deleteOlderThan'))
+    }
+
+    // Um lote por chamada, como no PrismaOutboxRepository
+    const batch = this.items
+      .filter((e) => e.occurredAt.getTime() < cutoff.getTime())
+      .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
+      .slice(0, batchSize)
+
+    const byStatus: Partial<Record<IOutboxEventStatus, number>> = {}
+    for (const event of batch) {
+      byStatus[event.status] = (byStatus[event.status] ?? 0) + 1
+    }
+
+    const batchIds = new Set(batch.map((e) => e.id))
+    this.items = this.items.filter((e) => !batchIds.has(e.id))
+
+    return ok({ deleted: batch.length, byStatus })
+  }
+
+  async deleteFailedOlderThan(cutoff: Date, batchSize: number): Promise<Result<number, AppError>> {
+    if (this.shouldFailOn.deleteFailedOlderThan) {
+      return err(new InMemoryOutboxError('Falha injetada em deleteFailedOlderThan'))
+    }
+
+    const batch = this.items
+      .filter((e) => e.status === IOutboxEventStatus.FAILED && e.occurredAt.getTime() < cutoff.getTime())
+      .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
+      .slice(0, batchSize)
+
+    const batchIds = new Set(batch.map((e) => e.id))
+    this.items = this.items.filter((e) => !batchIds.has(e.id))
+
+    return ok(batch.length)
+  }
+}

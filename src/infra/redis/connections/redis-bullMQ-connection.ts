@@ -1,0 +1,57 @@
+import { env } from '@config/env/index'
+import Redis from 'ioredis'
+import { logger } from '@infra/logger'
+import { attachOutageLogging } from './attach-outage-logging'
+import { isRedisConnectivityError, RedisOutageLogger } from './redis-outage-logger'
+import { REDIS_LOGS } from '@common/messages/constants/logs/redis'
+
+export function createRedisBullMQConnection() {
+  const redis = new Redis({
+    host: env.REDIS_HOST,
+    port: env.REDIS_PORT,
+    password: env.REDIS_PASSWORD || undefined,
+    maxRetriesPerRequest: null, // Obrigatório para BullMQ
+
+    // === CORREÇÃO DE INFRAESTRUTURA (DOCKER) ===
+    family: 4, // Força IPv4. Resolve instabilidade de rede no Docker.
+
+    // === CONFIGURAÇÕES DE Tentativa de Conexão ===
+    /*retryStrategy: (times) => {
+      return Math.min(times * 50, 2000)
+    },*/
+  })
+
+  attachOutageLogging(redis, 'bullmq', REDIS_LOGS.BULLMQ_UNEXPECTED_ERROR)
+
+  return redis
+}
+
+export function attachRedisLogger(redis: Redis, context: string) {
+  const outageLogger = new RedisOutageLogger({
+    subsystem: 'bullmq',
+    host: env.REDIS_HOST,
+    port: env.REDIS_PORT,
+  })
+
+  redis.on('connect', () => {
+    logger.info(`Conexão Redis (${context}) estabelecida`)
+    outageLogger.onRecovery()
+  })
+  redis.on('ready', () => {
+    logger.info(`Redis (${context}) pronto`)
+    outageLogger.onRecovery()
+  })
+
+  redis.on('error', (error) => {
+    if (isRedisConnectivityError(error)) {
+      outageLogger.onOutage('error', error)
+      return
+    }
+
+    logger.error({ context, err: error.message }, 'Instabilidade na conexão Redis')
+  })
+
+  redis.on('close', () => {
+    outageLogger.onOutage('close')
+  })
+}

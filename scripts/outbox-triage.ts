@@ -1,17 +1,17 @@
-import { DatabaseContext } from '../src/lib/prisma/helpers/database-context'
-import { PrismaOutboxRepository } from '../src/repositories/prisma/prisma-outbox-event-repository'
-import { PrismaErrorMapper } from '../src/lib/prisma/utils/prisma-error-mapper'
+import { DatabaseContext } from '../src/infra/database/prisma/helpers/database-context'
+import { PrismaOutboxRepository } from '../src/infra/outbox/repositories/prisma-outbox-event.repository'
+import { PrismaErrorMapper } from '../src/infra/database/prisma/utils/prisma-error-mapper'
 import {
   outboxHttpPrismaErrorMapping,
   outboxInfraPrismaErrorMapping,
-} from '../src/repositories/prisma/errors/outbox-error-mapping'
+} from '../src/infra/outbox/repositories/errors/outbox-error-mapping'
 import {
   listFailedOutboxEvents,
   retryFailedOutboxEvent,
   retryAllFailedOutboxEvents,
-} from '../src/lib/infra/jobs/outbox-triage'
-import { closeOutboxDispatchQueue } from '../src/lib/queue/outbox-dispatch-queue'
-import { isErr } from '../src/core/shared/result'
+} from '../src/infra/outbox/jobs/outbox-triage'
+import { closeOutboxDispatchQueue } from '../src/infra/outbox/queue/outbox-dispatch-queue'
+import { isErr } from '../src/common/utils/result'
 
 async function main() {
   const action = process.argv[2] ?? 'list'

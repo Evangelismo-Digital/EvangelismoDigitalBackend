@@ -19,8 +19,8 @@ export default defineConfig(({ mode }) => ({
     include: ['src/**/*.spec.ts'],
     exclude: [
       '**/node_modules/**',
-      'src/http/controllers/**/*.e2e.spec.ts',
-      'src/http/controllers/**/*.acceptance.spec.mts',
+      'src/**/*.e2e.spec.ts',
+      'src/**/*.acceptance.spec.mts',
       '**/api-providers-fallback-strategy*',
       // Integration suites need a real Redis/Postgres and are parallel-hostile.
       // Stryker runs many workers at once over one keyspace, which made the

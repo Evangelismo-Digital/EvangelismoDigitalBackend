@@ -1,6 +1,6 @@
 import { hash } from 'bcryptjs'
-import { prisma } from '../src/lib/prisma'
-import { env } from '../src/env'
+import { prisma } from '../src/infra/database/prisma'
+import { env } from '../src/config/env'
 
 export async function seed() {
   // ---------------------------------------------------------------------------

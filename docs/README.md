@@ -18,6 +18,7 @@ vence** — e o documento está com defeito, não o código.
 | [`monitoring-verification.md`](monitoring-verification.md)                                                               | Runbook de validação da stack de observabilidade ponta a ponta.                                                                   |
 | [`timeout-and-cancellation-model.md`](timeout-and-cancellation-model.md)                                                 | O modelo de deadline/cancelamento. Plano concluído, mas **12 arquivos de `src/` o citam pelo caminho** — por isso não foi movido. |
 | [`architecture-assessment-BullMQ-native-jobs-and-routing.md`](architecture-assessment-BullMQ-native-jobs-and-routing.md) | Avaliação de BullMQ nativo + roteamento. **Ainda vivo**: é o único registro de 5 defeitos em aberto, listados no topo dele.       |
+| [`nestjs-folder-organization-refactor-plan.md`](nestjs-folder-organization-refactor-plan.md)                             | Plano fase a fase (Fases 0–8) para reorganizar `src/` seguindo as convenções de módulos e pastas do NestJS (`modules/`, `common/`, `config/`, `infra/`). |
 
 ## O que está em aberto
 

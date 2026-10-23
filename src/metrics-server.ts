@@ -1,11 +1,11 @@
 import Fastify, { FastifyInstance } from 'fastify'
 import { Counter } from 'prom-client'
-import { abortRace } from 'core/shared/abort-race'
-import { getRegistry } from '@lib/metrics'
-import { collectBullMQMetrics } from '@lib/metrics/bullmq-metrics'
-import { env } from '@env/index'
-import { logger } from '@lib/logger'
-import { HTTP_STATUS } from '@http/http-status'
+import { abortRace } from '@common/utils/abort-race'
+import { getRegistry } from '@infra/metrics'
+import { collectBullMQMetrics } from '@infra/metrics/bullmq-metrics'
+import { env } from '@config/env/index'
+import { logger } from '@infra/logger'
+import { HTTP_STATUS } from '@common/constants/http-status'
 
 /** A scrape that cannot answer in time is more useful late than never. */
 const METRICS_COLLECTION_TIMEOUT_MS = 2_000
