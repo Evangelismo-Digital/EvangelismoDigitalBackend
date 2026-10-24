@@ -5,7 +5,7 @@ import { FindNearbyChurchesKnnUseCase } from './find-nearby-churches-knn.service
 import { CalculateChurchRouteDistancesUseCase } from './calculate-church-route-distances.service'
 import { toPublicNearbyChurches } from '@modules/churches/presenters/projections/public-church'
 import { isOk, ok, isErr, err } from '@common/utils/result'
-import { ServiceOverloadError as InfraServiceOverloadError } from '@common/errors/infrastructure/service-overload-error'
+import { ConcurrencyLimitError } from '@common/errors/infrastructure/concurrency-limit-error'
 import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
@@ -258,12 +258,12 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     }
   })
 
-  it('should return InfraServiceOverloadError when cache returns it (CacheOverload)', async () => {
-    mockGetOrFetch.mockResolvedValueOnce(err(new InfraServiceOverloadError()))
+  it('should return ConcurrencyLimitError when cache returns it (CacheOverload)', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(err(new ConcurrencyLimitError()))
     const result = await useCase.execute({ cep: '00000000' })
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
-      expect(result.error).toBeInstanceOf(InfraServiceOverloadError)
+      expect(result.error).toBeInstanceOf(ConcurrencyLimitError)
     }
   })
 

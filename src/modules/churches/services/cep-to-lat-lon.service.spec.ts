@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, Mock } from 'vitest'
 import { CepToLatLonUseCase } from './cep-to-lat-lon.service'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { CepToLatLonError } from '@modules/churches/errors/cep-to-lat-lon-error'
 import { IGeocodingProvider, EnumGeoPrecision } from '@infra/providers/interfaces/geo-provider.interface'
 import { IAddressProvider } from '@infra/providers/interfaces/address-provider.interface'
@@ -330,17 +330,17 @@ describe('CepToLatLon Use Case', () => {
     }
   })
 
-  it('should bubble up ServiceBusyError (Rate Limit) instead of trying the next strategy', async () => {
+  it('should bubble up ProviderRateLimitError (Rate Limit) instead of trying the next strategy', async () => {
     addressProviderMock.fetchAddress.mockResolvedValue(
       ok({ logradouro: 'Rua A', bairro: 'Centro', localidade: 'B', uf: 'C' }),
     )
-    geocodingProviderMock.search.mockResolvedValue(err(new ServiceBusyError('Nominatim')))
+    geocodingProviderMock.search.mockResolvedValue(err(new ProviderRateLimitError('Nominatim')))
 
     const result = await useCase.execute({ cep: '00000000' })
 
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
-      expect(result.error).toBeInstanceOf(ServiceBusyError)
+      expect(result.error).toBeInstanceOf(ProviderRateLimitError)
     }
     // A retryable failure is terminal: the neighborhood strategy must not run.
     expect(geocodingProviderMock.search).toHaveBeenCalledTimes(1)
@@ -349,13 +349,13 @@ describe('CepToLatLon Use Case', () => {
 
   it('should bubble up an error from the structured city search', async () => {
     addressProviderMock.fetchAddress.mockResolvedValue(ok({ localidade: 'São Paulo', uf: 'SP' }))
-    geocodingProviderMock.searchStructured.mockResolvedValue(err(new ServiceBusyError('LocationIQ')))
+    geocodingProviderMock.searchStructured.mockResolvedValue(err(new ProviderRateLimitError('LocationIQ')))
 
     const result = await useCase.execute({ cep: '00000000' })
 
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
-      expect(result.error).toBeInstanceOf(ServiceBusyError)
+      expect(result.error).toBeInstanceOf(ProviderRateLimitError)
     }
   })
 

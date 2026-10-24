@@ -14,8 +14,8 @@ import { DatabaseQueryError } from '@common/errors/infrastructure/database-query
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
 import { CircuitOpenError } from '@common/errors/infrastructure/circuit-open-error'
 import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-exceeded-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
-import { ServiceOverloadError } from '@common/errors/infrastructure/service-overload-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
+import { ConcurrencyLimitError } from '@common/errors/infrastructure/concurrency-limit-error'
 import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
 import { toHttpStatus } from '@common/filters/http-error-status.mapper'
 import { ZodValidationError } from '@common/filters/zod-validation-error'
@@ -32,9 +32,8 @@ import { LatitudeRangeError } from '@modules/churches/errors/latitude-range-erro
 import { LongitudeRangeError } from '@modules/churches/errors/longitude-range-error'
 import { NoAddressError } from '@modules/churches/errors/no-address-error'
 import { FormSubmissionError } from '@modules/forms/errors/form-submission-error'
-import { FormsAlreadyExistsError } from '@modules/forms/errors/forms-already-exists-error'
-import { FormsNotFoundError } from '@modules/forms/errors/forms-not-found-error'
-import { FormsSubmissionError } from '@modules/forms/errors/forms-submission-error'
+import { FormAlreadyExistsError } from '@modules/forms/errors/form-already-exists-error'
+import { FormNotFoundError } from '@modules/forms/errors/form-not-found-error'
 import { InvalidFormPayloadError } from '@modules/forms/errors/invalid-form-payload-error'
 import { InvalidCredentialsError } from '@modules/auth/errors/invalid-credentials-error'
 import { InvalidPasswordResetPayloadError } from '@modules/auth/errors/invalid-password-reset-payload-error'
@@ -44,17 +43,17 @@ import { UserNotCreatedError } from '@modules/users/errors/user-not-created-erro
 import { UserNotFoundError } from '@modules/users/errors/user-not-found-error'
 import { VisitorNotFoundError } from '@modules/analytics/errors/visitor-not-found-error'
 import {
-  OutboxEventNotFoundHttpError,
-  OutboxOperationFailedHttpError,
+  OutboxEventNotFoundDomainError,
+  OutboxOperationFailedSystemError,
   OutboxEventNotFoundInfraError,
   OutboxOperationFailedInfraError,
 } from '@infra/outbox/errors/outbox-errors'
 import { UnknownOutboxEventTypeError } from '@infra/outbox/errors/unknown-outbox-event-type-error'
 import { JobAlreadyProcessingError } from '@infra/mail/errors/job-already-processing-error'
 import { SmtpDispatchError } from '@infra/mail/errors/smtp-dispatch-error'
-import { NoAddressProviderError } from '@infra/providers/address-provider/error/no-address-provider-error'
-import { NoGeoProviderError } from '@infra/providers/geo-provider/error/no-geo-provider-error'
-import { NoRoutingProviderError } from '@infra/providers/church-routing-provider/error/no-routing-provider-error'
+import { NoAddressProviderError } from '@infra/providers/address-provider/errors/no-address-provider-error'
+import { NoGeoProviderError } from '@infra/providers/geo-provider/errors/no-geo-provider-error'
+import { NoRoutingProviderError } from '@infra/providers/church-routing-provider/errors/no-routing-provider-error'
 import { AsyncLocalStorageNotInitializedError } from '@infra/logger/errors/async-local-storage-not-initialized-error'
 
 class TestDomainError extends DomainError {
@@ -113,7 +112,7 @@ describe('Error Hierarchy Architecture', () => {
       expect(notFound.name).toBe('ChurchNotFoundError')
 
       const createFailed = new CreateChurchError()
-      expect(createFailed).toBeInstanceOf(DomainError)
+      expect(createFailed).toBeInstanceOf(SystemError)
       expect(createFailed.name).toBe('CreateChurchError')
 
       const emptyList = new EmptyChurchListError()
@@ -131,22 +130,22 @@ describe('Error Hierarchy Architecture', () => {
       const submission = new FormSubmissionError()
       expect(submission).toBeInstanceOf(DomainError)
       expect(submission.name).toBe('FormSubmissionError')
+      expect(submission.type).toBe(ErrorType.BAD_REQUEST)
 
-      const alreadyExists = new FormsAlreadyExistsError()
+      const alreadyExists = new FormAlreadyExistsError()
       expect(alreadyExists).toBeInstanceOf(DomainError)
-      expect(alreadyExists.name).toBe('FormsAlreadyExistsError')
+      expect(alreadyExists.name).toBe('FormAlreadyExistsError')
+      expect(alreadyExists.type).toBe(ErrorType.CONFLICT)
 
-      const notFound = new FormsNotFoundError()
+      const notFound = new FormNotFoundError()
       expect(notFound).toBeInstanceOf(DomainError)
-      expect(notFound.name).toBe('FormsNotFoundError')
-
-      const formsSubmission = new FormsSubmissionError()
-      expect(formsSubmission).toBeInstanceOf(DomainError)
-      expect(formsSubmission.name).toBe('FormsSubmissionError')
+      expect(notFound.name).toBe('FormNotFoundError')
+      expect(notFound.type).toBe(ErrorType.NOT_FOUND)
 
       const invalidPayload = new InvalidFormPayloadError('email')
       expect(invalidPayload).toBeInstanceOf(DomainError)
       expect(invalidPayload.name).toBe('InvalidFormPayloadError')
+      expect(invalidPayload.type).toBe(ErrorType.BAD_REQUEST)
       expect(invalidPayload.message).toContain('email')
     })
   })
@@ -176,10 +175,10 @@ describe('Error Hierarchy Architecture', () => {
 
   describe('Domain Errors - Outbox', () => {
     it('instantiates outbox errors in both HTTP and infra contexts', () => {
-      const httpNotFound = new OutboxEventNotFoundHttpError()
+      const httpNotFound = new OutboxEventNotFoundDomainError()
       expect(httpNotFound).toBeInstanceOf(DomainError)
 
-      const httpFailed = new OutboxOperationFailedHttpError()
+      const httpFailed = new OutboxOperationFailedSystemError()
       expect(httpFailed).toBeInstanceOf(SystemError)
 
       const infraNotFound = new OutboxEventNotFoundInfraError()
@@ -208,7 +207,7 @@ describe('Error Hierarchy Architecture', () => {
       expect(userExists).toBeInstanceOf(DomainError)
 
       const notCreated = new UserNotCreatedError()
-      expect(notCreated).toBeInstanceOf(DomainError)
+      expect(notCreated).toBeInstanceOf(SystemError)
 
       const notFound = new UserNotFoundError()
       expect(notFound).toBeInstanceOf(DomainError)
@@ -251,11 +250,11 @@ describe('Error Hierarchy Architecture', () => {
       const deadline = new DeadlineExceededError('Deadline passed')
       expect(deadline).toBeInstanceOf(InfrastructureError)
 
-      const serviceBusy = new ServiceBusyError('ViaCep')
+      const serviceBusy = new ProviderRateLimitError('ViaCep')
       expect(serviceBusy).toBeInstanceOf(InfrastructureError)
       expect(serviceBusy.provider).toBe('ViaCep')
 
-      const overload = new ServiceOverloadError()
+      const overload = new ConcurrencyLimitError()
       expect(overload).toBeInstanceOf(InfrastructureError)
 
       const timeout = new TimeoutExceededError('Request timed out')

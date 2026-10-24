@@ -1,7 +1,7 @@
 import { IOutboxEventRegistration } from '@infra/outbox/interfaces/outbox-event.interface'
 import { FormsRepository, IFormSubmissionInputData } from '@modules/forms/repositories/forms-repository.interface'
 import { IOutboxEvent } from '@infra/outbox/repositories/outbox-repository.interface'
-import { FormsAlreadyExistsError } from '@modules/forms/errors/forms-already-exists-error'
+import { FormAlreadyExistsError } from '@modules/forms/errors/form-already-exists-error'
 import { ok, err, isOk, isErr, Result } from '@common/utils/result'
 import { AppError } from '@common/errors/app-error'
 import { FormPayload } from '@modules/forms/dto/form-payload.type'
@@ -25,7 +25,7 @@ export class FormsSubmissionUseCase {
     const findEmailResult = await this.formsSubmissionRepository.findByEmail(request.email)
 
     if (isOk(findEmailResult)) {
-      return err(new FormsAlreadyExistsError())
+      return err(new FormAlreadyExistsError())
     }
 
     if (findEmailResult.error.body.code !== 'FORM_NOT_FOUND') {

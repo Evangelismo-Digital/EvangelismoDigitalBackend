@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { FormsSubmissionUseCase } from './forms-submission.service'
 import { InMemoryFormsSubmissionRepository } from '@modules/forms/repositories/in-memory-forms-submission.repository'
 import { FormSubmissionError } from '@modules/forms/errors/form-submission-error'
+import { FormAlreadyExistsError } from '@modules/forms/errors/form-already-exists-error'
 import { ok, err } from '@common/utils/result'
 
 describe('Forms Submission Use Case', async () => {
@@ -120,6 +121,30 @@ describe('Forms Submission Use Case', async () => {
     expect(result.success).toBe(false)
     if (!result.success) {
       expect(result.error).toBeInstanceOf(FormSubmissionError)
+    }
+  })
+
+  it('should return FormAlreadyExistsError if email is already registered', async () => {
+    const formsRepository = new InMemoryFormsSubmissionRepository()
+    await formsRepository.create({
+      name: 'Existing',
+      lastName: 'User',
+      email: 'existing@example.com',
+      decisaoPorCristo: false,
+    })
+
+    const useCase = new FormsSubmissionUseCase(formsRepository, mockEventRegistration)
+
+    const result = await useCase.execute({
+      name: 'New',
+      lastName: 'User',
+      email: 'existing@example.com',
+      decisaoPorCristo: true,
+    })
+
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error).toBeInstanceOf(FormAlreadyExistsError)
     }
   })
 })

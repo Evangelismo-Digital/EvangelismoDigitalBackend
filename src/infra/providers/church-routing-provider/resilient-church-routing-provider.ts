@@ -1,5 +1,5 @@
 import { logger } from '@infra/logger'
-import { NoRoutingProviderError } from './error/no-routing-provider-error'
+import { NoRoutingProviderError } from './errors/no-routing-provider-error'
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
 import {
   IChurchRoutingProvider,

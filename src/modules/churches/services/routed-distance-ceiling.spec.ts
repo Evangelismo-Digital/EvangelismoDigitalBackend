@@ -7,7 +7,7 @@ import { ROUTING_MAX_DISTANCE_KM } from '@common/messages/constants/churches/chu
 import { ok, err, isOk, isErr } from '@common/utils/result'
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
 import { EmptyChurchListError } from '@modules/churches/errors/empty-church-list-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 
 const user = { userLat: -23.5505, userLon: -46.6333 }
 
@@ -183,13 +183,13 @@ describe('routed-distance ceiling', () => {
       // A provider outage must not be reported as "there are no churches",
       // which would be indistinguishable from a genuine empty result.
       const useCase = new CalculateChurchRouteDistancesUseCase({
-        getDistances: vi.fn().mockResolvedValue(err(new ServiceBusyError('Stadia Maps'))),
+        getDistances: vi.fn().mockResolvedValue(err(new ProviderRateLimitError('Stadia Maps'))),
       })
 
       const result = await useCase.findNearest({ churches: [church(1)], user }, RoutingProfile.PEDESTRIAN)
 
       expect(isErr(result)).toBe(true)
-      if (isErr(result)) expect(result.error).toBeInstanceOf(ServiceBusyError)
+      if (isErr(result)) expect(result.error).toBeInstanceOf(ProviderRateLimitError)
     })
   })
 })

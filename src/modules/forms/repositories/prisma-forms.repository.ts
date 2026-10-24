@@ -1,6 +1,6 @@
 import { DatabaseContext } from '@infra/database/prisma/helpers/database-context'
 import { PrismaErrorMapper } from '@infra/database/prisma/utils/prisma-error-mapper'
-import { FormsNotFoundError } from '@modules/forms/errors/forms-not-found-error'
+import { FormNotFoundError } from '@modules/forms/errors/form-not-found-error'
 import {
   FormsRepository,
   IFormSubmission,
@@ -23,7 +23,7 @@ export class PrismaFormsRepository implements FormsRepository {
 
       return ok(formSubmission)
     } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.map(error))
     }
   }
 
@@ -36,12 +36,12 @@ export class PrismaFormsRepository implements FormsRepository {
       })
 
       if (!formSubmission) {
-        return err(new FormsNotFoundError())
+        return err(new FormNotFoundError())
       }
 
       return ok(formSubmission)
     } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.map(error))
     }
   }
 }

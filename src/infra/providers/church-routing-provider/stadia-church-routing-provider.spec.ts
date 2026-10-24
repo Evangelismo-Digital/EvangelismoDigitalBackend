@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StadiaChurchRoutingProvider } from './stadia-church-routing-provider'
 import { STADIA_CONFIG } from '@common/messages/constants/providers/stadia'
 import type Redis from 'ioredis'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { RoutingProfile } from '@common/types/routing-profile/routing-profile-enum'
 import { ResilientChurchRoutingProviderDecorator } from './decorators/resilient-church-routing-provider.decorator'
 import { IChurchRoutingProvider } from '@infra/providers/interfaces/church-routing-provider.interface'
@@ -182,7 +182,7 @@ describe('StadiaChurchRoutingProvider', () => {
 
     expect(result.success).toBe(false)
     if (!result.success) {
-      expect(result.error).toBeInstanceOf(ServiceBusyError)
+      expect(result.error).toBeInstanceOf(ProviderRateLimitError)
     }
 
     expect(mockedPost).not.toHaveBeenCalled()

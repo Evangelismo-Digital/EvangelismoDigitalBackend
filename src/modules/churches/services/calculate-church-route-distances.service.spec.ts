@@ -9,7 +9,7 @@ import { RoutingProfile } from '@common/types/routing-profile/routing-profile-en
 import { ok, err, isOk, isErr } from '@common/utils/result'
 import { EmptyChurchListError } from '@modules/churches/errors/empty-church-list-error'
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { Deadline } from '@common/utils/deadline'
 
 function church(overrides: Partial<NearbyChurch> = {}): NearbyChurch {
@@ -64,7 +64,7 @@ describe('CalculateChurchRouteDistancesUseCase', () => {
   })
 
   it('propagates a failure Result from the routing provider unchanged', async () => {
-    const failure = err(new ServiceBusyError('Stadia'))
+    const failure = err(new ProviderRateLimitError('Stadia'))
     vi.mocked(routingProvider.getDistances).mockResolvedValue(failure)
 
     const result = await useCase.findNearest({ churches: [church()], user })

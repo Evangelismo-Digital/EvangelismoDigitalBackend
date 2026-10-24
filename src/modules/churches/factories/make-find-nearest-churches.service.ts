@@ -7,7 +7,7 @@ import { FindNearestChurchesUseCase } from '@modules/churches/services/find-near
 import { FindNearbyChurchesKnnUseCase } from '@modules/churches/services/find-nearby-churches-knn.service'
 import { PrismaChurchesRepository } from '@modules/churches/repositories/prisma-churches.repository'
 import { PrismaErrorMapper } from '@infra/database/prisma/utils/prisma-error-mapper'
-import { churchPrismaErrorMapping } from '@modules/churches/repositories/errors/churches-error-mapping'
+import { churchesPrismaErrorMapping } from '@modules/churches/repositories/errors/churches-prisma-error-mapping'
 import { ResilientAddressProvider } from '@infra/providers/address-provider/resilient-address-provider'
 import { AwesomeApiProvider } from '@infra/providers/address-provider/awesome-api-provider'
 import { BrasilApiProvider } from '@infra/providers/address-provider/brasil-api-provider'
@@ -131,8 +131,8 @@ export function makeFindNearestChurchesUseCase(
     makeResilientAddressProvider(redisRateLimitConnection),
   )
 
-  const errorMapper = new PrismaErrorMapper(churchPrismaErrorMapping)
-  const churchesRepository = new PrismaChurchesRepository(errorMapper)
+  const churchesErrorMapper = new PrismaErrorMapper(churchesPrismaErrorMapping)
+  const churchesRepository = new PrismaChurchesRepository(churchesErrorMapper)
   const findNearbyChurchesKnnUseCase = new FindNearbyChurchesKnnUseCase(churchesRepository)
 
   cachedUseCase = new FindNearestChurchesUseCase(

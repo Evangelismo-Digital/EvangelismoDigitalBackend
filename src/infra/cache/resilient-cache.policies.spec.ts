@@ -25,7 +25,7 @@ import { ResilientCache, ResilientCacheOptions } from './resilient-cache'
 import { ok, err, isOk, isErr, Result } from '@common/utils/result'
 import { AppError } from '@common/errors/app-error'
 import { FailureMode } from '@common/types/failure-mode/failure-mode.enum'
-import { ServiceOverloadError } from '@common/errors/infrastructure/service-overload-error'
+import { ConcurrencyLimitError } from '@common/errors/infrastructure/concurrency-limit-error'
 import { CircuitOpenError } from '@common/errors/infrastructure/circuit-open-error'
 
 class TestAppError extends AppError {
@@ -129,7 +129,7 @@ describe('cache fetch policies', () => {
       const rejected = await cache.getOrFetch('key-b', vi.fn())
 
       expect(isErr(rejected)).toBe(true)
-      if (isErr(rejected)) expect(rejected.error).toBeInstanceOf(ServiceOverloadError)
+      if (isErr(rejected)) expect(rejected.error).toBeInstanceOf(ConcurrencyLimitError)
       void inflight
     })
 

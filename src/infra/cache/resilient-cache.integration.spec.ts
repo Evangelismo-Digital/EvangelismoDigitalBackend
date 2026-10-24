@@ -10,7 +10,7 @@ import { ResilientCache, CacheEnvelope, ResilientCacheOptions } from './resilien
 import { ok, err, isOk, isErr, Result } from '@common/utils/result'
 import { AppError } from '@common/errors/app-error'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { serializeAppError, deserializeAppError } from '@common/errors/app-error-registry'
 
 const PREFIX = 'cache:it:resilient:'
@@ -131,7 +131,7 @@ describe('ResilientCache (integration, real Redis)', () => {
   it('RETRYABLE failures are NOT cached (transient) → the fetcher runs again next time', async () => {
     const cache = makeCache()
     const key = `${PREFIX}retryable`
-    const fetcher = vi.fn(async (): Promise<Result<never, AppError>> => err(new ServiceBusyError('ViaCEP')))
+    const fetcher = vi.fn(async (): Promise<Result<never, AppError>> => err(new ProviderRateLimitError('ViaCEP')))
 
     await cache.getOrFetch(key, fetcher)
     expect(await redis.get(key)).toBeNull()

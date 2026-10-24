@@ -13,7 +13,7 @@ import { INFRA_ERRORS } from '@common/messages/errors/infrastructure'
  * is the whole point of tripping a breaker: the alternative is spending the
  * caller's budget waiting on an upstream we already know is unhealthy.
  *
- * Distinct from {@link ServiceBusyError} (the provider answered 429 — it was
+ * Distinct from {@link ProviderRateLimitError} (the provider answered 429 — it was
  * called, and it pushed back) and from {@link ProviderFailureError} (it was
  * called and failed). Only `telemetryReason` separates them in metrics, so an
  * operator can tell "upstream is erroring" from "we stopped calling upstream" —

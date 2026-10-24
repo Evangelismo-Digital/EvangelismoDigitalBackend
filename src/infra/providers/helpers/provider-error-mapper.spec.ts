@@ -1,16 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import { AxiosError } from 'axios'
 import { Prisma } from '@prisma/client'
-import { FindNearestChurchesErrorMapper } from './find-nearest-churches-error-mapper'
+import { ProviderErrorMapper } from './provider-error-mapper'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
 import { DatabaseQueryError } from '@common/errors/infrastructure/database-query-error'
 import { deserializeAppError } from '@common/errors/app-error-registry'
 import { CircuitOpenError } from '@common/errors/infrastructure/circuit-open-error'
-import { ServiceOverloadError } from '@common/errors/infrastructure/service-overload-error'
+import { ConcurrencyLimitError } from '@common/errors/infrastructure/concurrency-limit-error'
 import { BrokenCircuitError, BulkheadRejectedError } from 'cockatiel'
 import { FailureMode } from '@common/types/failure-mode/failure-mode.enum'
 
@@ -39,24 +39,24 @@ function createFakeAxiosError(
   } as AxiosError
 }
 
-describe('FindNearestChurchesErrorMapper', () => {
+describe('ProviderErrorMapper', () => {
   it('maps 404 to InvalidCepError for address providers', () => {
     const err = createFakeAxiosError(404, undefined, 'https://viacep.com.br/ws/12345678/json')
-    const mapped = FindNearestChurchesErrorMapper.map(err)
+    const mapped = ProviderErrorMapper.map(err)
     expect(mapped).toBeInstanceOf(InvalidCepError)
     expect(mapped.message).toContain('12345678')
   })
 
   it('names the 8-digit CEP even when the URL carries other, shorter numbers', () => {
     const err = createFakeAxiosError(404, undefined, 'https://viacep.com.br/ws/2/12345678/json')
-    const mapped = FindNearestChurchesErrorMapper.map(err)
+    const mapped = ProviderErrorMapper.map(err)
     expect(mapped.message).toBe('O CEP fornecido 12345678 não existe.')
   })
 
   it('maps a 404 with no request URL to CoordinatesNotFoundError, not to an invalid CEP', () => {
     const err = createFakeAxiosError(404, undefined)
     Object.assign(err, { config: undefined })
-    const mapped = FindNearestChurchesErrorMapper.map(err)
+    const mapped = ProviderErrorMapper.map(err)
     expect(mapped).toBeInstanceOf(CoordinatesNotFoundError)
   })
 
@@ -67,48 +67,48 @@ describe('FindNearestChurchesErrorMapper', () => {
 
   it('maps 404 to CoordinatesNotFoundError for geocoding providers', () => {
     const err = createFakeAxiosError(404, undefined, 'https://nominatim.openstreetmap.org/search')
-    const mapped = FindNearestChurchesErrorMapper.map(err)
+    const mapped = ProviderErrorMapper.map(err)
     expect(mapped).toBeInstanceOf(CoordinatesNotFoundError)
   })
 
-  it('maps 429 to ServiceBusyError', () => {
+  it('maps 429 to ProviderRateLimitError', () => {
     const err = createFakeAxiosError(429, undefined, 'https://viacep.com.br/ws/12345678/json')
-    const mapped = FindNearestChurchesErrorMapper.map(err)
-    expect(mapped).toBeInstanceOf(ServiceBusyError)
+    const mapped = ProviderErrorMapper.map(err)
+    expect(mapped).toBeInstanceOf(ProviderRateLimitError)
     expect(mapped.body.code).toBe('SERVICE_BUSY')
     // Provider name is preserved as a class property, not in the user-facing message
-    expect((mapped as ServiceBusyError).provider).toBe('ViaCEP')
+    expect((mapped as ProviderRateLimitError).provider).toBe('ViaCEP')
   })
 
   it('maps ERR_CANCELED to TimeoutExceededError', () => {
     const err = createFakeAxiosError(undefined, 'ERR_CANCELED')
-    const mapped = FindNearestChurchesErrorMapper.map(err)
+    const mapped = ProviderErrorMapper.map(err)
     expect(mapped).toBeInstanceOf(TimeoutExceededError)
   })
 
   it('maps ECONNABORTED / timeout to TimeoutExceededError', () => {
     const err = createFakeAxiosError(undefined, 'ECONNABORTED')
-    const mapped = FindNearestChurchesErrorMapper.map(err)
+    const mapped = ProviderErrorMapper.map(err)
     expect(mapped).toBeInstanceOf(TimeoutExceededError)
   })
 
   it('maps a timeout named only in the message, whatever its casing', () => {
     const err = createFakeAxiosError(undefined, undefined)
     err.message = 'Request Timeout Of 5000ms Exceeded'
-    const mapped = FindNearestChurchesErrorMapper.map(err)
+    const mapped = ProviderErrorMapper.map(err)
     expect(mapped).toBeInstanceOf(TimeoutExceededError)
   })
 
   it('does not treat an error with no code and no timeout wording as a timeout', () => {
     const err = createFakeAxiosError(500, undefined)
     err.message = 'Internal Server Error'
-    const mapped = FindNearestChurchesErrorMapper.map(err)
+    const mapped = ProviderErrorMapper.map(err)
     expect(mapped).toBeInstanceOf(ProviderFailureError)
   })
 
   it('maps generic Axios error to ProviderFailureError', () => {
     const err = createFakeAxiosError(500, undefined, 'https://api.awesomeapi.com.br/12345678')
-    const mapped = FindNearestChurchesErrorMapper.map(err)
+    const mapped = ProviderErrorMapper.map(err)
     expect(mapped).toBeInstanceOf(ProviderFailureError)
   })
 
@@ -122,14 +122,14 @@ describe('FindNearestChurchesErrorMapper', () => {
     ['https://api.openrouteservice.org/v2/matrix/foot-walking', 'OpenRouteService'],
   ])('names the provider behind a 429 from %s as %s', (url, provider) => {
     const err = createFakeAxiosError(429, undefined, url)
-    const mapped = FindNearestChurchesErrorMapper.map(err)
-    expect((mapped as ServiceBusyError).provider).toBe(provider)
+    const mapped = ProviderErrorMapper.map(err)
+    expect((mapped as ProviderRateLimitError).provider).toBe(provider)
   })
 
   it('falls back to a placeholder name for an unrecognised provider URL', () => {
     const err = createFakeAxiosError(429, undefined, 'https://example.com/whatever')
-    const mapped = FindNearestChurchesErrorMapper.map(err)
-    expect((mapped as ServiceBusyError).provider).toBe('Unknown Provider')
+    const mapped = ProviderErrorMapper.map(err)
+    expect((mapped as ProviderRateLimitError).provider).toBe('Unknown Provider')
   })
 
   it('survives an Axios error carrying no config at all', () => {
@@ -137,15 +137,15 @@ describe('FindNearestChurchesErrorMapper', () => {
     // Axios does not always populate `config` (e.g. a failure before the request is built)
     Object.assign(err, { config: undefined })
 
-    const mapped = FindNearestChurchesErrorMapper.map(err)
-    expect((mapped as ServiceBusyError).provider).toBe('Unknown Provider')
+    const mapped = ProviderErrorMapper.map(err)
+    expect((mapped as ProviderRateLimitError).provider).toBe('Unknown Provider')
   })
 
   it('treats a 404 with no config as a geocoding miss rather than an invalid CEP', () => {
     const err = createFakeAxiosError(404, undefined)
     Object.assign(err, { config: undefined })
 
-    const mapped = FindNearestChurchesErrorMapper.map(err)
+    const mapped = ProviderErrorMapper.map(err)
     expect(mapped).toBeInstanceOf(CoordinatesNotFoundError)
   })
 
@@ -154,7 +154,7 @@ describe('FindNearestChurchesErrorMapper', () => {
       code: 'P2002',
       clientVersion: '7.2.0',
     })
-    const mapped = FindNearestChurchesErrorMapper.map(err)
+    const mapped = ProviderErrorMapper.map(err)
     expect(mapped).toBeInstanceOf(DatabaseQueryError)
   })
 
@@ -162,24 +162,14 @@ describe('FindNearestChurchesErrorMapper', () => {
     const err = new Prisma.PrismaClientUnknownRequestError('Database connection error', {
       clientVersion: '7.2.0',
     })
-    const mapped = FindNearestChurchesErrorMapper.map(err)
+    const mapped = ProviderErrorMapper.map(err)
     expect(mapped).toBeInstanceOf(DatabaseQueryError)
   })
 
   it('returns AppError directly', () => {
     const err = new InvalidCepError()
-    const mapped = FindNearestChurchesErrorMapper.map(err)
+    const mapped = ProviderErrorMapper.map(err)
     expect(mapped).toBe(err)
-  })
-
-  it('runs block catching error and returns mapped AppError', async () => {
-    const res = await FindNearestChurchesErrorMapper.runCatching(async () => {
-      throw createFakeAxiosError(404, undefined, 'https://viacep.com.br/ws/12345678/json')
-    })
-    expect(res.success).toBe(false)
-    if (!res.success) {
-      expect(res.error).toBeInstanceOf(InvalidCepError)
-    }
   })
 
   it('deserializes InvalidCepError and extracts CEP from message', () => {
@@ -192,34 +182,34 @@ describe('FindNearestChurchesErrorMapper', () => {
     // ProviderFailureError would mislabel them in metrics and hide the fact
     // that no request was made — the opposite of what an operator needs.
     it('maps a tripped circuit to CircuitOpenError', () => {
-      const mapped = FindNearestChurchesErrorMapper.map(new BrokenCircuitError('circuit is open'))
+      const mapped = ProviderErrorMapper.map(new BrokenCircuitError('circuit is open'))
 
       expect(mapped).toBeInstanceOf(CircuitOpenError)
     })
 
     it('keeps a tripped circuit RETRYABLE so the chain tries the next provider', () => {
-      const mapped = FindNearestChurchesErrorMapper.map(new BrokenCircuitError('circuit is open'))
+      const mapped = ProviderErrorMapper.map(new BrokenCircuitError('circuit is open'))
 
       expect(mapped.failureMode).toBe(FailureMode.RETRYABLE)
     })
 
     it('preserves the cockatiel error as the cause', () => {
       const raw = new BrokenCircuitError('circuit is open')
-      const mapped = FindNearestChurchesErrorMapper.map(raw) as CircuitOpenError
+      const mapped = ProviderErrorMapper.map(raw) as CircuitOpenError
 
       expect(mapped.originalError).toBe(raw)
     })
 
-    it('maps a full bulkhead to ServiceOverloadError', () => {
-      const mapped = FindNearestChurchesErrorMapper.map(new BulkheadRejectedError(1, 0))
+    it('maps a full bulkhead to ConcurrencyLimitError', () => {
+      const mapped = ProviderErrorMapper.map(new BulkheadRejectedError(1, 0))
 
-      expect(mapped).toBeInstanceOf(ServiceOverloadError)
+      expect(mapped).toBeInstanceOf(ConcurrencyLimitError)
     })
 
     it('still falls back to ProviderFailureError for anything else', () => {
       // The counterweight: the two new branches must not swallow ordinary
       // failures on their way to the fallback.
-      const mapped = FindNearestChurchesErrorMapper.map(new Error('something else entirely'))
+      const mapped = ProviderErrorMapper.map(new Error('something else entirely'))
 
       expect(mapped).toBeInstanceOf(ProviderFailureError)
     })
@@ -229,7 +219,7 @@ describe('FindNearestChurchesErrorMapper', () => {
       // `\b\d{8}\b` cannot match inside a 9-digit run, which is exactly why the
       // second, unanchored pattern exists. Without it the CEP is lost and the
       // user is told which CEP was invalid without being told the CEP.
-      const mapped = FindNearestChurchesErrorMapper.map(
+      const mapped = ProviderErrorMapper.map(
         createFakeAxiosError(404, undefined, 'https://viacep.com.br/ws/123456789/json'),
       )
 

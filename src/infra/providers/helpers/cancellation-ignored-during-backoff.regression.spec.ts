@@ -36,7 +36,7 @@ import { AxiosError } from 'axios'
 import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-exceeded-error'
 import { FailureMode } from '@common/types/failure-mode/failure-mode.enum'
 
-/** A 429 maps to ServiceBusyError, which is RETRYABLE — so it triggers a backoff. */
+/** A 429 maps to ProviderRateLimitError, which is RETRYABLE — so it triggers a backoff. */
 function retryableError(): AxiosError {
   return {
     name: 'AxiosError',

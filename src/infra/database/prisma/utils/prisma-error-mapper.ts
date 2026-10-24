@@ -21,7 +21,7 @@ export type PrismaErrorMappingConfig<E extends AppError> = {
 export class PrismaErrorMapper<E extends AppError> implements IErrorMapper {
   constructor(private readonly errorMapping: PrismaErrorMappingConfig<E>) {}
 
-  mapToKnownError(error: unknown): AppError {
+  map(error: unknown): AppError {
     if (error instanceof AppError) {
       return error
     }

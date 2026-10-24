@@ -21,9 +21,9 @@ import { getOutboxDispatchQueue, closeOutboxDispatchQueue } from '@infra/outbox/
 import { PrismaOutboxRepository } from '@infra/outbox/repositories/prisma-outbox-event.repository'
 import { PrismaErrorMapper } from '@infra/database/prisma/utils/prisma-error-mapper'
 import {
-  outboxHttpPrismaErrorMapping,
+  outboxDomainPrismaErrorMapping,
   outboxInfraPrismaErrorMapping,
-} from '@infra/outbox/repositories/errors/outbox-error-mapping'
+} from '@infra/outbox/repositories/errors/outbox-prisma-error-mapping'
 import { Worker } from 'bullmq'
 import { crashShutdown } from '@infra/shutdown/crash-shutdown'
 import closeWithGrace from 'close-with-grace'
@@ -65,9 +65,9 @@ async function bootstrap() {
     logger.info('Inicializando serviços de background...')
 
     const dbContext = new DatabaseContext()
-    const outboxHttpMapper = new PrismaErrorMapper(outboxHttpPrismaErrorMapping)
-    const outboxInfraMapper = new PrismaErrorMapper(outboxInfraPrismaErrorMapping)
-    const outboxRepository = new PrismaOutboxRepository(dbContext, outboxHttpMapper, outboxInfraMapper)
+    const outboxDomainErrorMapper = new PrismaErrorMapper(outboxDomainPrismaErrorMapping)
+    const outboxInfraErrorMapper = new PrismaErrorMapper(outboxInfraPrismaErrorMapping)
+    const outboxRepository = new PrismaOutboxRepository(dbContext, outboxDomainErrorMapper, outboxInfraErrorMapper)
 
     worker = startMailWorker(outboxRepository)
     logger.info('Mail worker iniciado')

@@ -2,9 +2,9 @@ import { DatabaseContext } from '../src/infra/database/prisma/helpers/database-c
 import { PrismaOutboxRepository } from '../src/infra/outbox/repositories/prisma-outbox-event.repository'
 import { PrismaErrorMapper } from '../src/infra/database/prisma/utils/prisma-error-mapper'
 import {
-  outboxHttpPrismaErrorMapping,
+  outboxDomainPrismaErrorMapping,
   outboxInfraPrismaErrorMapping,
-} from '../src/infra/outbox/repositories/errors/outbox-error-mapping'
+} from '../src/infra/outbox/repositories/errors/outbox-prisma-error-mapping'
 import {
   listFailedOutboxEvents,
   retryFailedOutboxEvent,
@@ -18,9 +18,9 @@ async function main() {
   const targetId = process.argv[3]
 
   const dbContext = new DatabaseContext()
-  const outboxHttpMapper = new PrismaErrorMapper(outboxHttpPrismaErrorMapping)
+  const outboxDomainMapper = new PrismaErrorMapper(outboxDomainPrismaErrorMapping)
   const outboxInfraMapper = new PrismaErrorMapper(outboxInfraPrismaErrorMapping)
-  const repository = new PrismaOutboxRepository(dbContext, outboxHttpMapper, outboxInfraMapper)
+  const repository = new PrismaOutboxRepository(dbContext, outboxDomainMapper, outboxInfraMapper)
 
   try {
     if (action === 'list') {

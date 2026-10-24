@@ -32,7 +32,7 @@ import { IAddressProvider } from '@infra/providers/interfaces/address-provider.i
 import { Deadline } from '@common/utils/deadline'
 import { ok, err, isErr } from '@common/utils/result'
 import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-exceeded-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { FailureMode } from '@common/types/failure-mode/failure-mode.enum'
 
 const coords = { lat: -23.55, lon: -46.63, precision: EnumGeoPrecision.ROOFTOP }
@@ -70,7 +70,7 @@ describe('regression: a spent budget must stop the chain, not walk it', () => {
       const first: IGeocodingProvider = { search: vi.fn(), searchStructured: vi.fn() }
       const second: IGeocodingProvider = { search: vi.fn(), searchStructured: vi.fn() }
 
-      vi.mocked(first.search).mockResolvedValue(err(new ServiceBusyError('LocationIQ')))
+      vi.mocked(first.search).mockResolvedValue(err(new ProviderRateLimitError('LocationIQ')))
       vi.mocked(second.search).mockResolvedValue(ok(coords))
 
       const result = await new ResilientGeoProvider([first, second]).search('Av Paulista')

@@ -12,9 +12,9 @@ import { PrismaOutboxRepository } from '@infra/outbox/repositories/prisma-outbox
 import { DatabaseContext } from '@infra/database/prisma/helpers/database-context'
 import { PrismaErrorMapper } from '@infra/database/prisma/utils/prisma-error-mapper'
 import {
-  outboxHttpPrismaErrorMapping,
+  outboxDomainPrismaErrorMapping,
   outboxInfraPrismaErrorMapping,
-} from '@infra/outbox/repositories/errors/outbox-error-mapping'
+} from '@infra/outbox/repositories/errors/outbox-prisma-error-mapping'
 import { DistributedLock } from '@infra/distributed-lock/distributed-lock'
 import { getMailQueue } from '@infra/mail/queue/mail-queue'
 import { getRedisCache, closeAllRedisConnections } from '@infra/redis/clients/clients'
@@ -29,7 +29,7 @@ function makeProcessor() {
   const dbContext = new DatabaseContext()
   const repo = new PrismaOutboxRepository(
     dbContext,
-    new PrismaErrorMapper(outboxHttpPrismaErrorMapping),
+    new PrismaErrorMapper(outboxDomainPrismaErrorMapping),
     new PrismaErrorMapper(outboxInfraPrismaErrorMapping),
   )
   return new OutboxProcessor(repo, makeOutboxDispatchStrategyRegistry())

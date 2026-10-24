@@ -31,7 +31,7 @@ import { IGeoCoordinates, IGeocodingProvider } from '@infra/providers/interfaces
 import { IRawChurchRoutingProvider } from '@infra/providers/interfaces/raw-providers.interface'
 import { Result, ok, err } from '@common/utils/result'
 import { AppError } from '@common/errors/app-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
 import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-exceeded-error'
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
@@ -102,9 +102,9 @@ describe('Provider metrics instrumentation', () => {
       ).toBe(1)
     })
 
-    it('records rate_limited for a ServiceBusyError', async () => {
+    it('records rate_limited for a ProviderRateLimitError', async () => {
       const chain = new ResilientAddressProvider([
-        fakeAddressProvider('AwesomeAPI', err(new ServiceBusyError('AwesomeAPI'))),
+        fakeAddressProvider('AwesomeAPI', err(new ProviderRateLimitError('AwesomeAPI'))),
       ])
       await chain.fetchAddress('01001000')
       expect(
@@ -164,7 +164,7 @@ describe('Provider metrics instrumentation', () => {
   describe('address chain — fallback and exhaustion', () => {
     it('records one fallback transition when a RETRYABLE error advances to the next provider', async () => {
       const chain = new ResilientAddressProvider([
-        fakeAddressProvider('AwesomeAPI', err(new ServiceBusyError('AwesomeAPI'))),
+        fakeAddressProvider('AwesomeAPI', err(new ProviderRateLimitError('AwesomeAPI'))),
         fakeAddressProvider('ViaCEP', ok(ADDRESS)),
       ])
       await chain.fetchAddress('01001000')
@@ -194,8 +194,8 @@ describe('Provider metrics instrumentation', () => {
 
     it('records chain-exhausted when all providers fail with RETRYABLE errors', async () => {
       const chain = new ResilientAddressProvider([
-        fakeAddressProvider('AwesomeAPI', err(new ServiceBusyError('AwesomeAPI'))),
-        fakeAddressProvider('ViaCEP', err(new ServiceBusyError('ViaCEP'))),
+        fakeAddressProvider('AwesomeAPI', err(new ProviderRateLimitError('AwesomeAPI'))),
+        fakeAddressProvider('ViaCEP', err(new ProviderRateLimitError('ViaCEP'))),
       ])
       await chain.fetchAddress('01001000')
       expect(await metricValue(collectMetricsProviderChainExhausted, { layer: 'address' })).toBe(1)
@@ -212,7 +212,7 @@ describe('Provider metrics instrumentation', () => {
 
     it('observes latency once per provider attempt', async () => {
       const chain = new ResilientAddressProvider([
-        fakeAddressProvider('AwesomeAPI', err(new ServiceBusyError('AwesomeAPI'))),
+        fakeAddressProvider('AwesomeAPI', err(new ProviderRateLimitError('AwesomeAPI'))),
         fakeAddressProvider('ViaCEP', ok(ADDRESS)),
       ])
       await chain.fetchAddress('01001000')
@@ -228,7 +228,7 @@ describe('Provider metrics instrumentation', () => {
   describe('geocoding chain', () => {
     it('records a fallback + success across the geocoding layer', async () => {
       const chain = new ResilientGeoProvider([
-        fakeGeoProvider('Nominatim', err(new ServiceBusyError('Nominatim'))),
+        fakeGeoProvider('Nominatim', err(new ProviderRateLimitError('Nominatim'))),
         fakeGeoProvider('LocationIQ', ok(COORDS)),
       ])
       await chain.search('Rua X')

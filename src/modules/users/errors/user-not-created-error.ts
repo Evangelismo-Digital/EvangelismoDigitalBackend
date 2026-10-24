@@ -1,8 +1,8 @@
 import { ErrorType } from '@common/types/error-type/error-type'
-import { DomainError } from '@common/errors/domain-error'
+import { SystemError } from '@common/errors/system-error'
 import { USER_ERRORS } from '@common/messages/errors/users'
 
-export class UserNotCreatedError extends DomainError {
+export class UserNotCreatedError extends SystemError {
   constructor() {
     super(USER_ERRORS.NOT_CREATED, ErrorType.INTERNAL_SERVER_ERROR)
   }

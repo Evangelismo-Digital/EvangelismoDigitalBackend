@@ -22,7 +22,7 @@ import { IRawChurchRoutingProvider } from '@infra/providers/interfaces/raw-provi
 import { EnumProviderConfig } from '@infra/rate-limiter/redis-rate-limiter'
 import { RoutingProfile } from '@common/types/routing-profile/routing-profile-enum'
 import { isOk, isErr } from '@common/utils/result'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
 import { Deadline } from '@common/utils/deadline'
@@ -56,7 +56,7 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
     expect(decorator.providerName).toBe('Stadia')
   })
 
-  it('returns ServiceBusyError without recording it when the rate limiter rejects', async () => {
+  it('returns ProviderRateLimitError without recording it when the rate limiter rejects', async () => {
     mockTryConsume.mockResolvedValue(false)
     const raw = makeRaw()
     const decorator = new ResilientChurchRoutingProviderDecorator(raw, {} as Redis)
@@ -64,7 +64,7 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
     const result = await decorator.getDistances({ origin, destinations })
 
     expect(isErr(result)).toBe(true)
-    if (isErr(result)) expect(result.error).toBeInstanceOf(ServiceBusyError)
+    if (isErr(result)) expect(result.error).toBeInstanceOf(ProviderRateLimitError)
     expect(raw.fetchRawDistances).not.toHaveBeenCalled()
     // The chain above records it; recording here too would double every count.
     expect(mockRecordProviderRequest).not.toHaveBeenCalled()
@@ -146,7 +146,7 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
     expect(mockRecordProviderRequest).not.toHaveBeenCalled()
   })
 
-  it('maps a thrown raw error through FindNearestChurchesErrorMapper without timing it', async () => {
+  it('maps a thrown raw error through ProviderErrorMapper without timing it', async () => {
     const raw = makeRaw()
     vi.mocked(raw.fetchRawDistances).mockRejectedValue(new Error('network blew up'))
     const decorator = new ResilientChurchRoutingProviderDecorator(raw, {} as Redis)
@@ -209,7 +209,7 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
       const result = await decorator.getDistances({ origin, destinations })
 
       expect(isErr(result)).toBe(true)
-      if (isErr(result)) expect(result.error).toBeInstanceOf(ServiceBusyError)
+      if (isErr(result)) expect(result.error).toBeInstanceOf(ProviderRateLimitError)
       expect(raw.fetchRawDistances).toHaveBeenCalledTimes(2)
     })
   })

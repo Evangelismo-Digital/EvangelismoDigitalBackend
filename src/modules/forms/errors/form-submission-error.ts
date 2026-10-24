@@ -4,6 +4,6 @@ import { FORM_ERRORS } from '@common/messages/errors/forms'
 
 export class FormSubmissionError extends DomainError {
   constructor() {
-    super(FORM_ERRORS.SUBMISSION, ErrorType.INTERNAL_SERVER_ERROR)
+    super(FORM_ERRORS.SUBMISSION, ErrorType.BAD_REQUEST)
   }
 }

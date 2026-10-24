@@ -24,7 +24,7 @@ vi.mock('@infra/database/prisma', () => ({
 
 import { PrismaChurchesRepository } from './prisma-churches.repository'
 import { PrismaErrorMapper } from '@infra/database/prisma/utils/prisma-error-mapper'
-import { churchPrismaErrorMapping } from './errors/churches-error-mapping'
+import { churchesPrismaErrorMapping } from './errors/churches-prisma-error-mapping'
 import { isOk, isErr } from '@common/utils/result'
 import { CreateChurchError } from '@modules/churches/errors/create-church-error'
 import { ChurchNotFoundError } from '@modules/churches/errors/church-not-found-error'
@@ -56,7 +56,7 @@ describe('PrismaChurchesRepository', () => {
         $executeRawUnsafe: (...args: unknown[]) => mockExecuteRawUnsafe(...args),
       }),
     )
-    repository = new PrismaChurchesRepository(new PrismaErrorMapper(churchPrismaErrorMapping))
+    repository = new PrismaChurchesRepository(new PrismaErrorMapper(churchesPrismaErrorMapping))
   })
 
   describe('findNearest', () => {

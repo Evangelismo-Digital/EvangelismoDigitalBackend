@@ -4,7 +4,7 @@
  * carrying its own user-facing message where the provider name belonged.
  *
  * Why it mattered: `provider` is a metric label and a log field. A restored
- * ServiceBusyError reported "Serviço temporariamente indisponível devido ao
+ * ProviderRateLimitError reported "Serviço temporariamente indisponível devido ao
  * limite de requisições." as its provider, which both destroys the metric's
  * cardinality (one label per message, not per upstream) and points an operator
  * at nothing. CircuitOpenError, added alongside the cockatiel policies, would
@@ -20,9 +20,9 @@
 import { describe, it, expect } from 'vitest'
 import { serializeAppError, deserializeAppError } from './app-error-registry'
 import { CircuitOpenError } from './infrastructure/circuit-open-error'
-import { ServiceBusyError } from './infrastructure/service-busy-error'
+import { ProviderRateLimitError } from './infrastructure/provider-rate-limit-error'
 
-function roundTrip(error: CircuitOpenError | ServiceBusyError) {
+function roundTrip(error: CircuitOpenError | ProviderRateLimitError) {
   const serialized = serializeAppError(error)
   return deserializeAppError(serialized.type, serialized.message, serialized.data)
 }
@@ -32,14 +32,14 @@ describe('provider lost in error round trip', () => {
     expect((roundTrip(new CircuitOpenError('Stadia Maps')) as CircuitOpenError).provider).toBe('Stadia Maps')
   })
 
-  it('keeps the provider on a round-tripped ServiceBusyError', () => {
-    expect((roundTrip(new ServiceBusyError('LocationIQ')) as ServiceBusyError).provider).toBe('LocationIQ')
+  it('keeps the provider on a round-tripped ProviderRateLimitError', () => {
+    expect((roundTrip(new ProviderRateLimitError('LocationIQ')) as ProviderRateLimitError).provider).toBe('LocationIQ')
   })
 
   it('never lets the user-facing message become the provider label', () => {
     // The symptom itself, stated directly: whatever we recover, it must not be
     // the sentence we show to end users.
-    const restored = roundTrip(new ServiceBusyError('Nominatim')) as ServiceBusyError
+    const restored = roundTrip(new ProviderRateLimitError('Nominatim')) as ProviderRateLimitError
 
     expect(restored.provider).not.toBe(restored.message)
     expect(restored.provider).not.toContain('Serviço temporariamente')
@@ -49,19 +49,19 @@ describe('provider lost in error round trip', () => {
     it('still honours an explicitly structured body.provider payload', () => {
       // Hand-built payloads use `body.provider`; reading the top level first
       // must not stop that shape from working.
-      const restored = deserializeAppError('ServiceBusyError', 'irrelevante', {
+      const restored = deserializeAppError('ProviderRateLimitError', 'irrelevante', {
         body: { provider: 'ViaCEP' },
       })
 
-      expect((restored as ServiceBusyError).provider).toBe('ViaCEP')
+      expect((restored as ProviderRateLimitError).provider).toBe('ViaCEP')
     })
 
     it('still derives the provider from the message when no data is given at all', () => {
       // The cache stores only { type, message }, so this path is the common one
       // in production and must keep working.
-      const restored = deserializeAppError('ServiceBusyError', 'Serviço temporariamente indisponível: Nominatim')
+      const restored = deserializeAppError('ProviderRateLimitError', 'Serviço temporariamente indisponível: Nominatim')
 
-      expect((restored as ServiceBusyError).provider).toBe('Nominatim')
+      expect((restored as ProviderRateLimitError).provider).toBe('Nominatim')
     })
 
     it('labels a data-less CircuitOpenError neutrally rather than with its message', () => {

@@ -19,9 +19,9 @@ import { PrismaOutboxRepository } from '@infra/outbox/repositories/prisma-outbox
 import { DatabaseContext } from '@infra/database/prisma/helpers/database-context'
 import { PrismaErrorMapper } from '@infra/database/prisma/utils/prisma-error-mapper'
 import {
-  outboxHttpPrismaErrorMapping,
+  outboxDomainPrismaErrorMapping,
   outboxInfraPrismaErrorMapping,
-} from '@infra/outbox/repositories/errors/outbox-error-mapping'
+} from '@infra/outbox/repositories/errors/outbox-prisma-error-mapping'
 import { getRedisCache, closeAllRedisConnections } from '@infra/redis/clients/clients'
 import { prisma } from '@infra/database/prisma'
 import { IOutboxDispatchData } from '@infra/outbox/interfaces/outbox-dispatch-data.interface'
@@ -31,7 +31,7 @@ import { REDIS_CONSTANTS } from '@common/messages/constants/redis/redis'
 
 const repo = new PrismaOutboxRepository(
   new DatabaseContext(),
-  new PrismaErrorMapper(outboxHttpPrismaErrorMapping),
+  new PrismaErrorMapper(outboxDomainPrismaErrorMapping),
   new PrismaErrorMapper(outboxInfraPrismaErrorMapping),
 )
 const processJob = createMailJobProcessor(repo)

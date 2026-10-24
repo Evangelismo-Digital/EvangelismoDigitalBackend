@@ -76,14 +76,14 @@ vi.mock('ioredis', () => {
 // // Imports reais
 import Redis from 'ioredis'
 import { ResilientCache } from './resilient-cache'
-import { ServiceOverloadError as InfraServiceOverloadError } from '@common/errors/infrastructure/service-overload-error'
+import { ConcurrencyLimitError } from '@common/errors/infrastructure/concurrency-limit-error'
 import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
 import { Result, ok, err, isOk, isErr } from '@common/utils/result'
 import { AppError } from '@common/errors/app-error'
 import { FailureMode } from '@common/types/failure-mode/failure-mode.enum'
 import { AppErrorRegistry } from '@common/errors/app-error-registry'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
 import { logger } from '@infra/logger'
 import { Deadline } from '@common/utils/deadline'
@@ -299,7 +299,7 @@ describe('ResilientCache Unit Tests', () => {
       expect(fetcher).toHaveBeenCalledTimes(1)
     })
 
-    it('should return err(InfraServiceOverloadError) when max pending fetches exceeded with DIFFERENT KEYS', async () => {
+    it('should return err(ConcurrencyLimitError) when max pending fetches exceeded with DIFFERENT KEYS', async () => {
       const restrictedCache = new ResilientCache(redisClient, {
         ...defaultOptions,
         maxPendingFetches: 2,
@@ -324,7 +324,7 @@ describe('ResilientCache Unit Tests', () => {
       const p3 = await restrictedCache.getOrFetch('key-3', fetcher)
       expect(isErr(p3)).toBe(true)
       if (isErr(p3)) {
-        expect(p3.error).toBeInstanceOf(InfraServiceOverloadError)
+        expect(p3.error).toBeInstanceOf(ConcurrencyLimitError)
       }
 
       // Limpeza: aguarda as promises originais finalizarem
@@ -1339,7 +1339,7 @@ describe('ResilientCache Unit Tests', () => {
       expect(fetcher).not.toHaveBeenCalled()
       expect(isErr(result)).toBe(true)
       if (isErr(result)) {
-        expect(result.error).toBeInstanceOf(InfraServiceOverloadError)
+        expect(result.error).toBeInstanceOf(ConcurrencyLimitError)
       }
       expect(collectMetricsCacheCircuitBreakerTrips!.inc).toHaveBeenCalledWith({ prefix: 'test-cache:' })
     })
@@ -1618,7 +1618,7 @@ describe('ResilientCache Unit Tests', () => {
       mockRedisSet.mockClear()
       mockRedisSet.mockResolvedValue('OK')
 
-      await cache.getOrFetch('k', async () => err(new ServiceBusyError('ViaCEP')))
+      await cache.getOrFetch('k', async () => err(new ProviderRateLimitError('ViaCEP')))
 
       expect(isRetryable).toHaveBeenCalledOnce()
       expect(mockRedisSet).toHaveBeenCalledOnce()

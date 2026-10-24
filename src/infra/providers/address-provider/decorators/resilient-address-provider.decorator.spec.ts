@@ -3,7 +3,7 @@ import { ResilientAddressProviderDecorator } from './resilient-address-provider.
 import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-exceeded-error'
 import { Deadline } from '@common/utils/deadline'
 import { logger } from '@infra/logger'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import Redis from 'ioredis'
 import { err, isOk, isErr } from '@common/utils/result'
 
@@ -76,7 +76,7 @@ describe('ResilientAddressProviderDecorator Sleep Signal handling', () => {
     const result = await decorator.fetchAddress('01310100')
 
     expect(isErr(result)).toBe(true)
-    if (isErr(result)) expect(result.error).toBeInstanceOf(ServiceBusyError)
+    if (isErr(result)) expect(result.error).toBeInstanceOf(ProviderRateLimitError)
     expect(rawProviderMock.fetchRawAddress).not.toHaveBeenCalled()
   })
 

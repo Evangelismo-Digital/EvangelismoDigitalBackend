@@ -7,7 +7,7 @@ import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-c
 import { EmptyChurchListError } from '@modules/churches/errors/empty-church-list-error'
 import { LatitudeRangeError } from '@modules/churches/errors/latitude-range-error'
 import { LongitudeRangeError } from '@modules/churches/errors/longitude-range-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
 import { ok, err, isErr } from '@common/utils/result'
@@ -48,7 +48,7 @@ describe('regression: a system error must not be pinned by the negative cache', 
     })
 
     it.each([
-      ['ServiceBusyError', new ServiceBusyError('LocationIQ')],
+      ['ProviderRateLimitError', new ProviderRateLimitError('LocationIQ')],
       ['TimeoutExceededError', new TimeoutExceededError('Timeout Exceeded')],
       ['ProviderFailureError', new ProviderFailureError(new Error('boom'))],
     ])('does not negative-cache %s', (_name, error) => {

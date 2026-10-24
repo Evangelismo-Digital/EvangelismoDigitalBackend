@@ -6,8 +6,8 @@ import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-n
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
 import { EmptyChurchListError } from '@modules/churches/errors/empty-church-list-error'
 import { CepToLatLonError } from '@modules/churches/errors/cep-to-lat-lon-error'
-import { ServiceBusyError } from './infrastructure/service-busy-error'
-import { ServiceOverloadError as InfraServiceOverloadError } from './infrastructure/service-overload-error'
+import { ProviderRateLimitError } from './infrastructure/provider-rate-limit-error'
+import { ConcurrencyLimitError } from './infrastructure/concurrency-limit-error'
 import { TimeoutExceededError } from './infrastructure/timeout-exceeded-error'
 import { DeadlineExceededError } from './infrastructure/deadline-exceeded-error'
 import { ProviderFailureError } from './infrastructure/provider-failure-error'
@@ -50,12 +50,12 @@ export const AppErrorRegistry: Record<string, (message: string, data?: Serialize
     return new CepToLatLonError(cep)
   },
 
-  ServiceBusyError: (msg, data) => {
+  ProviderRateLimitError: (msg, data) => {
     const provider = readProvider(data) || msg.replace('Serviço temporariamente indisponível: ', '')
-    return new ServiceBusyError(provider)
+    return new ProviderRateLimitError(provider)
   },
 
-  ServiceOverloadError: () => new InfraServiceOverloadError(),
+  ConcurrencyLimitError: () => new ConcurrencyLimitError(),
 
   TimeoutExceededError: (msg) => new TimeoutExceededError(msg),
 

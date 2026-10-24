@@ -10,7 +10,7 @@ import { checkAdmission } from './provider-admission'
 import { Deadline } from '@common/utils/deadline'
 import { isOk, isErr } from '@common/utils/result'
 import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-exceeded-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { EnumProviderConfig } from '@infra/rate-limiter/redis-rate-limiter'
 import type Redis from 'ioredis'
 
@@ -37,13 +37,13 @@ describe('checkAdmission', () => {
     expect(mockTryConsume).toHaveBeenCalledOnce()
   })
 
-  it('rejects with ServiceBusyError when the limiter refuses', async () => {
+  it('rejects with ProviderRateLimitError when the limiter refuses', async () => {
     mockTryConsume.mockResolvedValue(false)
 
     const result = await admit(Deadline.in(5_000))
 
     expect(isErr(result)).toBe(true)
-    if (isErr(result)) expect(result.error).toBeInstanceOf(ServiceBusyError)
+    if (isErr(result)) expect(result.error).toBeInstanceOf(ProviderRateLimitError)
   })
 
   describe('ordering (D6)', () => {

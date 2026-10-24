@@ -1,15 +1,14 @@
-import { Result, err } from '@common/utils/result'
 import { AppError } from '@common/errors/app-error'
 import { AxiosError, isAxiosError } from 'axios'
 import { Prisma } from '@prisma/client'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
 import { DatabaseQueryError } from '@common/errors/infrastructure/database-query-error'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
 import { CircuitOpenError } from '@common/errors/infrastructure/circuit-open-error'
-import { ServiceOverloadError } from '@common/errors/infrastructure/service-overload-error'
+import { ConcurrencyLimitError } from '@common/errors/infrastructure/concurrency-limit-error'
 import { BrokenCircuitError, BulkheadRejectedError } from 'cockatiel'
 import { UPSTREAM_STATUS } from '@common/constants/upstream-http-status'
 
@@ -31,24 +30,16 @@ const ADDRESS_URL_FRAGMENTS = ['viacep', 'awesomeapi', 'brasilapi']
 // member, instead of being looked up under a placeholder string.
 const TIMEOUT_CODES = new Set<string | undefined>(['ERR_CANCELED', 'ECONNABORTED'])
 
-export class FindNearestChurchesErrorMapper {
+export class ProviderErrorMapper {
   private static readonly PROVIDER_UNKNOWN = 'Unknown Provider'
-
-  static async runCatching<T>(fn: () => Promise<Result<T, AppError>>): Promise<Result<T, AppError>> {
-    try {
-      return await fn()
-    } catch (error) {
-      return err(FindNearestChurchesErrorMapper.map(error))
-    }
-  }
 
   static map(error: unknown): AppError {
     if (error instanceof AppError) {
       return error
     }
 
-    if (FindNearestChurchesErrorMapper.isAxiosError(error)) {
-      return FindNearestChurchesErrorMapper.mapAxiosError(error as AxiosError)
+    if (ProviderErrorMapper.isAxiosError(error)) {
+      return ProviderErrorMapper.mapAxiosError(error as AxiosError)
     }
 
     if (
@@ -58,7 +49,7 @@ export class FindNearestChurchesErrorMapper {
       return new DatabaseQueryError(error)
     }
 
-    return FindNearestChurchesErrorMapper.mapUnrecognized(error)
+    return ProviderErrorMapper.mapUnrecognized(error)
   }
 
   /**
@@ -71,11 +62,11 @@ export class FindNearestChurchesErrorMapper {
    */
   private static mapUnrecognized(error: unknown): AppError {
     if (error instanceof BrokenCircuitError) {
-      return new CircuitOpenError(FindNearestChurchesErrorMapper.PROVIDER_UNKNOWN, error)
+      return new CircuitOpenError(ProviderErrorMapper.PROVIDER_UNKNOWN, error)
     }
 
     if (error instanceof BulkheadRejectedError) {
-      return new ServiceOverloadError()
+      return new ConcurrencyLimitError()
     }
 
     return new ProviderFailureError(error)
@@ -85,15 +76,15 @@ export class FindNearestChurchesErrorMapper {
     const status = error.response?.status
 
     if (status === UPSTREAM_STATUS.TOO_MANY_REQUESTS) {
-      return new ServiceBusyError(FindNearestChurchesErrorMapper.detectProvider(error))
+      return new ProviderRateLimitError(ProviderErrorMapper.detectProvider(error))
     }
 
-    if (FindNearestChurchesErrorMapper.isTimeout(error)) {
+    if (ProviderErrorMapper.isTimeout(error)) {
       return new TimeoutExceededError(error.message)
     }
 
     if (status === UPSTREAM_STATUS.NOT_FOUND) {
-      return FindNearestChurchesErrorMapper.mapNotFound(error)
+      return ProviderErrorMapper.mapNotFound(error)
     }
 
     return new ProviderFailureError(error)
@@ -107,7 +98,7 @@ export class FindNearestChurchesErrorMapper {
     const url = error.config?.url
 
     if (url && ADDRESS_URL_FRAGMENTS.some((fragment) => url.includes(fragment))) {
-      return new InvalidCepError(FindNearestChurchesErrorMapper.extractCep(url))
+      return new InvalidCepError(ProviderErrorMapper.extractCep(url))
     }
 
     return new CoordinatesNotFoundError()
@@ -125,7 +116,7 @@ export class FindNearestChurchesErrorMapper {
     const url = error.config?.url
     const match = PROVIDER_BY_URL_FRAGMENT.find(([fragment]) => url?.includes(fragment))
 
-    return match ? match[1] : FindNearestChurchesErrorMapper.PROVIDER_UNKNOWN
+    return match ? match[1] : ProviderErrorMapper.PROVIDER_UNKNOWN
   }
 
   private static extractCep(url: string): string | undefined {

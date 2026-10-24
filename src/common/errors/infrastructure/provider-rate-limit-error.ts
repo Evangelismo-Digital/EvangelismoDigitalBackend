@@ -4,7 +4,7 @@ import { TelemetryReason } from '@common/types/telemetry/telemetry-reason.enum'
 import { InfrastructureError } from '../infrastructure-error'
 import { INFRA_ERRORS } from '@common/messages/errors/infrastructure'
 
-export class ServiceBusyError extends InfrastructureError {
+export class ProviderRateLimitError extends InfrastructureError {
   public readonly provider: string
 
   constructor(provider: string) {
@@ -15,7 +15,7 @@ export class ServiceBusyError extends InfrastructureError {
       FailureMode.RETRYABLE,
       TelemetryReason.RATE_LIMITED,
     )
-    this.name = 'ServiceBusyError'
+    this.name = 'ProviderRateLimitError'
     this.provider = provider
   }
 }

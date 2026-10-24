@@ -12,12 +12,12 @@ import { Deadline } from '@common/utils/deadline'
 import { isOk, isErr } from '@common/utils/result'
 import { AxiosError } from 'axios'
 import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-exceeded-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { FailureMode } from '@common/types/failure-mode/failure-mode.enum'
 
-/** A 429 maps to ServiceBusyError, which is RETRYABLE. */
+/** A 429 maps to ProviderRateLimitError, which is RETRYABLE. */
 function retryableError(): AxiosError {
   return {
     name: 'AxiosError',
@@ -104,7 +104,7 @@ describe('runWithRetries', () => {
     const result = await runWithRetries(p)
 
     expect(isErr(result)).toBe(true)
-    if (isErr(result)) expect(result.error).toBeInstanceOf(ServiceBusyError)
+    if (isErr(result)) expect(result.error).toBeInstanceOf(ProviderRateLimitError)
     expect(action).toHaveBeenCalledTimes(2)
   })
 

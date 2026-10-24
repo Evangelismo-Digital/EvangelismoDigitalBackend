@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { CircuitOpenError } from './circuit-open-error'
-import { ServiceBusyError } from './service-busy-error'
+import { ProviderRateLimitError } from './provider-rate-limit-error'
 import { ProviderFailureError } from './provider-failure-error'
 import { InfrastructureError } from '../infrastructure-error'
 import { FailureMode } from '@common/types/failure-mode/failure-mode.enum'
@@ -54,9 +54,9 @@ describe('CircuitOpenError', () => {
     // Only telemetryReason tells an operator whether upstream is erroring, is
     // pushing back, or is not being called at all — which decides whose service
     // to go and look at.
-    it('differs from ServiceBusyError, which means the provider answered 429', () => {
+    it('differs from ProviderRateLimitError, which means the provider answered 429', () => {
       const circuit = new CircuitOpenError('Stadia Maps')
-      const busy = new ServiceBusyError('Stadia Maps')
+      const busy = new ProviderRateLimitError('Stadia Maps')
 
       expect(circuit.failureMode).toBe(busy.failureMode)
       expect(circuit.telemetryReason).not.toBe(busy.telemetryReason)

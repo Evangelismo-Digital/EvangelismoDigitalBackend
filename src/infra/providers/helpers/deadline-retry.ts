@@ -2,7 +2,7 @@ import { Deadline } from '@common/utils/deadline'
 import { Result, ok, err } from '@common/utils/result'
 import { AppError } from '@common/errors/app-error'
 import { abortRace } from '@common/utils/abort-race'
-import { FindNearestChurchesErrorMapper } from '@modules/churches/errors/mappings/find-nearest-churches-error-mapper'
+import { ProviderErrorMapper } from './provider-error-mapper'
 import { logger } from '@infra/logger'
 import {
   retry,
@@ -182,7 +182,7 @@ function classifyFailure(error: unknown, deadline: Deadline): AppError {
     return deadline.asError()
   }
 
-  return FindNearestChurchesErrorMapper.map(error)
+  return ProviderErrorMapper.map(error)
 }
 
 function hasBudgetForAttempt(deadline: Deadline): boolean {
@@ -214,7 +214,7 @@ function toAppError(error: unknown, providerName: string): AppError {
     return new CircuitOpenError(providerName, error)
   }
 
-  return error instanceof AppError ? error : FindNearestChurchesErrorMapper.map(error)
+  return error instanceof AppError ? error : ProviderErrorMapper.map(error)
 }
 
 function logRetry<T>(params: RunWithRetriesParams<T>, attempt: number, delay: number): void {

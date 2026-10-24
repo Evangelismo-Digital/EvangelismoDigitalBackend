@@ -7,7 +7,7 @@ import { Deadline } from '@common/utils/deadline'
 import { abortRace } from '@common/utils/abort-race'
 import { Result, ok, err, isErr } from '@common/utils/result'
 import { AppError } from '@common/errors/app-error'
-import { ServiceOverloadError as InfraServiceOverloadError } from '@common/errors/infrastructure/service-overload-error'
+import { ConcurrencyLimitError } from '@common/errors/infrastructure/concurrency-limit-error'
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
 import { CircuitOpenError } from '@common/errors/infrastructure/circuit-open-error'
 import {
@@ -322,7 +322,7 @@ export class ResilientCache<E = unknown> {
   private mapPolicyRejection(error: unknown, fetchDeadline: Deadline): Result<never, AppError> {
     if (error instanceof BulkheadRejectedError) {
       collectMetricsCacheCircuitBreakerTrips?.inc({ prefix: this.options.prefix })
-      return err(new InfraServiceOverloadError())
+      return err(new ConcurrencyLimitError())
     }
 
     if (error instanceof BrokenCircuitError) {

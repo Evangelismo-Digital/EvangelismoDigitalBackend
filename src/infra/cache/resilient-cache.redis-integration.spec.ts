@@ -18,7 +18,7 @@ import { AppError } from '@common/errors/app-error'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
 import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
 import { serializeAppError, deserializeAppError } from '@common/errors/app-error-registry'
@@ -130,7 +130,7 @@ describe('ResilientCache against real Redis — TTL semantics', () => {
     const cache = makeChurchCache()
     const key = `${PREFIX}ttl-retryable`
 
-    await cache.getOrFetch(key, async () => err(new ServiceBusyError('LocationIQ')))
+    await cache.getOrFetch(key, async () => err(new ProviderRateLimitError('LocationIQ')))
 
     expect(await redis.get(key)).toBeNull()
     expect(await redis.ttl(key)).toBe(-2) // -2 = key does not exist

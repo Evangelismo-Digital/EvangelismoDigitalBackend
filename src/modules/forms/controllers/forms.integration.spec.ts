@@ -25,15 +25,15 @@ import { getMailQueue } from '@infra/mail/queue/mail-queue'
 import { DatabaseContext } from '@infra/database/prisma/helpers/database-context'
 import { PrismaErrorMapper } from '@infra/database/prisma/utils/prisma-error-mapper'
 import {
-  outboxHttpPrismaErrorMapping,
+  outboxDomainPrismaErrorMapping,
   outboxInfraPrismaErrorMapping,
-} from '@infra/outbox/repositories/errors/outbox-error-mapping'
+} from '@infra/outbox/repositories/errors/outbox-prisma-error-mapping'
 
 function makeProcessor() {
   const dbContext = new DatabaseContext()
   const repo = new PrismaOutboxRepository(
     dbContext,
-    new PrismaErrorMapper(outboxHttpPrismaErrorMapping),
+    new PrismaErrorMapper(outboxDomainPrismaErrorMapping),
     new PrismaErrorMapper(outboxInfraPrismaErrorMapping),
   )
   return new OutboxProcessor(repo, makeOutboxDispatchStrategyRegistry())

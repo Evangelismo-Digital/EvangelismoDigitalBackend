@@ -9,7 +9,7 @@ import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-n
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
 import { EmptyChurchListError } from '@modules/churches/errors/empty-church-list-error'
 import { CepToLatLonError } from '@modules/churches/errors/cep-to-lat-lon-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-exceeded-error'
 import { ResilientCache } from '@infra/cache/resilient-cache'
 import { CACHE_CONFIG } from '@common/messages/constants/cache/cache'
@@ -112,7 +112,7 @@ describe('CEP negative cache policy', () => {
     })
 
     it('writes nothing at all for a retryable infrastructure failure', async () => {
-      expect(await ttlWrittenFor(new ServiceBusyError('LocationIQ'))).toBeUndefined()
+      expect(await ttlWrittenFor(new ProviderRateLimitError('LocationIQ'))).toBeUndefined()
       expect(redis.set).not.toHaveBeenCalled()
     })
 

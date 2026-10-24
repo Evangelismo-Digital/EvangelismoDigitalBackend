@@ -127,7 +127,7 @@ async claim(filter: OutboxClaimFilter): Promise<Result<boolean, AppError>> {
 
     return ok(result.count === 1)
   } catch (error) {
-    return err(this.infraErrorMapper.mapToKnownError(error))
+    return err(this.infraErrorMapper.map(error))
   }
 }
 ```

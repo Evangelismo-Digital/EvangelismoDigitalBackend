@@ -1,16 +1,16 @@
 import {
-  OutboxEventNotFoundHttpError,
+  OutboxEventNotFoundDomainError,
   OutboxEventNotFoundInfraError,
-  OutboxOperationFailedHttpError,
+  OutboxOperationFailedSystemError,
   OutboxOperationFailedInfraError,
 } from '@infra/outbox/errors/outbox-errors'
 import { PrismaErrorMappingConfig } from '@infra/database/prisma/utils/prisma-error-mapper'
 import { AppError } from '@common/errors/app-error'
 import { Prisma } from '@prisma/client'
 
-export const outboxHttpPrismaErrorMapping: PrismaErrorMappingConfig<AppError> = {
-  P2025: () => new OutboxEventNotFoundHttpError(),
-  P2003: () => new OutboxOperationFailedHttpError(),
+export const outboxDomainPrismaErrorMapping: PrismaErrorMappingConfig<AppError> = {
+  P2025: () => new OutboxEventNotFoundDomainError(),
+  P2003: () => new OutboxOperationFailedSystemError(),
 }
 
 export const outboxInfraPrismaErrorMapping: PrismaErrorMappingConfig<AppError> = {

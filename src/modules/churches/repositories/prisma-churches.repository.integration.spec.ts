@@ -12,7 +12,7 @@ import { beforeAll, afterAll } from 'vitest'
 import { prisma } from '@infra/database/prisma'
 import { PrismaChurchesRepository } from './prisma-churches.repository'
 import { PrismaErrorMapper } from '@infra/database/prisma/utils/prisma-error-mapper'
-import { churchPrismaErrorMapping } from './errors/churches-error-mapping'
+import { churchesPrismaErrorMapping } from './errors/churches-prisma-error-mapping'
 import { describeChurchesRepositoryContract } from './churches-repository.contract'
 
 beforeAll(async () => {
@@ -27,6 +27,6 @@ afterAll(async () => {
 describeChurchesRepositoryContract('Prisma + PostGIS', {
   create: async () => {
     await prisma.$executeRawUnsafe('TRUNCATE TABLE churches RESTART IDENTITY CASCADE')
-    return new PrismaChurchesRepository(new PrismaErrorMapper(churchPrismaErrorMapping))
+    return new PrismaChurchesRepository(new PrismaErrorMapper(churchesPrismaErrorMapping))
   },
 })

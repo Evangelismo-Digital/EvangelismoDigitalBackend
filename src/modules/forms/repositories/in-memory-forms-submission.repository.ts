@@ -5,7 +5,7 @@ import {
 } from '@modules/forms/repositories/forms-repository.interface'
 import { Result, ok, err } from '@common/utils/result'
 import { AppError } from '@common/errors/app-error'
-import { FormsNotFoundError } from '@modules/forms/errors/forms-not-found-error'
+import { FormNotFoundError } from '@modules/forms/errors/form-not-found-error'
 import { randomUUID } from 'node:crypto'
 
 export class InMemoryFormsSubmissionRepository implements FormsRepository {
@@ -34,7 +34,7 @@ export class InMemoryFormsSubmissionRepository implements FormsRepository {
     const submission = this.items.find((item) => item.email === email)
 
     if (!submission) {
-      return err(new FormsNotFoundError())
+      return err(new FormNotFoundError())
     }
 
     return ok(submission)

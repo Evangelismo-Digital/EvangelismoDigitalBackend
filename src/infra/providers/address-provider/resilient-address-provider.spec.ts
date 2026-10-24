@@ -11,9 +11,9 @@ vi.mock('@infra/logger', () => ({
 
 import { ResilientAddressProvider } from './resilient-address-provider'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
-import { NoAddressProviderError } from './error/no-address-provider-error'
+import { NoAddressProviderError } from './errors/no-address-provider-error'
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
 import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-exceeded-error'
 import { IAddressData, IAddressProvider } from '@infra/providers/interfaces/address-provider.interface'
@@ -104,7 +104,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
     it('should fallback to second provider if first fails with System Error (Busy/Generic)', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ProviderRateLimitError('MockProvider1')))
       vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(ok(mockAddress))
 
       const result = await provider.fetchAddress('12345678')
@@ -129,25 +129,25 @@ describe('ResilientAddressProvider Unit Tests', () => {
       }
     })
 
-    it('should return ServiceBusyError if the last provider had a ServiceBusy error', async () => {
+    it('should return ProviderRateLimitError if the last provider had a ServiceBusy error', async () => {
       const provider = createProvider()
 
       vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(
         err(new ProviderFailureError(new Error('Connection timeout'))),
       )
-      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider2')))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new ProviderRateLimitError('MockProvider2')))
 
       const result = await provider.fetchAddress('12345678')
       expect(isErr(result)).toBe(true)
       if (isErr(result)) {
-        expect(result.error).toBeInstanceOf(ServiceBusyError)
+        expect(result.error).toBeInstanceOf(ProviderRateLimitError)
       }
     })
 
     it('should return ProviderFailureError if the last provider had a non-busy System Error', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ProviderRateLimitError('MockProvider1')))
       vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(
         err(new ProviderFailureError(new Error('Connection timeout'))),
       )
@@ -159,16 +159,16 @@ describe('ResilientAddressProvider Unit Tests', () => {
       }
     })
 
-    it('should return ServiceBusyError if ANY provider had a System Error and last was ServiceBusy, even if others said Not Found', async () => {
+    it('should return ProviderRateLimitError if ANY provider had a System Error and last was ServiceBusy, even if others said Not Found', async () => {
       const provider = createProvider()
 
       vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(ok(null))
-      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider2')))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new ProviderRateLimitError('MockProvider2')))
 
       const result = await provider.fetchAddress('12345678')
       expect(isErr(result)).toBe(true)
       if (isErr(result)) {
-        expect(result.error).toBeInstanceOf(ServiceBusyError)
+        expect(result.error).toBeInstanceOf(ProviderRateLimitError)
       }
     })
 
@@ -185,16 +185,16 @@ describe('ResilientAddressProvider Unit Tests', () => {
       }
     })
 
-    it('should return ServiceBusyError if ALL providers have ServiceBusy errors', async () => {
+    it('should return ProviderRateLimitError if ALL providers have ServiceBusy errors', async () => {
       const provider = createProvider()
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
-      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider2')))
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ProviderRateLimitError('MockProvider1')))
+      vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new ProviderRateLimitError('MockProvider2')))
 
       const result = await provider.fetchAddress('12345678')
       expect(isErr(result)).toBe(true)
       if (isErr(result)) {
-        expect(result.error).toBeInstanceOf(ServiceBusyError)
+        expect(result.error).toBeInstanceOf(ProviderRateLimitError)
       }
     })
 
@@ -202,7 +202,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
       const provider = createProvider()
       const systemError = new Error('Database connection failed')
 
-      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ServiceBusyError('MockProvider1')))
+      vi.spyOn(provider1, 'fetchAddress').mockResolvedValue(err(new ProviderRateLimitError('MockProvider1')))
       vi.spyOn(provider2, 'fetchAddress').mockResolvedValue(err(new ProviderFailureError(systemError)))
 
       const result = await provider.fetchAddress('12345678')
@@ -275,7 +275,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
 
   describe('chain exhaustion', () => {
     it('reports the last retryable error, not a generic failure, when every provider is degraded', async () => {
-      vi.mocked(provider1.fetchAddress).mockResolvedValue(err(new ServiceBusyError('AwesomeAPI')))
+      vi.mocked(provider1.fetchAddress).mockResolvedValue(err(new ProviderRateLimitError('AwesomeAPI')))
       vi.mocked(provider2.fetchAddress).mockResolvedValue(err(new ProviderFailureError(new Error('boom'))))
 
       const result = await createProvider().fetchAddress('01310100')
@@ -299,7 +299,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
 
     it('does not call it a bad CEP when one provider merely failed', async () => {
       vi.mocked(provider1.fetchAddress).mockResolvedValue(ok(null))
-      vi.mocked(provider2.fetchAddress).mockResolvedValue(err(new ServiceBusyError('ViaCEP')))
+      vi.mocked(provider2.fetchAddress).mockResolvedValue(err(new ProviderRateLimitError('ViaCEP')))
 
       const result = await createProvider().fetchAddress('01310100')
 
@@ -350,7 +350,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
     it('warns with the provider, attempt number and error when falling back', async () => {
       const named1 = Object.assign(provider1, { providerName: 'AwesomeAPI' })
       const named2 = Object.assign(provider2, { providerName: 'ViaCEP' })
-      const busy = new ServiceBusyError('AwesomeAPI')
+      const busy = new ProviderRateLimitError('AwesomeAPI')
       vi.mocked(named1.fetchAddress).mockResolvedValue(err(busy))
       vi.mocked(named2.fetchAddress).mockResolvedValue(ok(mockAddress))
 
@@ -389,7 +389,7 @@ describe('ResilientAddressProvider Unit Tests', () => {
 
     it('reports the CEP, provider and error when the chain is exhausted by failures', async () => {
       const named = Object.assign(provider1, { providerName: 'AwesomeAPI' })
-      const busy = new ServiceBusyError('AwesomeAPI')
+      const busy = new ProviderRateLimitError('AwesomeAPI')
       vi.mocked(named.fetchAddress).mockResolvedValue(err(busy))
 
       await new ResilientAddressProvider([named]).fetchAddress('01310100')

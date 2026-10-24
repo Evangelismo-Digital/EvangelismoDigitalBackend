@@ -1,5 +1,5 @@
 import { logger } from '@infra/logger'
-import { NoGeoProviderError } from './error/no-geo-provider-error'
+import { NoGeoProviderError } from './errors/no-geo-provider-error'
 import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
 import {
   IGeocodingProvider,

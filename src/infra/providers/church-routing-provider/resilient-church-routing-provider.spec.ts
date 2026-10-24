@@ -12,7 +12,7 @@ vi.mock('@infra/logger', () => ({
 }))
 
 import { ResilientChurchRoutingProvider } from './resilient-church-routing-provider'
-import { NoRoutingProviderError } from './error/no-routing-provider-error'
+import { NoRoutingProviderError } from './errors/no-routing-provider-error'
 import {
   IChurchRoutingProvider,
   RouteDistanceResult,
@@ -21,7 +21,7 @@ import { RoutingProfile } from '@common/types/routing-profile/routing-profile-en
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
 import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-exceeded-error'
 import { Deadline } from '@common/utils/deadline'
 import { logger } from '@infra/logger'
@@ -73,7 +73,7 @@ describe('ResilientChurchRoutingProvider', () => {
 
   it.each([
     ['a provider failure (e.g. a 403 plan without matrix access)', new ProviderFailureError()],
-    ['a rate limit', new ServiceBusyError('Stadia Maps')],
+    ['a rate limit', new ProviderRateLimitError('Stadia Maps')],
   ])('falls through to the next provider on %s', async (_label, error) => {
     vi.mocked(stadia.getDistances).mockResolvedValue(err(error))
     vi.mocked(ors.getDistances).mockResolvedValue(ok(MATRIX))
@@ -111,7 +111,7 @@ describe('ResilientChurchRoutingProvider', () => {
   })
 
   it('returns the last retryable error once every provider has failed', async () => {
-    const lastError = new ServiceBusyError('OpenRouteService')
+    const lastError = new ProviderRateLimitError('OpenRouteService')
     vi.mocked(stadia.getDistances).mockResolvedValue(err(new ProviderFailureError()))
     vi.mocked(ors.getDistances).mockResolvedValue(err(lastError))
 

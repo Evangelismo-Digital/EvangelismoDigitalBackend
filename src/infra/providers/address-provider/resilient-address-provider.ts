@@ -1,5 +1,5 @@
 import { logger } from '@infra/logger'
-import { NoAddressProviderError } from './error/no-address-provider-error'
+import { NoAddressProviderError } from './errors/no-address-provider-error'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { IAddressData, IAddressProvider } from '@infra/providers/interfaces/address-provider.interface'
 import { Deadline } from '@common/utils/deadline'

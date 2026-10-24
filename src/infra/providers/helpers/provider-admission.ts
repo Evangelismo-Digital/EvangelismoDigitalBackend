@@ -2,7 +2,7 @@ import Redis from 'ioredis'
 import { Deadline } from '@common/utils/deadline'
 import { Result, ok, err } from '@common/utils/result'
 import { AppError } from '@common/errors/app-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { EnumProviderConfig, RedisRateLimiter } from '@infra/rate-limiter/redis-rate-limiter'
 
 /**
@@ -29,7 +29,7 @@ export async function checkAdmission(params: {
   const allowed = await RedisRateLimiter.getInstance(redis).tryConsume(rateLimitConfig)
 
   if (!allowed) {
-    return err(new ServiceBusyError(providerName))
+    return err(new ProviderRateLimitError(providerName))
   }
 
   return ok(undefined)

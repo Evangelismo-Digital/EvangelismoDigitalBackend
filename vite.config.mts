@@ -78,7 +78,7 @@ export default defineConfig(({ mode }) => {
           test: {
             name: 'unit-errors',
             dir: 'src',
-            include: ['common/errors/**/*.spec.ts', 'modules/churches/errors/**/*.spec.ts'],
+            include: ['common/errors/**/*.spec.ts'],
           },
         },
         {

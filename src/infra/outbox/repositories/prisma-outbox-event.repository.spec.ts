@@ -46,8 +46,8 @@ describe('PrismaOutboxRepository', () => {
     },
   } as unknown as DatabaseContext
 
-  const mapToKnownError = vi.fn(() => new MappedTestError())
-  const mapperStub = { mapToKnownError } as unknown as PrismaErrorMapper<AppError>
+  const map = vi.fn(() => new MappedTestError())
+  const mapperStub = { map } as unknown as PrismaErrorMapper<AppError>
 
   let repository: PrismaOutboxRepository
 
@@ -63,7 +63,7 @@ describe('PrismaOutboxRepository', () => {
       const result = await repository.delete('public-id')
 
       expect(isOk(result)).toBe(true)
-      expect(mapToKnownError).not.toHaveBeenCalled()
+      expect(map).not.toHaveBeenCalled()
     })
 
     it('mapeia outros erros conhecidos do Prisma (ex: P2002) para err', async () => {
@@ -72,7 +72,7 @@ describe('PrismaOutboxRepository', () => {
       const result = await repository.delete('public-id')
 
       expect(isErr(result)).toBe(true)
-      expect(mapToKnownError).toHaveBeenCalledOnce()
+      expect(map).toHaveBeenCalledOnce()
     })
 
     it('mapeia erros não-Prisma para err', async () => {
@@ -81,7 +81,7 @@ describe('PrismaOutboxRepository', () => {
       const result = await repository.delete('public-id')
 
       expect(isErr(result)).toBe(true)
-      expect(mapToKnownError).toHaveBeenCalledOnce()
+      expect(map).toHaveBeenCalledOnce()
     })
 
     it('sucesso da deleção retorna ok', async () => {
@@ -143,7 +143,7 @@ describe('PrismaOutboxRepository', () => {
       const result = await repository.updateStatus('public-id', IOutboxEventStatus.PENDING)
 
       expect(isErr(result)).toBe(true)
-      expect(mapToKnownError).toHaveBeenCalledOnce()
+      expect(map).toHaveBeenCalledOnce()
     })
   })
 
@@ -166,7 +166,7 @@ describe('PrismaOutboxRepository', () => {
       const result = await repository.updatePendingRecipients('public-id', ['a@test.com'])
 
       expect(isErr(result)).toBe(true)
-      expect(mapToKnownError).toHaveBeenCalledOnce()
+      expect(map).toHaveBeenCalledOnce()
     })
   })
 
@@ -325,7 +325,7 @@ describe('PrismaOutboxRepository', () => {
       const result = await repository.deleteExpired(new Date(), 50)
 
       expect(isErr(result)).toBe(true)
-      expect(mapToKnownError).toHaveBeenCalledOnce()
+      expect(map).toHaveBeenCalledOnce()
     })
   })
 
@@ -373,7 +373,7 @@ describe('PrismaOutboxRepository', () => {
       const result = await repository.deleteOlderThan(new Date(), 50)
 
       expect(isErr(result)).toBe(true)
-      expect(mapToKnownError).toHaveBeenCalledOnce()
+      expect(map).toHaveBeenCalledOnce()
     })
   })
 
@@ -417,7 +417,7 @@ describe('PrismaOutboxRepository', () => {
       const result = await repository.deleteFailedOlderThan(new Date(), 50)
 
       expect(isErr(result)).toBe(true)
-      expect(mapToKnownError).toHaveBeenCalledOnce()
+      expect(map).toHaveBeenCalledOnce()
     })
   })
 
@@ -495,7 +495,7 @@ describe('PrismaOutboxRepository', () => {
       })
 
       expect(isErr(result)).toBe(true)
-      expect(mapToKnownError).toHaveBeenCalledOnce()
+      expect(map).toHaveBeenCalledOnce()
     })
   })
 
@@ -535,7 +535,7 @@ describe('PrismaOutboxRepository', () => {
       const result = await repository.findFailed(10)
 
       expect(isErr(result)).toBe(true)
-      expect(mapToKnownError).toHaveBeenCalledOnce()
+      expect(map).toHaveBeenCalledOnce()
     })
   })
 
@@ -577,7 +577,7 @@ describe('PrismaOutboxRepository', () => {
       const result = await repository.retryFailed('ev-retry')
 
       expect(isErr(result)).toBe(true)
-      expect(mapToKnownError).toHaveBeenCalledOnce()
+      expect(map).toHaveBeenCalledOnce()
     })
   })
 })

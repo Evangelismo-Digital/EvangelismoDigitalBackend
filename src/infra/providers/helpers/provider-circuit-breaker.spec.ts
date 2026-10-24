@@ -31,7 +31,7 @@ import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { FailureMode } from '@common/types/failure-mode/failure-mode.enum'
 import { TelemetryReason } from '@common/types/telemetry/telemetry-reason.enum'
 
-/** A 429 maps to ServiceBusyError, which is RETRYABLE — the breaker counts it. */
+/** A 429 maps to ProviderRateLimitError, which is RETRYABLE — the breaker counts it. */
 function retryableError(): AxiosError {
   return {
     name: 'AxiosError',

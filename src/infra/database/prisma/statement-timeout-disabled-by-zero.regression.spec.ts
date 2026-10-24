@@ -29,7 +29,7 @@ vi.mock('@infra/database/prisma', () => ({
 
 import { PrismaChurchesRepository } from '@modules/churches/repositories/prisma-churches.repository'
 import { PrismaErrorMapper } from '@infra/database/prisma/utils/prisma-error-mapper'
-import { churchPrismaErrorMapping } from '@modules/churches/repositories/errors/churches-error-mapping'
+import { churchesPrismaErrorMapping } from '@modules/churches/repositories/errors/churches-prisma-error-mapping'
 import { isOk } from '@common/utils/result'
 
 /** The `SET LOCAL statement_timeout = N` the repository issued, as a number. */
@@ -56,7 +56,7 @@ describe('regression: a sub-millisecond budget must not disable the statement ti
       }),
     )
 
-    repository = new PrismaChurchesRepository(new PrismaErrorMapper(churchPrismaErrorMapping))
+    repository = new PrismaChurchesRepository(new PrismaErrorMapper(churchesPrismaErrorMapping))
   })
 
   it.each([

@@ -33,7 +33,7 @@ export class PrismaUsersRepository implements UsersRepository {
       })
       return ok(user)
     } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.map(error))
     }
   }
 
@@ -50,7 +50,7 @@ export class PrismaUsersRepository implements UsersRepository {
       })
       return ok(user)
     } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.map(error))
     }
   }
 
@@ -63,7 +63,7 @@ export class PrismaUsersRepository implements UsersRepository {
       })
       return ok(user)
     } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.map(error))
     }
   }
 
@@ -73,7 +73,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
       return ok(users)
     } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.map(error))
     }
   }
 
@@ -92,7 +92,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
       return ok(users)
     } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.map(error))
     }
   }
 
@@ -123,7 +123,7 @@ export class PrismaUsersRepository implements UsersRepository {
 
       return ok(user)
     } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.map(error))
     }
   }
 
@@ -136,7 +136,7 @@ export class PrismaUsersRepository implements UsersRepository {
       })
       return ok(user)
     } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.map(error))
     }
   }
 }

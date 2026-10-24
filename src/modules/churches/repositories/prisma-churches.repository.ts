@@ -121,7 +121,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
 
       return ok(churches.map(toNearbyChurch))
     } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.map(error))
     }
   }
 
@@ -176,7 +176,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
       `
       return ok(results[0] ?? null)
     } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.map(error))
     }
   }
 
@@ -199,7 +199,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
       `
       return ok(results[0] ?? null)
     } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.map(error))
     }
   }
 
@@ -218,7 +218,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
 
       return ok(church)
     } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.map(error))
     }
   }
 
@@ -246,7 +246,7 @@ export class PrismaChurchesRepository implements ChurchesRepository {
 
       return ok(church)
     } catch (error) {
-      return err(this.errorMapper.mapToKnownError(error))
+      return err(this.errorMapper.map(error))
     }
   }
 }

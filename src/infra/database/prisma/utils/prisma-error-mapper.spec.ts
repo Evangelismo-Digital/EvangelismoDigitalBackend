@@ -18,17 +18,17 @@ const mapping = {
   P2025: () => new UserNotFoundError(),
 }
 
-describe('PrismaErrorMapper.mapToKnownError', () => {
+describe('PrismaErrorMapper.map', () => {
   const mapper = new PrismaErrorMapper(mapping)
 
   it('returns an AppError unchanged (already mapped upstream)', () => {
     const original = new UserNotFoundError()
-    expect(mapper.mapToKnownError(original)).toBe(original)
+    expect(mapper.map(original)).toBe(original)
   })
 
   it('invokes the configured factory for a known Prisma error code', () => {
-    expect(mapper.mapToKnownError(knownError('P2002'))).toBeInstanceOf(UserAlreadyExistsError)
-    expect(mapper.mapToKnownError(knownError('P2025'))).toBeInstanceOf(UserNotFoundError)
+    expect(mapper.map(knownError('P2002'))).toBeInstanceOf(UserAlreadyExistsError)
+    expect(mapper.map(knownError('P2025'))).toBeInstanceOf(UserNotFoundError)
   })
 
   it('passes the Prisma error into the factory', () => {
@@ -41,25 +41,25 @@ describe('PrismaErrorMapper.mapToKnownError', () => {
     })
     const prismaError = knownError('P2002')
 
-    spyMapper.mapToKnownError(prismaError)
+    spyMapper.map(prismaError)
 
     expect(received).toBe(prismaError)
   })
 
   it('falls back to DatabaseQueryError for an unmapped known Prisma code', () => {
-    const mapped = mapper.mapToKnownError(knownError('P2003'))
+    const mapped = mapper.map(knownError('P2003'))
     expect(mapped).toBeInstanceOf(DatabaseQueryError)
   })
 
   it('falls back to DatabaseQueryError for a non-Prisma, non-AppError value', () => {
-    expect(mapper.mapToKnownError(new Error('generic'))).toBeInstanceOf(DatabaseQueryError)
-    expect(mapper.mapToKnownError('a string')).toBeInstanceOf(DatabaseQueryError)
-    expect(mapper.mapToKnownError(undefined)).toBeInstanceOf(DatabaseQueryError)
+    expect(mapper.map(new Error('generic'))).toBeInstanceOf(DatabaseQueryError)
+    expect(mapper.map('a string')).toBeInstanceOf(DatabaseQueryError)
+    expect(mapper.map(undefined)).toBeInstanceOf(DatabaseQueryError)
   })
 
   it('wraps the original cause inside the fallback DatabaseQueryError', () => {
     const cause = new Error('root cause')
-    const mapped = mapper.mapToKnownError(cause) as DatabaseQueryError
+    const mapped = mapper.map(cause) as DatabaseQueryError
     expect(mapped).toBeInstanceOf(AppError)
     expect(mapped.cause ?? mapped.originalError).toBe(cause)
   })

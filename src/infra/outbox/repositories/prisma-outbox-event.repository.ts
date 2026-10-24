@@ -14,7 +14,7 @@ import { AppError } from '@common/errors/app-error'
 export class PrismaOutboxRepository implements IOutboxRepository {
   constructor(
     private readonly dbContext: DatabaseContext,
-    private readonly httpErrorMapper: PrismaErrorMapper<AppError>,
+    private readonly domainErrorMapper: PrismaErrorMapper<AppError>,
     private readonly infraErrorMapper: PrismaErrorMapper<AppError>,
   ) {}
 
@@ -31,7 +31,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(this.toEntity(outboxEvent))
     } catch (error) {
-      return err(this.httpErrorMapper.mapToKnownError(error))
+      return err(this.domainErrorMapper.map(error))
     }
   }
 
@@ -45,7 +45,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(events.map((e) => this.toEntity(e)))
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.map(error))
     }
   }
 
@@ -62,7 +62,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(events.map((e) => this.toEntity(e)))
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.map(error))
     }
   }
 
@@ -76,7 +76,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(events.map((e) => this.toEntity(e)))
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.map(error))
     }
   }
 
@@ -96,7 +96,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(result.count === 1)
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.map(error))
     }
   }
 
@@ -108,7 +108,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(event ? this.toEntity(event) : null)
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.map(error))
     }
   }
 
@@ -129,7 +129,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(result.count === 1)
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.map(error))
     }
   }
 
@@ -147,7 +147,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       })
       return ok(undefined)
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.map(error))
     }
   }
 
@@ -159,7 +159,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       })
       return ok(undefined)
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.map(error))
     }
   }
 
@@ -174,7 +174,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         return ok(undefined)
       }
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.map(error))
     }
   }
 
@@ -199,7 +199,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(result.count)
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.map(error))
     }
   }
 
@@ -233,7 +233,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok({ deleted: result.count, byStatus })
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.map(error))
     }
   }
 
@@ -259,7 +259,7 @@ export class PrismaOutboxRepository implements IOutboxRepository {
 
       return ok(result.count)
     } catch (error) {
-      return err(this.infraErrorMapper.mapToKnownError(error))
+      return err(this.infraErrorMapper.map(error))
     }
   }
 

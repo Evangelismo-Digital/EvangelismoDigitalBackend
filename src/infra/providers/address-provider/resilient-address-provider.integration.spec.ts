@@ -30,7 +30,7 @@ import { RedisRateLimiter, EnumProviderConfig } from '@infra/rate-limiter/redis-
 import { getRedisCache, closeAllRedisConnections } from '@infra/redis/clients/clients'
 import { isOk, isErr } from '@common/utils/result'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 
 const CEP = '01310100'
 
@@ -149,7 +149,7 @@ describe('ResilientAddressProvider chain (integration, real Redis rate-limiter)'
 
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
-      expect(result.error).toBeInstanceOf(ServiceBusyError)
+      expect(result.error).toBeInstanceOf(ProviderRateLimitError)
       expect(result.error.failureMode).toBe('RETRYABLE')
     }
   })
@@ -181,6 +181,6 @@ describe('ResilientAddressProvider chain (integration, real Redis rate-limiter)'
     // ViaCEP's decorator never issued the HTTP call — the limiter rejected it first.
     expect(viacepGet).not.toHaveBeenCalled()
     expect(isErr(result)).toBe(true)
-    if (isErr(result)) expect(result.error).toBeInstanceOf(ServiceBusyError)
+    if (isErr(result)) expect(result.error).toBeInstanceOf(ProviderRateLimitError)
   })
 })

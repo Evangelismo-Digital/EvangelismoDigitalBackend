@@ -6,8 +6,8 @@ import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-n
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
 import { CepToLatLonError } from '@modules/churches/errors/cep-to-lat-lon-error'
 import { EmptyChurchListError } from '@modules/churches/errors/empty-church-list-error'
-import { ServiceBusyError } from './infrastructure/service-busy-error'
-import { ServiceOverloadError } from './infrastructure/service-overload-error'
+import { ProviderRateLimitError } from './infrastructure/provider-rate-limit-error'
+import { ConcurrencyLimitError } from './infrastructure/concurrency-limit-error'
 import { TimeoutExceededError } from './infrastructure/timeout-exceeded-error'
 import { DeadlineExceededError } from './infrastructure/deadline-exceeded-error'
 import { ProviderFailureError } from './infrastructure/provider-failure-error'
@@ -21,9 +21,9 @@ describe('serializeAppError', () => {
     expect(typeof serialized.message).toBe('string')
   })
 
-  it('serializes a ServiceBusyError under its constructor name', () => {
-    const serialized = serializeAppError(new ServiceBusyError('ViaCEP'))
-    expect(serialized.type).toBe('ServiceBusyError')
+  it('serializes a ProviderRateLimitError under its constructor name', () => {
+    const serialized = serializeAppError(new ProviderRateLimitError('ViaCEP'))
+    expect(serialized.type).toBe('ProviderRateLimitError')
   })
 
   it('prefers an explicit `data` property over the error instance itself', () => {
@@ -36,12 +36,12 @@ describe('serializeAppError', () => {
     expect(serializeAppError(plain).data).toBe(plain)
   })
 
-  it('recovers the ServiceBusyError provider from structured body data', () => {
-    const restored = deserializeAppError('ServiceBusyError', 'irrelevante', {
+  it('recovers the ProviderRateLimitError provider from structured body data', () => {
+    const restored = deserializeAppError('ProviderRateLimitError', 'irrelevante', {
       body: { provider: 'ViaCEP' },
     })
-    expect(restored).toBeInstanceOf(ServiceBusyError)
-    expect((restored as ServiceBusyError).provider).toBe('ViaCEP')
+    expect(restored).toBeInstanceOf(ProviderRateLimitError)
+    expect((restored as ProviderRateLimitError).provider).toBe('ViaCEP')
   })
 })
 
@@ -88,7 +88,7 @@ describe('deserializeAppError', () => {
   it('reconstructs parameterless errors', () => {
     expect(deserializeAppError('CoordinatesNotFoundError', 'x')).toBeInstanceOf(CoordinatesNotFoundError)
     expect(deserializeAppError('NoNearbyChurchesFoundError', 'x')).toBeInstanceOf(NoNearbyChurchesFoundError)
-    expect(deserializeAppError('ServiceOverloadError', 'x')).toBeInstanceOf(ServiceOverloadError)
+    expect(deserializeAppError('ConcurrencyLimitError', 'x')).toBeInstanceOf(ConcurrencyLimitError)
     expect(deserializeAppError('TimeoutExceededError', 'slow')).toBeInstanceOf(TimeoutExceededError)
     expect(deserializeAppError('DeadlineExceededError', 'sem tempo')).toBeInstanceOf(DeadlineExceededError)
   })
@@ -119,7 +119,7 @@ describe('deserializeAppError', () => {
       new CoordinatesNotFoundError(),
       new NoNearbyChurchesFoundError(),
       new EmptyChurchListError(),
-      new ServiceOverloadError(),
+      new ConcurrencyLimitError(),
       new TimeoutExceededError('slow'),
       new DeadlineExceededError('DEADLINE_EXPIRED'),
     ]
@@ -133,17 +133,17 @@ describe('deserializeAppError', () => {
     }
   })
 
-  it('derives ServiceBusyError provider from the message when no structured data is given', () => {
-    const restored = deserializeAppError('ServiceBusyError', 'Serviço temporariamente indisponível: Nominatim')
-    expect((restored as ServiceBusyError).provider).toBe('Nominatim')
+  it('derives ProviderRateLimitError provider from the message when no structured data is given', () => {
+    const restored = deserializeAppError('ProviderRateLimitError', 'Serviço temporariamente indisponível: Nominatim')
+    expect((restored as ProviderRateLimitError).provider).toBe('Nominatim')
   })
 
   it('safely falls back to the message when data is present but has no body (optional chaining on data.body)', () => {
-    const restored = deserializeAppError('ServiceBusyError', 'Serviço temporariamente indisponível: LocationIQ', {
+    const restored = deserializeAppError('ProviderRateLimitError', 'Serviço temporariamente indisponível: LocationIQ', {
       originalError: 'boom',
     })
-    expect(restored).toBeInstanceOf(ServiceBusyError)
-    expect((restored as ServiceBusyError).provider).toBe('LocationIQ')
+    expect(restored).toBeInstanceOf(ProviderRateLimitError)
+    expect((restored as ProviderRateLimitError).provider).toBe('LocationIQ')
   })
 
   it('rebuilds ProviderFailureError and preserves its RETRYABLE routing hint', () => {

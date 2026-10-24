@@ -63,7 +63,7 @@ vi.mock('@infra/logger', () => ({
 import { errorHandler } from './error-handler.filter'
 import { UserNotFoundError } from '@modules/users/errors/user-not-found-error'
 import { DatabaseQueryError } from '@common/errors/infrastructure/database-query-error'
-import { ServiceBusyError } from '@common/errors/infrastructure/service-busy-error'
+import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-exceeded-error'
 import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
 
@@ -234,7 +234,7 @@ describe('errorHandlerPlugin', () => {
     })
 
     it('returns SERVICE_UNAVAILABLE for TOO_MANY_REQUESTS errors', async () => {
-      const busyError = new ServiceBusyError('ViaCEP')
+      const busyError = new ProviderRateLimitError('ViaCEP')
 
       await handler(busyError, request, reply)
 

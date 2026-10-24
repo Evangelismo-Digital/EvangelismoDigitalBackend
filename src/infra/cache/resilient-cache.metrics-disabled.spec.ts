@@ -30,7 +30,7 @@ import { ok, err, isOk, isErr, Result } from '@common/utils/result'
 import { AppError } from '@common/errors/app-error'
 import { FailureMode } from '@common/types/failure-mode/failure-mode.enum'
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
-import { ServiceOverloadError } from '@common/errors/infrastructure/service-overload-error'
+import { ConcurrencyLimitError } from '@common/errors/infrastructure/concurrency-limit-error'
 import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
 import { Deadline } from '@common/utils/deadline'
 import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-exceeded-error'
@@ -136,7 +136,7 @@ describe('ResilientCache with Prometheus metrics disabled', () => {
     const rejected = await limited.getOrFetch('other', vi.fn())
 
     expect(isErr(rejected)).toBe(true)
-    if (isErr(rejected)) expect(rejected.error).toBeInstanceOf(ServiceOverloadError)
+    if (isErr(rejected)) expect(rejected.error).toBeInstanceOf(ConcurrencyLimitError)
     void inflight
   })
 
