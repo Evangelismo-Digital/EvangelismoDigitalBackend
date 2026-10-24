@@ -89,14 +89,14 @@ npm run test:coverage
 npm run test:ui
 
 # Run a single test file directly:
-npx vitest run --project unit-users src/use-cases/users/reset-password-use-case.spec.ts
+npx vitest run --project unit-users src/modules/auth/services/reset-password.service.spec.ts
 ```
 
 E2E projects use a custom Vitest environment (`prisma/vitest-environment-prisma/prisma-docker-environment.ts`) and require the Docker Postgres/Redis stack to be running (`docker-compose up`). When running the API on the host (`npm run dev`), Redis must be reachable at `localhost:6379` — the `redis` hostname only resolves inside the Docker network.
 
 `unit-repositories` deliberately excludes `*.integration.spec.ts`: the Prisma/PostGIS contract suite used to be collected there, which made `npm run test:unit:all` — the Docker-free gate the pre-commit hook runs — fail the moment the database container stopped. It now runs as its own `integration-repositories` project, which **is** in both CI allowlists, so the coverage did not move, only the label.
 
-Three integration projects are cheap enough to gate every push and are listed in **both** `ci.yml` and `scripts/ci-local.sh` (keep them in lockstep): `integration-cache` (Redis only, `src/lib/infra/cache`), `integration-jobs` (Redis only, `src/lib/infra/jobs`) and `integration-repositories` (Postgres only, `src/repositories`). They are split by the infrastructure they need, which is what keeps them out of the Docker-free unit gate. The catch-all `integration` project — `*.integration.spec.ts` anywhere under `src`, using the Prisma Docker environment — is opt-in and **not** in CI; `src/lib/mail/nodemailer-mail-sender.integration.spec.ts` (real SMTP dialogue over `node:net`) lives there.
+Three integration projects are cheap enough to gate every push and are listed in **both** `ci.yml` and `scripts/ci-local.sh` (keep them in lockstep): `integration-cache` (Redis only, `src/infra/cache`), `integration-jobs` (Redis only, `src/infra/outbox/jobs`) and `integration-repositories` (Postgres only, `src/modules/**/repositories` and `src/infra/outbox/repositories`). They are split by the infrastructure they need, which is what keeps them out of the Docker-free unit gate. The catch-all `integration` project — `*.integration.spec.ts` anywhere under `src`, using the Prisma Docker environment — is opt-in and **not** in CI; `src/infra/mail/nodemailer-mail-sender.integration.spec.ts` (real SMTP dialogue over `node:net`) lives there.
 
 The CI coverage step uses an explicit project **allowlist** that omits `e2e-api-providers-fallback-strategy` and `e2e-users`, so those two projects do not run in CI. `e2e-api-providers-fallback-strategy` calls **live** geocoding APIs (LocationIQ, Nominatim, ViaCEP, BrasilAPI) and needs two things set up before it can be green locally:
 
@@ -272,47 +272,47 @@ Keep `scripts/ci-local.sh` and `ci.yml` in lockstep when changing either (the vi
 
 ## Path aliases
 
-Imports use `tsconfig.json` path aliases (also resolved in tests via `vite-tsconfig-paths`). All aliases have explicit `paths` mappings: prefixed ones (`@env/*`, `@lib/*`, `@http/*`, `@controllers/*`, `@middlewares/*`, `@use-cases/*`, `@repositories/*`, `@schemas/*`, `@services/*`, `@constants/*`, `@templates/*`, `@tps/*` → `src/@types/*`) and unprefixed ones (`app`, `core/*`, `errors/*`, `messages/*`, `providers/*`).
+Imports use `tsconfig.json` path aliases (also resolved in tests via `vite-tsconfig-paths`): `@config/*` (`src/config/*`), `@common/*` (`src/common/*`), `@infra/*` (`src/infra/*`), `@modules/*` (`src/modules/*`), `@tps/*` (`src/@types/*`), and `app` (`src/app.ts`).
 
 ## Architecture
 
-Clean-architecture layering: **HTTP controllers → use-cases → repositories → Prisma/Redis**. Dependencies point inward via interfaces defined in `src/core/contracts/`; concrete implementations live in `src/repositories`, `src/providers`, `src/lib`.
+NestJS module-based organization with clean-architecture layering: **`src/modules/<feature>/` (`controllers/` → `services/` → `repositories/`)**, backed by cross-cutting primitives in **`src/common/`**, environment config in **`src/config/`**, and technical adapters in **`src/infra/`**. Feature modules (`health`, `auth`, `users`, `forms`, `churches`, `analytics`) are composed in `src/app.module.ts`.
 
 ### Result pattern (central convention)
 
-This codebase does **not** throw for expected failures across the use-case/repository boundary. Instead it uses a `Result<T, E>` discriminated union (`src/core/shared/result.ts`):
+This codebase does **not** throw for expected failures across the service/repository boundary. Instead it uses a `Result<T, E>` discriminated union (`src/common/utils/result.ts`):
 
 - Return success with `ok(value)`, failure with `err(appError)`.
 - Guard with `isOk(result)` / `isErr(result)`. On failure, propagate by returning the failure result as-is (`if (isErr(x)) return x`).
-- Repositories return `Result<T, AppError>`; use-cases return `Result<Response, AppError>`.
+- Repositories return `Result<T, AppError>`; services return `Result<Response, AppError>`.
 - Controllers unwrap the result and, on failure, delegate to `HttpErrorMapper.map(result.error, reply)`.
 
-When adding a use-case or repository method, keep this style — never throw a domain/expected error; return `err(...)`.
+When adding a service or repository method, keep this style — never throw a domain/expected error; return `err(...)`.
 
 ### Error hierarchy
 
-All app errors extend `AppError` (`src/errors/app-error.ts`), which carries an `ErrorType` (maps to HTTP status via `toHttpStatus`), a user-safe `body` (`code`/`message`/`issues`), and an optional `failureMode` (`RETRYABLE` | `NOT_FOUND`) used by resilient provider chains.
+All app errors extend `AppError` (`src/common/errors/app-error.ts`), which carries an `ErrorType` (maps to HTTP status via `toHttpStatus`), a user-safe `body` (`code`/`message`/`issues`), and an optional `failureMode` (`RETRYABLE` | `NOT_FOUND`) used by resilient provider chains.
 
-- `DomainError` — safe, user-facing; sent to the client as-is by both `HttpErrorMapper` and the global error handler.
+- `DomainError` — safe, user-facing; sent to the client as-is by both `HttpErrorMapper` and the global error handler. Domain-specific error subclasses live in their owning `src/modules/<feature>/errors/`.
 - `InfrastructureError` / `SystemError` — logged fully, captured in Sentry, and **sanitized** before reaching the client.
 
-`HttpErrorMapper` (used in controllers) only serializes `DomainError`; it **rethrows** infrastructure/system/unknown errors so the global Fastify error handler (`src/http/plugins/error-handler.plugin.ts`) sanitizes them. That plugin is the single place handling `ZodError`, `SyntaxError`, `DomainError`, `AppError`, Fastify internal errors, and unknowns.
+`HttpErrorMapper` (`src/common/filters/http-error-mapper.filter.ts`, used in controllers) only serializes `DomainError`; it **rethrows** infrastructure/system/unknown errors so the global Fastify error handler (`src/common/filters/error-handler.filter.ts`) sanitizes them. That plugin is the single place handling `ZodError`, `SyntaxError`, `DomainError`, `AppError`, Fastify internal errors, and unknowns.
 
 ### Dependency wiring (factories)
 
-Use-cases are hand-wired via `make*` factory functions in `src/use-cases/factories/` (and `src/use-cases/forms/factories/`). Controllers call the factory, not constructors directly. A factory constructs the Prisma repository, its `PrismaErrorMapper` (with a domain-specific error-mapping table from `src/repositories/prisma/errors/`), and any collaborating use-cases. There is no DI container.
+Services are hand-wired via `make*` factory functions in `src/modules/<feature>/factories/` (and `src/infra/mail/factories/`, `src/infra/outbox/factories/`). Controllers call the factory, not constructors directly. A factory constructs the Prisma repository, its `PrismaErrorMapper` (with a domain-specific error-mapping table from `src/modules/<feature>/repositories/errors/`), and any collaborating services. There is no DI container.
 
 ### HTTP plugin pipeline
 
-`src/app.ts` registers plugins in a deliberate order (each documented inline): async-context (ALS with per-request `requestId` via uuidv7) → CORS → rate-limit → cookie → analytics → JWT → request-lifecycle (JWT extraction, `userId` population, logging) → error-handler → routes. Routes are grouped in `src/http/routes.ts` by prefix (`/users`, `/health`, `/forms`, `/churches`, `/analytics`).
+`src/app.ts` registers plugins in a deliberate order (each documented inline): async-context (ALS with per-request `requestId` via uuidv7) → CORS → rate-limit → security-headers → `healthModule` (`/health`) → cookie → JWT → request-lifecycle (JWT extraction, `userId` population, logging) → request-deadline → error-handler → `appModule`. Feature modules are registered in `src/app.module.ts` by prefix (`/auth`, `/users`, `/forms`, `/churches`, `/analytics`).
 
-The rate-limit plugin keeps **Redis as the single source of truth** — `@fastify/rate-limit` with the built-in `redis:` store, no local fallback and no second counting algorithm — and runs `skipOnError: true`. With `skipOnError: false` a Redis that merely got slow returned HTTP 500 to every caller, because the rate-limiter connection is deliberately impatient (`commandTimeout: 100`, `enableOfflineQueue: false`, `maxRetriesPerRequest: 0`): the limiter became the outage it exists to prevent. Failing open is the accepted trade, and it is only acceptable because it is **loud** — the plugin swallows the store error silently and offers no hook on it, so `RateLimitHealthProbe` (`src/lib/infra/rate-limiter/rate-limit-health-probe.ts`) PINGs that same connection on a bounded interval (`REDIS_RATE_LIMIT_HEALTH_INTERVAL_MS`, 1 s–5 min, default 15 s) and publishes `http_rate_limit_redis_up` plus `http_rate_limit_infra_degraded_total` / `_recovered_total`. It probes on the rate limiter's own connection on purpose: a more forgiving client would report "Redis up" during exactly the slow-Redis incident this exists to catch. Alerts `HttpRateLimitSkippedRedisDown` (gauge at 0) and `HttpRateLimitFlapping` live in `prometheus/alerts.yml`, with two panels on the _Fastify HTTP & BullMQ_ dashboard. Note the opposite decision in `RedisRateLimiter`, which fails **closed** for outbound provider quotas: the reasoning for each is in the two files.
+The rate-limit plugin keeps **Redis as the single source of truth** — `@fastify/rate-limit` with the built-in `redis:` store, no local fallback and no second counting algorithm — and runs `skipOnError: true`. With `skipOnError: false` a Redis that merely got slow returned HTTP 500 to every caller, because the rate-limiter connection is deliberately impatient (`commandTimeout: 100`, `enableOfflineQueue: false`, `maxRetriesPerRequest: 0`): the limiter became the outage it exists to prevent. Failing open is the accepted trade, and it is only acceptable because it is **loud** — the plugin swallows the store error silently and offers no hook on it, so `RateLimitHealthProbe` (`src/infra/rate-limiter/rate-limit-health-probe.ts`) PINGs that same connection on a bounded interval (`REDIS_RATE_LIMIT_HEALTH_INTERVAL_MS`, 1 s–5 min, default 15 s) and publishes `http_rate_limit_redis_up` plus `http_rate_limit_infra_degraded_total` / `_recovered_total`. It probes on the rate limiter's own connection on purpose: a more forgiving client would report "Redis up" during exactly the slow-Redis incident this exists to catch. Alerts `HttpRateLimitSkippedRedisDown` (gauge at 0) and `HttpRateLimitFlapping` live in `prometheus/alerts.yml`, with two panels on the _Fastify HTTP & BullMQ_ dashboard. Note the opposite decision in `RedisRateLimiter`, which fails **closed** for outbound provider quotas: the reasoning for each is in the two files.
 
-Request context (`requestId`, `userId`) flows through `AsyncLocalStorage` (`src/lib/async-local-storage`, exposed via `getRequestId()`/`getUserId()` from `@lib/logger`), so logging and Sentry scoping stay request-isolated without threading params.
+Request context (`requestId`, `userId`) flows through `AsyncLocalStorage` (`src/infra/logger/async-local-storage.ts`, exposed via `getRequestId()`/`getUserId()` from `@infra/logger`), so logging and Sentry scoping stay request-isolated without threading params.
 
 ### Resilient providers (geo / address / church-routing)
 
-External API integrations under `src/providers/` use a two-level resilience design:
+External API integrations under `src/infra/providers/` use a two-level resilience design:
 
 - **Decorator** (`*.decorator.ts`) wraps a raw provider with per-provider Redis rate-limiting, timeouts, and error mapping, translating raw failures into `AppError`s tagged with a `FailureMode`.
 - **Resilient chain** (`ResilientGeoProvider`, etc.) holds an ordered list of decorated providers and advances to the next only when the current one fails with `failureMode === RETRYABLE`; it bails immediately on `NOT_FOUND` or untagged errors. **Routing is driven entirely by `error.failureMode` — no `instanceof` branching.**
@@ -323,9 +323,9 @@ When adding a provider, implement the raw interface, wrap it in the decorator, a
 
 `src/worker.ts` is a separate process running three things:
 
-1. **The mail worker** (`@lib/workers/mail-worker`) — a BullMQ worker over `QUEUE.NAMES.MAIL`.
-2. **`OutboxProcessor`**, driven by a Redis pub/sub signal (`OutboxSignal`) for low latency. The outbox pattern (`src/use-cases/outbox-event`, `OutboxEventStatus` in Prisma) guarantees at-least-once delivery of async side-effects (e.g. emails), and `OutboxProcessor` uses a `DistributedLock` (Redis) to avoid duplicate processing.
-3. **Scheduled maintenance**, on BullMQ **Job Schedulers** — not `node-cron`, which was removed. `startMaintenanceScheduler` (`@lib/infra/jobs/maintenance-scheduler`) upserts four schedulers onto `QUEUE.NAMES.MAINTENANCE`, and `startMaintenanceWorker` (`@lib/infra/jobs/maintenance-worker`) consumes them.
+1. **The mail worker** (`@infra/mail/workers/mail-worker`) — a BullMQ worker over `QUEUE.NAMES.MAIL`.
+2. **`OutboxProcessor`**, driven by a Redis pub/sub signal (`OutboxSignal`) for low latency. The outbox pattern (`src/infra/outbox`, `OutboxEventStatus` in Prisma) guarantees at-least-once delivery of async side-effects (e.g. emails), and `OutboxProcessor` uses a `DistributedLock` (Redis) to avoid duplicate processing.
+3. **Scheduled maintenance**, on BullMQ **Job Schedulers** — not `node-cron`, which was removed. `startMaintenanceScheduler` (`@infra/outbox/jobs/maintenance-scheduler`) upserts four schedulers onto `QUEUE.NAMES.MAINTENANCE`, and `startMaintenanceWorker` (`@infra/outbox/jobs/maintenance-worker`) consumes them.
 
 The four schedules and their stable ids live in `QUEUE.SCHEDULER_IDS` / `CRON_SCHEDULES`: a 5-minute sweep, the midnight safety scan, the outbox retention purge at 03:00 and the analytics retention purge at 04:00. Each schedule is **one job with its phases inside**, never a job per phase, because the ordering between phases is load-bearing — the 5-minute sweep must expire events _before_ dispatching pending ones, or a just-expired PENDING would be emailed as a dead link.
 
@@ -337,17 +337,17 @@ No timezone is passed to `upsertJobScheduler` **on purpose**: BullMQ's cron-pars
 
 ### Repositories & testing doubles
 
-Each aggregate has a repository interface in `src/core/contracts/repository/`, a Prisma implementation in `src/repositories/prisma/`, and an in-memory implementation in `src/repositories/in-memory/` used by unit tests. Prisma repositories receive a `DatabaseContext` and one or more `PrismaErrorMapper`s that translate Prisma errors into typed `AppError`s.
+Each aggregate colocates its repository interface (`*-repository.interface.ts`), contract runner (`*.contract.ts`), Prisma implementation (`prisma-*.repository.ts`), and in-memory test double (`in-memory-*.repository.ts`) inside `src/modules/<feature>/repositories/` (or `src/infra/outbox/repositories/`). Prisma repositories receive a `DatabaseContext` (`@infra/database/prisma/database-context`) and one or more `PrismaErrorMapper`s that translate Prisma errors into typed `AppError`s.
 
 ## Config & environment
 
-- Env is validated/typed centrally via `@env/index` (Zod). Add new env vars there and to `.env.example`.
+- Env is validated/typed centrally via `@config/env/index` (Zod). Add new env vars there and to `.env.example`.
 - Rate limits for every route group are env-driven (`HTTP_RATE_LIMIT_*`).
 - Zod is configured for Portuguese locale (`z.config(z.locales.pt())` in `app.ts`).
 - Sentry is initialized first thing in both `server.ts` and `worker.ts` (no-ops without `SENTRY_DSN`).
 - PostGIS is required (used for nearest-church geospatial queries); the DB image is `postgis/postgis`.
 - Metrics: both `server.ts` and `worker.ts` start a dedicated Prometheus endpoint via `src/metrics-server.ts`, toggled by `METRICS_ENABLED` (ports `METRICS_API_PORT`/`METRICS_WORKER_PORT`, default 9091/9092). On shutdown the metrics server is stopped **last** so telemetry stays available while the app drains; `stopMetricsServer` is a safe no-op if it never started.
-- Observability stack (Prometheus/Grafana/Alertmanager, `fastify-metrics`/`prom-client`): the compose file is `docker-compose.monitoring.yml`, alert rules are `prometheus/alerts.yml`, dashboards are under `grafana/`, and the counters/gauges are declared in `src/lib/metrics/` (one module per area — `outbox-metrics.ts`, `email-metrics.ts`, `bullmq-metrics.ts`, `analytics-metrics.ts`, `lock-metrics.ts`). `scripts/verify-monitoring.sh` checks the stack end to end.
-- Mail (`src/lib/mail/nodemailer-mail-sender.ts`): nodemailer runs **pooled** (`SMTP_POOL_*`), because the worker sends in batches and one connection per message makes a batch slow enough to outlive the job lock. Sending is wrapped in a cockatiel `SamplingBreaker` configured from its own `SMTP_CIRCUIT_BREAKER_*` vars — deliberately _not_ the `CIRCUIT_BREAKER_*` shared with the providers, whose traffic profile is nothing alike and whose kill switch would otherwise disable the mail breaker too. Opening the circuit also drops the cached transporter, since the pooled sockets of an SMTP that just failed in series are not worth keeping. Nothing is lost while the circuit is open: the failure reaches the mail worker, which turns it into a BullMQ retry, and the event stays in the outbox.
-- Email templates are **React Email** (`src/templates/react/*.tsx`, shared `layout.tsx`), rendered with `@react-email/render` from the dispatch strategies. React escapes interpolation by construction, which is the security property the old raw template literals lacked — the rendering specs next to each strategy assert it, each paired with a counterweight so that over-escaping (which mangles accented Brazilian names) fails too. The plaintext part still comes from the `*-text.ts` templates. `knip.json` must keep following `.tsx` or the dead-code gate stops seeing these files.
+- Observability stack (Prometheus/Grafana/Alertmanager, `fastify-metrics`/`prom-client`): the compose file is `docker-compose.monitoring.yml`, alert rules are `prometheus/alerts.yml`, dashboards are under `grafana/`, and the counters/gauges are declared in `src/infra/metrics/` (one module per area — `outbox-metrics.ts`, `email-metrics.ts`, `bullmq-metrics.ts`, `analytics-metrics.ts`, `lock-metrics.ts`). `scripts/verify-monitoring.sh` checks the stack end to end.
+- Mail (`src/infra/mail/nodemailer-mail-sender.ts`): nodemailer runs **pooled** (`SMTP_POOL_*`), because the worker sends in batches and one connection per message makes a batch slow enough to outlive the job lock. Sending is wrapped in a cockatiel `SamplingBreaker` configured from its own `SMTP_CIRCUIT_BREAKER_*` vars — deliberately _not_ the `CIRCUIT_BREAKER_*` shared with the providers, whose traffic profile is nothing alike and whose kill switch would otherwise disable the mail breaker too. Opening the circuit also drops the cached transporter, since the pooled sockets of an SMTP that just failed in series are not worth keeping. Nothing is lost while the circuit is open: the failure reaches the mail worker, which turns it into a BullMQ retry, and the event stays in the outbox.
+- Email templates are **React Email** (`src/infra/mail/templates/react/*.tsx`, shared `layout.tsx`), rendered with `@react-email/render` from the dispatch strategies. React escapes interpolation by construction, which is the security property the old raw template literals lacked — the rendering specs next to each strategy assert it, each paired with a counterweight so that over-escaping (which mangles accented Brazilian names) fails too. The plaintext part still comes from the `*-text.ts` templates. `knip.json` must keep following `.tsx` or the dead-code gate stops seeing these files.
 - Deployment: `Dockerfile` (multi-stage; prod image only copies `@prisma/client`/`.prisma` from node_modules), `deploy.sh`, and PM2 `ecosystem.config.js` for the VPS target.

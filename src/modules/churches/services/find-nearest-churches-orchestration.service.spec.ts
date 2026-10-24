@@ -1,0 +1,326 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { FindNearestChurchesUseCase } from './find-nearest-churches.service'
+import { CepToLatLonUseCase } from './cep-to-lat-lon.service'
+import { FindNearbyChurchesKnnUseCase } from './find-nearby-churches-knn.service'
+import { CalculateChurchRouteDistancesUseCase } from './calculate-church-route-distances.service'
+import { toPublicNearbyChurches } from '@modules/churches/presenters/projections/public-church'
+import { isOk, ok, isErr, err } from '@common/utils/result'
+import { ConcurrencyLimitError } from '@common/errors/infrastructure/concurrency-limit-error'
+import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
+import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
+import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
+import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
+import { LatitudeRangeError } from '@modules/churches/errors/latitude-range-error'
+import { Deadline } from '@common/utils/deadline'
+
+const mockGetOrFetch = vi.fn()
+const mockGenerateKey = vi.fn()
+
+vi.mock('@infra/cache/resilient-cache', () => {
+  return {
+    ResilientCache: class ResilientCacheMock {
+      getOrFetch(...args: any[]) {
+        return mockGetOrFetch(...args)
+      }
+
+      generateKey(...args: any[]) {
+        return mockGenerateKey(...args)
+      }
+    },
+  }
+})
+
+describe('FindNearestChurchesUseCase orchestration', () => {
+  let useCase: FindNearestChurchesUseCase
+  let cepToLatLonUseCase: { execute: ReturnType<typeof vi.fn> }
+  let findNearbyChurchesKnnUseCase: { execute: ReturnType<typeof vi.fn> }
+  let calculateChurchRouteDistancesUseCase: { findNearest: ReturnType<typeof vi.fn> }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+
+    mockGetOrFetch.mockReset()
+    mockGenerateKey.mockReset()
+    mockGenerateKey.mockImplementation((params: any) => `nearest:${params.cep}`)
+    mockGetOrFetch.mockImplementation(async (_key: string, fetcher: (d: Deadline) => Promise<unknown>) =>
+      fetcher(Deadline.none()),
+    )
+
+    cepToLatLonUseCase = { execute: vi.fn() }
+    findNearbyChurchesKnnUseCase = { execute: vi.fn() }
+    calculateChurchRouteDistancesUseCase = { findNearest: vi.fn() }
+
+    useCase = new FindNearestChurchesUseCase(
+      cepToLatLonUseCase as unknown as CepToLatLonUseCase,
+      findNearbyChurchesKnnUseCase as unknown as FindNearbyChurchesKnnUseCase,
+      calculateChurchRouteDistancesUseCase as unknown as CalculateChurchRouteDistancesUseCase,
+      {
+        redis: {} as never,
+        options: {
+          prefix: 'nearest:',
+          defaultTtlSeconds: 60,
+          negativeTtlSeconds: 10,
+        } as never,
+      },
+    )
+  })
+
+  it('returns the cached final HTTP response and skips downstream dependencies', async () => {
+    const cachedResponse = {
+      nearestChurchesInfo: [
+        {
+          publicId: 'church-1',
+          name: 'Igreja Central',
+          address: 'Rua A',
+          lat: -23,
+          lon: -46,
+          distanceKm: 1.2,
+          distanceMeters: 1200,
+        },
+      ],
+      totalFound: 1,
+      precision: 'ROOFTOP',
+      providerName: 'AwesomeAPI',
+    }
+
+    mockGetOrFetch.mockResolvedValueOnce(ok(cachedResponse))
+
+    const result = await useCase.execute({ cep: '01310-100' })
+
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      expect(result.value).toBe(cachedResponse)
+    }
+    expect(mockGenerateKey).toHaveBeenCalledWith(expect.objectContaining({ cep: '01310100' }))
+    expect(cepToLatLonUseCase.execute).not.toHaveBeenCalled()
+    expect(findNearbyChurchesKnnUseCase.execute).not.toHaveBeenCalled()
+    expect(calculateChurchRouteDistancesUseCase.findNearest).not.toHaveBeenCalled()
+  })
+
+  it('computes and caches the sanitized HTTP response on a cache miss', async () => {
+    cepToLatLonUseCase.execute.mockResolvedValueOnce(
+      ok({
+        userLat: -23.55,
+        userLon: -46.63,
+        precision: 'ROOFTOP',
+        coordinatesProviderName: 'LocationIQ',
+      }),
+    )
+
+    const knnChurches = [
+      {
+        id: 10,
+        publicId: 'church-10',
+        name: 'Igreja Centro',
+        address: 'Av Principal',
+        lat: -23.5,
+        lon: -46.6,
+        distanceKm: 0,
+        distanceMeters: 0,
+      },
+    ]
+
+    const routedChurches = [
+      {
+        ...knnChurches[0],
+        distanceKm: 2.4,
+        distanceMeters: 2400,
+      },
+    ]
+
+    findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce(
+      ok({
+        churches: knnChurches,
+        totalFound: 1,
+      }),
+    )
+
+    calculateChurchRouteDistancesUseCase.findNearest.mockResolvedValueOnce(ok(routedChurches))
+
+    const result = await useCase.execute({ cep: '01310100' })
+
+    expect(isOk(result)).toBe(true)
+    if (isOk(result)) {
+      expect(result.value).toEqual({
+        nearestChurchesInfo: toPublicNearbyChurches(routedChurches),
+        totalFound: 1,
+        precision: 'ROOFTOP',
+        coordinatesProviderName: 'LocationIQ',
+      })
+    }
+    expect(cepToLatLonUseCase.execute).toHaveBeenCalledWith({ cep: '01310100', deadline: expect.any(Deadline) })
+    // The KNN leg now shares the same budget as every other step.
+    expect(findNearbyChurchesKnnUseCase.execute).toHaveBeenCalledWith({
+      userLat: -23.55,
+      userLon: -46.63,
+      deadline: expect.any(Deadline),
+    })
+    expect(calculateChurchRouteDistancesUseCase.findNearest).toHaveBeenCalledWith(
+      {
+        churches: knnChurches,
+        user: { userLat: -23.55, userLon: -46.63 },
+        deadline: expect.any(Deadline),
+      },
+      expect.anything(),
+    )
+  })
+
+  it('propagates a KNN failure and never reaches the routing step', async () => {
+    cepToLatLonUseCase.execute.mockResolvedValueOnce(
+      ok({ userLat: -23.55, userLon: -46.63, precision: 'ROOFTOP', coordinatesProviderName: 'LocationIQ' }),
+    )
+    findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce(err(new LatitudeRangeError()))
+
+    const result = await useCase.execute({ cep: '01310100' })
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(LatitudeRangeError)
+    }
+    expect(calculateChurchRouteDistancesUseCase.findNearest).not.toHaveBeenCalled()
+  })
+
+  it('propagates a routing failure instead of returning a partial response', async () => {
+    cepToLatLonUseCase.execute.mockResolvedValueOnce(
+      ok({ userLat: -23.55, userLon: -46.63, precision: 'ROOFTOP', coordinatesProviderName: 'LocationIQ' }),
+    )
+    findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce(ok({ churches: [{ id: 1 }], totalFound: 1 }))
+    calculateChurchRouteDistancesUseCase.findNearest.mockResolvedValueOnce(err(new NoNearbyChurchesFoundError()))
+
+    const result = await useCase.execute({ cep: '01310100' })
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(NoNearbyChurchesFoundError)
+    }
+  })
+
+  it('propagates a CEP failure and never reaches the KNN step', async () => {
+    cepToLatLonUseCase.execute.mockResolvedValueOnce(err(new InvalidCepError()))
+
+    const result = await useCase.execute({ cep: '00000000' })
+
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(InvalidCepError)
+    }
+    expect(findNearbyChurchesKnnUseCase.execute).not.toHaveBeenCalled()
+  })
+
+  it('shares one budget: the same deadline, carrying the cache cancellation, reaches the CEP and routing steps', async () => {
+    const controller = new AbortController()
+    mockGetOrFetch.mockImplementationOnce(async (_key: string, fetcher: (d: Deadline) => Promise<unknown>) =>
+      fetcher(Deadline.in(Infinity, { linkedTo: controller.signal })),
+    )
+
+    cepToLatLonUseCase.execute.mockResolvedValueOnce(
+      ok({ userLat: -23.55, userLon: -46.63, precision: 'ROOFTOP', coordinatesProviderName: 'LocationIQ' }),
+    )
+    findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce(ok({ churches: [{ id: 1 }], totalFound: 1 }))
+    calculateChurchRouteDistancesUseCase.findNearest.mockResolvedValueOnce(ok([{ id: 1, distanceKm: 1 }]))
+
+    await useCase.execute({ cep: '01310100' })
+
+    const cepDeadline = cepToLatLonUseCase.execute.mock.calls[0][0].deadline as Deadline
+    const routingDeadline = calculateChurchRouteDistancesUseCase.findNearest.mock.calls[0][0].deadline as Deadline
+
+    // One budget, not two: both steps must receive the very same instance.
+    expect(cepDeadline).toBeInstanceOf(Deadline)
+    expect(routingDeadline).toBe(cepDeadline)
+
+    // ...and cancelling the cache's signal must expire it.
+    expect(cepDeadline.expired).toBe(false)
+    controller.abort('cache budget spent')
+    expect(cepDeadline.expired).toBe(true)
+  })
+
+  it('caches only the final response — no intermediate value is ever written', async () => {
+    cepToLatLonUseCase.execute.mockResolvedValueOnce(
+      ok({ userLat: -23.55, userLon: -46.63, precision: 'ROOFTOP', coordinatesProviderName: 'LocationIQ' }),
+    )
+    findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce(ok({ churches: [{ id: 1 }], totalFound: 1 }))
+    calculateChurchRouteDistancesUseCase.findNearest.mockResolvedValueOnce(ok([{ id: 1, distanceKm: 1 }]))
+
+    await useCase.execute({ cep: '01310100' })
+
+    // A single cache round-trip for the whole flow, keyed by cep + profile.
+    expect(mockGetOrFetch).toHaveBeenCalledTimes(1)
+    expect(mockGenerateKey).toHaveBeenCalledTimes(1)
+    expect(mockGenerateKey).toHaveBeenCalledWith({ cep: '01310100', profile: expect.anything() })
+  })
+
+  it('should return TimeoutExceededError when cache returns it (CacheOvertime)', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(err(new TimeoutExceededError('Cache get timeout')))
+    const result = await useCase.execute({ cep: '00000000' })
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(TimeoutExceededError)
+    }
+  })
+
+  it('should return ConcurrencyLimitError when cache returns it (CacheOverload)', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(err(new ConcurrencyLimitError()))
+    const result = await useCase.execute({ cep: '00000000' })
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(ConcurrencyLimitError)
+    }
+  })
+
+  it('should unwrap err(InvalidCepError) from cache', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(err(new InvalidCepError()))
+
+    const result = await useCase.execute({ cep: '00000000' })
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(InvalidCepError)
+    }
+  })
+
+  it('should unwrap err(CoordinatesNotFoundError) from cache', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(err(new CoordinatesNotFoundError()))
+
+    const result = await useCase.execute({ cep: '00000000' })
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(CoordinatesNotFoundError)
+    }
+  })
+
+  it('should return NoNearbyChurchesFoundError when cache returns an unknown AppError', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(err(new NoNearbyChurchesFoundError()))
+    const result = await useCase.execute({ cep: '00000000' })
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(NoNearbyChurchesFoundError)
+    }
+  })
+
+  it('should return TimeoutExceededError when signal is already aborted (Signal Abortion)', async () => {
+    const controller = new AbortController()
+    controller.abort(new Error('Aborted by client'))
+
+    mockGetOrFetch.mockImplementationOnce(async (_key, fetcher) => {
+      return fetcher(Deadline.in(Infinity, { linkedTo: controller.signal }))
+    })
+
+    cepToLatLonUseCase.execute.mockImplementationOnce(async () => {
+      return err(new TimeoutExceededError('Aborted'))
+    })
+
+    const result = await useCase.execute({ cep: '00000000' })
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(TimeoutExceededError)
+    }
+  })
+
+  it('should return NoNearbyChurchesFoundError when cache returns it', async () => {
+    mockGetOrFetch.mockResolvedValueOnce(err(new NoNearbyChurchesFoundError()))
+    const result = await useCase.execute({ cep: '00000000' })
+    expect(isErr(result)).toBe(true)
+    if (isErr(result)) {
+      expect(result.error).toBeInstanceOf(NoNearbyChurchesFoundError)
+    }
+  })
+})

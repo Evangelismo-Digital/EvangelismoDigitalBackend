@@ -21,7 +21,7 @@ Content-Type: application/json
 
 ### POST Authenticate Admin
 # @name authenticate_admin
-POST {{apiurl}}/users/sessions HTTP/1.1
+POST {{apiurl}}/auth/sessions HTTP/1.1
 Content-Type: application/json
 
 {
@@ -30,7 +30,7 @@ Content-Type: application/json
 }
 
 ### POST forgot password
-POST {{apiurl}}/users/forgot-password HTTP/1.1
+POST {{apiurl}}/auth/forgot-password HTTP/1.1
 Content-Type: application/json
 
 {
@@ -38,7 +38,7 @@ Content-Type: application/json
 }
 
 ### PATCH reset password
-PATCH {{apiurl}}/users/reset-password HTTP/1.1
+PATCH {{apiurl}}/auth/reset-password HTTP/1.1
 Content-Type: application/json
 
 {

@@ -3,7 +3,7 @@
 Record of what was set up, what it found, what was changed, and — most
 importantly — the places where a tool's advice was **rejected**, with the
 reason. A silenced rule with no recorded reason is indistinguishable from a bug
-someone gave up on.
+someone gave up on. Ok.
 
 ---
 
@@ -216,14 +216,12 @@ Three inward-pointing dependencies were inverted:
   domain question, not a transport one. Now `core/validation/email.ts`, which
   the HTTP schemas import too — outer depending on inner, as intended.
 
-**One violation was left in place**, deliberately:
-`FindNearestChurchesUseCase` imports `ChurchPresenter` from `@http/presenters`
-and returns HTTP-shaped data. Fixing it means moving presentation to the
-controller and changing the use-case's return type — and
-`find-nearest-churches-orchestration-use-case.spec.ts` imports `ChurchPresenter`
-directly and asserts that shape. Under a test freeze it cannot be done honestly.
-It needs the presenter call moved to the controller, the use-case returning
-domain objects, and that spec updated in the same commit.
+- **Resolved in NestJS Refactor (Phase 8):** `FindNearestChurchesUseCase` now
+  projects domain items via `toPublicNearbyChurches` from
+  `@modules/churches/presenters/projections/public-church` ( tested directly in
+  `find-nearest-churches-orchestration.service.spec.ts`), while HTTP presentation
+  via `ChurchPresenter.toHTTP` is applied at the controller boundary in
+  `find-nearest-churches.controller.ts`.
 
 ### The hottest module
 

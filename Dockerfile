@@ -40,7 +40,8 @@ ENV DATABASE_URL=postgresql://placeholder:placeholder@localhost:5432/placeholder
   BRASIL_API_URL=https://example.com \
   NOMINATIM_API_URL=https://example.com \
   LOCATION_IQ_API_TOKEN=build-time-placeholder \
-  STADIA_API_TOKEN=build-time-placeholder
+  STADIA_API_TOKEN=build-time-placeholder \
+  OPENROUTESERVICE_API_TOKEN=build-time-placeholder
 
 RUN npx prisma generate
 RUN npm run build
@@ -55,20 +56,22 @@ RUN apt-get update \
 
 ENV NODE_ENV=production
 WORKDIR /app
+RUN chown node:node /app
+
+# Run as an unprivileged user before installing dependencies so every file in
+# node_modules is created as node:node — avoiding a recursive `chown -R /app`
+# layer that triggers an OverlayFS copy-up of all node_modules inodes.
+USER node
 
 # Production dependencies only.
-COPY package.json package-lock.json ./
+COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 # Bring over the generated Prisma client + engines and the compiled output.
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
-
-# Run as an unprivileged user.
-RUN chown -R node:node /app
-USER node
+COPY --chown=node:node --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --chown=node:node --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
+COPY --chown=node:node --from=builder /app/dist ./dist
+COPY --chown=node:node --from=builder /app/prisma ./prisma
 
 EXPOSE 3333
 

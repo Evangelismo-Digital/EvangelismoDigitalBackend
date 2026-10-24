@@ -1,11 +1,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { contactUserHtmlTemplate } from '../src/templates/contact-user/contact-user-html'
-import { contactStaffHtmlTemplate } from '../src/templates/contact-staff/contact-staff-html'
-import { decisionForChristStaffHtmlTemplate } from '../src/templates/decision-for-christ-staff/decision-for-christ-staff-html'
-import { decisionForChristUserHtmlTemplate } from '../src/templates/decision-for-christ-user/decision-for-christ-user-html'
-import { forgotPasswordHtmlTemplate } from '../src/templates/forgot-password/forgot-password-html'
+import { contactUserHtmlTemplate } from '../src/infra/mail/templates/contact-user/contact-user-html'
+import { contactStaffHtmlTemplate } from '../src/infra/mail/templates/contact-staff/contact-staff-html'
+import { decisionForChristStaffHtmlTemplate } from '../src/infra/mail/templates/decision-for-christ-staff/decision-for-christ-staff-html'
+import { decisionForChristUserHtmlTemplate } from '../src/infra/mail/templates/decision-for-christ-user/decision-for-christ-user-html'
+import { forgotPasswordHtmlTemplate } from '../src/infra/mail/templates/forgot-password/forgot-password-html'
 
 const outDir = path.join(__dirname, '../test/fixtures/email-templates')
 

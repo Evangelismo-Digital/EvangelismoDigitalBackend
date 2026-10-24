@@ -285,10 +285,13 @@ export default [
     // In both cases the missing `await` is the contract, not an oversight.
     files: [
       'src/app.ts',
-      'src/http/routes.ts',
-      'src/http/**/*.routes.ts',
-      'src/http/plugins/**/*.ts',
-      'src/repositories/in-memory/**/*.ts',
+      'src/app.module.ts',
+      'src/modules/**/*.module.ts',
+      'src/common/plugins/**/*.ts',
+      'src/common/filters/**/*.ts',
+      'src/modules/analytics/plugins/**/*.ts',
+      'src/modules/**/repositories/in-memory-*.ts',
+      'src/infra/outbox/repositories/in-memory-*.ts',
     ],
     rules: {
       '@typescript-eslint/require-await': 'off',
@@ -302,7 +305,7 @@ export default [
     // process; server.ts and worker.ts call it after close-with-grace has
     // drained. Throwing instead, as the rule suggests, would land back in the
     // same crash handler.
-    files: ['src/server.ts', 'src/worker.ts', 'src/lib/shutdown/**/*.ts'],
+    files: ['src/server.ts', 'src/worker.ts', 'src/infra/shutdown/**/*.ts'],
     rules: {
       'n/no-process-exit': 'off',
     },
@@ -314,7 +317,7 @@ export default [
     // that is a proof of ownership rather than an identifier, across nine
     // signatures. The alternative the rule implies — `string` everywhere — is
     // the outcome this alias exists to prevent.
-    files: ['src/lib/infra/distributed-lock/distributed-lock.ts'],
+    files: ['src/infra/distributed-lock/distributed-lock.ts'],
     rules: {
       'sonarjs/redundant-type-aliases': 'off',
     },
@@ -325,7 +328,7 @@ export default [
     // `max-lines-per-function` measures markup rather than logic. Splitting the
     // markup to satisfy a line count would make the templates harder to read,
     // not easier. `complexity` and `max-depth` still apply here.
-    files: ['src/templates/**/*.{ts,tsx}'],
+    files: ['src/infra/mail/templates/**/*.{ts,tsx}'],
     rules: {
       'max-lines-per-function': 'off',
       'sonarjs/prefer-read-only-props': 'off',

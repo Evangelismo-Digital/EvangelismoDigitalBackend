@@ -223,6 +223,16 @@ groups:
           summary: 'Falhas de infraestrutura no envio de e-mail'
           description: 'Falhas classificadas como "infra" no envio de e-mail nos últimos 15 minutos.'
 
+      - alert: EmailPermanentRejectionRate
+        expr: increase(emails_permanent_rejections_total[15m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Detecção de rejeições permanentes SMTP (5xx/EENVELOPE)'
+          description: 'Mais de 5 rejeições permanentes (destinatários inválidos ou caixas inexistentes) nos últimos 15 minutos.'
+
+
       - alert: OutboxRevertFailed
         expr: increase(outbox_events_revert_failed_total[15m]) > 0
         labels:
@@ -248,14 +258,23 @@ groups:
           summary: 'Evento do outbox marcado como FAILED terminal (poison message)'
           description: 'Evento(s) excederam o limite de tentativas de dispatch e foram marcados como FAILED terminal na última hora.'
 
-      - alert: OutboxSignalPublishFailing
-        expr: increase(outbox_signal_publish_failed_total[10m]) > 0
+      - alert: OutboxDispatchEnqueueFailing
+        expr: increase(outbox_dispatch_enqueue_failed_total[10m]) > 0
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: 'Falha ao publicar sinal pub/sub do outbox'
-          description: 'Falhas ao publicar o sinal de wakeup do outbox (Redis indisponível); o processamento depende do fallback via cron.'
+          summary: 'Falha ao enfileirar job na fila de outbox-dispatch'
+          description: 'Falhas ao enfileirar o evento do outbox no BullMQ (Redis indisponível); o processamento depende do fallback via cron.'
+
+      - alert: OutboxHighCasContentionRate
+        expr: sum(rate(outbox_events_claimed_total{outcome="contention"}[10m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Alta taxa de disputa de CAS no outbox'
+          description: 'Múltiplos workers ou a varredura periódica estão colidindo repetidamente ao tentar reivindicar os mesmos eventos de outbox.'
 
       # Manutenção agendada (Job Schedulers do BullMQ). O handler engole o erro
       # na última tentativa para não deixar o job como `failed`, então

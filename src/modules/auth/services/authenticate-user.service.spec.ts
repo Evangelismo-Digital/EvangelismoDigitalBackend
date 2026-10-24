@@ -1,0 +1,264 @@
+import { InMemoryUsersRepository } from '@modules/users/repositories/in-memory-users.repository'
+import { InMemoryAuthenticationAuditRepository } from '@modules/auth/repositories/in-memory-authentication-audit.repository'
+import { describe, it, expect, vi } from 'vitest'
+import { RegisterUserUseCase } from '@modules/users/services/register-user.service'
+import { compare } from 'bcryptjs'
+import { UserRole } from '@modules/users/repositories/users-repository.interface'
+import { AuthenticateUserUseCase } from './authenticate-user.service'
+import { InvalidCredentialsError } from '@modules/auth/errors/invalid-credentials-error'
+import { DatabaseQueryError } from '@common/errors/infrastructure/database-query-error'
+import { cpf as cpfValidator } from 'cpf-cnpj-validator'
+import { AuthenticationAuditUseCase } from '@modules/auth/services/authentication-audit.service'
+import { AuthenticationStatus } from '@prisma/client'
+import { isOk, isErr, err } from '@common/utils/result'
+
+describe('Authenticate User Use Case', () => {
+  const auditContext = {
+    ipAddress: '203.0.113.1',
+    remotePort: '1234',
+    userAgent: 'vitest',
+    origin: 'http://localhost',
+  }
+
+  it('should be able to find a user by email', async () => {
+    const usersRepository = new InMemoryUsersRepository()
+    const authenticationAuditRepository = new InMemoryAuthenticationAuditRepository()
+    const authenticationAuditUseCase = new AuthenticationAuditUseCase(authenticationAuditRepository)
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const authenticateUserUseCase = new AuthenticateUserUseCase(usersRepository, authenticationAuditUseCase)
+
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const username = 'johndoe'
+    const uniqueCpf = cpfValidator.generate()
+
+    const password = 'Teste123x!'
+
+    const registerResult = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username,
+      role: UserRole.DEFAULT,
+    })
+
+    expect(isOk(registerResult)).toBe(true)
+
+    const authResult = await authenticateUserUseCase.execute({
+      login: uniqueEmail,
+      password,
+      auditContext,
+    })
+
+    expect(isOk(authResult)).toBe(true)
+    if (isOk(authResult)) {
+      expect(authResult.value.user.publicId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      )
+    }
+    expect(authenticationAuditRepository.items).toHaveLength(1)
+    expect(authenticationAuditRepository.items[0].status).toBe(AuthenticationStatus.SUCCESS)
+  })
+
+  it('should be able to find a user by username', async () => {
+    const usersRepository = new InMemoryUsersRepository()
+    const authenticationAuditRepository = new InMemoryAuthenticationAuditRepository()
+    const authenticationAuditUseCase = new AuthenticationAuditUseCase(authenticationAuditRepository)
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const authenticateUserUseCase = new AuthenticateUserUseCase(usersRepository, authenticationAuditUseCase)
+
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const username = 'johndoe'
+    const uniqueCpf = cpfValidator.generate()
+
+    const password = 'Teste123x!'
+
+    const registerResult = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username,
+      role: UserRole.DEFAULT,
+    })
+
+    expect(isOk(registerResult)).toBe(true)
+
+    const authResult = await authenticateUserUseCase.execute({
+      login: username,
+      password,
+      auditContext,
+    })
+
+    expect(isOk(authResult)).toBe(true)
+    if (isOk(authResult)) {
+      expect(authResult.value.user.publicId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      )
+    }
+    expect(authenticationAuditRepository.items).toHaveLength(1)
+    expect(authenticationAuditRepository.items[0].status).toBe(AuthenticationStatus.SUCCESS)
+  })
+
+  it("should compare user's password upon authentication", async () => {
+    const usersRepository = new InMemoryUsersRepository()
+    const authenticationAuditRepository = new InMemoryAuthenticationAuditRepository()
+    const authenticationAuditUseCase = new AuthenticationAuditUseCase(authenticationAuditRepository)
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const authenticateUserUseCase = new AuthenticateUserUseCase(usersRepository, authenticationAuditUseCase)
+
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const username = 'johndoe'
+    const uniqueCpf = cpfValidator.generate()
+
+    const password = 'Teste123x!'
+
+    const registerResult = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username,
+      role: UserRole.DEFAULT,
+    })
+
+    expect(isOk(registerResult)).toBe(true)
+
+    const authResult = await authenticateUserUseCase.execute({
+      login: uniqueEmail,
+      password,
+      auditContext,
+    })
+
+    expect(isOk(authResult)).toBe(true)
+    if (isOk(authResult)) {
+      const isPasswordCorrectlyHashed = await compare(password, authResult.value.user.passwordHash)
+      expect(isPasswordCorrectlyHashed).toBe(true)
+    }
+    expect(authenticationAuditRepository.items).toHaveLength(1)
+    expect(authenticationAuditRepository.items[0].status).toBe(AuthenticationStatus.SUCCESS)
+  })
+
+  it('should not be able to register with invalid email', async () => {
+    const usersRepository = new InMemoryUsersRepository()
+    const authenticationAuditRepository = new InMemoryAuthenticationAuditRepository()
+    const authenticationAuditUseCase = new AuthenticationAuditUseCase(authenticationAuditRepository)
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const authenticateUserUseCase = new AuthenticateUserUseCase(usersRepository, authenticationAuditUseCase)
+
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const username = 'johndoe'
+    const uniqueCpf = cpfValidator.generate()
+
+    const password = 'Teste123!!'
+
+    const invalidEmail = 'invalid-email@gmail.com'
+
+    const registerResult = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username,
+      role: UserRole.DEFAULT,
+    })
+
+    expect(isOk(registerResult)).toBe(true)
+
+    const authResult = await authenticateUserUseCase.execute({
+      login: invalidEmail,
+      password,
+      auditContext,
+    })
+
+    expect(isErr(authResult)).toBe(true)
+    if (isErr(authResult)) {
+      expect(authResult.error).toBeInstanceOf(InvalidCredentialsError)
+    }
+
+    expect(authenticationAuditRepository.items).toHaveLength(1)
+    expect(authenticationAuditRepository.items[0].status).toBe(AuthenticationStatus.USER_NOT_EXISTS)
+  })
+
+  it('should not be able to register with invalid username', async () => {
+    const usersRepository = new InMemoryUsersRepository()
+    const authenticationAuditRepository = new InMemoryAuthenticationAuditRepository()
+    const authenticationAuditUseCase = new AuthenticationAuditUseCase(authenticationAuditRepository)
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const authenticateUserUseCase = new AuthenticateUserUseCase(usersRepository, authenticationAuditUseCase)
+
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const username = 'johndoe'
+    const uniqueCpf = cpfValidator.generate()
+
+    const password = 'Teste123!!'
+
+    const invalidUsername = 'invalid-username'
+
+    const registerResult = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username,
+      role: UserRole.DEFAULT,
+    })
+
+    expect(isOk(registerResult)).toBe(true)
+
+    const authResult = await authenticateUserUseCase.execute({
+      login: invalidUsername,
+      password,
+      auditContext,
+    })
+
+    expect(isErr(authResult)).toBe(true)
+    if (isErr(authResult)) {
+      expect(authResult.error).toBeInstanceOf(InvalidCredentialsError)
+    }
+
+    expect(authenticationAuditRepository.items).toHaveLength(1)
+    expect(authenticationAuditRepository.items[0].status).toBe(AuthenticationStatus.USER_NOT_EXISTS)
+  })
+
+  it('should continue authentication even when audit persistence fails', async () => {
+    const usersRepository = new InMemoryUsersRepository()
+    const authenticationAuditRepository = {
+      create: vi.fn(async () => {
+        return err(new DatabaseQueryError('audit unavailable'))
+      }),
+    }
+    const authenticationAuditUseCase = new AuthenticationAuditUseCase(authenticationAuditRepository as any)
+    const registerUseCase = new RegisterUserUseCase(usersRepository)
+    const authenticateUserUseCase = new AuthenticateUserUseCase(usersRepository, authenticationAuditUseCase)
+
+    const uniqueEmail = `johndoe${Date.now()}@gmail.com`
+    const username = 'johndoe'
+    const uniqueCpf = cpfValidator.generate()
+
+    const password = 'Teste123x!'
+
+    const registerResult = await registerUseCase.execute({
+      name: 'John Doe',
+      email: uniqueEmail,
+      cpf: uniqueCpf,
+      password,
+      username,
+      role: UserRole.DEFAULT,
+    })
+
+    expect(isOk(registerResult)).toBe(true)
+
+    const authResult = await authenticateUserUseCase.execute({
+      login: uniqueEmail,
+      password,
+      auditContext,
+    })
+
+    expect(isOk(authResult)).toBe(true)
+    if (isOk(authResult)) {
+      expect(authResult.value.user.publicId).toBeDefined()
+    }
+    expect(authenticationAuditRepository.create).toHaveBeenCalledOnce()
+  })
+})

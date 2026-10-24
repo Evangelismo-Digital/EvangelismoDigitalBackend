@@ -139,6 +139,10 @@ var envSchema = import_zod2.z.object({
   SMTP_POOL_MAX_MESSAGES: import_zod2.z.coerce.number().int().positive().default(100),
   SMTP_POOL_RATE_LIMIT: import_zod2.z.coerce.number().int().positive().default(5),
   SMTP_POOL_RATE_DELTA_MS: import_zod2.z.coerce.number().int().positive().default(1e3),
+  // Rate limiter nativo do BullMQ no worker de e-mail (coordenado via Redis entre pods).
+  // Garante vazão global controlada para o SMTP do Gmail independentemente do número de réplicas.
+  MAIL_RATE_LIMIT_MAX: import_zod2.z.coerce.number().int().positive().default(2),
+  MAIL_RATE_LIMIT_DURATION_MS: import_zod2.z.coerce.number().int().positive().default(1e3),
   // Timeouts defensivos: impedem que um servidor SMTP travado bloqueie o chamador (padrões do Nodemailer chegam a 10 min)
   // Breaker do SMTP — deliberadamente separado do CIRCUIT_BREAKER_* dos
   // provedores: o perfil de tráfego não tem nada a ver (um punhado de mensagens
@@ -1336,12 +1340,61 @@ var PrismaOutboxRepository = class {
       return err(this.infraErrorMapper.mapToKnownError(error));
     }
   }
+  async findFailed(limit) {
+    try {
+      const events = await this.dbContext.client.outboxEvent.findMany({
+        where: { status: "FAILED" /* FAILED */ },
+        orderBy: { occurredAt: "desc" },
+        take: limit
+      });
+      return ok(events.map((e) => this.toEntity(e)));
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
+  async retryFailed(publicId) {
+    try {
+      const result = await this.dbContext.client.outboxEvent.updateMany({
+        where: {
+          publicId,
+          status: "FAILED" /* FAILED */
+        },
+        data: {
+          status: "PENDING" /* PENDING */,
+          sendingAt: null,
+          attempts: 0
+        }
+      });
+      return ok(result.count === 1);
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
   async findByPublicId(publicId) {
     try {
       const event = await this.dbContext.client.outboxEvent.findUnique({
         where: { publicId }
       });
       return ok(event ? this.toEntity(event) : null);
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
+  async claim(filter) {
+    try {
+      const result = await this.dbContext.client.outboxEvent.updateMany({
+        where: {
+          publicId: filter.publicId,
+          status: filter.fromStatus,
+          ...filter.stuckBefore ? { sendingAt: { lte: filter.stuckBefore } } : {}
+        },
+        data: {
+          status: "SENDING" /* SENDING */,
+          sendingAt: /* @__PURE__ */ new Date(),
+          attempts: { increment: 1 }
+        }
+      });
+      return ok(result.count === 1);
     } catch (error) {
       return err(this.infraErrorMapper.mapToKnownError(error));
     }
@@ -1424,6 +1477,28 @@ var PrismaOutboxRepository = class {
         byStatus[status] = (byStatus[status] ?? 0) + 1;
       }
       return ok({ deleted: result.count, byStatus });
+    } catch (error) {
+      return err(this.infraErrorMapper.mapToKnownError(error));
+    }
+  }
+  async deleteFailedOlderThan(cutoff, batchSize) {
+    try {
+      const batch = await this.dbContext.client.outboxEvent.findMany({
+        where: {
+          status: "FAILED" /* FAILED */,
+          occurredAt: { lt: cutoff }
+        },
+        select: { id: true },
+        orderBy: { occurredAt: "asc" },
+        take: batchSize
+      });
+      if (batch.length === 0) {
+        return ok(0);
+      }
+      const result = await this.dbContext.client.outboxEvent.deleteMany({
+        where: { id: { in: batch.map((e) => e.id) } }
+      });
+      return ok(result.count);
     } catch (error) {
       return err(this.infraErrorMapper.mapToKnownError(error));
     }
@@ -1598,146 +1673,35 @@ function makeForgotPasswordUseCase() {
   return new TransactionalUseCaseDecorator(useCase, dbContext);
 }
 
-// src/messages/constants/redis/redis.ts
-var REDIS_CONSTANTS = {
-  CHANNELS: {
-    OUTBOX_SIGNAL: "outbox-signal"
+// src/messages/constants/queue/queue.ts
+var QUEUE = {
+  NAMES: {
+    MAIL: "mail-queue",
+    MAINTENANCE: "maintenance-queue",
+    OUTBOX_DISPATCH: "outbox-dispatch-queue"
   },
-  KEYS: {
-    IDEMPOTENCY_EMAIL_PREFIX: "idempotency:email:",
-    RATE_LIMIT_PREFIX: "ratelimit:v1:"
+  JOBS: {
+    OUTBOX_DISPATCH: "outbox-dispatch",
+    FIVE_MIN_SWEEP: "five-min-sweep",
+    MIDNIGHT_SCAN: "midnight-scan",
+    RETENTION_PURGE: "retention-purge",
+    ANALYTICS_RETENTION: "analytics-retention",
+    FAILED_JOBS_CLEANUP: "failed-jobs-cleanup"
+  },
+  /**
+   * Scheduler ids are the dedup key: every pod upserts the same id, so BullMQ
+   * keeps one scheduler and emits one job per tick regardless of pod count.
+   * Changing an id orphans the old scheduler in Redis — rename only alongside a
+   * `removeJobScheduler` for the previous id.
+   */
+  SCHEDULER_IDS: {
+    FIVE_MIN_SWEEP: "maintenance:five-min-sweep",
+    MIDNIGHT_SCAN: "maintenance:midnight-scan",
+    RETENTION_PURGE: "maintenance:retention-purge",
+    ANALYTICS_RETENTION: "maintenance:analytics-retention",
+    FAILED_JOBS_CLEANUP: "maintenance:failed-jobs-cleanup"
   }
 };
-
-// src/messages/constants/logs/outbox.ts
-var OUTBOX_LOGS = {
-  // outbox-signal
-  SIGNAL_PUBLISH_FAILED: "N\xE3o foi poss\xEDvel publicar sinal de envio da nova outbox. O cron job continuar\xE1 funcionando como fallback.",
-  SIGNAL_PROCESSING_ERROR: "Erro ao processar sinal de envio do Outbox",
-  UNEXPECTED_CHANNEL: "Mensagem recebida em canal inesperado. Ignorando.",
-  LISTENER_REMOVED: "Listener anterior de OutboxSignal removido com sucesso",
-  SUBSCRIBE_ERROR: "Erro ao se inscrever no canal de OutboxSignal",
-  PUBLISHER_CONNECTED: "Redis publisher conectado ao outbox-signal",
-  PUBLISHER_ERROR: "Erro no publicador Redis do outbox-signal",
-  PUBLISHER_CLOSED: "Conex\xE3o do publicador Redis fechada para outbox-signal",
-  SUBSCRIBER_CONNECTED: "Redis subscriber conectado para outbox-signal",
-  SUBSCRIBER_ERROR: "Erro no assinante Redis do outbox-signal",
-  SUBSCRIBER_CLOSED: "Conex\xE3o do assinante Redis fechada para outbox-signal",
-  // outbox-cron
-  CRON_START: "Cron de meia-noite: iniciando varredura de seguran\xE7a da Outbox...",
-  PHASE1_DONE: "Fase 1 (recupera\xE7\xE3o SENDING): conclu\xEDda.",
-  PHASE1_ERROR: "Fase 1 (recupera\xE7\xE3o SENDING): erro inesperado.",
-  PHASE2_DONE: "Fase 2 (eventos PENDING): conclu\xEDda.",
-  PHASE2_ERROR: "Fase 2 (eventos PENDING): erro inesperado.",
-  SCAN_DONE: "Varredura de seguran\xE7a da Outbox conclu\xEDda.",
-  SCHEDULER_CONFIGURED: "Agendadores da Outbox configurados: varredura a cada 5 min, seguran\xE7a \xE0 meia-noite e reten\xE7\xE3o \xE0s 03:00.",
-  // maintenance-scheduler / maintenance-worker
-  MAINTENANCE_PHASE_RETRYING: "Fase de manuten\xE7\xE3o falhou; o BullMQ far\xE1 nova tentativa com backoff antes de desistir.",
-  MAINTENANCE_JOB_UNKNOWN: "Job de manuten\xE7\xE3o desconhecido recebido na fila; nada a executar.",
-  MAINTENANCE_WORKER_STARTED: "Worker de manuten\xE7\xE3o iniciado e consumindo a fila.",
-  MAINTENANCE_QUEUE_ERROR: "Erro na fila de manuten\xE7\xE3o.",
-  // outbox-processor
-  SKIPPED_ANOTHER_RUNNING: "processPendingEvents: Processamento ignorado. Outra inst\xE2ncia j\xE1 est\xE1 rodando.",
-  PENDING_FETCH_ERROR: "Erro de Infra ao buscar eventos pendentes.",
-  STUCK_FETCH_ERROR: "Erro de Infra ao buscar eventos travados na Outbox.",
-  STATUS_UPDATE_FAILED: "Falha ao atualizar status para SENDING. Evento permanece em PENDING.",
-  REVERT_FATAL: "FATAL: Falha ao reverter status para PENDING. Inconsist\xEAncia na DB.",
-  DISPATCH_REVERTED: "Falha no dispatch, revertido para PENDING",
-  CRITICAL_LOOP_ERROR: "Erro cr\xEDtico inesperado no loop principal de processPendingEvents",
-  CRITICAL_RECOVERY_ERROR: "Erro cr\xEDtico inesperado no processStuckSendingEvents",
-  MARKED_FAILED: "Evento excedeu o n\xFAmero m\xE1ximo de tentativas de despacho e foi marcado como FAILED.",
-  FAILED_MARK_ERROR: "Falha ao marcar evento como FAILED no banco de dados.",
-  EXPIRED_EVENT_DELETED: "Evento expirado removido da Outbox sem despacho (link morto nunca \xE9 enviado).",
-  EXPIRED_EVENT_DELETE_ERROR: "Falha ao remover evento expirado da Outbox.",
-  PENDING_RECIPIENTS_UNRESOLVED: "Destinat\xE1rios pendentes n\xE3o corresponderam a nenhum e-mail reconstru\xEDdo; despachando o lote completo (at-least-once).",
-  // outbox-maintenance
-  EXPIRY_SWEEP_DELETED: "Varredura de expira\xE7\xE3o: eventos expirados removidos da Outbox.",
-  EXPIRY_SWEEP_ERROR: "Erro na varredura de expira\xE7\xE3o da Outbox.",
-  RETENTION_PURGED: "Reten\xE7\xE3o: eventos antigos removidos da Outbox.",
-  RETENTION_PURGED_NON_TERMINAL: "Reten\xE7\xE3o: eventos PENDING/SENDING antigos removidos da Outbox \u2014 investigar por que n\xE3o foram processados.",
-  RETENTION_ERROR: "Erro na reten\xE7\xE3o da Outbox.",
-  FIVE_MIN_SWEEP_PENDING_ERROR: "Varredura de 5 min: erro inesperado ao processar eventos PENDING.",
-  FIVE_MIN_SWEEP_EXPIRY_ERROR: "Varredura de 5 min: erro inesperado na varredura de expira\xE7\xE3o.",
-  RETENTION_CRON_ERROR: "Cron de reten\xE7\xE3o: erro inesperado."
-};
-
-// src/lib/metrics/outbox-metrics.ts
-var import_prom_client2 = require("prom-client");
-
-// src/lib/metrics/index.ts
-var import_prom_client = require("prom-client");
-var registry = null;
-var initialized = false;
-function getRegistry() {
-  if (!env.METRICS_ENABLED) return null;
-  if (!initialized) {
-    registry = new import_prom_client.Registry();
-    (0, import_prom_client.collectDefaultMetrics)({ register: registry });
-    initialized = true;
-  }
-  return registry;
-}
-
-// src/lib/metrics/outbox-metrics.ts
-var registry2 = getRegistry();
-var collectMetricsOutboxEventsDispatched = registry2 ? new import_prom_client2.Counter({
-  name: "outbox_events_dispatched_total",
-  help: "Events successfully enqueued to BullMQ",
-  registers: [registry2]
-}) : null;
-var collectMetricsOutboxEventsReverted = registry2 ? new import_prom_client2.Counter({
-  name: "outbox_events_reverted_total",
-  help: "Dispatch failed and the event was successfully reverted to PENDING",
-  registers: [registry2]
-}) : null;
-var collectMetricsOutboxEventsRevertFailed = registry2 ? new import_prom_client2.Counter({
-  name: "outbox_events_revert_failed_total",
-  help: "Dispatch failed and the revert-to-PENDING write also failed (stranded in SENDING)",
-  registers: [registry2]
-}) : null;
-var collectMetricsOutboxEventsMarkedAsTerminalFail = registry2 ? new import_prom_client2.Counter({
-  name: "outbox_events_marked_as_terminal_fail_total",
-  help: "Events marked terminal FAILED after exceeding the dispatch attempts cap (poison message)",
-  registers: [registry2]
-}) : null;
-var collectMetricsOutboxEventsExpired = registry2 ? new import_prom_client2.Counter({
-  name: "outbox_events_expired_total",
-  help: "Events deleted at the expiration gate before dispatch",
-  registers: [registry2]
-}) : null;
-var collectMetricsOutboxEventsStuckSendingEventsRecovered = registry2 ? new import_prom_client2.Counter({
-  name: "outbox_events_stuck_sending_events_recovered_total",
-  help: "Stuck SENDING events reprocessed by the recovery loop",
-  registers: [registry2]
-}) : null;
-var collectMetricsOutboxCronRuns = registry2 ? new import_prom_client2.Counter({
-  name: "outbox_cron_runs_total",
-  help: "Outbox cron executions by phase",
-  labelNames: ["phase"],
-  registers: [registry2]
-}) : null;
-var collectMetricsOutboxCronFailures = registry2 ? new import_prom_client2.Counter({
-  name: "outbox_cron_failures_total",
-  help: "Maintenance phase failures by phase and outcome (retrying | exhausted)",
-  labelNames: ["phase", "outcome"],
-  registers: [registry2]
-}) : null;
-var collectMetricsOutboxMaintenanceDeleted = registry2 ? new import_prom_client2.Counter({
-  name: "outbox_maintenance_deleted_total",
-  help: "Events deleted by maintenance sweeps, by operation",
-  labelNames: ["operation"],
-  registers: [registry2]
-}) : null;
-var collectMetricsOutboxSignalPublished = registry2 ? new import_prom_client2.Counter({
-  name: "outbox_signal_published_total",
-  help: "Pub/Sub wakeup signals published after an outbox write",
-  registers: [registry2]
-}) : null;
-var collectMetricsOutboxSignalPublishFailed = registry2 ? new import_prom_client2.Counter({
-  name: "outbox_signal_publish_failed_total",
-  help: "Pub/Sub signal publish failures (Redis unavailable)",
-  registers: [registry2]
-}) : null;
 
 // src/lib/redis/connections/redis-bullMQ-connection.ts
 var import_ioredis = __toESM(require("ioredis"));
@@ -1888,6 +1852,51 @@ function reportError(outageLogger, subsystem, unexpectedErrorMessage, error) {
   );
 }
 
+// src/lib/redis/connections/redis-bullMQ-connection.ts
+function createRedisBullMQConnection() {
+  const redis = new import_ioredis.default({
+    host: env.REDIS_HOST,
+    port: env.REDIS_PORT,
+    password: env.REDIS_PASSWORD || void 0,
+    maxRetriesPerRequest: null,
+    // Obrigatório para BullMQ
+    // === CORREÇÃO DE INFRAESTRUTURA (DOCKER) ===
+    family: 4
+    // Força IPv4. Resolve instabilidade de rede no Docker.
+    // === CONFIGURAÇÕES DE Tentativa de Conexão ===
+    /*retryStrategy: (times) => {
+      return Math.min(times * 50, 2000)
+    },*/
+  });
+  attachOutageLogging(redis, "bullmq", REDIS_LOGS.BULLMQ_UNEXPECTED_ERROR);
+  return redis;
+}
+function attachRedisLogger(redis, context) {
+  const outageLogger = new RedisOutageLogger({
+    subsystem: "bullmq",
+    host: env.REDIS_HOST,
+    port: env.REDIS_PORT
+  });
+  redis.on("connect", () => {
+    logger.info(`Conex\xE3o Redis (${context}) estabelecida`);
+    outageLogger.onRecovery();
+  });
+  redis.on("ready", () => {
+    logger.info(`Redis (${context}) pronto`);
+    outageLogger.onRecovery();
+  });
+  redis.on("error", (error) => {
+    if (isRedisConnectivityError(error)) {
+      outageLogger.onOutage("error", error);
+      return;
+    }
+    logger.error({ context, err: error.message }, "Instabilidade na conex\xE3o Redis");
+  });
+  redis.on("close", () => {
+    outageLogger.onOutage("close");
+  });
+}
+
 // src/lib/redis/connections/redis-cache-connection.ts
 var import_ioredis2 = __toESM(require("ioredis"));
 var MAX_RECONNECT_ATTEMPTS = 2;
@@ -1946,31 +1955,6 @@ var baseConfig2 = {
   family: 4
   // force IPv4
 };
-var RECONNECT_BACKOFF_STEP_MS2 = 100;
-var RECONNECT_BACKOFF_MAX_MS2 = 5e3;
-function createOutboxPublisherConnection() {
-  const redis = new import_ioredis4.default({
-    ...baseConfig2,
-    enableOfflineQueue: true,
-    commandTimeout: 2e3
-  });
-  attachOutageLogging(redis, "outbox-publisher", OUTBOX_LOGS.PUBLISHER_ERROR);
-  return redis;
-}
-function createOutboxSubscriberConnection() {
-  const redis = new import_ioredis4.default({
-    ...baseConfig2,
-    maxRetriesPerRequest: null,
-    enableOfflineQueue: false,
-    retryStrategy: (times) => {
-      const delay = Math.min(Math.pow(2, times) * RECONNECT_BACKOFF_STEP_MS2, RECONNECT_BACKOFF_MAX_MS2);
-      logger.warn({ times, delay }, "Reconnecting outbox subscriber...");
-      return delay;
-    }
-  });
-  attachOutageLogging(redis, "outbox-subscriber", OUTBOX_LOGS.SUBSCRIBER_ERROR);
-  return redis;
-}
 
 // src/lib/redis/clients/clients.ts
 var redisCacheInstance = null;
@@ -1986,13 +1970,9 @@ function getRedisRateLimit() {
   redisRateLimitInstance ??= createRedisRateLimiterConnection();
   return redisRateLimitInstance;
 }
-function getOutboxPublisher() {
-  redisOutboxPublisherInstance ??= createOutboxPublisherConnection();
-  return redisOutboxPublisherInstance;
-}
-function getOutboxSubscriber() {
-  redisOutboxSubscriberInstance ??= createOutboxSubscriberConnection();
-  return redisOutboxSubscriberInstance;
+function getRedisForQueue() {
+  redisForQueueInstance ??= createRedisBullMQConnection();
+  return redisForQueueInstance;
 }
 async function closeAllRedisConnections() {
   const targets = [
@@ -2012,122 +1992,159 @@ async function closeAllRedisConnections() {
   );
 }
 
-// src/lib/infra/events/outbox-signal.ts
-function isOutboxSignalPayload(value) {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value;
-  return typeof candidate.publicId === "string" && typeof candidate.event === "object" && candidate.event !== null;
-}
-function getPublisher() {
-  const publisher = getOutboxPublisher();
-  publisher.on("connect", () => {
-    logger.info(OUTBOX_LOGS.PUBLISHER_CONNECTED);
-  });
-  publisher.on("error", (err2) => {
-    logger.error({ err: err2 }, OUTBOX_LOGS.PUBLISHER_ERROR);
-  });
-  publisher.on("close", () => {
-    logger.warn(OUTBOX_LOGS.PUBLISHER_CLOSED);
-  });
-  return publisher;
-}
-function getSubscriber() {
-  const subscriber = getOutboxSubscriber();
-  subscriber.on("connect", () => {
-    logger.info(OUTBOX_LOGS.SUBSCRIBER_CONNECTED);
-  });
-  subscriber.on("error", (err2) => {
-    logger.error({ err: err2 }, OUTBOX_LOGS.SUBSCRIBER_ERROR);
-  });
-  subscriber.on("close", () => {
-    logger.warn(OUTBOX_LOGS.SUBSCRIBER_CLOSED);
-  });
-  return subscriber;
-}
-async function ensureConnected(client, name) {
-  if (client.status === "wait" || client.status === "close" || client.status === "end") {
-    logger.info(`Conectando ${name}...`);
-    await client.connect();
+// src/lib/queue/outbox-dispatch-queue.ts
+var import_bullmq = require("bullmq");
+
+// src/lib/metrics/outbox-metrics.ts
+var import_prom_client2 = require("prom-client");
+
+// src/lib/metrics/index.ts
+var import_prom_client = require("prom-client");
+var registry = null;
+var initialized = false;
+function getRegistry() {
+  if (!env.METRICS_ENABLED) return null;
+  if (!initialized) {
+    registry = new import_prom_client.Registry();
+    (0, import_prom_client.collectDefaultMetrics)({ register: registry });
+    initialized = true;
   }
+  return registry;
 }
-var activeMessageListener = null;
-function createMessageHandler(onSignal) {
-  return async (channel, message) => {
-    if (channel !== REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL) {
-      logger.warn({ channel }, OUTBOX_LOGS.UNEXPECTED_CHANNEL);
-      return;
-    }
-    try {
-      const parsed = JSON.parse(message);
-      if (!isOutboxSignalPayload(parsed)) {
-        logger.warn({ message }, OUTBOX_LOGS.UNEXPECTED_CHANNEL);
-        return;
-      }
-      await onSignal(parsed.publicId, parsed.event);
-    } catch (err2) {
-      logger.error({ err: err2, publicId: message }, OUTBOX_LOGS.SIGNAL_PROCESSING_ERROR);
-      captureError(err2, { publicId: message });
-    }
-  };
-}
-var OutboxSignal = {
-  /**
-   * Publishes a wakeup signal after a successful outbox write.
-   * Fire-and-forget by design: if Redis is unavailable the cron job is the
-   * durable fallback, so we swallow the error here intentionally.
-   *
-   * Call this from your Controller/Service *after* the DB transaction commits.
-   */
-  async publishNewItem(publicId, event) {
-    try {
-      const client = getPublisher();
-      await ensureConnected(client, "OutboxPublisher");
-      await client.publish(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL, JSON.stringify({ publicId, event }));
-      collectMetricsOutboxSignalPublished?.inc();
-    } catch (err2) {
-      collectMetricsOutboxSignalPublishFailed?.inc();
-      logger.warn({ err: err2 }, OUTBOX_LOGS.SIGNAL_PUBLISH_FAILED);
-    }
-  },
-  /**
-   * Subscribes the Worker to the outbox channel.
-   *
-   * Seguro para ser chamado múltiplas vezes: o listener anterior é removido
-   * com precisão via `off` antes de registrar o novo, evitando:
-   *   1. Listeners duplicados (processamento duplo por mensagem)
-   *   2. Memory leak de closures antigas de `onSignal`
-   *   3. Destruição acidental dos listeners de lifecycle do subscriber
-   *
-   * @param onSignal - async callback invoked when a new item is signalled.
-   *                   Errors thrown here are caught and logged — they won't
-   *                   crash the worker process.
-   */
-  async subscribe(onSignal) {
-    try {
-      const client = getSubscriber();
-      await ensureConnected(client, "OutboxSubscriber");
-      if (activeMessageListener !== null) {
-        client.off("message", activeMessageListener);
-        logger.info(OUTBOX_LOGS.LISTENER_REMOVED);
-      }
-      const handleMessage = createMessageHandler(onSignal);
-      activeMessageListener = (channel, message) => {
-        void handleMessage(channel, message);
-      };
-      client.on("message", activeMessageListener);
-      await client.subscribe(REDIS_CONSTANTS.CHANNELS.OUTBOX_SIGNAL);
-    } catch (err2) {
-      logger.error({ err: err2 }, OUTBOX_LOGS.SUBSCRIBE_ERROR);
-      captureError(err2);
-    }
-  },
-  disconnect() {
-    if (activeMessageListener !== null) {
-      getOutboxSubscriber().off("message", activeMessageListener);
-      activeMessageListener = null;
-    }
-  }
+
+// src/lib/metrics/outbox-metrics.ts
+var registry2 = getRegistry();
+var collectMetricsOutboxEventsDispatched = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_events_dispatched_total",
+  help: "Events successfully enqueued to BullMQ",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxEventsClaimed = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_events_claimed_total",
+  help: "Outbox CAS claim attempts by outcome (claimed | contention)",
+  labelNames: ["outcome"],
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxEventsReverted = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_events_reverted_total",
+  help: "Dispatch failed and the event was successfully reverted to PENDING",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxEventsRevertFailed = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_events_revert_failed_total",
+  help: "Dispatch failed and the revert-to-PENDING write also failed (stranded in SENDING)",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxEventsMarkedAsTerminalFail = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_events_marked_as_terminal_fail_total",
+  help: "Events marked terminal FAILED after exceeding the dispatch attempts cap (poison message)",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxEventsExpired = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_events_expired_total",
+  help: "Events deleted at the expiration gate before dispatch",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxEventsStuckSendingEventsRecovered = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_events_stuck_sending_events_recovered_total",
+  help: "Stuck SENDING events reprocessed by the recovery loop",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxCronRuns = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_cron_runs_total",
+  help: "Outbox cron executions by phase",
+  labelNames: ["phase"],
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxCronFailures = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_cron_failures_total",
+  help: "Maintenance phase failures by phase and outcome (retrying | exhausted)",
+  labelNames: ["phase", "outcome"],
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxMaintenanceDeleted = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_maintenance_deleted_total",
+  help: "Events deleted by maintenance sweeps, by operation",
+  labelNames: ["operation"],
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxSignalPublished = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_signal_published_total",
+  help: "Pub/Sub wakeup signals published after an outbox write (deprecated in favor of outbox_dispatch_enqueued_total)",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxSignalPublishFailed = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_signal_publish_failed_total",
+  help: "Pub/Sub signal publish failures (deprecated in favor of outbox_dispatch_enqueue_failed_total)",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxDispatchEnqueued = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_dispatch_enqueued_total",
+  help: "Events successfully enqueued to outbox-dispatch queue",
+  registers: [registry2]
+}) : null;
+var collectMetricsOutboxDispatchEnqueueFailed = registry2 ? new import_prom_client2.Counter({
+  name: "outbox_dispatch_enqueue_failed_total",
+  help: "Failures enqueuing event to outbox-dispatch queue (Redis down)",
+  registers: [registry2]
+}) : null;
+
+// src/messages/constants/logs/worker.ts
+var WORKER_LOGS = {
+  BATCH_ALREADY_SENT: "Lote j\xE1 enviado anteriormente. Limpando DB e abortando duplicata.",
+  BULLMQ_NETWORK_GLITCH: "Falha de rede interna do BullMQ ap\xF3s processamento. Ignorando.",
+  GENERIC_WORKER_FAILURE: "Falha gen\xE9rica n\xE3o mapeada no worker",
+  MAIL_QUEUE_ERROR: "Erro na MailQueue (Producer)",
+  OUTBOX_DISPATCH_QUEUE_ERROR: "Erro na OutboxDispatchQueue (Producer)",
+  OUTBOX_REVERTED_AFTER_FINAL_FAILURE: "Job falhou definitivamente no BullMQ. Evento revertido para PENDING para nova tentativa de despacho.",
+  OUTBOX_REVERT_AFTER_FINAL_FAILURE_ERROR: "Falha ao reverter evento para PENDING ap\xF3s falha definitiva do job (linha possivelmente j\xE1 removida).",
+  FAILURE_HANDLER_ERROR: "Erro inesperado no tratamento de falha de job do worker.",
+  EXPIRED_JOB_SKIPPED: "Job com evento expirado: e-mail n\xE3o ser\xE1 enviado; removendo a linha da Outbox.",
+  PARTIAL_BATCH_FAILURE: "Falha parcial no lote de e-mails \u2014 alguns foram enviados; apenas os destinat\xE1rios pendentes ser\xE3o re-tentados.",
+  PENDING_RECIPIENTS_UPDATE_FAILED: "Falha ao persistir destinat\xE1rios pendentes no banco ap\xF3s envio parcial; o lote completo ser\xE1 re-tentado.",
+  JOB_DATA_UPDATE_FAILED: "Falha ao atualizar o payload do job no BullMQ ap\xF3s envio parcial; a re-tentativa interna usar\xE1 o lote completo."
 };
+
+// src/lib/queue/outbox-dispatch-queue.ts
+var outboxDispatchQueueInstance = null;
+function getOutboxDispatchQueue() {
+  if (!outboxDispatchQueueInstance) {
+    const redisForQueue = getRedisForQueue();
+    attachRedisLogger(redisForQueue, QUEUE.NAMES.OUTBOX_DISPATCH);
+    outboxDispatchQueueInstance = new import_bullmq.Queue(QUEUE.NAMES.OUTBOX_DISPATCH, {
+      connection: redisForQueue,
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+          type: "exponential",
+          delay: 5e3
+        },
+        removeOnComplete: true,
+        removeOnFail: true
+      }
+    });
+    outboxDispatchQueueInstance.on("error", (err2) => {
+      logger.error({ err: err2 }, WORKER_LOGS.OUTBOX_DISPATCH_QUEUE_ERROR);
+    });
+  }
+  return outboxDispatchQueueInstance;
+}
+async function enqueueOutboxDispatch(event) {
+  try {
+    const queue = getOutboxDispatchQueue();
+    await queue.add(
+      QUEUE.JOBS.OUTBOX_DISPATCH,
+      { publicId: event.publicId, event },
+      {
+        jobId: event.publicId
+      }
+    );
+    collectMetricsOutboxDispatchEnqueued?.inc();
+  } catch (err2) {
+    collectMetricsOutboxDispatchEnqueueFailed?.inc();
+    logger.warn({ err: err2, publicId: event.publicId }, "Falha ao enfileirar evento de outbox na fila outbox-dispatch");
+  }
+}
 
 // src/messages/constants/email/email.ts
 var EMAIL_CONSTANTS = {
@@ -2148,7 +2165,7 @@ async function forgotPassword(request, reply) {
   }
   const { outboxEvent } = result.value;
   if (outboxEvent) {
-    void OutboxSignal.publishNewItem(outboxEvent.publicId, outboxEvent);
+    void enqueueOutboxDispatch(outboxEvent);
   }
   return reply.code(HTTP_STATUS.OK).send({ message: EMAIL_CONSTANTS.PASSWORD_RESET_GENERIC_MESSAGE });
 }
@@ -2879,7 +2896,7 @@ async function formSubmission(request, reply) {
     return HttpErrorMapper.map(result.error, reply);
   }
   const { sanitizedFormSubmission, outboxEvent } = result.value;
-  void OutboxSignal.publishNewItem(outboxEvent.publicId, outboxEvent);
+  void enqueueOutboxDispatch(outboxEvent);
   logger.info({ sanitizedFormSubmission }, "Formul\xE1rio recebido com sucesso");
   return reply.code(HTTP_STATUS.CREATED).send({
     sanitizedFormSubmission
@@ -4519,6 +4536,17 @@ function createProviderHttpClient(params) {
 
 // src/lib/infra/rate-limiter/redis-rate-limiter.ts
 var import_rate_limiter_flexible = require("rate-limiter-flexible");
+
+// src/messages/constants/redis/redis.ts
+var REDIS_CONSTANTS = {
+  CHANNELS: {
+    OUTBOX_SIGNAL: "outbox-signal"
+  },
+  KEYS: {
+    IDEMPOTENCY_EMAIL_PREFIX: "idempotency:email:",
+    RATE_LIMIT_PREFIX: "ratelimit:v1:"
+  }
+};
 
 // src/messages/constants/logs/rate-limiter.ts
 var RATE_LIMITER_LOGS = {

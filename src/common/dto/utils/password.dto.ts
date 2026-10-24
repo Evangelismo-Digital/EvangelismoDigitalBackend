@@ -1,0 +1,14 @@
+import { z } from 'zod'
+import { VALIDATION_CONSTANTS } from '@common/messages/constants/validation/validation'
+import { VALIDATION_LIMITS } from '@common/constants/validation-limits'
+
+export const passwordSchema = z
+  .string()
+  .trim()
+  .min(VALIDATION_LIMITS.PASSWORD_MIN, { message: VALIDATION_CONSTANTS.PASSWORD.TOO_SHORT })
+  .max(VALIDATION_LIMITS.PASSWORD_MAX, { message: VALIDATION_CONSTANTS.PASSWORD.TOO_LONG })
+  .regex(/[A-Z]/, { message: VALIDATION_CONSTANTS.PASSWORD.UPPERCASE })
+  .regex(/[a-z]/, { message: VALIDATION_CONSTANTS.PASSWORD.LOWERCASE })
+  .regex(/\d/, { message: VALIDATION_CONSTANTS.PASSWORD.DIGIT })
+  .regex(/[\W_]/, { message: VALIDATION_CONSTANTS.PASSWORD.SPECIAL })
+  .refine((val) => !val.includes(' '), { message: VALIDATION_CONSTANTS.PASSWORD.NO_SPACES })

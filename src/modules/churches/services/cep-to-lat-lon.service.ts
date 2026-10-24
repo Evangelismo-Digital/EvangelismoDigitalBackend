@@ -1,0 +1,199 @@
+import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
+import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
+import { logger } from '@infra/logger'
+import { CepToLatLonError } from '@modules/churches/errors/cep-to-lat-lon-error'
+import {
+  IGeocodingProvider,
+  IGeoCoordinates,
+  EnumGeoPrecision,
+} from '@infra/providers/interfaces/geo-provider.interface'
+import { IAddressData, IAddressProvider } from '@infra/providers/interfaces/address-provider.interface'
+import { Deadline } from '@common/utils/deadline'
+import { Result, ok, err, isErr } from '@common/utils/result'
+import { AppError } from '@common/errors/app-error'
+import { FailureMode } from '@common/types/failure-mode/failure-mode.enum'
+import { CHURCH_CONSTANTS } from '@common/messages/constants/churches/churches'
+
+interface CepToLatLonRequest {
+  cep: string
+  /**
+   * Budget owned by the caller. This use-case holds no cache and therefore no
+   * budget of its own — it inherits the one enforced by the single cache layer
+   * in FindNearestChurchesUseCase, and every provider call below derives from it.
+   */
+  deadline?: Deadline
+}
+
+interface CepToLatLonResponse {
+  userLat: number
+  userLon: number
+  precision: string
+  coordinatesProviderName?: string
+}
+
+/**
+ * Outcome of a single geocoding strategy. `null` means "this strategy has no
+ * answer, fall through to the next one"; a Result means the chain terminates,
+ * either with coordinates or with an error worth surfacing.
+ */
+type StrategyOutcome = Result<CepToLatLonResponse, AppError> | null
+
+export class CepToLatLonUseCase {
+  constructor(
+    private readonly geocodingProvider: IGeocodingProvider,
+    private readonly addressProvider: IAddressProvider,
+  ) {}
+
+  async execute({ cep, deadline }: CepToLatLonRequest): Promise<Result<CepToLatLonResponse, AppError>> {
+    return await this.processCep(cep.replace(/\D/g, ''), deadline)
+  }
+
+  private async processCep(cleanCep: string, deadline?: Deadline): Promise<Result<CepToLatLonResponse, AppError>> {
+    // 1. Fetch Address (ViaCEP / AwesomeAPI / BrasilAPI)
+    const addrResult = await this.addressProvider.fetchAddress(cleanCep, deadline)
+
+    if (isErr(addrResult)) {
+      return err(addrResult.error)
+    }
+
+    const address = addrResult.value
+
+    if (!address) {
+      return err(new InvalidCepError())
+    }
+
+    // 2. OPTIMIZATION: If the Address Provider (AwesomeAPI) gave us coordinates, USE THEM.
+    const directCoordinates = this.mapAddressCoordinates(address)
+
+    if (directCoordinates) {
+      return ok(directCoordinates)
+    }
+
+    // 3. Geocoding Fallback Strategies, most precise first.
+    return await this.geocodeAddress(cleanCep, address, deadline)
+  }
+
+  /**
+   * Some address providers (AwesomeAPI) already return coordinates, letting us
+   * skip geocoding entirely. Returns null when they did not.
+   */
+  private mapAddressCoordinates(address: IAddressData): CepToLatLonResponse | null {
+    if (!address.lat || !address.lon) {
+      return null
+    }
+
+    return {
+      userLat: address.lat,
+      userLon: address.lon,
+      precision: address.precision ?? EnumGeoPrecision.NO_CERTAINTY,
+      coordinatesProviderName: address.providerName ?? CHURCH_CONSTANTS.UNKNOWN_PROVIDER,
+    }
+  }
+
+  private async geocodeAddress(
+    cleanCep: string,
+    address: IAddressData,
+    deadline?: Deadline,
+  ): Promise<Result<CepToLatLonResponse, AppError>> {
+    const strategies = [
+      () => this.searchByStreet(address, deadline),
+      () => this.searchByNeighborhood(address, deadline),
+      () => this.searchByCity(address, deadline),
+    ]
+
+    for (const runStrategy of strategies) {
+      const outcome = await runStrategy()
+
+      if (outcome) {
+        return outcome
+      }
+    }
+
+    // 4. PARANOID GUARD
+    logger.error({ cep: cleanCep, city: address.localidade }, 'Crítico: Geocoding Provider não encontrou a cidade.')
+
+    // This is a system error
+    return err(new CepToLatLonError(cleanCep))
+  }
+
+  /** Strategy A: Exact Match (Street) */
+  private async searchByStreet(address: IAddressData, deadline?: Deadline): Promise<StrategyOutcome> {
+    const { logradouro, localidade, uf } = address
+
+    if (!logradouro) {
+      return null
+    }
+
+    const result = await this.geocodingProvider.search(
+      `${logradouro}, ${localidade} - ${uf}, ${CHURCH_CONSTANTS.GEOCODING_COUNTRY}`,
+      deadline,
+    )
+
+    return this.interpretSearch(result)
+  }
+
+  /** Strategy B: Approximate Match (Neighborhood) */
+  private async searchByNeighborhood(address: IAddressData, deadline?: Deadline): Promise<StrategyOutcome> {
+    const { bairro, localidade, uf } = address
+
+    if (!bairro) {
+      return null
+    }
+
+    const result = await this.geocodingProvider.search(
+      `${bairro}, ${localidade} - ${uf}, ${CHURCH_CONSTANTS.GEOCODING_COUNTRY}`,
+      deadline,
+    )
+
+    return this.interpretSearch(result)
+  }
+
+  /**
+   * Strategy C: City Fallback. Unlike A and B this is the last resort, so an
+   * empty result is a definitive CoordinatesNotFoundError rather than a
+   * fall-through.
+   */
+  private async searchByCity(address: IAddressData, deadline?: Deadline): Promise<StrategyOutcome> {
+    const { localidade, uf } = address
+
+    if (!localidade) {
+      return null
+    }
+
+    const result = await this.geocodingProvider.searchStructured(
+      {
+        city: localidade,
+        state: uf,
+        country: CHURCH_CONSTANTS.GEOCODING_COUNTRY,
+      },
+      deadline,
+    )
+
+    if (isErr(result)) {
+      return err(result.error)
+    }
+
+    return result.value ? ok(this.mapResponse(result.value)) : err(new CoordinatesNotFoundError())
+  }
+
+  /**
+   * A hit terminates the chain; a NOT_FOUND (or empty) result falls through to
+   * the next strategy; anything else is a real failure worth surfacing.
+   */
+  private interpretSearch(result: Result<IGeoCoordinates | null, AppError>): StrategyOutcome {
+    if (isErr(result)) {
+      return result.error.failureMode === FailureMode.NOT_FOUND ? null : err(result.error)
+    }
+
+    return result.value ? ok(this.mapResponse(result.value)) : null
+  }
+
+  private mapResponse(coords: IGeoCoordinates): CepToLatLonResponse {
+    return {
+      userLat: coords.lat,
+      userLon: coords.lon,
+      precision: coords.precision,
+      coordinatesProviderName: coords.providerName,
+    }
+  }
+}

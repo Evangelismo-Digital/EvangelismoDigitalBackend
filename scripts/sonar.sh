@@ -76,7 +76,7 @@ wait_ready() {
 # password every scanner on the network knows.
 bootstrap_password() {
   mkdir -p "$SONAR_STATE_DIR"
-  chmod 700 "$SONAR_STATE_DIR"
+  chmod 755 "$SONAR_STATE_DIR"
 
   if [ -f "$PASSWORD_FILE" ]; then
     return 0

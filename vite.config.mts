@@ -34,8 +34,13 @@ export default defineConfig(({ mode }) => {
           'src/@types/**',
           // Type-only modules compile to nothing, so V8 reports them as 0 %
           // of 0 lines and they distort the average without carrying logic.
-          'src/core/contracts/**',
-          'src/core/types/**',
+          'src/common/interfaces/**',
+          'src/common/types/**',
+          'src/infra/providers/interfaces/**',
+          'src/infra/mail/interfaces/**',
+          'src/infra/outbox/interfaces/**',
+          'src/modules/**/*.interface.ts',
+          'src/modules/**/dto/*.type.ts',
         ],
       },
       projects: [
@@ -43,15 +48,15 @@ export default defineConfig(({ mode }) => {
           extends: true,
           test: {
             name: 'unit-core',
-            dir: 'src/core',
-            include: ['**/*.spec.ts'],
+            dir: 'src/common',
+            include: ['utils/**/*.spec.ts', 'decorators/**/*.spec.ts', 'dto/**/*.spec.ts'],
           },
         },
         {
           extends: true,
           test: {
             name: 'unit-providers-helpers',
-            dir: 'src/providers/helpers',
+            dir: 'src/infra/providers/helpers',
             include: ['**/*.spec.ts'],
           },
         },
@@ -64,7 +69,7 @@ export default defineConfig(({ mode }) => {
             // the ci.yml and scripts/ci-local.sh allowlists — keep them in
             // lockstep.
             name: 'unit-env',
-            dir: 'src/env',
+            dir: 'src/config/env',
             include: ['**/*.spec.ts'],
           },
         },
@@ -72,56 +77,72 @@ export default defineConfig(({ mode }) => {
           extends: true,
           test: {
             name: 'unit-errors',
-            dir: 'src/errors',
+            dir: 'src',
+            include: ['common/errors/**/*.spec.ts'],
           },
         },
         {
           extends: true,
           test: {
             name: 'unit-use-cases',
-            dir: 'src/use-cases',
+            dir: 'src',
+            include: [
+              'modules/analytics/services/**/*.spec.ts',
+              'modules/churches/factories/**/*.spec.ts',
+              'infra/outbox/services/**/*.spec.ts',
+            ],
           },
         },
         {
           extends: true,
           test: {
             name: 'unit-churches',
-            dir: 'src/use-cases/churches',
+            dir: 'src/modules/churches/services',
           },
         },
         {
           extends: true,
           test: {
             name: 'unit-users',
-            dir: 'src/use-cases/users',
+            dir: 'src/modules',
+            include: [
+              'auth/services/**/*.spec.ts',
+              'auth/helpers/**/*.spec.ts',
+              'auth/strategies/**/*.spec.ts',
+              'users/services/**/*.spec.ts',
+              'users/repositories/**/*.spec.ts',
+            ],
           },
         },
         {
           extends: true,
           test: {
             name: 'unit-messaging',
-            dir: 'src/use-cases/messaging',
+            dir: 'src/infra/mail',
+            include: ['services/**/*.spec.ts'],
           },
         },
         {
           extends: true,
           test: {
             name: 'unit-forms',
-            dir: 'src/use-cases/forms',
+            dir: 'src/modules/forms',
+            include: ['**/*.spec.ts'],
+            exclude: ['**/*.integration.spec.ts'],
           },
         },
         {
           extends: true,
           test: {
             name: 'unit-geo-provider',
-            dir: 'src/providers/geo-provider',
+            dir: 'src/infra/providers/geo-provider',
           },
         },
         {
           extends: true,
           test: {
             name: 'unit-address-provider',
-            dir: 'src/providers/address-provider',
+            dir: 'src/infra/providers/address-provider',
             include: ['**/*.spec.ts'],
             exclude: ['**/*.integration.spec.ts'],
           },
@@ -130,15 +151,19 @@ export default defineConfig(({ mode }) => {
           extends: true,
           test: {
             name: 'unit-http',
-            dir: 'src/http',
+            dir: 'src',
             include: [
-              'plugins/**/*.spec.ts',
-              'presenters/**/*.spec.ts',
-              'middlewares/**/*.spec.ts',
-              'cookies/**/*.spec.ts',
-              // Church controllers: the users ones have their own project.
-              'controllers/churches/**/*.spec.ts',
-              'controllers/analytics/**/*.spec.ts',
+              'common/filters/**/*.spec.ts',
+              'common/guards/**/*.spec.ts',
+              'common/plugins/**/*.spec.ts',
+              'modules/auth/controllers/**/*.spec.ts',
+              'modules/auth/guards/**/*.spec.ts',
+              'modules/users/presenters/**/*.spec.ts',
+              'modules/analytics/controllers/**/*.spec.ts',
+              'modules/analytics/plugins/**/*.spec.ts',
+              'modules/analytics/presenters/**/*.spec.ts',
+              'modules/churches/controllers/**/*.spec.ts',
+              'modules/churches/presenters/**/*.spec.ts',
             ],
             exclude: ['**/*.e2e.spec.ts', '**/*.acceptance.spec.mts'],
           },
@@ -147,16 +172,18 @@ export default defineConfig(({ mode }) => {
           extends: true,
           test: {
             name: 'unit-http-users',
-            dir: 'src/http/controllers/users',
+            dir: 'src/modules/users/controllers',
             environment: 'node',
             include: ['**/*.spec.ts'],
+            // e2e specs here need Docker Postgres; they run in the `e2e` project.
+            exclude: ['**/*.e2e.spec.ts'],
           },
         },
         {
           extends: true,
           test: {
             name: 'unit-church-routing-provider',
-            dir: 'src/providers/church-routing-provider',
+            dir: 'src/infra/providers/church-routing-provider',
             include: ['**/*.spec.ts'],
           },
         },
@@ -164,16 +191,22 @@ export default defineConfig(({ mode }) => {
           extends: true,
           test: {
             name: 'unit-lib',
-            dir: 'src/lib',
-            include: ['**/*.spec.ts'],
-            exclude: ['**/*.integration.spec.ts', '**/*.redis-integration.spec.ts'],
+            dir: 'src',
+            include: ['infra/**/*.spec.ts', 'modules/analytics/helpers/**/*.spec.ts'],
+            exclude: [
+              '**/*.integration.spec.ts',
+              '**/*.redis-integration.spec.ts',
+              'infra/providers/**/*.spec.ts',
+              'infra/cache/**/*.spec.ts',
+              'infra/rate-limiter/**/*.spec.ts',
+            ],
           },
         },
         {
           extends: true,
           test: {
             name: 'unit-resilient-cache',
-            dir: 'src/lib/infra/cache',
+            dir: 'src/infra/cache',
             include: ['**/*.spec.ts'],
             exclude: ['**/*.integration.spec.ts', '**/*.redis-integration.spec.ts'],
           },
@@ -182,7 +215,7 @@ export default defineConfig(({ mode }) => {
           extends: true,
           test: {
             name: 'unit-rate-limiter',
-            dir: 'src/lib/infra/rate-limiter',
+            dir: 'src/infra/rate-limiter',
             include: ['**/*.spec.ts'],
             exclude: ['**/*.integration.spec.ts'],
           },
@@ -191,9 +224,12 @@ export default defineConfig(({ mode }) => {
           extends: true,
           test: {
             name: 'unit-repositories',
-            dir: 'src/repositories',
-            include: ['**/*.spec.ts'],
-            // Without this, `prisma-churches-repository.integration.spec.ts` is
+            dir: 'src',
+            include: [
+              'modules/**/repositories/**/*.spec.ts',
+              'infra/outbox/repositories/**/*.spec.ts',
+            ],
+            // Without this, `prisma-churches.repository.integration.spec.ts` is
             // collected here — a "unit" project that needs Docker Postgres, and
             // the reason `npm run test:unit:all` (which the pre-commit hook runs
             // and documents as Docker-free) failed the moment the DB container
@@ -205,7 +241,7 @@ export default defineConfig(({ mode }) => {
           extends: true,
           test: {
             name: 'e2e',
-            dir: 'src/http/controllers',
+            dir: 'src',
             // Explicit: without it this defaults to every `*.spec.ts` under
             // controllers, so plain unit specs colocated with a controller get
             // dragged through the Docker Prisma environment as well as their
@@ -219,6 +255,10 @@ export default defineConfig(({ mode }) => {
             ],
             // Uses Docker database with public schema
             environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
+            // Serial, like the other projects sharing `public`: analytics truncates
+            // `users` per test, and its ACCESS EXCLUSIVE lock stalled
+            // search-users.e2e.spec.ts past the test timeout when run alongside.
+            fileParallelism: false,
           },
         },
         {
@@ -228,7 +268,7 @@ export default defineConfig(({ mode }) => {
             // step definitions colocated as *.acceptance.spec.ts, driven through
             // Vitest by @amiceli/vitest-cucumber over the HTTP boundary.
             name: 'acceptance',
-            dir: 'src/http',
+            dir: 'src',
             // ESM (.mts) — @amiceli/vitest-cucumber is an ESM-only package.
             include: ['**/*.acceptance.spec.mts'],
             // Uses Docker database with public schema
@@ -249,7 +289,7 @@ export default defineConfig(({ mode }) => {
           extends: true,
           test: {
             name: 'e2e-users',
-            dir: 'src/http/controllers/users',
+            dir: 'src/modules/users/controllers',
             environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
           },
         },
@@ -262,7 +302,7 @@ export default defineConfig(({ mode }) => {
             // cheap enough to run in CI on every push. Listed in BOTH the
             // ci.yml and scripts/ci-local.sh allowlists — keep them in lockstep.
             name: 'integration-cache',
-            dir: 'src/lib/infra/cache',
+            dir: 'src/infra/cache',
             include: ['**/*.redis-integration.spec.ts'],
             // One shared Redis keyspace; parallel files would collide.
             fileParallelism: false,
@@ -282,7 +322,7 @@ export default defineConfig(({ mode }) => {
             // Listed in BOTH the ci.yml and scripts/ci-local.sh allowlists —
             // keep them in lockstep.
             name: 'integration-jobs',
-            dir: 'src/lib/infra/jobs',
+            dir: 'src/infra/outbox/jobs',
             include: ['**/*.redis-integration.spec.ts'],
             // One shared Redis keyspace; parallel files would collide.
             fileParallelism: false,
@@ -302,8 +342,11 @@ export default defineConfig(({ mode }) => {
             // Listed in BOTH the ci.yml and scripts/ci-local.sh allowlists —
             // keep them in lockstep.
             name: 'integration-repositories',
-            dir: 'src/repositories',
-            include: ['**/*.integration.spec.ts'],
+            dir: 'src',
+            include: [
+              'modules/**/repositories/**/*.integration.spec.ts',
+              'infra/outbox/repositories/**/*.integration.spec.ts',
+            ],
             environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
             // One shared schema; parallel files would truncate each other.
             fileParallelism: false,

@@ -1,6 +1,6 @@
 import 'dotenv/config'
 import type { Environment } from 'vitest/environments'
-import { prisma } from '../../src/lib/prisma/index.ts'
+import { prisma } from '../../src/infra/database/prisma/index.ts'
 
 export default <Environment>{
   name: 'prisma-docker',

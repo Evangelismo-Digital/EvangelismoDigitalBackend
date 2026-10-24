@@ -15,22 +15,11 @@
     "outDir": "./dist",
     "paths": {
       "app": ["./src/app.ts"],
-      "core/*": ["./src/core/*"],
-      "errors/*": ["./src/errors/*"],
-      "messages/*": ["./src/messages/*"],
-      "providers/*": ["./src/providers/*"],
-      "@env/*": ["./src/env/*"],
-      "@lib/*": ["./src/lib/*"],
-      "@controllers/*": ["./src/http/controllers/*"],
-      "@middlewares/*": ["./src/http/middlewares/*"],
-      "@constants/*": ["./src/constants/*"],
-      "@use-cases/*": ["./src/use-cases/*"],
-      "@repositories/*": ["./src/repositories/*"],
-      "@services/*": ["./src/services/*"],
-      "@http/*": ["./src/http/*"],
-      "@tps/*": ["./src/@types/*"],
-      "@templates/*": ["./src/templates/*"],
-      "@schemas/*": ["./src/http/schemas/*"]
+      "@config/*": ["./src/config/*"],
+      "@common/*": ["./src/common/*"],
+      "@infra/*": ["./src/infra/*"],
+      "@modules/*": ["./src/modules/*"],
+      "@tps/*": ["./src/@types/*"]
     },
     "typeRoots": ["./node_modules/@types", "./src/types"],
     "types": ["node"]

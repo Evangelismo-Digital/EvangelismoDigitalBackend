@@ -20,7 +20,7 @@ const credentials = {
 }
 
 export default () => {
-  const loginRes = http.post('http://localhost:3333/users/sessions', JSON.stringify(credentials), {
+  const loginRes = http.post('http://localhost:3333/auth/sessions', JSON.stringify(credentials), {
     headers: { 'Content-Type': 'application/json' },
   })
 

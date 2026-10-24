@@ -1,14 +1,14 @@
-import { initSentry } from '@lib/sentry/init'
+import { initSentry } from '@infra/sentry/init'
 
 // 1. Initialize Sentry as early as possible
 initSentry()
 
 import { app } from 'app'
-import { env } from '@env/index'
-import { logger } from '@lib/logger'
-import { captureError } from '@lib/sentry/capture'
+import { env } from '@config/env/index'
+import { logger } from '@infra/logger'
+import { captureError } from '@infra/sentry/capture'
 import closeWithGrace from 'close-with-grace'
-import { crashShutdown } from '@lib/shutdown/crash-shutdown'
+import { crashShutdown } from '@infra/shutdown/crash-shutdown'
 import { startMetricsServer, stopMetricsServer } from './metrics-server'
 
 // Close the main app first (drains in-flight requests, tears down Redis via

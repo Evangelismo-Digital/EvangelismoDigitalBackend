@@ -21,14 +21,17 @@ export default {
     '!src/**/*.d.ts',
     '!src/server.ts',
     '!src/app.ts',
+    '!src/app.module.ts',
+    '!src/modules/**/*.module.ts',
     '!src/worker.ts',
     // Narrowed from `!src/env/**`: `index.ts` validates and THROWS at import, so
     // mutating it breaks every run before a test executes. That does not apply
     // to the pure helpers beside it, and excluding the whole directory left the
     // blank-variable normalisation ungated.
-    '!src/env/index.ts',
+    '!src/config/env/index.ts',
     '!src/@types/**',
-    '!src/templates/**',
+    '!src/infra/mail/templates/**',
+    '!src/**/factories/**',
   ],
   reporters: ['html', 'clear-text', 'progress'],
   htmlReporter: { fileName: 'reports/mutation/index.html' },

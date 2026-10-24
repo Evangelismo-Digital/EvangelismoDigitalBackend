@@ -1,0 +1,29 @@
+import { User } from '@prisma/client'
+import { UsersRepository } from '@modules/users/repositories/users-repository.interface'
+import { Result, ok, isErr } from '@common/utils/result'
+import { AppError } from '@common/errors/app-error'
+
+interface SearchUsersUseCaseRequest {
+  query: string
+  page: number
+}
+
+interface SearchUsersUseCaseResponse {
+  users: User[]
+}
+
+export class SearchUsersUseCase {
+  constructor(private readonly usersRepository: UsersRepository) {}
+
+  async execute({ query, page }: SearchUsersUseCaseRequest): Promise<Result<SearchUsersUseCaseResponse, AppError>> {
+    const searchResult = await this.usersRepository.search(query, page)
+
+    if (isErr(searchResult)) {
+      return searchResult
+    }
+
+    const users = searchResult.value
+
+    return ok({ users })
+  }
+}

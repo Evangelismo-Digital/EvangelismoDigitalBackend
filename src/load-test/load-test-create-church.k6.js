@@ -22,7 +22,7 @@ const credentials = {
 }
 
 export function setup() {
-  const loginRes = http.post(`${BASE_URL}/users/sessions`, JSON.stringify(credentials), {
+  const loginRes = http.post(`${BASE_URL}/auth/sessions`, JSON.stringify(credentials), {
     headers: { 'Content-Type': 'application/json' },
   })
 
