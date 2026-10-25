@@ -4,6 +4,7 @@ import { ViaCepProvider } from '@infra/providers/address-provider/viaCep-provide
 import { LocationIqProvider } from '@infra/providers/geo-provider/location-iq-provider'
 import { NominatimGeoProvider } from '@infra/providers/geo-provider/nominatim-provider'
 import request from 'supertest'
+import { execFileSync } from 'node:child_process'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRedisCacheConnection } from '@infra/redis/connections/redis-cache-connection'
 import { BrasilApiProvider } from '@infra/providers/address-provider/brasil-api-provider'
@@ -25,17 +26,20 @@ const redisConnection = createRedisCacheConnection()
 //    sobrescreve. Sem isso a LocationIQ responde 401 `Invalid key`, que é
 //    RETRYABLE: a cadeia resiliente cai para o Nominatim e os Cenários 4 e 7
 //    (`expect(spyNominatim).not.toHaveBeenCalled()`) falham — indistinguível,
-//    à primeira vista, da flakiness de cota descrita no item 2.
-// 2. O banco precisa estar semeado (`npm run db:seed`). A suíte usa o schema
-//    `public` compartilhado, que as outras suítes e2e truncam; sem igrejas na
-//    tabela todo cenário de sucesso responde 404 em vez de 200.
+//    à primeira vista, da flakiness de cota descrita no item 3.
+// 2. Docker com Postgres/Redis no ar. A suíte roda o seed sozinha antes de
+//    começar: ela usa o schema `public` compartilhado, que as outras suítes e2e
+//    truncam, e sem igrejas na tabela todo cenário de sucesso responderia 404
+//    em vez de 200.
 // 3. O plano gratuito do LocationIQ limita a ~2 req/s e retorna HTTP 429 quando
 //    os cenários rodam em sequência — execute o projeto isolado e espace as
 //    execuções para respeitar o limite.
 describe('Real Geocoding Fallback Scenarios (e2e)', () => {
   beforeAll(async () => {
+    execFileSync('npx', ['prisma', 'db', 'seed'], { stdio: 'ignore', env: process.env })
+
     await app.ready()
-  })
+  }, 120_000)
 
   afterAll(async () => {
     await app.close()
@@ -60,8 +64,11 @@ describe('Real Geocoding Fallback Scenarios (e2e)', () => {
     }
   })
 
-  // Known Valid CEP (Av. Paulista, SP)
-  const VALID_CEP = '01310100'
+  // Known valid CEP next to the seeded churches (Icaraí, Niterói). It used to be
+  // Av. Paulista (SP), which only "succeeded" because routing is mocked to
+  // 1.5 km: the seeded churches are ~326 km away, so once candidates beyond the
+  // walking ceiling are dropped before routing, an SP search is correctly a 404.
+  const VALID_CEP = '24210201'
   // Invalid CEP
   const INVALID_CEP = '00000000'
 

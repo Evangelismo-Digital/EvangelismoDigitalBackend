@@ -5,11 +5,9 @@ import type Redis from 'ioredis'
 import { AxiosError, AxiosHeaders } from 'axios'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { env } from '@config/env/index'
-import { prisma } from '@infra/database/prisma'
 import { createRedisCacheConnection } from '@infra/redis/connections/redis-cache-connection'
 import { RedisRateLimiter } from '@infra/rate-limiter/redis-rate-limiter'
 import { resetProviderCircuitBreakers } from '@infra/providers/helpers/provider-circuit-breaker'
-import { StadiaChurchRoutingProvider } from '@infra/providers/church-routing-provider/stadia-church-routing-provider'
 import { GeoapifyChurchRoutingProvider } from '@infra/providers/church-routing-provider/geoapify-church-routing-provider'
 import { OpenRouteServiceChurchRoutingProvider } from '@infra/providers/church-routing-provider/openrouteservice-church-routing-provider'
 import { ResilientChurchRoutingProviderDecorator } from '@infra/providers/church-routing-provider/decorators/resilient-church-routing-provider.decorator'
@@ -19,22 +17,29 @@ import { RoutingProfile } from '@common/types/routing-profile/routing-profile-en
 import { FailureMode } from '@common/types/failure-mode/failure-mode.enum'
 import { isErr, isOk } from '@common/utils/result'
 
-// ATENÇÃO: esta suíte faz chamadas REAIS às APIs de matriz de rotas (Stadia,
-// Geoapify, OpenRouteService) e de geocodificação. Ela tem um projeto próprio
+// ATENÇÃO: esta suíte faz chamadas REAIS às APIs de matriz de rotas (Geoapify,
+// OpenRouteService) e de endereço/geocodificação. Ela tem um projeto próprio
 // (`npm run test:e2e:routing-providers-live`) e fica FORA do CI de propósito:
 // gasta cota dos provedores e depende de terceiros estarem no ar.
 //
 // PRÉ-REQUISITOS:
-// 1. Tokens REAIS em `.env.test.local` (gitignored): STADIA_API_TOKEN,
-//    GEOAPIFY_API_TOKEN, OPENROUTESERVICE_API_TOKEN, AWESOME_API_TOKEN e
-//    LOCATION_IQ_API_TOKEN. O `.env.test` versionado traz tokens falsos.
-// 2. Docker com Postgres/Redis no ar. A suíte semeia as igrejas sozinha quando a
-//    tabela está vazia (as outras suítes e2e truncam o schema `public`).
+// 1. Tokens REAIS em `.env.test.local` (gitignored): GEOAPIFY_API_TOKEN,
+//    OPENROUTESERVICE_API_TOKEN, AWESOME_API_TOKEN e LOCATION_IQ_API_TOKEN. O
+//    `.env.test` versionado traz tokens falsos.
+// 2. Docker com Postgres/Redis no ar. A suíte roda o seed antes de começar (as
+//    outras suítes e2e truncam o schema `public`, e o seed é a fonte das igrejas).
 
 const redisConnection = createRedisCacheConnection()
 
-/** Icaraí, Niterói — where the seeded churches are. */
+/** Icaraí, Niterói — where most seeded churches are. */
 const CEP_NITEROI = '24210-201'
+/** Centro, Niterói — the other side of Guanabara Bay from the Catedral. */
+const CEP_NITEROI_CENTRO = '24020-085'
+/** Avenida Paulista, São Paulo — ~326 km from the nearest seeded church. */
+const CEP_SAO_PAULO = '01310-100'
+/** Inside Rio Grande do Sul's range; BrasilAPI "finds" it in Sarandi/PR. */
+const CEP_FAKE = '99999999'
+
 const origin = { lat: -22.9113709, lon: -43.1054179 }
 const destinations = [
   { lat: -22.905555, lon: -43.108653 },
@@ -43,13 +48,8 @@ const destinations = [
 
 const LIVE_TIMEOUT_MS = 30_000
 
-function liveProviders(): Record<'stadia' | 'geoapify' | 'ors', IRawChurchRoutingProvider> {
+function liveProviders(): Record<'geoapify' | 'ors', IRawChurchRoutingProvider> {
   return {
-    stadia: new StadiaChurchRoutingProvider({
-      matrixApiUrl: env.STADIA_MAPS_MATRIX_API_URL,
-      apiToken: env.STADIA_API_TOKEN,
-      defaultCosting: RoutingProfile.PEDESTRIAN,
-    }),
     geoapify: new GeoapifyChurchRoutingProvider({
       matrixApiUrl: env.GEOAPIFY_ROUTE_MATRIX_API_URL,
       apiToken: env.GEOAPIFY_API_TOKEN,
@@ -90,7 +90,7 @@ function expectPlausibleKm(distances: number[]) {
 }
 
 function upstreamFailure(status: number) {
-  const config = { url: env.STADIA_MAPS_MATRIX_API_URL, headers: new AxiosHeaders() }
+  const config = { url: env.GEOAPIFY_ROUTE_MATRIX_API_URL, headers: new AxiosHeaders() }
 
   return new AxiosError(`Request failed with status code ${status}`, 'ERR_BAD_RESPONSE', config, undefined, {
     status,
@@ -103,22 +103,32 @@ function upstreamFailure(status: number) {
 
 interface NearestBody {
   mode: string
-  nearestChurchesInfo: Array<{ distanceKm: number }>
+  totalFound: number
+  nearestChurchesInfo: Array<{ name: string; address: string; distanceKm: number }>
 }
 
 function expectRankedWithin(body: NearestBody, maxKm: number) {
   const distances = body.nearestChurchesInfo.map((church) => church.distanceKm)
 
   expect(distances.length).toBeGreaterThan(0)
+  // The churches returned, not the KNN candidates routing started from.
+  expect(body.totalFound).toBe(distances.length)
   expect(distances.every((km) => km > 0 && km <= maxKm)).toBe(true)
   expect(distances).toEqual([...distances].sort((a, b) => a - b))
 }
 
+/** The `Cidade - UF` tail of each address (`Rua, nº - Bairro, Cidade - UF`). */
+function cities(body: NearestBody): string[] {
+  return body.nearestChurchesInfo.map((church) => church.address.split(', ').at(-1) ?? '')
+}
+
+async function nearest(query: Record<string, string>) {
+  return await request(app.server).get('/churches/nearest').query(query)
+}
+
 describe('Live routing providers and routing mode (e2e, real APIs)', () => {
   beforeAll(async () => {
-    if ((await prisma.church.count()) === 0) {
-      execFileSync('npx', ['prisma', 'db', 'seed'], { stdio: 'ignore', env: process.env })
-    }
+    execFileSync('npx', ['prisma', 'db', 'seed'], { stdio: 'ignore', env: process.env })
 
     await app.ready()
   }, 120_000)
@@ -152,7 +162,7 @@ describe('Live routing providers and routing mode (e2e, real APIs)', () => {
         const driving = await routeWith(raw, RoutingProfile.TRANSPORT)
 
         // Only the error's own label: the AxiosError underneath carries the
-        // request config, Authorization header included.
+        // request config, credentials included.
         expect(isOk(walking) ? 'ok' : walking.error.name).toBe('ok')
         expect(isOk(driving) ? 'ok' : driving.error.name).toBe('ok')
         if (isErr(walking) || isErr(driving)) return
@@ -169,17 +179,15 @@ describe('Live routing providers and routing mode (e2e, real APIs)', () => {
       LIVE_TIMEOUT_MS,
     )
 
-    // Stadia's current plan answers 403 on the matrix endpoint and ORS is down
-    // on its own side. Either may come back at any time, so neither is required
-    // to answer — but when one fails it must fail RETRYABLE, or the chain would
-    // stop there instead of moving on to the next provider.
-    it.each([['stadia' as const], ['ors' as const]])(
-      '%s either answers with plausible distances or fails RETRYABLE',
-      async (name) => {
-        const raw = liveProviders()[name]
-
+    // ORS is currently refusing the account (403 "Access to this API has been
+    // disallowed") and may come back at any time, so it is not required to
+    // answer — but when it fails it must fail RETRYABLE, so the chain reports
+    // an outage instead of a fake "nothing nearby".
+    it(
+      'openrouteservice either answers with plausible distances or fails RETRYABLE',
+      async () => {
         for (const profile of [RoutingProfile.PEDESTRIAN, RoutingProfile.TRANSPORT]) {
-          const result = await routeWith(raw, profile)
+          const result = await routeWith(liveProviders().ors, profile)
 
           if (isOk(result)) {
             expectPlausibleKm(kmOf(result.value))
@@ -194,13 +202,16 @@ describe('Live routing providers and routing mode (e2e, real APIs)', () => {
 
   describe('GET /churches/nearest, end to end', () => {
     it(
-      'walks by default and keeps every church within the 10 km walking cap',
+      'walks by default, within the 10 km cap, asking Geoapify and nothing else',
       async () => {
-        const response = await request(app.server).get('/churches/nearest').query({ cep: CEP_NITEROI })
+        const ors = vi.spyOn(OpenRouteServiceChurchRoutingProvider.prototype, 'fetchRawDistances')
+
+        const response = await nearest({ cep: CEP_NITEROI })
 
         expect(response.statusCode).toBe(200)
         expect(response.body.mode).toBe(RoutingProfile.PEDESTRIAN)
         expectRankedWithin(response.body as NearestBody, 10)
+        expect(ors).not.toHaveBeenCalled()
       },
       LIVE_TIMEOUT_MS,
     )
@@ -208,9 +219,7 @@ describe('Live routing providers and routing mode (e2e, real APIs)', () => {
     it(
       'routes by vehicle when asked, within the 150 km transport cap',
       async () => {
-        const response = await request(app.server)
-          .get('/churches/nearest')
-          .query({ cep: CEP_NITEROI, mode: RoutingProfile.TRANSPORT })
+        const response = await nearest({ cep: CEP_NITEROI, mode: RoutingProfile.TRANSPORT })
 
         expect(response.statusCode).toBe(200)
         expect(response.body.mode).toBe(RoutingProfile.TRANSPORT)
@@ -220,36 +229,71 @@ describe('Live routing providers and routing mode (e2e, real APIs)', () => {
     )
 
     it(
-      'falls through to the live Geoapify when Stadia fails, without reaching ORS',
+      'never walks across Guanabara Bay: on foot from Niterói Centro only Niterói churches come back',
       async () => {
-        vi.spyOn(StadiaChurchRoutingProvider.prototype, 'fetchRawDistances').mockRejectedValue(upstreamFailure(503))
-        const geoapify = vi.spyOn(GeoapifyChurchRoutingProvider.prototype, 'fetchRawDistances')
-        const ors = vi.spyOn(OpenRouteServiceChurchRoutingProvider.prototype, 'fetchRawDistances')
+        const walking = await nearest({ cep: CEP_NITEROI_CENTRO })
+        const driving = await nearest({ cep: CEP_NITEROI_CENTRO, mode: RoutingProfile.TRANSPORT })
 
-        const response = await request(app.server)
-          .get('/churches/nearest')
-          .query({ cep: CEP_NITEROI, mode: RoutingProfile.TRANSPORT })
-
-        expect(response.statusCode).toBe(200)
-        expect(response.body.mode).toBe(RoutingProfile.TRANSPORT)
-        expectRankedWithin(response.body as NearestBody, 150)
-        expect(geoapify).toHaveBeenCalledWith(
-          expect.anything(),
-          expect.anything(),
-          RoutingProfile.TRANSPORT,
-          expect.anything(),
-        )
-        expect(ors).not.toHaveBeenCalled()
+        expect(walking.statusCode).toBe(200)
+        expect(cities(walking.body as NearestBody).every((city) => city === 'Niterói - RJ')).toBe(true)
+        // Counterweight: by car the bridge makes Rio reachable, so what filters
+        // Rio out on foot is the ferry, not the city.
+        expect(cities(driving.body as NearestBody)).toContain('Rio de Janeiro - RJ')
       },
       LIVE_TIMEOUT_MS,
     )
 
-    it('rejects an unknown mode before calling any provider', async () => {
+    it(
+      'answers NO_NEARBY_CHURCHES_FOUND, not 503, for a far CEP on foot — without routing',
+      async () => {
+        const geoapify = vi.spyOn(GeoapifyChurchRoutingProvider.prototype, 'fetchRawDistances')
+
+        const response = await nearest({ cep: CEP_SAO_PAULO })
+
+        expect(response.statusCode).toBe(404)
+        expect(response.body.code).toBe('NO_NEARBY_CHURCHES_FOUND')
+        expect(geoapify).not.toHaveBeenCalled()
+      },
+      LIVE_TIMEOUT_MS,
+    )
+
+    it(
+      'answers INVALID_CEP, not 503, for a CEP BrasilAPI places in the wrong state',
+      async () => {
+        const response = await nearest({ cep: CEP_FAKE })
+
+        expect(response.statusCode).toBe(404)
+        expect(response.body.code).toBe('INVALID_CEP')
+      },
+      LIVE_TIMEOUT_MS,
+    )
+
+    it(
+      'falls through to ORS when Geoapify fails, and reports the outage if ORS is down too',
+      async () => {
+        vi.spyOn(GeoapifyChurchRoutingProvider.prototype, 'fetchRawDistances').mockRejectedValue(upstreamFailure(503))
+        const ors = vi.spyOn(OpenRouteServiceChurchRoutingProvider.prototype, 'fetchRawDistances')
+
+        const response = await nearest({ cep: CEP_NITEROI, mode: RoutingProfile.TRANSPORT })
+
+        expect(ors).toHaveBeenCalled()
+        if (response.statusCode === 200) {
+          expectRankedWithin(response.body as NearestBody, 150)
+        } else {
+          expect(response.statusCode).toBe(503)
+          expect(response.body.code).toBe('SERVICE_UNAVAILABLE')
+        }
+      },
+      LIVE_TIMEOUT_MS,
+    )
+
+    it('rejects an unknown mode with VALIDATION_ERROR before calling any provider', async () => {
       const geoapify = vi.spyOn(GeoapifyChurchRoutingProvider.prototype, 'fetchRawDistances')
 
-      const response = await request(app.server).get('/churches/nearest').query({ cep: CEP_NITEROI, mode: 'bicycle' })
+      const response = await nearest({ cep: CEP_NITEROI, mode: 'bicycle' })
 
       expect(response.statusCode).toBe(400)
+      expect(response.body.code).toBe('VALIDATION_ERROR')
       expect(geoapify).not.toHaveBeenCalled()
     })
   })

@@ -77,7 +77,6 @@ export enum EnumProviderConfig {
   BRASIL_API_ADDRESS = 'brasilApiAddressProvider',
   NOMINATIM_GEOCODING = 'nominatimGeocodingProvider',
   LOCATION_IQ_GEOCODING = 'locationIqGeocodingProvider',
-  STADIA_ROUTING = 'stadiaRoutingProvider',
   OPENROUTESERVICE_ROUTING = 'openRouteServiceRoutingProvider',
   GEOAPIFY_ROUTING = 'geoapifyRoutingProvider',
 }
@@ -141,10 +140,6 @@ export class RedisRateLimiter {
     },
     [EnumProviderConfig.LOCATION_IQ_GEOCODING]: {
       points: 2,
-      windowSeconds: 1,
-    },
-    [EnumProviderConfig.STADIA_ROUTING]: {
-      points: 50,
       windowSeconds: 1,
     },
     // Free (Standard) plan: 40 matrix requests per minute. The 500/day quota is

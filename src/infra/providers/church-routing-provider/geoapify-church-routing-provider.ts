@@ -32,6 +32,20 @@ const GEOAPIFY_MODE_BY_PROFILE: Record<RoutingProfile, string> = {
   [RoutingProfile.TRANSPORT]: 'drive',
 }
 
+interface GeoapifyAvoid {
+  type: 'ferries'
+}
+
+/**
+ * What each mode must not route through. Walking avoids ferries: Geoapify's
+ * walking router otherwise takes the Rio–Niterói ferry and reports a 7 km
+ * "walk" across Guanabara Bay. Driving keeps car ferries where they exist.
+ */
+const GEOAPIFY_AVOID_BY_PROFILE: Record<RoutingProfile, GeoapifyAvoid[] | undefined> = {
+  [RoutingProfile.PEDESTRIAN]: [{ type: 'ferries' }],
+  [RoutingProfile.TRANSPORT]: undefined,
+}
+
 /** Geoapify takes GeoJSON order, `[lon, lat]`, wrapped in `{ location }`. */
 function toWaypoint(point: RoutingPoint): { location: [number, number] } {
   return { location: [point.lon, point.lat] }
@@ -61,14 +75,32 @@ export class GeoapifyChurchRoutingProvider implements IRawChurchRoutingProvider 
     })
   }
 
-  private resolveMode(profile?: RoutingProfile): string {
-    return GEOAPIFY_MODE_BY_PROFILE[profile ?? this.config.defaultCosting ?? RoutingProfile.PEDESTRIAN]
+  private resolveProfile(profile?: RoutingProfile): RoutingProfile {
+    return profile ?? this.config.defaultCosting ?? RoutingProfile.PEDESTRIAN
+  }
+
+  /** The request body; `avoid` is sent only when the mode has something to avoid. */
+  private matrixBody(origin: RoutingPoint, destinations: RoutingPoint[], profile: RoutingProfile | undefined) {
+    const resolved = this.resolveProfile(profile)
+    const avoid = GEOAPIFY_AVOID_BY_PROFILE[resolved]
+
+    return {
+      mode: GEOAPIFY_MODE_BY_PROFILE[resolved],
+      sources: [toWaypoint(origin)],
+      targets: destinations.map(toWaypoint),
+      units: GEOAPIFY_CONFIG.UNITS,
+      ...(avoid && { avoid }),
+    }
   }
 
   /**
-   * One source (the user), the churches as targets. `| undefined` on the
-   * generic for the same reason as Stadia's: axios types an empty body as a
-   * valid payload.
+   * One source (the user), the churches as targets.
+   *
+   * The generic carries `| undefined` because that is the truth: axios types
+   * `response.data` as the generic regardless of what the server sent, so a
+   * 204, an empty body or a proxy error page all arrive typed as a valid
+   * payload. Saying so is what makes the guard in the caller necessary instead
+   * of "unnecessary".
    */
   private async postMatrix(
     origin: RoutingPoint,
@@ -78,12 +110,7 @@ export class GeoapifyChurchRoutingProvider implements IRawChurchRoutingProvider 
   ) {
     return await this.api.post<GeoapifyMatrixResponse | undefined>(
       this.config.matrixApiUrl.replace(/\/$/, ''),
-      {
-        mode: this.resolveMode(profile),
-        sources: [toWaypoint(origin)],
-        targets: destinations.map(toWaypoint),
-        units: GEOAPIFY_CONFIG.UNITS,
-      },
+      this.matrixBody(origin, destinations, profile),
       {
         params: { apiKey: this.config.apiToken },
         headers: { 'Content-Type': GEOAPIFY_CONFIG.CONTENT_TYPE },

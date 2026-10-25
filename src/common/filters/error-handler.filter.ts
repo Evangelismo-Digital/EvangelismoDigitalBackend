@@ -11,6 +11,7 @@ import { ErrorType } from '@common/types/error-type/error-type'
 import { FailureMode } from '@common/types/failure-mode/failure-mode.enum'
 import { toHttpStatus } from '@common/filters/http-error-status.mapper'
 import { ZodValidationError } from '@common/filters/zod-validation-error'
+import { VALIDATION_ERRORS } from '@common/messages/errors/validation'
 import { HTTP_STATUS } from '@common/constants/http-status'
 
 /**
@@ -118,8 +119,23 @@ function isFastifyError(error: unknown): boolean {
   return error instanceof Error && 'statusCode' in error && typeof error.statusCode === 'number'
 }
 
+/**
+ * Request-schema failures (fastify-type-provider-zod) arrive here, not as a
+ * ZodError: a Fastify error carrying a `validation` array. They get the same
+ * VALIDATION_ERROR code as a ZodError, so every error body has a `code`.
+ */
+function isRequestValidationError(error: Error): boolean {
+  return 'validation' in error && Array.isArray(error.validation)
+}
+
 function respondFastifyError(error: unknown, _request: FastifyRequest, reply: FastifyReply) {
   const fastifyError = error as Error & { statusCode: number }
+
+  if (isRequestValidationError(fastifyError)) {
+    return reply
+      .code(fastifyError.statusCode)
+      .send({ message: fastifyError.message, code: VALIDATION_ERRORS.ZOD_VALIDATION.code })
+  }
 
   return reply.code(fastifyError.statusCode).send({ message: fastifyError.message })
 }

@@ -89,6 +89,7 @@ export default defineConfig(({ mode }) => {
             include: [
               'modules/analytics/services/**/*.spec.ts',
               'modules/churches/factories/**/*.spec.ts',
+              'modules/churches/seed/**/*.spec.ts',
               'infra/outbox/services/**/*.spec.ts',
             ],
           },
@@ -249,7 +250,7 @@ export default defineConfig(({ mode }) => {
             include: ['**/*.e2e.spec.ts'],
             exclude: [
               '**/api-providers-fallback-strategy.e2e.spec.ts',
-              // Live routing APIs (Stadia, Geoapify, ORS) — own opt-in project, not in CI.
+              // Live routing APIs (Geoapify, ORS) — own opt-in project, not in CI.
               '**/routing-providers-live.e2e.spec.ts',
               '**/*.acceptance.spec.mts',
               // Opt-in integration suite (own `integration` project, not in CI).
@@ -290,7 +291,7 @@ export default defineConfig(({ mode }) => {
         {
           extends: true,
           test: {
-            // Calls the LIVE routing matrix APIs (Stadia, Geoapify, OpenRouteService)
+            // Calls the LIVE routing matrix APIs (Geoapify, OpenRouteService)
             // with real tokens from `.env.test.local`. Opt-in and deliberately
             // absent from both CI allowlists: it spends provider quota and
             // depends on third parties being up.

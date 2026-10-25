@@ -17,7 +17,7 @@ vi.mock('@infra/rate-limiter/redis-rate-limiter', () => ({
   RedisRateLimiter: {
     getInstance: () => ({ tryConsume: mockTryConsume }),
   },
-  EnumProviderConfig: { STADIA_ROUTING: 'stadiaRoutingProvider' },
+  EnumProviderConfig: { GEOAPIFY_ROUTING: 'geoapifyRoutingProvider' },
 }))
 
 // Imports reais após os mocks
@@ -257,7 +257,7 @@ describe('Provider metrics instrumentation', () => {
 
       return {
         providerName,
-        rateLimitConfig: 'stadiaRoutingProvider',
+        rateLimitConfig: 'geoapifyRoutingProvider',
         timeoutMs: 1000,
         maxRetries: 1,
         backoffMs: 0,
@@ -276,46 +276,46 @@ describe('Provider metrics instrumentation', () => {
     it('records success + latency exactly once — the decorator no longer counts as well', async () => {
       mockTryConsume.mockResolvedValue(true)
 
-      await chainOf(makeRawRouting('Stadia Maps')).getDistances(params)
+      await chainOf(makeRawRouting('Geoapify')).getDistances(params)
 
       expect(
         await metricValue(collectMetricsProviderRequest, {
-          provider: 'Stadia Maps',
+          provider: 'Geoapify',
           layer: 'routing',
           result: 'success',
         }),
       ).toBe(1)
       expect(
-        await metricValue(collectMetricsProviderLatency, { provider: 'Stadia Maps', layer: 'routing' }, '_count'),
+        await metricValue(collectMetricsProviderLatency, { provider: 'Geoapify', layer: 'routing' }, '_count'),
       ).toBe(1)
     })
 
     it('records rate_limited exactly once when the limiter rejects', async () => {
       mockTryConsume.mockResolvedValue(false)
 
-      await chainOf(makeRawRouting('Stadia Maps')).getDistances(params)
+      await chainOf(makeRawRouting('Geoapify')).getDistances(params)
 
       expect(
         await metricValue(collectMetricsProviderRequest, {
-          provider: 'Stadia Maps',
+          provider: 'Geoapify',
           layer: 'routing',
           result: 'rate_limited',
         }),
       ).toBe(1)
     })
 
-    it('records the fallback from Stadia to OpenRouteService', async () => {
+    it('records the fallback from Geoapify to OpenRouteService', async () => {
       mockTryConsume.mockResolvedValue(true)
 
       await chainOf(
-        makeRawRouting('Stadia Maps', new Error('403 plan without matrix access')),
+        makeRawRouting('Geoapify', new Error('403 plan without matrix access')),
         makeRawRouting('OpenRouteService'),
       ).getDistances(params)
 
       expect(
         await metricValue(collectMetricsProviderFallback, {
           layer: 'routing',
-          from_provider: 'Stadia Maps',
+          from_provider: 'Geoapify',
           to_provider: 'OpenRouteService',
         }),
       ).toBe(1)

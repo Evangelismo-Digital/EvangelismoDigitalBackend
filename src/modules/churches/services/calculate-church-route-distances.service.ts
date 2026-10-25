@@ -82,9 +82,22 @@ export class CalculateChurchRouteDistancesUseCase {
       return err(new EmptyChurchListError())
     }
 
+    const maxDistanceKm = maxDistanceFor(profile)
+
+    // A route is never shorter than the straight line, so a candidate already
+    // beyond the ceiling as the crow flies can only be cut below. Dropping it
+    // before routing is what keeps a far CEP on foot from reaching Geoapify,
+    // which refuses walking matrices over 100 km with a 400 that would surface
+    // as a 503 instead of "no church nearby".
+    const withinReach = churches.filter((church) => church.distanceKm <= maxDistanceKm)
+
+    if (!withinReach.length) {
+      return err(new NoNearbyChurchesFoundError())
+    }
+
     const routeResult = await this.routingProvider.getDistances({
       origin: { lat: user.userLat, lon: user.userLon },
-      destinations: churches.map((church) => ({ lat: church.lat, lon: church.lon })),
+      destinations: withinReach.map((church) => ({ lat: church.lat, lon: church.lon })),
       profile,
       deadline,
     })
@@ -98,7 +111,7 @@ export class CalculateChurchRouteDistancesUseCase {
     // user in a sparse region is handed a church hundreds of kilometres away and
     // told to walk. Applied here rather than in the query so the cut is made on
     // the routed distance a person would actually travel.
-    const rankedChurches = rankByDistance(churches, routeResult.value, maxDistanceFor(profile))
+    const rankedChurches = rankByDistance(withinReach, routeResult.value, maxDistanceKm)
 
     if (!rankedChurches.length) {
       return err(new NoNearbyChurchesFoundError())

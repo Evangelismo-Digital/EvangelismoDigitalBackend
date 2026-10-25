@@ -19,7 +19,7 @@ const PROVIDER_BY_URL_FRAGMENT: ReadonlyArray<readonly [string, string]> = [
   ['brasilapi', 'BrasilAPI'],
   ['nominatim', 'Nominatim'],
   ['locationiq', 'LocationIQ'],
-  ['stadia', 'Stadia Maps'],
+  ['geoapify', 'Geoapify'],
   ['openrouteservice', 'OpenRouteService'],
 ]
 
