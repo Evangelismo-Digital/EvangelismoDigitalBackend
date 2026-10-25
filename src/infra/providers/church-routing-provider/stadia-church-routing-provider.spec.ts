@@ -392,32 +392,32 @@ describe('StadiaChurchRoutingProvider', () => {
         mockedPost.mockResolvedValue({ status: 200, data: { sources_to_targets: [[{ distance: 1, time: 1 }]] } })
       })
 
-      it('prefers an explicit profile', async () => {
-        await rawProvider().fetchRawDistances(origin, [three[0]], RoutingProfile.BICYCLE)
+      it('prefers an explicit profile, sending TRANSPORT as the Valhalla `auto` costing', async () => {
+        await rawProvider().fetchRawDistances(origin, [three[0]], RoutingProfile.TRANSPORT)
 
         expect(mockedPost).toHaveBeenCalledWith(
           expect.anything(),
-          expect.objectContaining({ costing: RoutingProfile.BICYCLE }),
+          expect.objectContaining({ costing: 'auto' }),
           expect.anything(),
         )
       })
 
       it('falls back to the configured default', async () => {
-        await rawProvider().fetchRawDistances(origin, [three[0]])
+        await rawProvider({ defaultCosting: RoutingProfile.TRANSPORT }).fetchRawDistances(origin, [three[0]])
 
         expect(mockedPost).toHaveBeenCalledWith(
           expect.anything(),
-          expect.objectContaining({ costing: RoutingProfile.PEDESTRIAN }),
+          expect.objectContaining({ costing: 'auto' }),
           expect.anything(),
         )
       })
 
-      it('falls back to AUTO when nothing is configured', async () => {
+      it('falls back to PEDESTRIAN when nothing is configured', async () => {
         await rawProvider({ defaultCosting: undefined }).fetchRawDistances(origin, [three[0]])
 
         expect(mockedPost).toHaveBeenCalledWith(
           expect.anything(),
-          expect.objectContaining({ costing: RoutingProfile.AUTO }),
+          expect.objectContaining({ costing: 'pedestrian' }),
           expect.anything(),
         )
       })

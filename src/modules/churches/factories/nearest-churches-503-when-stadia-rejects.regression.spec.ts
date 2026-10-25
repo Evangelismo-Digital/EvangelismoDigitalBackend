@@ -12,8 +12,8 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
  * though geocoding had already succeeded. The same happened for an invalid
  * token (401), a quota (429) or a Stadia outage.
  *
- * The routing stack is now a chain — Stadia, then OpenRouteService — assembled
- * by `makeChurchRoutingProvider`. Defect: Stadia 403 → nearest churches 503
+ * The routing stack is now a chain — Stadia, then Geoapify, then
+ * OpenRouteService — assembled by `makeChurchRoutingProvider`. Defect: Stadia 403 → nearest churches 503
  * (2026-10-15).
  *
  * This drives the real wiring (decorators, retry policy, error mapper, chain)
@@ -74,7 +74,7 @@ describe('Regression: nearest churches answered 503 when Stadia rejected the mat
     mockTryConsume.mockResolvedValue(true)
   })
 
-  it('falls through to OpenRouteService when Stadia answers 403 (plan without matrix access)', async () => {
+  it('falls through to the next provider (Geoapify) when Stadia answers 403 (plan without matrix access)', async () => {
     mockPost.mockImplementation((url: string) =>
       isStadiaCall(url)
         ? Promise.reject(
@@ -82,7 +82,7 @@ describe('Regression: nearest churches answered 503 when Stadia rejected the mat
               error: 'Account does not have access to this endpoint. Please upgrade your account.',
             }),
           )
-        : Promise.resolve({ status: 200, data: { distances: [[0.98, 3.25]] } }),
+        : Promise.resolve({ status: 200, data: { sources_to_targets: [[{ distance: 980 }, { distance: 3250 }]] } }),
     )
 
     const result = await makeChurchRoutingProvider({} as Redis).getDistances({ origin, destinations })
@@ -92,15 +92,15 @@ describe('Regression: nearest churches answered 503 when Stadia rejected the mat
       { distance: 3.25, status: 0 },
     ])
     expect(mockPost).toHaveBeenCalledWith(
-      `${env.OPENROUTESERVICE_MATRIX_API_URL.replace(/\/$/, '')}/foot-walking`,
-      expect.anything(),
+      env.GEOAPIFY_ROUTE_MATRIX_API_URL,
+      expect.objectContaining({ mode: 'walk' }),
       expect.anything(),
     )
   })
 
   it('still asks Stadia first, and only Stadia, when Stadia answers', async () => {
     // Counterweight: the fallback must not turn into "always call both", which
-    // would spend the 500/day ORS quota on every request.
+    // would spend the fallbacks' daily quotas on every request.
     mockPost.mockResolvedValue({
       status: 200,
       data: {

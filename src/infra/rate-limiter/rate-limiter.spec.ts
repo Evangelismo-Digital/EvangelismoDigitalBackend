@@ -230,6 +230,7 @@ describe('RedisRateLimiter Unit Tests', () => {
       [EnumProviderConfig.NOMINATIM_GEOCODING, 'nominatimGeocodingProvider', 1],
       [EnumProviderConfig.LOCATION_IQ_GEOCODING, 'locationIqGeocodingProvider', 2],
       [EnumProviderConfig.STADIA_ROUTING, 'stadiaRoutingProvider', 50],
+      [EnumProviderConfig.GEOAPIFY_ROUTING, 'geoapifyRoutingProvider', 5],
     ])('builds %s with its published limit', async (provider, expectedKey, points) => {
       const limiter = RedisRateLimiter.getInstance(redisClient)
       mockConsume.mockResolvedValue({})

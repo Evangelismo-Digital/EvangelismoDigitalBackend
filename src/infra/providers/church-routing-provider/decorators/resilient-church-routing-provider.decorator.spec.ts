@@ -94,18 +94,18 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
     vi.mocked(raw.fetchRawDistances).mockResolvedValue([{ distance: 2 }])
     const decorator = new ResilientChurchRoutingProviderDecorator(raw, {} as Redis)
 
-    await decorator.getDistances({ origin, destinations, profile: RoutingProfile.BICYCLE })
+    await decorator.getDistances({ origin, destinations, profile: RoutingProfile.TRANSPORT })
 
     expect(raw.fetchRawDistances).toHaveBeenCalledWith(
       origin,
       destinations,
-      RoutingProfile.BICYCLE,
+      RoutingProfile.TRANSPORT,
       expect.any(AbortSignal),
     )
   })
 
-  it('falls back to defaultCosting, then AUTO, when no profile is given', async () => {
-    const withDefault = makeRaw()
+  it('falls back to defaultCosting, then PEDESTRIAN, when no profile is given', async () => {
+    const withDefault = makeRaw({ defaultCosting: RoutingProfile.TRANSPORT })
     vi.mocked(withDefault.fetchRawDistances).mockResolvedValue([{ distance: 1 }])
     await new ResilientChurchRoutingProviderDecorator(withDefault, {} as Redis).getDistances({
       origin,
@@ -114,7 +114,7 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
     expect(withDefault.fetchRawDistances).toHaveBeenCalledWith(
       origin,
       destinations,
-      RoutingProfile.PEDESTRIAN,
+      RoutingProfile.TRANSPORT,
       expect.any(AbortSignal),
     )
 
@@ -127,7 +127,7 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
     expect(noDefault.fetchRawDistances).toHaveBeenCalledWith(
       origin,
       destinations,
-      RoutingProfile.AUTO,
+      RoutingProfile.PEDESTRIAN,
       expect.any(AbortSignal),
     )
   })

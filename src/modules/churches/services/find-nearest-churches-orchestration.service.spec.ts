@@ -12,6 +12,7 @@ import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-n
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
 import { LatitudeRangeError } from '@modules/churches/errors/latitude-range-error'
 import { Deadline } from '@common/utils/deadline'
+import { RoutingProfile } from '@common/types/routing-profile/routing-profile-enum'
 
 const mockGetOrFetch = vi.fn()
 const mockGenerateKey = vi.fn()
@@ -146,6 +147,7 @@ describe('FindNearestChurchesUseCase orchestration', () => {
         totalFound: 1,
         precision: 'ROOFTOP',
         coordinatesProviderName: 'LocationIQ',
+        mode: RoutingProfile.PEDESTRIAN,
       })
     }
     expect(cepToLatLonUseCase.execute).toHaveBeenCalledWith({ cep: '01310100', deadline: expect.any(Deadline) })
@@ -161,8 +163,58 @@ describe('FindNearestChurchesUseCase orchestration', () => {
         user: { userLat: -23.55, userLon: -46.63 },
         deadline: expect.any(Deadline),
       },
-      expect.anything(),
+      RoutingProfile.PEDESTRIAN,
     )
+  })
+
+  describe('routing mode', () => {
+    function stubMissPipeline() {
+      cepToLatLonUseCase.execute.mockResolvedValueOnce(
+        ok({ userLat: -23.55, userLon: -46.63, precision: 'ROOFTOP', coordinatesProviderName: 'LocationIQ' }),
+      )
+      findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce(ok({ churches: [{ id: 1 }], totalFound: 1 }))
+      calculateChurchRouteDistancesUseCase.findNearest.mockResolvedValueOnce(ok([]))
+    }
+
+    it('routes, keys the cache and echoes the mode the caller chose', async () => {
+      stubMissPipeline()
+
+      const result = await useCase.execute({ cep: '01310100', profile: RoutingProfile.TRANSPORT })
+
+      expect(mockGenerateKey).toHaveBeenCalledWith({ cep: '01310100', profile: RoutingProfile.TRANSPORT })
+      expect(calculateChurchRouteDistancesUseCase.findNearest).toHaveBeenCalledWith(
+        expect.anything(),
+        RoutingProfile.TRANSPORT,
+      )
+      expect(isOk(result) && result.value.mode).toBe(RoutingProfile.TRANSPORT)
+    })
+
+    it('defaults to PEDESTRIAN when the caller names no mode', async () => {
+      stubMissPipeline()
+
+      const result = await useCase.execute({ cep: '01310100' })
+
+      expect(mockGenerateKey).toHaveBeenCalledWith({ cep: '01310100', profile: RoutingProfile.PEDESTRIAN })
+      expect(calculateChurchRouteDistancesUseCase.findNearest).toHaveBeenCalledWith(
+        expect.anything(),
+        RoutingProfile.PEDESTRIAN,
+      )
+      expect(isOk(result) && result.value.mode).toBe(RoutingProfile.PEDESTRIAN)
+    })
+
+    it('uses the wired default profile when one is configured', async () => {
+      const transportByDefault = new FindNearestChurchesUseCase(
+        cepToLatLonUseCase as unknown as CepToLatLonUseCase,
+        findNearbyChurchesKnnUseCase as unknown as FindNearbyChurchesKnnUseCase,
+        calculateChurchRouteDistancesUseCase as unknown as CalculateChurchRouteDistancesUseCase,
+        { redis: {} as never, options: {} as never, defaultProfile: RoutingProfile.TRANSPORT },
+      )
+      stubMissPipeline()
+
+      await transportByDefault.execute({ cep: '01310100' })
+
+      expect(mockGenerateKey).toHaveBeenCalledWith({ cep: '01310100', profile: RoutingProfile.TRANSPORT })
+    })
   })
 
   it('propagates a KNN failure and never reaches the routing step', async () => {

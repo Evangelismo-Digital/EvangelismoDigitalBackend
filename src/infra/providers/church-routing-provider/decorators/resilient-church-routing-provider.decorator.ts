@@ -29,7 +29,7 @@ export class ResilientChurchRoutingProviderDecorator implements IChurchRoutingPr
     deadline?: Deadline
   }): Promise<Result<RouteDistanceResult[], AppError>> {
     const deadline = params.deadline ?? Deadline.none()
-    const costing = params.profile ?? this.rawProvider.defaultCosting ?? RoutingProfile.AUTO
+    const costing = params.profile ?? this.rawProvider.defaultCosting ?? RoutingProfile.PEDESTRIAN
 
     return await runGuardedAttempt({
       rawProvider: this.rawProvider,

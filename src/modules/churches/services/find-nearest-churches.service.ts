@@ -12,6 +12,8 @@ import { AppError } from '@common/errors/app-error'
 
 export interface FindNearestChurchesRequest {
   cep: string
+  /** How the user travels. Defaults to the wiring's `defaultProfile`. */
+  profile?: RoutingProfile
   /**
    * The caller's budget. Supplied by the HTTP boundary; defaults to unbounded
    * for non-HTTP callers (workers, scripts) that have no clock to answer to.
@@ -24,6 +26,8 @@ export interface FindNearestChurchesResponse {
   totalFound: number
   precision: string
   coordinatesProviderName?: string
+  /** The routing mode the distances were computed for. */
+  mode: RoutingProfile
 }
 
 /**
@@ -65,15 +69,18 @@ export class FindNearestChurchesUseCase {
 
   async execute({
     cep,
+    profile = this.defaultProfile,
     deadline = Deadline.none(),
   }: FindNearestChurchesRequest): Promise<Result<FindNearestChurchesResponse, AppError>> {
     const cleanCep = cep.replace(/\D/g, '')
 
-    const cacheKey = this.cacheManager.generateKey({ cep: cleanCep, profile: this.defaultProfile })
+    // The profile is part of the key: a walk and a drive from the same CEP
+    // rank (and cut off) churches differently, so they must never share an entry.
+    const cacheKey = this.cacheManager.generateKey({ cep: cleanCep, profile })
 
     return await this.cacheManager.getOrFetch<FindNearestChurchesResponse>(
       cacheKey,
-      (fetchDeadline: Deadline) => this.computeNearestChurches(cleanCep, fetchDeadline),
+      (fetchDeadline: Deadline) => this.computeNearestChurches(cleanCep, profile, fetchDeadline),
       deadline,
     )
   }
@@ -85,6 +92,7 @@ export class FindNearestChurchesUseCase {
    */
   private async computeNearestChurches(
     cleanCep: string,
+    profile: RoutingProfile,
     deadline: Deadline,
   ): Promise<Result<FindNearestChurchesResponse, AppError>> {
     const cepResult = await this.cepToLatLonUseCase.execute({ cep: cleanCep, deadline })
@@ -103,7 +111,7 @@ export class FindNearestChurchesUseCase {
 
     const { churches, totalFound } = knnResult.value
 
-    const nearestChurchesResult = await this.rankByRouteDistance(churches, { userLat, userLon }, deadline)
+    const nearestChurchesResult = await this.rankByRouteDistance(churches, { userLat, userLon }, profile, deadline)
 
     if (isErr(nearestChurchesResult)) {
       return err(nearestChurchesResult.error)
@@ -111,6 +119,7 @@ export class FindNearestChurchesUseCase {
 
     return ok({
       nearestChurchesInfo: toPublicNearbyChurches(nearestChurchesResult.value),
+      mode: profile,
       totalFound,
       precision,
       coordinatesProviderName,
@@ -120,11 +129,9 @@ export class FindNearestChurchesUseCase {
   private async rankByRouteDistance(
     churches: NearbyChurch[],
     user: { userLat: number; userLon: number },
+    profile: RoutingProfile,
     deadline: Deadline,
   ): Promise<Result<NearbyChurch[], AppError>> {
-    return await this.calculateChurchRouteDistancesUseCase.findNearest(
-      { churches, user, deadline },
-      this.defaultProfile,
-    )
+    return await this.calculateChurchRouteDistancesUseCase.findNearest({ churches, user, deadline }, profile)
   }
 }

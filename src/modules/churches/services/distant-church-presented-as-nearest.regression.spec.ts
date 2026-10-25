@@ -100,7 +100,7 @@ describe('regression: a church beyond a plausible journey must not be "nearest"'
       )
       const byCar = await new CalculateChurchRouteDistancesUseCase(routingReturning(distance)).findNearest(
         { churches: [church(1)], user },
-        RoutingProfile.AUTO,
+        RoutingProfile.TRANSPORT,
       )
 
       expect(isErr(onFoot)).toBe(true)

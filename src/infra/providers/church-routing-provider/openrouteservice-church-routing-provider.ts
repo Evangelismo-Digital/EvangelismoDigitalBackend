@@ -21,28 +21,10 @@ interface OpenRouteServiceMatrixResponse {
   distances?: Array<Array<number | null> | undefined>
 }
 
-/**
- * The app speaks Valhalla costings (Stadia's vocabulary); ORS has its own,
- * smaller set of profiles. Each costing maps to the closest one ORS offers.
- */
-const ORS_PROFILE = {
-  WALKING: 'foot-walking',
-  CYCLING: 'cycling-regular',
-  CAR: 'driving-car',
-  HGV: 'driving-hgv',
-} as const
-
-const ORS_PROFILE_BY_COSTING: Record<RoutingProfile, (typeof ORS_PROFILE)[keyof typeof ORS_PROFILE]> = {
-  [RoutingProfile.PEDESTRIAN]: ORS_PROFILE.WALKING,
-  [RoutingProfile.BICYCLE]: ORS_PROFILE.CYCLING,
-  [RoutingProfile.BIKESHARE]: ORS_PROFILE.CYCLING,
-  [RoutingProfile.AUTO]: ORS_PROFILE.CAR,
-  [RoutingProfile.TAXI]: ORS_PROFILE.CAR,
-  [RoutingProfile.BUS]: ORS_PROFILE.CAR,
-  [RoutingProfile.MOTORCYCLE]: ORS_PROFILE.CAR,
-  [RoutingProfile.MOTOR_SCOOTER]: ORS_PROFILE.CAR,
-  [RoutingProfile.LOW_SPEED_VEHICLE]: ORS_PROFILE.CAR,
-  [RoutingProfile.TRUCK]: ORS_PROFILE.HGV,
+/** The app's two routing modes, in ORS's profile vocabulary. */
+const ORS_PROFILE_BY_COSTING: Record<RoutingProfile, string> = {
+  [RoutingProfile.PEDESTRIAN]: 'foot-walking',
+  [RoutingProfile.TRANSPORT]: 'driving-car',
 }
 
 /** ORS takes `[lon, lat]`, not `{ lat, lon }`. */
@@ -70,7 +52,7 @@ export class OpenRouteServiceChurchRoutingProvider implements IRawChurchRoutingP
   }
 
   private matrixUrl(profile?: RoutingProfile): string {
-    const costing = profile ?? this.config.defaultCosting ?? RoutingProfile.AUTO
+    const costing = profile ?? this.config.defaultCosting ?? RoutingProfile.PEDESTRIAN
 
     return `${this.config.matrixApiUrl.replace(/\/$/, '')}/${ORS_PROFILE_BY_COSTING[costing]}`
   }
