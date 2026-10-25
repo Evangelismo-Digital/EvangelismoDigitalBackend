@@ -21,6 +21,7 @@ import { RoutingProfile } from '@common/types/routing-profile/routing-profile-en
 
 const response = {
   nearestChurchesInfo: [],
+  origin: { lat: -23.5505, lon: -46.6333 },
   totalFound: 0,
   precision: 'ROOFTOP',
   coordinatesProviderName: 'LocationIQ',

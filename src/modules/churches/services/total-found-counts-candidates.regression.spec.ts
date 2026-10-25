@@ -95,6 +95,8 @@ describe('Regression: totalFound counted KNN candidates, not the churches return
   it('reads no response cached before the fix, where totalFound still meant candidates', () => {
     // Cached answers live for a week; without a new key version the old
     // meaning would keep being served after deploy.
-    expect(makeNearestChurchesCacheOptions().prefix).toBe('cache:nearest-churches:v2:')
+    // Later bumps (v3 added `origin`) keep this guarantee: only the unversioned v1 key held that meaning.
+    expect(makeNearestChurchesCacheOptions().prefix).not.toBe('cache:nearest-churches:')
+    expect(makeNearestChurchesCacheOptions().prefix).toMatch(/^cache:nearest-churches:v([2-9]|\d{2,}):$/)
   })
 })
