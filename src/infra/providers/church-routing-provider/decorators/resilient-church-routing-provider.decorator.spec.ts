@@ -7,7 +7,7 @@ const { mockTryConsume, mockRecordProviderRequest, mockStartTimer } = vi.hoisted
 }))
 
 vi.mock('@infra/rate-limiter/redis-rate-limiter', () => ({
-  EnumProviderConfig: { STADIA_ROUTING: 'stadiaRoutingProvider' },
+  EnumProviderConfig: { GEOAPIFY_ROUTING: 'geoapifyRoutingProvider' },
   RedisRateLimiter: { getInstance: vi.fn(() => ({ tryConsume: mockTryConsume })) },
 }))
 
@@ -30,8 +30,8 @@ import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-ex
 
 function makeRaw(overrides: Partial<IRawChurchRoutingProvider> = {}): IRawChurchRoutingProvider {
   return {
-    providerName: 'Stadia',
-    rateLimitConfig: EnumProviderConfig.STADIA_ROUTING,
+    providerName: 'Geoapify',
+    rateLimitConfig: EnumProviderConfig.GEOAPIFY_ROUTING,
     timeoutMs: 3000,
     maxRetries: 2,
     // Zero backoff keeps the retry tests free of any real waiting.
@@ -53,7 +53,7 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
 
   it('copies the raw provider name', () => {
     const decorator = new ResilientChurchRoutingProviderDecorator(makeRaw(), {} as Redis)
-    expect(decorator.providerName).toBe('Stadia')
+    expect(decorator.providerName).toBe('Geoapify')
   })
 
   it('returns ProviderRateLimitError without recording it when the rate limiter rejects', async () => {
@@ -166,8 +166,8 @@ describe('ResilientChurchRoutingProviderDecorator', () => {
         name: 'AxiosError',
         message: 'Request failed with status code 429',
         isAxiosError: true,
-        response: { status: 429, data: {}, statusText: '', headers: {}, config: { url: '/stadia' } },
-        config: { url: '/stadia' },
+        response: { status: 429, data: {}, statusText: '', headers: {}, config: { url: '/geoapify' } },
+        config: { url: '/geoapify' },
         toJSON: () => ({}),
       }
     }

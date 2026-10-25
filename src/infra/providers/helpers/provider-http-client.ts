@@ -12,7 +12,7 @@ import { SHARED_PROVIDER_DEFAULTS } from '@common/messages/constants/providers/s
  * from one shared value to itself: ~28 duplicated lines, and five places to
  * edit if the pool is ever retuned.
  *
- * Providers that need more (Stadia's Authorization header, LocationIQ's default
+ * Providers that need more (ORS's Authorization header, LocationIQ's default
  * params) pass it through `extra`, which is merged last.
  */
 export interface ProviderHttpClientParams {

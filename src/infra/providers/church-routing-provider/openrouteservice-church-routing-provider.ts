@@ -21,7 +21,14 @@ interface OpenRouteServiceMatrixResponse {
   distances?: Array<Array<number | null> | undefined>
 }
 
-/** The app's two routing modes, in ORS's profile vocabulary. */
+/**
+ * The app's two routing modes, in ORS's profile vocabulary.
+ *
+ * Unlike Geoapify, the ORS matrix endpoint takes no routing options, so it
+ * cannot be told to avoid ferries on foot: as the fallback it may still count
+ * the Rio–Niterói ferry in a walk. Accepted because ORS answers only when
+ * Geoapify has already failed.
+ */
 const ORS_PROFILE_BY_COSTING: Record<RoutingProfile, string> = {
   [RoutingProfile.PEDESTRIAN]: 'foot-walking',
   [RoutingProfile.TRANSPORT]: 'driving-car',
@@ -59,7 +66,7 @@ export class OpenRouteServiceChurchRoutingProvider implements IRawChurchRoutingP
 
   /**
    * Origin at index 0, churches after it. `| undefined` on the generic for the
-   * same reason as Stadia's: axios types an empty body as a valid payload.
+   * same reason as Geoapify's: axios types an empty body as a valid payload.
    */
   private async postMatrix(
     origin: RoutingPoint,

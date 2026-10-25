@@ -88,6 +88,7 @@ describe('GeoapifyChurchRoutingProvider', () => {
         sources: [{ location: [origin.lon, origin.lat] }],
         targets: three.map((point) => ({ location: [point.lon, point.lat] })),
         units: 'metric',
+        avoid: [{ type: 'ferries' }],
       })
     })
 

@@ -20,7 +20,14 @@ export const CACHE_CONFIG = {
    * chain (address -> geocode -> KNN -> routing matrix).
    */
   NEAREST_CHURCHES: {
-    PREFIX: 'cache:nearest-churches:',
+    /**
+     * Versioned: bump it whenever the cached response changes meaning, so
+     * entries written by the previous release are never read back — they would
+     * otherwise be served for up to DEFAULT_TTL_SECONDS. v2: `totalFound` counts
+     * the churches returned, walking routes avoid ferries, and the church
+     * addresses were normalised (2026-10-25). Old keys simply expire.
+     */
+    PREFIX: 'cache:nearest-churches:v2:',
     DEFAULT_TTL_SECONDS: SECONDS_PER_DAY * DAYS_PER_WEEK,
 
     /**

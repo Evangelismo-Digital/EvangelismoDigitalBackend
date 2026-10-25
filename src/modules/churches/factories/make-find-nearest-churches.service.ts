@@ -15,7 +15,6 @@ import { ViaCepProvider } from '@infra/providers/address-provider/viaCep-provide
 import { NominatimGeoProvider } from '@infra/providers/geo-provider/nominatim-provider'
 import { LocationIqProvider } from '@infra/providers/geo-provider/location-iq-provider'
 import { ResilientGeoProvider } from '@infra/providers/geo-provider/resilient-geo-provider'
-import { StadiaChurchRoutingProvider } from '@infra/providers/church-routing-provider/stadia-church-routing-provider'
 import { OpenRouteServiceChurchRoutingProvider } from '@infra/providers/church-routing-provider/openrouteservice-church-routing-provider'
 import { GeoapifyChurchRoutingProvider } from '@infra/providers/church-routing-provider/geoapify-church-routing-provider'
 import { ResilientChurchRoutingProvider } from '@infra/providers/church-routing-provider/resilient-church-routing-provider'
@@ -26,7 +25,6 @@ import { ResilientChurchRoutingProviderDecorator } from '@infra/providers/church
 import { Redis } from 'ioredis'
 import { IChurchRoutingProvider } from '@infra/providers/interfaces/church-routing-provider.interface'
 import { makeNearestChurchesCacheOptions } from '@modules/churches/services/church-lookup-cache-policy'
-import { STADIA_CONFIG } from '@common/messages/constants/providers/stadia'
 import { OPENROUTESERVICE_CONFIG } from '@common/messages/constants/providers/openrouteservice'
 import { GEOAPIFY_CONFIG } from '@common/messages/constants/providers/geoapify'
 
@@ -72,24 +70,15 @@ function makeResilientAddressProvider(redisRateLimitConnection: Redis): Resilien
 }
 
 /**
- * Stadia first, then Geoapify, then OpenRouteService — each one tried only when
- * the previous fails with a RETRYABLE error (an outage, a quota, or a plan
- * without matrix access (403), which is what made every nearest-church lookup
- * answer 503 while routing had a single provider). Geoapify sits ahead of ORS
- * because ORS went down on its own side; ORS stays last so it rejoins the chain
- * by itself once it recovers.
+ * Geoapify first, OpenRouteService when Geoapify fails with a RETRYABLE error
+ * (an outage, a quota, a plan without matrix access). Stadia used to lead the
+ * chain until its plan stopped serving the matrix endpoint (403 on every call),
+ * which cost each search a wasted attempt before Geoapify answered.
  *
  * Each raw provider is wrapped in its resilient decorator (rate limiting + error
  * mapping only); caching happens once, at the FindNearestChurchesUseCase layer.
  */
 export function makeChurchRoutingProvider(redisRateLimitConnection: Redis): IChurchRoutingProvider {
-  const rawStadiaProvider = new StadiaChurchRoutingProvider({
-    matrixApiUrl: env.STADIA_MAPS_MATRIX_API_URL,
-    apiToken: env.STADIA_API_TOKEN,
-    defaultCosting: RoutingProfile.PEDESTRIAN,
-    timeoutMs: STADIA_CONFIG.DEFAULT_TIMEOUT_MS,
-  })
-
   const rawOpenRouteServiceProvider = new OpenRouteServiceChurchRoutingProvider({
     matrixApiUrl: env.OPENROUTESERVICE_MATRIX_API_URL,
     apiToken: env.OPENROUTESERVICE_API_TOKEN,
@@ -105,7 +94,6 @@ export function makeChurchRoutingProvider(redisRateLimitConnection: Redis): IChu
   })
 
   return new ResilientChurchRoutingProvider([
-    new ResilientChurchRoutingProviderDecorator(rawStadiaProvider, redisRateLimitConnection),
     new ResilientChurchRoutingProviderDecorator(rawGeoapifyProvider, redisRateLimitConnection),
     new ResilientChurchRoutingProviderDecorator(rawOpenRouteServiceProvider, redisRateLimitConnection),
   ])

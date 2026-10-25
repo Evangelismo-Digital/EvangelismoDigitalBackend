@@ -172,17 +172,12 @@ const envSchema = z.object({
   LOCATION_IQ_API_URL: z.string().default('https://us1.locationiq.com/v1'),
   LOCATION_IQ_API_TOKEN: z.string().min(1),
 
-  // Stadia API — only the batch matrix endpoint is called; the single-route
-  // endpoint went away with the unused `fetchRawDistance`.
-  STADIA_MAPS_MATRIX_API_URL: z.url().default('https://api.stadiamaps.com/sources_to_targets'),
-  STADIA_API_TOKEN: z.string().min(1, 'STADIA_API_TOKEN is required'),
-
-  // OpenRouteService — routing fallback after Stadia. The profile is appended
+  // OpenRouteService — last routing fallback, after Geoapify. The profile is appended
   // to this base URL per request (`/foot-walking`, `/driving-car`, ...).
   OPENROUTESERVICE_MATRIX_API_URL: z.url().default('https://api.openrouteservice.org/v2/matrix'),
   OPENROUTESERVICE_API_TOKEN: z.string().min(1, 'OPENROUTESERVICE_API_TOKEN is required'),
 
-  // Geoapify Route Matrix — routing fallback after Stadia, before OpenRouteService.
+  // Geoapify Route Matrix — primary routing provider; OpenRouteService is the fallback.
   GEOAPIFY_ROUTE_MATRIX_API_URL: z.url().default('https://api.geoapify.com/v1/routematrix'),
   GEOAPIFY_API_TOKEN: z.string().min(1, 'GEOAPIFY_API_TOKEN is required'),
   // No `.default(...)`, deliberately. The value that used to sit here was

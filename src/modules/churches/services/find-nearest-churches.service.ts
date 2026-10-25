@@ -23,6 +23,11 @@ export interface FindNearestChurchesRequest {
 
 export interface FindNearestChurchesResponse {
   nearestChurchesInfo: PublicNearbyChurch[]
+  /**
+   * How many churches `nearestChurchesInfo` carries — not the KNN candidates
+   * routing started from, since it drops the unreachable ones and those beyond
+   * the mode's ceiling.
+   */
   totalFound: number
   precision: string
   coordinatesProviderName?: string
@@ -109,8 +114,7 @@ export class FindNearestChurchesUseCase {
       return err(knnResult.error)
     }
 
-    const { churches, totalFound } = knnResult.value
-
+    const { churches } = knnResult.value
     const nearestChurchesResult = await this.rankByRouteDistance(churches, { userLat, userLon }, profile, deadline)
 
     if (isErr(nearestChurchesResult)) {
@@ -120,7 +124,7 @@ export class FindNearestChurchesUseCase {
     return ok({
       nearestChurchesInfo: toPublicNearbyChurches(nearestChurchesResult.value),
       mode: profile,
-      totalFound,
+      totalFound: nearestChurchesResult.value.length,
       precision,
       coordinatesProviderName,
     })

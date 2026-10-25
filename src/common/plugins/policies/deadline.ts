@@ -14,7 +14,7 @@ export const HTTP_DEADLINE_POLICIES = {
   churches: {
     /**
      * The cold happy path is two sequential external calls (an address provider
-     * at ~2s, then the Stadia matrix at ~3s) plus a PostGIS KNN, so 8s clears it
+     * at ~2s, then the routing matrix at ~3s) plus a PostGIS KNN, so 8s clears it
      * with margin. It replaces an effective ceiling of ~17s — the old 15s cache
      * budget plus an unbounded Redis read and write at either end — which is far
      * past any sane client timeout for a synchronous GET.

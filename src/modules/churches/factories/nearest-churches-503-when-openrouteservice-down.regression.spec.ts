@@ -1,16 +1,18 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
+import { RoutingProfile } from '@common/types/routing-profile/routing-profile-enum'
 
 /**
  * Regression: **nearest-church lookups answered 503 while OpenRouteService was
  * down.**
  *
  * The routing chain was Stadia → OpenRouteService. ORS went down on its own
- * side (a PHP failure answering 5xx), so whenever Stadia also failed with a
- * RETRYABLE error the chain ran out of providers and `GET /churches/nearest`
- * returned `503 SERVICE_UNAVAILABLE`, even though geocoding had succeeded.
+ * side (first a PHP failure answering 5xx, later a 403 "Access to this API has
+ * been disallowed"), so whenever the other provider also failed the chain ran
+ * out and `GET /churches/nearest` returned `503 SERVICE_UNAVAILABLE`, even
+ * though geocoding had succeeded. Defect: ORS outage → nearest churches 503
+ * (2026-10-25).
  *
- * Geoapify now sits between them (Stadia → Geoapify → ORS). Defect: ORS outage
- * → nearest churches 503 (2026-10-25).
+ * Geoapify now answers ahead of ORS (Stadia was later dropped altogether).
  *
  * This drives the real wiring (decorators, retry policy, error mapper, chain)
  * with only the HTTP client and the rate limiter replaced.
@@ -39,8 +41,7 @@ import { AxiosError, AxiosHeaders } from 'axios'
 import { makeChurchRoutingProvider } from './make-find-nearest-churches.service'
 import { resetProviderCircuitBreakers } from '@infra/providers/helpers/provider-circuit-breaker'
 import { env } from '@config/env/index'
-import { isOk } from '@common/utils/result'
-import { RoutingProfile } from '@common/types/routing-profile/routing-profile-enum'
+import { isErr, isOk } from '@common/utils/result'
 
 const origin = { lat: -22.9113709, lon: -43.1054179 }
 const destinations = [
@@ -60,26 +61,30 @@ function rejects(url: string, status: number) {
   })
 }
 
-const isStadia = (url: string) => url.startsWith(env.STADIA_MAPS_MATRIX_API_URL)
 const isGeoapify = (url: string) => url.startsWith(env.GEOAPIFY_ROUTE_MATRIX_API_URL)
 const isOrs = (url: string) => url.startsWith(env.OPENROUTESERVICE_MATRIX_API_URL)
+
+/** Geoapify's envelope: meters, one row per source. */
+const GEOAPIFY_ANSWER = { status: 200, data: { sources_to_targets: [[{ distance: 980 }, { distance: 3250 }]] } }
+/** ORS's envelope: already in km. */
+const ORS_ANSWER = { status: 200, data: { distances: [[1.5, 2.5]] } }
 
 function calledUrls(): string[] {
   return mockPost.mock.calls.map(([url]) => url as string)
 }
 
-describe('Regression: nearest churches answered 503 while OpenRouteService was down', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    resetProviderCircuitBreakers()
-    mockTryConsume.mockResolvedValue(true)
-  })
+function resetMocks() {
+  vi.clearAllMocks()
+  resetProviderCircuitBreakers()
+  mockTryConsume.mockResolvedValue(true)
+}
 
-  it('answers from Geoapify when Stadia fails and ORS is down, without asking ORS', async () => {
+describe('Regression: nearest churches answered 503 while OpenRouteService was down', () => {
+  beforeEach(resetMocks)
+
+  it('answers from Geoapify while ORS is down, without asking ORS', async () => {
     mockPost.mockImplementation((url: string) =>
-      isGeoapify(url)
-        ? Promise.resolve({ status: 200, data: { sources_to_targets: [[{ distance: 980 }, { distance: 3250 }]] } })
-        : Promise.reject(rejects(url, isStadia(url) ? 403 : 500)),
+      isGeoapify(url) ? Promise.resolve(GEOAPIFY_ANSWER) : Promise.reject(rejects(url, 403)),
     )
 
     const result = await makeChurchRoutingProvider({} as Redis).getDistances({
@@ -100,22 +105,14 @@ describe('Regression: nearest churches answered 503 while OpenRouteService was d
     expect(calledUrls().some(isOrs)).toBe(false)
   })
 
-  it('still falls through to ORS when Stadia and Geoapify both fail', async () => {
-    // Counterweight: Geoapify must not have replaced ORS — once ORS recovers it
-    // is the last line of defence again.
-    mockPost.mockImplementation((url: string) =>
-      isOrs(url)
-        ? Promise.resolve({ status: 200, data: { distances: [[1.5, 2.5]] } })
-        : Promise.reject(rejects(url, 429)),
-    )
+  it('still reports a retryable failure when both providers are down', async () => {
+    // Counterweight: the fix must not paper over a real outage by inventing an
+    // empty (all-unreachable) matrix — that would read as "no church nearby".
+    mockPost.mockImplementation((url: string) => Promise.reject(rejects(url, 503)))
 
     const result = await makeChurchRoutingProvider({} as Redis).getDistances({ origin, destinations })
 
-    expect(isOk(result) && result.value).toEqual([
-      { distance: 1.5, status: 0 },
-      { distance: 2.5, status: 0 },
-    ])
-    expect(calledUrls().some(isStadia)).toBe(true)
+    expect(isErr(result) && result.error.failureMode).toBe('RETRYABLE')
     expect(calledUrls().some(isGeoapify)).toBe(true)
     expect(calledUrls().some(isOrs)).toBe(true)
   })

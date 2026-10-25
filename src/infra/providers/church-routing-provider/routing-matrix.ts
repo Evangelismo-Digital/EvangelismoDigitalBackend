@@ -9,7 +9,7 @@ import {
  * What every matrix-based routing provider does with its answer, once the
  * vendor-specific envelope has been unwrapped.
  *
- * Stadia and OpenRouteService disagree on the request and response shapes but
+ * Geoapify and OpenRouteService disagree on the request and response shapes but
  * agree on what the answer means: a 404 is "nothing reachable", a missing entry
  * is "this destination is unreachable", and the caller zips the result against
  * its church list, so it must always have one row per destination.

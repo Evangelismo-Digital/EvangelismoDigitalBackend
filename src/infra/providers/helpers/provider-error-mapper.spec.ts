@@ -118,7 +118,7 @@ describe('ProviderErrorMapper', () => {
     ['https://brasilapi.com.br/api/cep/v1/12345678', 'BrasilAPI'],
     ['https://nominatim.openstreetmap.org/search', 'Nominatim'],
     ['https://us1.locationiq.com/v1/search', 'LocationIQ'],
-    ['https://api.stadiamaps.com/route/v1', 'Stadia Maps'],
+    ['https://api.geoapify.com/v1/routematrix', 'Geoapify'],
     ['https://api.openrouteservice.org/v2/matrix/foot-walking', 'OpenRouteService'],
   ])('names the provider behind a 429 from %s as %s', (url, provider) => {
     const err = createFakeAxiosError(429, undefined, url)

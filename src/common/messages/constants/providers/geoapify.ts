@@ -1,6 +1,6 @@
 export const GEOAPIFY_CONFIG = {
   DEFAULT_TIMEOUT_MS: 3_000,
-  // Two attempts, matching Stadia and OpenRouteService.
+  // Two attempts, matching OpenRouteService and the address/geocoding providers.
   MAX_RETRIES: 2,
   BACKOFF_MS: 200,
   // Geoapify answers in meters under `metric`; the provider converts to km.
