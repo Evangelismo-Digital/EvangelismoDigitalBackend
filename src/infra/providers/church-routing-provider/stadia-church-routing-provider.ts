@@ -25,6 +25,12 @@ interface StadiaMatrixResponse {
   sources_to_targets: Array<Array<StadiaMatrixEntry | undefined> | undefined>
 }
 
+/** The app's two routing modes, as Valhalla costings. */
+const STADIA_COSTING_BY_PROFILE: Record<RoutingProfile, string> = {
+  [RoutingProfile.PEDESTRIAN]: 'pedestrian',
+  [RoutingProfile.TRANSPORT]: 'auto',
+}
+
 /** A 404, or a response carrying no rows at all, means nothing is reachable. */
 function isEmptyMatrix(status: number, data: StadiaMatrixResponse): boolean {
   return status === UPSTREAM_STATUS.NOT_FOUND || !data.sources_to_targets.length
@@ -49,8 +55,8 @@ export class StadiaChurchRoutingProvider implements IRawChurchRoutingProvider {
     })
   }
 
-  private resolveCosting(profile?: RoutingProfile): RoutingProfile {
-    return profile ?? this.config.defaultCosting ?? RoutingProfile.AUTO
+  private resolveCosting(profile?: RoutingProfile): string {
+    return STADIA_COSTING_BY_PROFILE[profile ?? this.config.defaultCosting ?? RoutingProfile.PEDESTRIAN]
   }
 
   /**

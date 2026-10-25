@@ -1,12 +1,10 @@
+/**
+ * How the caller is travelling. These are the only two modes the public API
+ * offers (`?mode=`), so the string values double as the API contract; each
+ * provider maps them onto its own vocabulary.
+ */
 export enum RoutingProfile {
-  AUTO = 'auto',
   PEDESTRIAN = 'pedestrian',
-  BICYCLE = 'bicycle',
-  BIKESHARE = 'bikeshare',
-  MOTOR_SCOOTER = 'motor_scooter',
-  MOTORCYCLE = 'motorcycle',
-  LOW_SPEED_VEHICLE = 'low_speed_vehicle',
-  BUS = 'bus',
-  TAXI = 'taxi',
-  TRUCK = 'truck',
+  /** Car / motor vehicle. */
+  TRANSPORT = 'transport',
 }

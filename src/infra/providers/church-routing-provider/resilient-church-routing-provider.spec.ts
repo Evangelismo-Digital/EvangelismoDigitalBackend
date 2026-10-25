@@ -214,7 +214,7 @@ describe('ResilientChurchRoutingProvider', () => {
     const result = await chain().getDistances({
       origin,
       destinations,
-      profile: RoutingProfile.BICYCLE,
+      profile: RoutingProfile.TRANSPORT,
       deadline,
     })
 
@@ -223,7 +223,7 @@ describe('ResilientChurchRoutingProvider', () => {
       expect(asked.getDistances).toHaveBeenCalledWith({
         origin,
         destinations,
-        profile: RoutingProfile.BICYCLE,
+        profile: RoutingProfile.TRANSPORT,
         deadline,
       })
     }

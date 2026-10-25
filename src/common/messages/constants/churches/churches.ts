@@ -14,15 +14,7 @@ import { RoutingProfile } from '@common/types/routing-profile/routing-profile-en
  */
 export const ROUTING_MAX_DISTANCE_KM: Record<RoutingProfile, number> = {
   [RoutingProfile.PEDESTRIAN]: 10,
-  [RoutingProfile.BIKESHARE]: 30,
-  [RoutingProfile.BICYCLE]: 50,
-  [RoutingProfile.LOW_SPEED_VEHICLE]: 50,
-  [RoutingProfile.MOTOR_SCOOTER]: 100,
-  [RoutingProfile.AUTO]: 150,
-  [RoutingProfile.TAXI]: 150,
-  [RoutingProfile.MOTORCYCLE]: 150,
-  [RoutingProfile.BUS]: 150,
-  [RoutingProfile.TRUCK]: 150,
+  [RoutingProfile.TRANSPORT]: 150,
 }
 
 export const CHURCH_CONSTANTS = {

@@ -249,6 +249,8 @@ export default defineConfig(({ mode }) => {
             include: ['**/*.e2e.spec.ts'],
             exclude: [
               '**/api-providers-fallback-strategy.e2e.spec.ts',
+              // Live routing APIs (Stadia, Geoapify, ORS) — own opt-in project, not in CI.
+              '**/routing-providers-live.e2e.spec.ts',
               '**/*.acceptance.spec.mts',
               // Opt-in integration suite (own `integration` project, not in CI).
               '**/*.integration.spec.ts',
@@ -281,6 +283,19 @@ export default defineConfig(({ mode }) => {
           test: {
             name: 'e2e-api-providers-fallback-strategy',
             include: ['**/api-providers-fallback-strategy.e2e.spec.ts'],
+            // Uses Docker database with public schema (no isolation)
+            environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
+          },
+        },
+        {
+          extends: true,
+          test: {
+            // Calls the LIVE routing matrix APIs (Stadia, Geoapify, OpenRouteService)
+            // with real tokens from `.env.test.local`. Opt-in and deliberately
+            // absent from both CI allowlists: it spends provider quota and
+            // depends on third parties being up.
+            name: 'e2e-routing-providers-live',
+            include: ['**/routing-providers-live.e2e.spec.ts'],
             // Uses Docker database with public schema (no isolation)
             environment: './prisma/vitest-environment-prisma/prisma-docker-environment.ts',
           },

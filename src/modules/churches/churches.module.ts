@@ -10,11 +10,10 @@ import { findChurchPublicIdByName } from './controllers/find-church-publicId-by-
 import { HTTP_RATE_LIMIT_POLICIES } from '@common/plugins/policies/rate-limit'
 import { HTTP_DEADLINE_POLICIES } from '@common/plugins/policies/deadline'
 
-import { cepSchema } from '@common/dto/utils/cep.dto'
 import { createChurchBodySchema } from '@modules/churches/dto/create-church.dto'
 import { deleteChurchBodySchema } from '@modules/churches/dto/delete-church.dto'
 import { findChurchByNameSchema } from '@modules/churches/dto/find-church-by-name.dto'
-import z from 'zod'
+import { findNearestChurchesQuerySchema } from '@modules/churches/dto/find-nearest-churches.dto'
 
 import { ZodTypeProvider } from 'fastify-type-provider-zod'
 
@@ -30,7 +29,7 @@ export async function churchesRoutes(appInst: FastifyInstance) {
       schema: {
         tags: ['Churches'],
         summary: 'Encontra as igrejas mais próximas de um CEP',
-        querystring: z.object({ cep: cepSchema }),
+        querystring: findNearestChurchesQuerySchema,
       },
     },
     findNearestChurches,

@@ -17,6 +17,7 @@ import { LocationIqProvider } from '@infra/providers/geo-provider/location-iq-pr
 import { ResilientGeoProvider } from '@infra/providers/geo-provider/resilient-geo-provider'
 import { StadiaChurchRoutingProvider } from '@infra/providers/church-routing-provider/stadia-church-routing-provider'
 import { OpenRouteServiceChurchRoutingProvider } from '@infra/providers/church-routing-provider/openrouteservice-church-routing-provider'
+import { GeoapifyChurchRoutingProvider } from '@infra/providers/church-routing-provider/geoapify-church-routing-provider'
 import { ResilientChurchRoutingProvider } from '@infra/providers/church-routing-provider/resilient-church-routing-provider'
 import { RoutingProfile } from '@common/types/routing-profile/routing-profile-enum'
 import { ResilientAddressProviderDecorator } from '@infra/providers/address-provider/decorators/resilient-address-provider.decorator'
@@ -27,6 +28,7 @@ import { IChurchRoutingProvider } from '@infra/providers/interfaces/church-routi
 import { makeNearestChurchesCacheOptions } from '@modules/churches/services/church-lookup-cache-policy'
 import { STADIA_CONFIG } from '@common/messages/constants/providers/stadia'
 import { OPENROUTESERVICE_CONFIG } from '@common/messages/constants/providers/openrouteservice'
+import { GEOAPIFY_CONFIG } from '@common/messages/constants/providers/geoapify'
 
 let cachedUseCase: FindNearestChurchesUseCase | null = null
 
@@ -70,9 +72,12 @@ function makeResilientAddressProvider(redisRateLimitConnection: Redis): Resilien
 }
 
 /**
- * Stadia first, OpenRouteService when Stadia fails with a RETRYABLE error — an
- * outage, a quota, or a plan without matrix access (403), which is what made
- * every nearest-church lookup answer 503 while routing had a single provider.
+ * Stadia first, then Geoapify, then OpenRouteService — each one tried only when
+ * the previous fails with a RETRYABLE error (an outage, a quota, or a plan
+ * without matrix access (403), which is what made every nearest-church lookup
+ * answer 503 while routing had a single provider). Geoapify sits ahead of ORS
+ * because ORS went down on its own side; ORS stays last so it rejoins the chain
+ * by itself once it recovers.
  *
  * Each raw provider is wrapped in its resilient decorator (rate limiting + error
  * mapping only); caching happens once, at the FindNearestChurchesUseCase layer.
@@ -92,8 +97,16 @@ export function makeChurchRoutingProvider(redisRateLimitConnection: Redis): IChu
     timeoutMs: OPENROUTESERVICE_CONFIG.DEFAULT_TIMEOUT_MS,
   })
 
+  const rawGeoapifyProvider = new GeoapifyChurchRoutingProvider({
+    matrixApiUrl: env.GEOAPIFY_ROUTE_MATRIX_API_URL,
+    apiToken: env.GEOAPIFY_API_TOKEN,
+    defaultCosting: RoutingProfile.PEDESTRIAN,
+    timeoutMs: GEOAPIFY_CONFIG.DEFAULT_TIMEOUT_MS,
+  })
+
   return new ResilientChurchRoutingProvider([
     new ResilientChurchRoutingProviderDecorator(rawStadiaProvider, redisRateLimitConnection),
+    new ResilientChurchRoutingProviderDecorator(rawGeoapifyProvider, redisRateLimitConnection),
     new ResilientChurchRoutingProviderDecorator(rawOpenRouteServiceProvider, redisRateLimitConnection),
   ])
 }

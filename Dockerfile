@@ -41,7 +41,8 @@ ENV DATABASE_URL=postgresql://placeholder:placeholder@localhost:5432/placeholder
   NOMINATIM_API_URL=https://example.com \
   LOCATION_IQ_API_TOKEN=build-time-placeholder \
   STADIA_API_TOKEN=build-time-placeholder \
-  OPENROUTESERVICE_API_TOKEN=build-time-placeholder
+  OPENROUTESERVICE_API_TOKEN=build-time-placeholder \
+  GEOAPIFY_API_TOKEN=build-time-placeholder
 
 RUN npx prisma generate
 RUN npm run build

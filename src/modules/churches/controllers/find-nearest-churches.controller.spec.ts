@@ -17,6 +17,7 @@ import { Deadline } from '@common/utils/deadline'
 import { ok, err } from '@common/utils/result'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { DatabaseQueryError } from '@common/errors/infrastructure/database-query-error'
+import { RoutingProfile } from '@common/types/routing-profile/routing-profile-enum'
 
 const response = {
   nearestChurchesInfo: [],
@@ -25,8 +26,8 @@ const response = {
   coordinatesProviderName: 'LocationIQ',
 }
 
-function makeRequest(deadline: Deadline, cep = '01310100') {
-  return { query: { cep }, ip: '203.0.113.10', deadline } as any
+function makeRequest(deadline: Deadline, cep = '01310100', mode = RoutingProfile.PEDESTRIAN) {
+  return { query: { cep, mode }, ip: '203.0.113.10', deadline } as any
 }
 
 function makeReply() {
@@ -47,7 +48,13 @@ describe('findNearestChurches controller', () => {
 
     await findNearestChurches(makeRequest(deadline), makeReply())
 
-    expect(mockExecute).toHaveBeenCalledWith({ cep: '01310100', deadline })
+    expect(mockExecute).toHaveBeenCalledWith({ cep: '01310100', profile: RoutingProfile.PEDESTRIAN, deadline })
+  })
+
+  it('hands the routing mode the client chose to the use-case', async () => {
+    await findNearestChurches(makeRequest(Deadline.in(8_000), '01310100', RoutingProfile.TRANSPORT), makeReply())
+
+    expect(mockExecute.mock.calls[0][0].profile).toBe(RoutingProfile.TRANSPORT)
   })
 
   it('passes the very deadline the plugin attached, not a fresh one', async () => {

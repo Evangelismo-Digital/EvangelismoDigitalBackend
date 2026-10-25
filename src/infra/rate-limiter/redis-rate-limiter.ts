@@ -79,6 +79,7 @@ export enum EnumProviderConfig {
   LOCATION_IQ_GEOCODING = 'locationIqGeocodingProvider',
   STADIA_ROUTING = 'stadiaRoutingProvider',
   OPENROUTESERVICE_ROUTING = 'openRouteServiceRoutingProvider',
+  GEOAPIFY_ROUTING = 'geoapifyRoutingProvider',
 }
 
 /**
@@ -151,6 +152,12 @@ export class RedisRateLimiter {
     [EnumProviderConfig.OPENROUTESERVICE_ROUTING]: {
       points: 40,
       windowSeconds: 60,
+    },
+    // Free plan: 5 requests per second. The 3000 credits/day quota is not
+    // mirrored here — Geoapify answers 429 once it is spent, which is RETRYABLE.
+    [EnumProviderConfig.GEOAPIFY_ROUTING]: {
+      points: 5,
+      windowSeconds: 1,
     },
   }
 

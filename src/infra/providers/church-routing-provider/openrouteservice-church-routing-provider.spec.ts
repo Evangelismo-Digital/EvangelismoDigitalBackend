@@ -130,15 +130,7 @@ describe('OpenRouteServiceChurchRoutingProvider', () => {
 
     it.each([
       [RoutingProfile.PEDESTRIAN, 'foot-walking'],
-      [RoutingProfile.BICYCLE, 'cycling-regular'],
-      [RoutingProfile.BIKESHARE, 'cycling-regular'],
-      [RoutingProfile.AUTO, 'driving-car'],
-      [RoutingProfile.TAXI, 'driving-car'],
-      [RoutingProfile.BUS, 'driving-car'],
-      [RoutingProfile.MOTORCYCLE, 'driving-car'],
-      [RoutingProfile.MOTOR_SCOOTER, 'driving-car'],
-      [RoutingProfile.LOW_SPEED_VEHICLE, 'driving-car'],
-      [RoutingProfile.TRUCK, 'driving-hgv'],
+      [RoutingProfile.TRANSPORT, 'driving-car'],
     ])('routes the %s costing with the ORS %s profile', async (costing, orsProfile) => {
       await rawProvider().fetchRawDistances(origin, [three[0]], costing)
 
@@ -146,15 +138,15 @@ describe('OpenRouteServiceChurchRoutingProvider', () => {
     })
 
     it('falls back to the configured default costing', async () => {
-      await rawProvider({ defaultCosting: RoutingProfile.BICYCLE }).fetchRawDistances(origin, [three[0]])
-
-      expect(mockedPost).toHaveBeenCalledWith(`${BASE_URL}/cycling-regular`, expect.anything(), expect.anything())
-    })
-
-    it('falls back to AUTO (driving-car) when nothing is configured', async () => {
-      await rawProvider({ defaultCosting: undefined }).fetchRawDistances(origin, [three[0]])
+      await rawProvider({ defaultCosting: RoutingProfile.TRANSPORT }).fetchRawDistances(origin, [three[0]])
 
       expect(mockedPost).toHaveBeenCalledWith(`${BASE_URL}/driving-car`, expect.anything(), expect.anything())
+    })
+
+    it('falls back to PEDESTRIAN (foot-walking) when nothing is configured', async () => {
+      await rawProvider({ defaultCosting: undefined }).fetchRawDistances(origin, [three[0]])
+
+      expect(mockedPost).toHaveBeenCalledWith(`${BASE_URL}/foot-walking`, expect.anything(), expect.anything())
     })
   })
 

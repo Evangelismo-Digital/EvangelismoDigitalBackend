@@ -34,7 +34,7 @@ export interface FindNearestProps {
  * The ceiling for the profile actually being routed.
  *
  * Falls back to PEDESTRIAN — the costing the provider itself defaults to, and
- * the most conservative of the ten — so an unspecified profile can never widen
+ * the more conservative of the two — so an unspecified profile can never widen
  * the cut-off by accident.
  */
 function maxDistanceFor(profile?: RoutingProfile): number {

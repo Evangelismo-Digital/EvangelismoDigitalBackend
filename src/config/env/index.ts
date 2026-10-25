@@ -181,6 +181,10 @@ const envSchema = z.object({
   // to this base URL per request (`/foot-walking`, `/driving-car`, ...).
   OPENROUTESERVICE_MATRIX_API_URL: z.url().default('https://api.openrouteservice.org/v2/matrix'),
   OPENROUTESERVICE_API_TOKEN: z.string().min(1, 'OPENROUTESERVICE_API_TOKEN is required'),
+
+  // Geoapify Route Matrix — routing fallback after Stadia, before OpenRouteService.
+  GEOAPIFY_ROUTE_MATRIX_API_URL: z.url().default('https://api.geoapify.com/v1/routematrix'),
+  GEOAPIFY_API_TOKEN: z.string().min(1, 'GEOAPIFY_API_TOKEN is required'),
   // No `.default(...)`, deliberately. The value that used to sit here was
   // committed to the repository and applied in every NODE_ENV, so forgetting the
   // variable in a deploy did not fail the boot — it silently signed production

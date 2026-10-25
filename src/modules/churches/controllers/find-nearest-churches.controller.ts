@@ -1,4 +1,4 @@
-import { cepSchema } from '@common/dto/utils/cep.dto'
+import { findNearestChurchesQuerySchema } from '@modules/churches/dto/find-nearest-churches.dto'
 import { logger } from '@infra/logger'
 import { makeFindNearestChurchesUseCase } from '@modules/churches/factories/make-find-nearest-churches.service'
 import { ChurchPresenter } from '@modules/churches/presenters/church.presenter'
@@ -8,22 +8,22 @@ import { HttpErrorMapper } from '@common/filters/http-error-mapper'
 import { HTTP_STATUS } from '@common/constants/http-status'
 
 import { ZodRequest } from '@common/types/zod-request'
-import z from 'zod'
 
 export async function findNearestChurches(
-  request: ZodRequest<{ querystring: z.ZodObject<{ cep: typeof cepSchema }> }>,
+  request: ZodRequest<{ querystring: typeof findNearestChurchesQuerySchema }>,
   reply: FastifyReply,
 ) {
-  const { cep } = request.query
+  const { cep, mode } = request.query
 
   logger.info({
     msg: 'Cep do usuário recebido para encontrar igrejas próximas',
     ip: request.ip,
+    mode,
   })
 
   const findNearestChurchesUseCase = makeFindNearestChurchesUseCase()
 
-  const result = await findNearestChurchesUseCase.execute({ cep, deadline: request.deadline })
+  const result = await findNearestChurchesUseCase.execute({ cep, profile: mode, deadline: request.deadline })
 
   if (isErr(result)) {
     return HttpErrorMapper.map(result.error, reply)
