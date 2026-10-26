@@ -107,6 +107,31 @@ describe('DecisionForChristEmailStrategy', async () => {
       expect(result.error.message).toContain('form.location')
     })
 
+    it('async shows a given phone formatted, and nothing for an absent, empty or non-string one', async () => {
+      const withPhone = await strategy.buildStaffEmail({ ...complete, phone: '21987654321' })
+      const variants = await Promise.all(
+        [
+          { ...complete },
+          { ...complete, phone: '' },
+          { ...complete, phone: null },
+          { ...complete, phone: 21987654321 },
+        ].map((form) => strategy.buildStaffEmail(form as unknown as FormPayload)),
+      )
+
+      expect(isOk(withPhone)).toBe(true)
+      if (!isOk(withPhone)) return
+      expect(withPhone.value.message).toContain('Telefone: (21) 98765-4321')
+      expect(withPhone.value.html).toContain('Telefone:')
+      expect(withPhone.value.html).toContain('(21) 98765-4321')
+      for (const result of variants) {
+        expect(isOk(result)).toBe(true)
+        if (!isOk(result)) return
+        expect(result.value.message).not.toContain('Telefone')
+        expect(result.value.html).not.toContain('Telefone')
+        expect(result.value.html).not.toContain('21987654321')
+      }
+    })
+
     it('async includes a string ipAddress but never a non-string one', async () => {
       const nullIp = await strategy.buildStaffEmail({ ...complete, ipAddress: null })
       const numericIp = await strategy.buildStaffEmail({

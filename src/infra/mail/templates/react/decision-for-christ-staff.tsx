@@ -6,6 +6,7 @@ interface DecisionForChristStaffEmailProps {
   name: string
   lastName: string
   email: string
+  phone?: string
   location?: string
   ipAddress?: string
 }
@@ -14,6 +15,7 @@ export function DecisionForChristStaffEmail({
   name,
   lastName,
   email,
+  phone,
   location,
   ipAddress,
 }: Readonly<DecisionForChristStaffEmailProps>) {
@@ -29,6 +31,11 @@ export function DecisionForChristStaffEmail({
           <li>
             <strong>Email:</strong> {email}
           </li>
+          {phone && (
+            <li>
+              <strong>Telefone:</strong> {phone}
+            </li>
+          )}
           <li>
             <strong>Local:</strong> {location ?? 'não informado'}
           </li>

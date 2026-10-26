@@ -38,6 +38,7 @@ export class FormsSubmissionUseCase {
       name: request.name,
       lastName: request.lastName,
       email: request.email,
+      phone: request.phone,
       decisaoPorCristo: request.decisaoPorCristo,
       location: request.location || undefined,
       ipAddress: request.ipAddress || undefined,
@@ -67,6 +68,7 @@ export class FormsSubmissionUseCase {
         name: sanitizedFormSubmission.name,
         lastName: sanitizedFormSubmission.lastName,
         email: sanitizedFormSubmission.email,
+        phone: sanitizedFormSubmission.phone,
         decisaoPorCristo: sanitizedFormSubmission.decisaoPorCristo,
         location: sanitizedFormSubmission.location,
       },
@@ -87,6 +89,7 @@ type SanitizedFormSubmission = {
   name: string
   lastName: string
   email: string
+  phone: string | null
   decisaoPorCristo: boolean
   location: string | null
   ipAddress: string | null
@@ -96,6 +99,7 @@ function sanitize(formSubmission: {
   name: string
   lastName: string
   email: string
+  phone?: string | null
   decisaoPorCristo: boolean
   location?: string | null
   ipAddress?: string | null
@@ -104,6 +108,7 @@ function sanitize(formSubmission: {
     name: formSubmission.name,
     lastName: formSubmission.lastName,
     email: formSubmission.email,
+    phone: formSubmission.phone ?? null,
     decisaoPorCristo: formSubmission.decisaoPorCristo,
     location: formSubmission.location ?? null,
     ipAddress: formSubmission.ipAddress ?? null,

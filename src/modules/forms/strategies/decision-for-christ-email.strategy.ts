@@ -13,6 +13,7 @@ import {
   buildStaffMailJob,
   buildUserMailJob,
   optionalIpAddress,
+  optionalPhone,
   optionalStringField,
   requireStringField,
   requireSubmitterIdentity,
@@ -46,14 +47,15 @@ export class DecisionForChristEmailStrategy implements IFormEmailStrategy {
     const lastName = lastNameResult.value
     const location = locationResult.value
     const ipAddress = optionalIpAddress(form)
+    const phone = optionalPhone(form)
 
     return ok(
       buildStaffMailJob({
         type: 'decision-for-Christ',
         subject: decisionForChristStaffSubjectText(),
-        message: decisionForChristStaffTextTemplate(name, email, ipAddress),
+        message: decisionForChristStaffTextTemplate(name, email, ipAddress, phone),
         html: await render(
-          React.createElement(DecisionForChristStaffEmail, { name, lastName, email, location, ipAddress }),
+          React.createElement(DecisionForChristStaffEmail, { name, lastName, email, phone, location, ipAddress }),
         ),
       }),
     )
