@@ -15,8 +15,8 @@ export const CACHE_CONFIG = {
 
   /**
    * The single cache layer for the "find the nearest church" flow. Keyed by
-   * CEP + routing profile and holding the finished church list — never
-   * intermediate coordinates. FETCH_TIMEOUT_MS is the budget for the entire
+   * CEP + routing profile and holding the finished answer (church list and its
+   * origin) — never intermediate values. FETCH_TIMEOUT_MS is the budget for the entire
    * chain (address -> geocode -> KNN -> routing matrix).
    */
   NEAREST_CHURCHES: {
@@ -25,9 +25,10 @@ export const CACHE_CONFIG = {
      * entries written by the previous release are never read back — they would
      * otherwise be served for up to DEFAULT_TTL_SECONDS. v2: `totalFound` counts
      * the churches returned, walking routes avoid ferries, and the church
-     * addresses were normalised (2026-10-25). Old keys simply expire.
+     * addresses were normalised (2026-10-25). v3: the response carries `origin`,
+     * the point the routes start from (2026-10-25). Old keys simply expire.
      */
-    PREFIX: 'cache:nearest-churches:v2:',
+    PREFIX: 'cache:nearest-churches:v3:',
     DEFAULT_TTL_SECONDS: SECONDS_PER_DAY * DAYS_PER_WEEK,
 
     /**

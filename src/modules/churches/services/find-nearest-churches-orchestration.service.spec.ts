@@ -13,6 +13,7 @@ import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-c
 import { LatitudeRangeError } from '@modules/churches/errors/latitude-range-error'
 import { Deadline } from '@common/utils/deadline'
 import { RoutingProfile } from '@common/types/routing-profile/routing-profile-enum'
+import { makeNearestChurchesCacheOptions } from '@modules/churches/services/church-lookup-cache-policy'
 
 const mockGetOrFetch = vi.fn()
 const mockGenerateKey = vi.fn()
@@ -144,6 +145,7 @@ describe('FindNearestChurchesUseCase orchestration', () => {
     if (isOk(result)) {
       expect(result.value).toEqual({
         nearestChurchesInfo: toPublicNearbyChurches(routedChurches),
+        origin: { lat: -23.55, lon: -46.63 },
         totalFound: 1,
         precision: 'ROOFTOP',
         coordinatesProviderName: 'LocationIQ',
@@ -165,6 +167,39 @@ describe('FindNearestChurchesUseCase orchestration', () => {
       },
       RoutingProfile.PEDESTRIAN,
     )
+  })
+
+  describe('route origin', () => {
+    it('answers with the point the distances were measured from: the coordinates the CEP resolved to', async () => {
+      cepToLatLonUseCase.execute.mockResolvedValueOnce(
+        ok({ userLat: -22.9035, userLon: -43.1098, precision: 'ROOFTOP', coordinatesProviderName: 'AwesomeAPI' }),
+      )
+      findNearbyChurchesKnnUseCase.execute.mockResolvedValueOnce(ok({ churches: [{ id: 1 }], totalFound: 1 }))
+      calculateChurchRouteDistancesUseCase.findNearest.mockResolvedValueOnce(ok([]))
+
+      const result = await useCase.execute({ cep: '24230100' })
+
+      expect(isOk(result) && result.value.origin).toEqual({ lat: -22.9035, lon: -43.1098 })
+      // The same point routing started from, so a map can draw the very route that was measured.
+      expect(calculateChurchRouteDistancesUseCase.findNearest).toHaveBeenCalledWith(
+        expect.objectContaining({ user: { userLat: -22.9035, userLon: -43.1098 } }),
+        RoutingProfile.PEDESTRIAN,
+      )
+    })
+
+    it('reads no response cached before the origin existed', () => {
+      // Cached answers live for a week: without a new key version they would be served without an origin.
+      expect(makeNearestChurchesCacheOptions().prefix).toBe('cache:nearest-churches:v3:')
+    })
+
+    it('has no origin when the CEP cannot be located', async () => {
+      cepToLatLonUseCase.execute.mockResolvedValueOnce(err(new InvalidCepError()))
+
+      const result = await useCase.execute({ cep: '00000000' })
+
+      expect(isErr(result) && result.error).toBeInstanceOf(InvalidCepError)
+      expect(findNearbyChurchesKnnUseCase.execute).not.toHaveBeenCalled()
+    })
   })
 
   describe('routing mode', () => {

@@ -43,7 +43,13 @@ describe('ResilientGeocodingProviderDecorator Sleep Signal handling', () => {
 
   it('should abort sleep early when the deadline expires during backoff', async () => {
     rawProviderMock.searchRaw.mockRejectedValueOnce(new Error('Retryable network error'))
-    rawProviderMock.searchRaw.mockResolvedValueOnce({ lat: 1, lon: 2 })
+    rawProviderMock.searchRaw.mockImplementationOnce(
+      async () =>
+        await new Promise<{
+          lat: number
+          lon: number
+        }>(() => {}),
+    )
 
     const controller = new AbortController()
     const fetchPromise = decorator.search('some query', Deadline.in(Infinity, { linkedTo: controller.signal }))

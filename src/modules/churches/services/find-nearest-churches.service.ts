@@ -21,8 +21,20 @@ export interface FindNearestChurchesRequest {
   deadline?: Deadline
 }
 
+/** A point in decimal degrees, named like the churches' own `lat`/`lon`. */
+export interface GeoPoint {
+  lat: number
+  lon: number
+}
+
 export interface FindNearestChurchesResponse {
   nearestChurchesInfo: PublicNearbyChurch[]
+  /**
+   * Where the routes start: the coordinates the CEP resolved to, the same point
+   * every distance was measured from. A client draws directions from here rather
+   * than from the device's own location, which may be far from the CEP searched.
+   */
+  origin: GeoPoint
   /**
    * How many churches `nearestChurchesInfo` carries — not the KNN candidates
    * routing started from, since it drops the unreachable ones and those beyond
@@ -38,9 +50,10 @@ export interface FindNearestChurchesResponse {
 /**
  * The single cache layer for the whole "find the nearest church" flow.
  *
- * A CEP hit returns the finished church list — the cache holds no intermediate
- * values (coordinates, KNN candidates), so every collaborator below runs only
- * on a miss and inherits this layer's budget as a {@link Deadline}.
+ * A CEP hit returns the finished answer (church list and origin) — the cache
+ * holds no intermediate values (KNN candidates, unrouted distances), so every
+ * collaborator below runs only on a miss and inherits this layer's budget as a
+ * {@link Deadline}.
  */
 /**
  * How this use-case's cache is wired.
@@ -123,6 +136,7 @@ export class FindNearestChurchesUseCase {
 
     return ok({
       nearestChurchesInfo: toPublicNearbyChurches(nearestChurchesResult.value),
+      origin: { lat: userLat, lon: userLon },
       mode: profile,
       totalFound: nearestChurchesResult.value.length,
       precision,
