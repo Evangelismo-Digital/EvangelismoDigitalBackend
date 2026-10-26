@@ -116,6 +116,13 @@ describe('HTML dos e-mails de contato', () => {
       expect(html).not.toContain('onerror=alert(1)>')
     })
 
+    it('escapa HTML num telefone fora do formato, exibido como veio', async () => {
+      const html = await staffHtml(form({ phone: '<img src=x onerror=alert(1)>' } as never))
+
+      expect(html).not.toContain('<img src=x')
+      expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;')
+    })
+
     it('escapa HTML no endereço de e-mail exibido para a equipe', async () => {
       const html = await staffHtml(form({ email: '<b>fake</b>@example.com' } as never))
 

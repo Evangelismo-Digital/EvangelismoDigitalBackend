@@ -99,6 +99,31 @@ describe('POST /forms/submit-form (integration, real Postgres)', () => {
     expect((events[0].payload as Record<string, unknown>).email).toBe('forms-it@example.com')
   })
 
+  it('201 → stores a masked phone as digits in the row and the outbox payload', async () => {
+    const res = await request(app.server)
+      .post('/forms/submit-form')
+      .set('x-forwarded-for', '198.51.100.14')
+      .send({ ...VALID, email: 'forms-it-phone@example.com', phone: '(21) 98765-4321' })
+
+    expect(res.statusCode).toBe(201)
+    expect(res.body.sanitizedFormSubmission.phone).toBe('21987654321')
+    const form = await prisma.formSubmission.findUnique({ where: { email: 'forms-it-phone@example.com' } })
+    expect(form?.phone).toBe('21987654321')
+    const [event] = await prisma.outboxEvent.findMany({ where: { type: OUTBOX_EVENT_TYPES.FORM_SUBMISSION_CREATED } })
+    expect((event.payload as Record<string, unknown>).phone).toBe('21987654321')
+  })
+
+  it('201 → stores NULL when the phone is blank or absent', async () => {
+    await request(app.server)
+      .post('/forms/submit-form')
+      .set('x-forwarded-for', '198.51.100.15')
+      .send({ ...VALID, email: 'forms-it-blank@example.com', phone: '' })
+    await request(app.server).post('/forms/submit-form').set('x-forwarded-for', '198.51.100.15').send(VALID)
+
+    const forms = await prisma.formSubmission.findMany({ where: { email: { contains: 'forms-it' } } })
+    expect(forms.map((form) => form.phone)).toEqual([null, null])
+  })
+
   it('publishes the outbox wakeup signal after commit with the created event', async () => {
     await request(app.server)
       .post('/forms/submit-form')
@@ -133,6 +158,7 @@ describe('POST /forms/submit-form (integration, real Postgres)', () => {
     ['name too short', { ...VALID, name: 'ab' }],
     ['invalid email', { ...VALID, email: 'not-an-email' }],
     ['missing decisaoPorCristo', { name: 'Maria', lastName: 'Souza', email: 'forms-it-x@example.com' }],
+    ['invalid phone', { ...VALID, phone: '(20) 1234-5678' }],
   ])('400 on %s and touches neither table', async (_label, payload) => {
     const res = await request(app.server)
       .post('/forms/submit-form')

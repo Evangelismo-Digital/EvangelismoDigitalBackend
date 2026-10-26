@@ -5,6 +5,8 @@ import { isOk, isErr } from '@common/utils/result'
 import { InvalidFormPayloadError } from '@modules/forms/errors/invalid-form-payload-error'
 import { env } from '@config/env/index'
 
+const CONTACT = { name: 'João', lastName: 'Lima', email: 'joao@test.com' }
+
 describe('ContactEmailStrategy', async () => {
   let strategy: ContactEmailStrategy
 
@@ -107,6 +109,31 @@ describe('ContactEmailStrategy', async () => {
       expect(isErr(result)).toBe(true)
       if (!isErr(result)) return
       expect(result.error.message).toContain('form.lastName')
+    })
+
+    it('async shows a given phone formatted, and nothing for an absent, empty or non-string one', async () => {
+      const withPhone = await strategy.buildStaffEmail({ ...CONTACT, phone: '21987654321' })
+      const variants = await Promise.all(
+        [
+          { ...CONTACT },
+          { ...CONTACT, phone: '' },
+          { ...CONTACT, phone: null },
+          { ...CONTACT, phone: 21987654321 },
+        ].map((form) => strategy.buildStaffEmail(form as unknown as FormPayload)),
+      )
+
+      expect(isOk(withPhone)).toBe(true)
+      if (!isOk(withPhone)) return
+      expect(withPhone.value.message).toContain('Telefone: (21) 98765-4321')
+      expect(withPhone.value.html).toContain('Telefone:')
+      expect(withPhone.value.html).toContain('(21) 98765-4321')
+      for (const result of variants) {
+        expect(isOk(result)).toBe(true)
+        if (!isOk(result)) return
+        expect(result.value.message).not.toContain('Telefone')
+        expect(result.value.html).not.toContain('Telefone')
+        expect(result.value.html).not.toContain('21987654321')
+      }
     })
 
     it('async includes a string ipAddress but never a non-string one', async () => {

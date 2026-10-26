@@ -4,6 +4,7 @@ import { AppError } from '@common/errors/app-error'
 import { InvalidFormPayloadError } from '@modules/forms/errors/invalid-form-payload-error'
 import { IMailJobData } from '@infra/mail/interfaces/mail-job-data.interface'
 import { env } from '@config/env/index'
+import { formatPhone } from '@common/utils/phone'
 
 /**
  * Reading typed fields out of an untyped form payload.
@@ -47,6 +48,17 @@ export function optionalStringField(value: unknown, fieldName: string): Result<s
  */
 export function optionalIpAddress(form: FormPayload): string | undefined {
   return typeof form.ipAddress === 'string' ? form.ipAddress : undefined
+}
+
+/**
+ * The submitter's phone, formatted for a person to read, when they gave one.
+ *
+ * Never a failure, like the IP: the phone is optional on every form, and an
+ * event written before the field existed simply has none. A blank phone stays
+ * `''`, which every template treats as absent.
+ */
+export function optionalPhone(form: FormPayload): string | undefined {
+  return typeof form.phone === 'string' ? formatPhone(form.phone) : undefined
 }
 
 /** The two fields every form must carry, whoever the e-mail is addressed to. */
@@ -110,6 +122,7 @@ export function buildStaffMailJob(content: StaffMailJobContent): IMailJobData {
 
 export interface ContactStaffData extends SubmitterIdentity {
   lastName: string
+  phone?: string
   ipAddress?: string
 }
 
@@ -123,6 +136,7 @@ export function extractContactStaffData(form: FormPayload): Result<ContactStaffD
   return ok({
     ...identityResult.value,
     lastName: lastNameResult.value,
+    phone: optionalPhone(form),
     ipAddress: optionalIpAddress(form),
   })
 }

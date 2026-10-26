@@ -6,10 +6,11 @@ interface ContactStaffEmailProps {
   name: string
   lastName: string
   email: string
+  phone?: string
   ipAddress?: string
 }
 
-export function ContactStaffEmail({ name, lastName, email, ipAddress }: Readonly<ContactStaffEmailProps>) {
+export function ContactStaffEmail({ name, lastName, email, phone, ipAddress }: Readonly<ContactStaffEmailProps>) {
   return (
     <EmailLayout headerTitle="Boas notícias!">
       <Heading className="text-[20px] font-semibold text-gray-800 text-center mb-[20px]">
@@ -23,6 +24,11 @@ export function ContactStaffEmail({ name, lastName, email, ipAddress }: Readonly
         <Text className="m-0">
           <strong>Email:</strong> {email}
         </Text>
+        {phone && (
+          <Text className="m-0">
+            <strong>Telefone:</strong> {phone}
+          </Text>
+        )}
         {ipAddress && (
           <Text className="m-0">
             <strong>IP de origem:</strong> {ipAddress}

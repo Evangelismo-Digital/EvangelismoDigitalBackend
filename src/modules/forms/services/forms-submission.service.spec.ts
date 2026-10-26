@@ -69,6 +69,47 @@ describe('Forms Submission Use Case', async () => {
     }
   })
 
+  it('persists the phone and carries it in the outbox payload', async () => {
+    const formsRepository = new InMemoryFormsSubmissionRepository()
+    const useCase = new FormsSubmissionUseCase(formsRepository, mockEventRegistration)
+
+    const result = await useCase.execute({
+      name: 'John',
+      lastName: 'Smith',
+      email: 'john@example.com',
+      phone: '21987654321',
+      decisaoPorCristo: false,
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.value.sanitizedFormSubmission.phone).toBe('21987654321')
+    expect(formsRepository.items[0].phone).toBe('21987654321')
+    expect(mockEventRegistration.register).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: expect.objectContaining({ phone: '21987654321' }) }),
+    )
+  })
+
+  it('stores and forwards a missing phone as null', async () => {
+    const formsRepository = new InMemoryFormsSubmissionRepository()
+    const useCase = new FormsSubmissionUseCase(formsRepository, mockEventRegistration)
+
+    const result = await useCase.execute({
+      name: 'John',
+      lastName: 'Smith',
+      email: 'john@example.com',
+      decisaoPorCristo: false,
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.value.sanitizedFormSubmission.phone).toBeNull()
+    expect(formsRepository.items[0].phone).toBeNull()
+    expect(mockEventRegistration.register).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: expect.objectContaining({ phone: null }) }),
+    )
+  })
+
   it('should set ipAddress to null if not provided', async () => {
     const formsRepository = new InMemoryFormsSubmissionRepository()
     const useCase = new FormsSubmissionUseCase(formsRepository, mockEventRegistration)

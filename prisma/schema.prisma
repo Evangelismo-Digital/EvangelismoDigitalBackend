@@ -86,6 +86,8 @@ model FormSubmission {
   name             String
   lastName         String
   email            String   @unique
+  // Só dígitos (DDD + número); NULL quando não informado
+  phone            String?
   decisaoPorCristo Boolean
   location         String?
   ipAddress        String?  @map("ip_address")

@@ -27,14 +27,14 @@ export class ContactEmailStrategy implements IFormEmailStrategy {
     const dataResult = extractContactStaffData(form)
     if (isErr(dataResult)) return dataResult
 
-    const { email, name, lastName, ipAddress } = dataResult.value
+    const { email, name, lastName, phone, ipAddress } = dataResult.value
 
     return ok(
       buildStaffMailJob({
         type: 'contact',
         subject: contactStaffSubjectTextTemplate(),
-        message: contactStaffTextTemplate(name, email, ipAddress),
-        html: await render(React.createElement(ContactStaffEmail, { name, lastName, email, ipAddress })),
+        message: contactStaffTextTemplate(name, email, ipAddress, phone),
+        html: await render(React.createElement(ContactStaffEmail, { name, lastName, email, phone, ipAddress })),
       }),
     )
   }
