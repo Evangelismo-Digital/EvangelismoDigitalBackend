@@ -10,16 +10,34 @@
  * Usage: node scripts/vitest-to-sonar.mjs <vitest.json> <out.xml>
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { dirname, relative, isAbsolute } from 'node:path'
+import { dirname, relative, isAbsolute, resolve, sep } from 'node:path'
 
-const [inputPath, outputPath] = process.argv.slice(2)
+const ROOT = process.cwd()
 
-if (!inputPath || !outputPath) {
+/**
+ * Both paths come from argv, so they are confined to the repository: the script
+ * only ever converts reports/sonar/* (sonar.sh, ci-local.sh), and a path that
+ * resolves outside the tree is a mistake to stop on, not a file to touch
+ * (Snyk Code javascript/PT).
+ */
+function insideRoot(path) {
+  const absolute = resolve(ROOT, path)
+  if (!absolute.startsWith(ROOT + sep)) {
+    console.error(`caminho fora do repositório: ${path}`)
+    process.exit(1)
+  }
+  return absolute
+}
+
+const [inputArg, outputArg] = process.argv.slice(2)
+
+if (!inputArg || !outputArg) {
   console.error('uso: node scripts/vitest-to-sonar.mjs <vitest.json> <out.xml>')
   process.exit(1)
 }
 
-const ROOT = process.cwd()
+const inputPath = insideRoot(inputArg)
+const outputPath = insideRoot(outputArg)
 
 /** Control characters are illegal in XML 1.0 even when escaped, and a stack
  *  trace from a failed assertion routinely contains them. */
@@ -97,4 +115,4 @@ writeFileSync(outputPath, xml, 'utf8')
 
 const fileCount = byFile.size
 const caseCount = [...byFile.values()].reduce((total, cases) => total + cases.size, 0)
-console.log(`sonar: ${caseCount} testes em ${fileCount} arquivos -> ${outputPath}`)
+console.log(`sonar: ${caseCount} testes em ${fileCount} arquivos -> ${outputArg}`)

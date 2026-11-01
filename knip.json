@@ -4,5 +4,5 @@
   "project": ["src/**/*.{ts,tsx}"],
   "ignore": ["src/load-test/**"],
   "ignoreExportsUsedInFile": true,
-  "ignoreDependencies": ["pino-pretty", "snyk"]
+  "ignoreDependencies": ["pino-pretty"]
 }

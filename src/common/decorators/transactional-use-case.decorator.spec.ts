@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { TransactionalUseCaseDecorator } from './transactional-use-case.decorator'
 import { DatabaseContext } from '@infra/database/prisma/helpers/database-context'
-import { ok, err, isOk, isErr, Result } from '@common/utils/result'
+import { ok, err, isOk, Result } from '@common/utils/result'
 import { AppError } from '@common/errors/app-error'
 import { DatabaseQueryError } from '@common/errors/infrastructure/database-query-error'
 

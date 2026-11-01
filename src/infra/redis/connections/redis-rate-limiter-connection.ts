@@ -2,12 +2,14 @@ import { env } from '@config/env/index'
 import Redis from 'ioredis'
 import { attachOutageLogging } from './attach-outage-logging'
 import { REDIS_LOGS } from '@common/messages/constants/logs/redis'
+import { REDIS_WIRE_PROTOCOL } from './redis-wire-protocol'
 
 export function createRedisRateLimiterConnection() {
   const redis = new Redis({
     host: env.REDIS_HOST,
     port: env.REDIS_PORT,
     password: env.REDIS_PASSWORD || undefined,
+    protocol: REDIS_WIRE_PROTOCOL,
 
     // === DIFERENÇAS CHAVE PARA O RATE LIMITER ===
 

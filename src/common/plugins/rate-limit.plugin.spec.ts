@@ -25,6 +25,17 @@ vi.mock('@infra/rate-limiter/rate-limit-health-probe', () => ({
 import { httpRateLimitPlugin } from './rate-limit.plugin'
 import { HTTP_RATE_LIMIT_POLICIES } from '@common/plugins/policies/rate-limit'
 
+/**
+ * Invokes the plugin the way Fastify does: with the instance AND its options.
+ * The implementation ignores `opts`, so CodeQL reports the second argument as
+ * superfluous — but `FastifyPluginAsync` requires it, and dropping it would test
+ * a call shape Fastify never makes.
+ */
+function runPlugin(app: unknown) {
+  // codeql[js/superfluous-trailing-arguments] Required by the FastifyPluginAsync contract; Fastify always passes opts.
+  return httpRateLimitPlugin(app as never, {} as never)
+}
+
 function fakeApp() {
   const register = vi.fn().mockResolvedValue(undefined)
   const addHook = vi.fn()
@@ -41,7 +52,7 @@ describe('httpRateLimitPlugin', () => {
     const { register } = fakeApp()
     const app = { register, addHook: vi.fn() }
 
-    await httpRateLimitPlugin(app as never, {} as never)
+    await runPlugin(app)
 
     expect(mockGetRedisRateLimit).toHaveBeenCalled()
     expect(register).toHaveBeenCalledWith(
@@ -66,7 +77,7 @@ describe('httpRateLimitPlugin', () => {
   it('does not install a custom store — Redis is the single source of truth', async () => {
     const { register, app } = fakeApp()
 
-    await httpRateLimitPlugin(app as never, {} as never)
+    await runPlugin(app)
 
     const registered = register.mock.calls[0][1] as Record<string, unknown>
     expect(registered.store).toBeUndefined()
@@ -75,7 +86,7 @@ describe('httpRateLimitPlugin', () => {
   it('starts the health probe, so a skipped limit is never silent', async () => {
     const { app } = fakeApp()
 
-    await httpRateLimitPlugin(app as never, {} as never)
+    await runPlugin(app)
 
     expect(mockProbeFor).toHaveBeenCalledWith(mockRedisConnection)
     expect(mockProbe.start).toHaveBeenCalledOnce()
@@ -84,7 +95,7 @@ describe('httpRateLimitPlugin', () => {
   it('stops the probe when the app closes, leaving no timer behind', async () => {
     const { addHook, app } = fakeApp()
 
-    await httpRateLimitPlugin(app as never, {} as never)
+    await runPlugin(app)
 
     const onClose = addHook.mock.calls.find((call) => call[0] === 'onClose')?.[1] as () => void
     expect(onClose).toBeDefined()
@@ -98,7 +109,7 @@ describe('httpRateLimitPlugin', () => {
   it('registers onRoute hook to apply default rate limits', async () => {
     const { addHook, app } = fakeApp()
 
-    await httpRateLimitPlugin(app as never, {} as never)
+    await runPlugin(app)
 
     expect(addHook).toHaveBeenCalledWith('onRoute', expect.any(Function))
     const onRouteHook = addHook.mock.calls.find((call) => call[0] === 'onRoute')?.[1] as (routeOptions: any) => void

@@ -15,6 +15,7 @@ import { resetPassword } from './reset-password.controller'
 import { ok, err } from '@common/utils/result'
 import { AUTH_CONSTANTS } from '@common/messages/constants/auth/auth'
 import { InvalidTokenError } from '@modules/auth/errors/invalid-token-error'
+import { logger } from '@infra/logger'
 
 function makeReply() {
   return {
@@ -37,6 +38,14 @@ describe('resetPassword controller', () => {
     expect(mockExecute).toHaveBeenCalledWith({ password: 'NewPassword1!', token: 'tok-123' })
     expect(reply.code).toHaveBeenCalledWith(200)
     expect(reply.send).toHaveBeenCalledWith({ message: AUTH_CONSTANTS.PASSWORD_CHANGED_SUCCESS })
+  })
+
+  it('logs the reset against the public id only', async () => {
+    mockExecute.mockResolvedValueOnce(ok({ user: { publicId: 'user-1', passwordHash: '$2b$hash' } }))
+
+    await resetPassword({ body: { password: 'NewPassword1!', token: 'tok-123' } } as never, makeReply())
+
+    expect(logger.info).toHaveBeenCalledWith({ userId: 'user-1' }, AUTH_CONSTANTS.PASSWORD_CHANGED_SUCCESS)
   })
 
   it('maps domain error when token is invalid', async () => {

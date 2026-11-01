@@ -70,6 +70,10 @@
     "sonar:reset": "bash scripts/sonar.sh reset",
     "security:scan": "bash scripts/security-scan.sh",
     "security:report": "node scripts/security-report.mjs",
+    "security:codeql": "bash scripts/codeql-scan.sh",
+    "security:snyk": "snyk test",
+    "security:snyk:code": "snyk code test",
+    "security:audit": "npm audit",
     "test:integration:repositories": "vitest run --project integration-repositories",
     "outbox:triage": "tsx scripts/outbox-triage.ts",
     "check:duplication": "jscpd src"
@@ -101,16 +105,16 @@
     "@sentry/profiling-node": "10.73.0",
     "axios": "1.20.0",
     "bcryptjs": "3.0.3",
-    "bullmq": "5.81.4",
+    "bullmq": "6.4.2",
     "close-with-grace": "2.5.0",
     "cockatiel": "4.0.0",
-    "cpf-cnpj-validator": "1.0.3",
+    "cpf-cnpj-validator": "2.1.2",
     "dotenv": "17.4.2",
     "fastify": "5.12.6",
     "fastify-metrics": "13.2.1",
     "fastify-plugin": "5.1.0",
     "fastify-type-provider-zod": "7.0.0",
-    "ioredis": "5.11.1",
+    "ioredis": "6.0.0",
     "ipaddr.js": "2.2.0",
     "ms": "2.1.3",
     "nodemailer": "10.1.4",
@@ -155,7 +159,7 @@
     "pino-pretty": "13.1.3",
     "prettier": "3.9.6",
     "prisma": "7.10.0",
-    "snyk": "1.1307.0",
+    "snyk": "1.1308.3",
     "supertest": "7.2.2",
     "tsup": "8.5.1",
     "tsx": "4.23.13",
@@ -169,9 +173,7 @@
     "@rollup/rollup-linux-x64-gnu": "4.53.3"
   },
   "overrides": {
-    "typed-rest-client": {
-      "qs": "6.16.0"
-    },
+    "qs": "6.16.1",
     "@prisma/config": {
       "deepmerge-ts": "8.0.0"
     },
@@ -182,6 +184,9 @@
       "esbuild": "0.28.2"
     },
     "fast-uri": "3.1.9",
-    "follow-redirects": "1.16.1"
+    "follow-redirects": "1.16.1",
+    "@react-email/render": {
+      "html-to-text": "10.0.1"
+    }
   }
 }

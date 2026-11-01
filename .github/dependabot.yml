@@ -20,3 +20,19 @@ updates:
     open-pull-requests-limit: 5
     cooldown:
       default-days: 7
+
+  # The Dockerfile's base image (node:22-slim) is what the production container
+  # runs on, and it was the one dependency no update stream watched.
+  - package-ecosystem: 'docker'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+
+# Dependabot SECURITY updates (enabled in the repository settings, not here)
+# open a PR as soon as an advisory has a fix and do not honour `cooldown`. When
+# one proposes a version younger than the 7-day release quarantine in .npmrc,
+# `npm ci` in CI still resolves from the lockfile it wrote, so review the
+# published date before merging rather than relying on the quarantine.

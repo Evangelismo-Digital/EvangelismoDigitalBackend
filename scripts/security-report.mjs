@@ -26,6 +26,8 @@ const SOURCES = {
   semgrep: `${OUT_DIR}/semgrep.sarif`,
   snykOss: `${OUT_DIR}/snyk-oss.sarif`,
   snykCode: `${OUT_DIR}/snyk-code.sarif`,
+  codeqlJs: `${OUT_DIR}/codeql-javascript-typescript.sarif`,
+  codeqlActions: `${OUT_DIR}/codeql-actions.sarif`,
   eslint: 'reports/eslint/eslint-report.json',
   sonarIssues: 'reports/sonar/issues.json',
   sonarHotspots: 'reports/sonar/hotspots.json',
@@ -131,16 +133,30 @@ function sarifSeverity(level) {
   return 'LOW'
 }
 
-function collectSarif(tool, path) {
+/**
+ * @param {{ securityOnly?: boolean }} [options] `securityOnly` keeps only the
+ *   results whose rule is tagged `security` — CodeQL's security-and-quality
+ *   suite also reports maintainability findings, which belong in the Security
+ *   tab but not in a security gate.
+ */
+function collectSarif(tool, path, { securityOnly = false } = {}) {
   const sarif = readJson(path)
   if (!sarif) return []
 
   return (sarif.runs ?? []).flatMap((run) => {
     // SARIF puts the severity on the rule, not the result, unless the result
     // overrides it; without this lookup everything collapses to one level.
-    const rules = new Map((run.tool?.driver?.rules ?? []).map((rule) => [rule.id, rule]))
+    // CodeQL declares its rules on the query packs (`tool.extensions`), not on
+    // the driver, so both are searched.
+    const rules = new Map(
+      [run.tool?.driver, ...(run.tool?.extensions ?? [])]
+        .flatMap((component) => component?.rules ?? [])
+        .map((rule) => [rule.id, rule]),
+    )
 
-    return (run.results ?? []).map((result) => {
+    const isSecurity = (result) => (rules.get(result.ruleId)?.properties?.tags ?? []).includes('security')
+
+    return (run.results ?? []).filter((result) => !securityOnly || isSecurity(result)).map((result) => {
       const location = result.locations?.[0]?.physicalLocation
       const rule = rules.get(result.ruleId)
 
@@ -152,6 +168,10 @@ function collectSarif(tool, path) {
         severity: sarifSeverity(result.level ?? rule?.defaultConfiguration?.level ?? 'warning'),
         message: (result.message?.text ?? '').trim(),
         extra: result.properties?.cwe ?? rule?.properties?.cwe ?? '',
+        // An in-source suppression (CodeQL's `// codeql[<rule>] <reason>`) is a
+        // justification that lives next to the code; it counts like an entry in
+        // security-suppressions.json.
+        suppressedInSource: (result.suppressions ?? []).length > 0,
       }
     })
   })
@@ -224,12 +244,20 @@ function deduplicate(findings) {
     const existing = merged.get(key)
 
     if (!existing) {
-      merged.set(key, { ...finding, tools: [finding.tool], rules: [finding.rule] })
+      merged.set(key, {
+        ...finding,
+        tools: [finding.tool],
+        rules: [finding.rule],
+        suppressedInSource: finding.suppressedInSource === true,
+      })
       continue
     }
 
     existing.tools.push(finding.tool)
     existing.rules.push(finding.rule)
+    // Suppressed in source only if EVERY tool's report of this line is: one
+    // scanner's justified false positive must not hide another scanner's finding.
+    existing.suppressedInSource &&= finding.suppressedInSource === true
 
     if (SEVERITY_ORDER[finding.severity] < SEVERITY_ORDER[existing.severity]) {
       existing.severity = finding.severity
@@ -242,12 +270,27 @@ function deduplicate(findings) {
   )
 }
 
-function loadSuppressions() {
+/**
+ * An entry may carry `expires` (ISO date). Past it, the entry stops suppressing
+ * and the finding is back in the report — the same contract as `ignoreUntil` in
+ * osv-scanner.toml. It exists for findings that are accepted only until a fix
+ * becomes installable (the 7-day release quarantine in .npmrc), so the
+ * suppression cannot outlive the reason it was written.
+ */
+function loadSuppressions(now = Date.now()) {
   const raw = readJson(SUPPRESSIONS_FILE) ?? []
-  return new Map(raw.map((entry) => [`${entry.rule}@${entry.file}:${entry.line}`, entry]))
+  const active = raw.filter((entry) => {
+    if (!entry.expires || Date.parse(entry.expires) > now) return true
+    console.warn(
+      `[security] AVISO: supressão expirada em ${entry.expires} — ${entry.rule}@${entry.file}:${entry.line} volta a contar.`,
+    )
+    return false
+  })
+  return new Map(active.map((entry) => [`${entry.rule}@${entry.file}:${entry.line}`, entry]))
 }
 
 function isSuppressed(finding, suppressions) {
+  if (finding.suppressedInSource) return true
   return finding.rules.some((rule) => suppressions.has(`${rule}@${finding.file}:${finding.line}`))
 }
 
@@ -265,7 +308,14 @@ function renderFindings(title, findings) {
   for (const finding of findings) {
     const rules = [...new Set(finding.rules)].join(', ')
     const tools = [...new Set(finding.tools)].join(', ')
-    const message = finding.message.replace(/\|/g, '\\|').replace(/\n/g, ' ').slice(0, 160)
+    // Backslashes first: a message that already contains `\|` would otherwise
+    // become `\\|`, an escaped backslash followed by a live pipe that splits the
+    // table row (CodeQL js/incomplete-sanitization).
+    const message = finding.message
+      .replace(/\\/g, '\\\\')
+      .replace(/\|/g, '\\|')
+      .replace(/\n/g, ' ')
+      .slice(0, 160)
     lines.push(`| ${finding.severity} | \`${finding.file}:${finding.line}\` | \`${rules}\` | ${tools} | ${message} |`)
   }
 
@@ -279,6 +329,8 @@ const all = deduplicate([
   ...collectSarif('semgrep', SOURCES.semgrep),
   ...collectSarif('snyk-oss', SOURCES.snykOss),
   ...collectSarif('snyk-code', SOURCES.snykCode),
+  ...collectSarif('codeql', SOURCES.codeqlJs, { securityOnly: true }),
+  ...collectSarif('codeql', SOURCES.codeqlActions, { securityOnly: true }),
   ...collectEslint(),
   ...collectSonar(),
 ])
@@ -304,6 +356,8 @@ const TOOL_LABELS = {
   semgrep: 'Semgrep (security rulesets)',
   snykOss: 'Snyk Open Source (SCA)',
   snykCode: 'Snyk Code (SAST)',
+  codeqlJs: 'CodeQL (JavaScript/TypeScript)',
+  codeqlActions: 'CodeQL (GitHub Actions)',
   eslint: 'ESLint (regras de segurança)',
   sonarIssues: 'SonarQube (issues)',
   sonarHotspots: 'SonarQube (hotspots)',
@@ -319,8 +373,9 @@ const toolsSkipped = executionStatus.filter((tool) => !tool.ran)
 const markdown = [
   '# Relatório de segurança',
   '',
-  'Consolida njsscan, Semgrep, as regras de segurança do ESLint e os achados de',
-  'segurança do SonarQube em uma lista só, deduplicada por `arquivo:linha`.',
+  'Consolida njsscan, Semgrep, Snyk, CodeQL, as regras de segurança do ESLint e',
+  'os achados de segurança do SonarQube em uma lista só, deduplicada por',
+  '`arquivo:linha`.',
   '',
   `Gerado em: ${new Date().toISOString()}`,
   '',
@@ -342,8 +397,10 @@ const markdown = [
   ...(toolsSkipped.length > 0
     ? [
         `> ⚠️ ${toolsSkipped.length} ferramenta(s) não executaram — este relatório NÃO é uma varredura completa.`,
-        '> Snyk exige `SNYK_TOKEN` (use `.env.security`). Snyk Code exige, além disso,',
-        '> que Snyk Code esteja habilitado para a organização no painel da Snyk.',
+        '> Snyk exige `SNYK_TOKEN` (use `.env.security`) ou um login via `snyk auth`.',
+        '> Snyk Code exige, além disso, que Snyk Code esteja habilitado para a',
+        '> organização no painel da Snyk. CodeQL roda localmente via',
+        '> `npm run security:codeql` (o CI usa o workflow `codeql.yml`).',
         '',
       ]
     : []),
@@ -363,7 +420,11 @@ const markdown = [
   '1. Corrija o código — é sempre a primeira opção.',
   `2. Se for um falso positivo, registre-o em \`${SUPPRESSIONS_FILE}\` com`,
   '   `rule`, `file`, `line` e uma `justification` que explique POR QUE aquele',
-  '   ponto é seguro. A justificativa vai para o git e é revisável.',
+  '   ponto é seguro. A justificativa vai para o git e é revisável. Se a aceitação',
+  '   é temporária (ex.: a correção ainda está na quarentena de 7 dias do .npmrc),',
+  '   adicione `expires` (data ISO): depois dela o achado volta a bloquear.',
+  '   Para o CodeQL, prefira o comentário `// codeql[<regra>] <motivo>` na linha',
+  '   acima do alerta — ele também fecha o alerta no GitHub.',
   '3. Nunca desative a ferramenta inteira para calar um achado.',
   '',
 ].join('\n')

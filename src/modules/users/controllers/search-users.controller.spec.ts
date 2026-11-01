@@ -49,7 +49,7 @@ describe('searchUsersController', () => {
   it('logs how many users matched, for which query and page', async () => {
     await searchUsersController(makeRequest('maria', 2), makeReply())
 
-    expect(logger.info).toHaveBeenCalledWith('Encontrados 0 usuários para a consulta: "maria" na página 2.')
+    expect(logger.info).toHaveBeenCalledWith({ query: 'maria', page: 2, count: 0 }, 'Busca de usuários concluída')
   })
 
   it('delegates a domain failure to the HTTP error mapper', async () => {

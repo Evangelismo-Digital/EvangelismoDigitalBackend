@@ -7,7 +7,6 @@
  * 2. Worker pods pick jobs from outbox-dispatch point-to-point without fan-out (attempts === 1, no duplicate claims).
  * 3. Global SMTP rate limit (MAIL_RATE_LIMIT_MAX: 2/s) is strictly honored across all pods via Redis.
  */
-import http from 'node:http'
 import { Pool } from 'pg'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
@@ -27,19 +26,21 @@ const redis = new Redis({
   host: redisHost,
   port: redisPort,
   password: redisPassword,
+  // RESP2, like every production connection (src/infra/redis/connections/redis-wire-protocol.ts):
+  // ioredis 6 defaults to RESP3, and a smoke test that speaks another protocol
+  // than the pods it exercises proves less than it claims.
+  protocol: 2,
   maxRetriesPerRequest: null,
 })
 
-function httpGet(url) {
-  return new Promise((resolve, reject) => {
-    http
-      .get(url, (res) => {
-        let data = ''
-        res.on('data', (chunk) => (data += chunk))
-        res.on('end', () => resolve({ status: res.statusCode, body: data }))
-      })
-      .on('error', reject)
-  })
+/**
+ * Scrapes the Prometheus endpoints of the pods from INSIDE the compose network
+ * (`localhost` and the `fastify-worker` service name). Those metrics servers are
+ * plain HTTP by design — internal, never published — so there is no TLS to use.
+ */
+async function httpGet(url) {
+  const res = await fetch(url)
+  return { status: res.status, body: await res.text() }
 }
 
 function delay(ms) {

@@ -76,6 +76,7 @@ export class ResetPasswordUseCase {
 
     if (isErr(cleanupResult)) {
       logger.error(
+        // codeql[js/clear-text-logging] False positive: flagged only because the enclosing class is named "ResetPassword". publicId is the user's public UUID and the error is an AppError from a write that carried no secret (token and expiry set to null).
         { publicId, error: cleanupResult.error },
         'Falha ao limpar token de reset expirado; o token permanece inválido e expira naturalmente',
       )

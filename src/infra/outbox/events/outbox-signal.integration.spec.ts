@@ -3,7 +3,7 @@
  *
  * Opt-in: `npm run test:integration:full` with the compose stack up. Not in CI.
  */
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import Redis from 'ioredis'
 import { env } from '@config/env/index'
 import { OutboxSignal } from './outbox-signal'

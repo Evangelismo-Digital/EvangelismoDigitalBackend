@@ -27,7 +27,6 @@ import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-n
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
 import { NoGeoProviderError } from './errors/no-geo-provider-error'
 import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
-import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
 import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-exceeded-error'
 import { Deadline } from '@common/utils/deadline'
 import { logger } from '@infra/logger'

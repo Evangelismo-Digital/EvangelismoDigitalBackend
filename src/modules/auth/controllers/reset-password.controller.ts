@@ -21,6 +21,7 @@ export async function resetPassword(request: ZodRequest<{ body: typeof resetPass
 
   const { user } = result.value
 
+  // codeql[js/clear-text-logging] False positive: CodeQL's heuristic treats anything NAMED "password" as a secret (here the use-case and the constant). Only the public UUID and a static success message are logged; no password, hash or token reaches this line.
   logger.info({ userId: user.publicId }, AUTH_CONSTANTS.PASSWORD_CHANGED_SUCCESS)
 
   return reply.code(HTTP_STATUS.OK).send({ message: AUTH_CONSTANTS.PASSWORD_CHANGED_SUCCESS })

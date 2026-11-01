@@ -64,11 +64,21 @@ docker run --rm -v "$(pwd):/src" -w /src "$SEMGREP_IMAGE" \
 # graph, so it reaches injection and traversal bugs that only appear when a
 # source and a sink are several functions apart.
 #
-# Requires SNYK_TOKEN. Absent, the stage SKIPS loudly rather than failing: a
-# missing credential is an environment problem, and turning it into a red
-# pipeline would train people to ignore a red pipeline. `security-report.mjs`
-# reports the tool as absent, so a skipped scan is never mistaken for a clean one.
-if [ -n "${SNYK_TOKEN:-}" ]; then
+# Authenticates the same two ways the CLI itself does: SNYK_TOKEN (CI, or
+# .env.security locally), or the OAuth login `npx snyk auth` stores in
+# ~/.config/configstore/snyk.json — the way the MissionApp projects run it on a
+# developer machine. Before the second path existed, a machine logged in with
+# `snyk auth` but without SNYK_TOKEN skipped Snyk on every run.
+#
+# Neither present, the stage SKIPS loudly rather than failing: a missing
+# credential is an environment problem, and turning it into a red pipeline would
+# train people to ignore a red pipeline. `security-report.mjs` reports the tool
+# as absent, so a skipped scan is never mistaken for a clean one.
+snyk_authenticated() {
+  [ -n "${SNYK_TOKEN:-}" ] || npx --no-install snyk whoami --experimental >/dev/null 2>&1
+}
+
+if snyk_authenticated; then
   # --- Snyk Open Source (SCA) -------------------------------------------------
   # Deliberately NOT `--all-projects`: that walks every package-lock.json under
   # the tree, including the .stryker-tmp mutation sandboxes, which are throwaway
@@ -102,8 +112,20 @@ if [ -n "${SNYK_TOKEN:-}" ]; then
     rm -f "$OUT_DIR/snyk-code.sarif"
   fi
 else
-  log 'AVISO: SNYK_TOKEN ausente — Snyk não executado. Defina-o em .env.security (0600, gitignored).'
+  log 'AVISO: Snyk sem credencial — não executado. Rode `npx snyk auth` ou defina SNYK_TOKEN em .env.security (0600, gitignored).'
   rm -f "$OUT_DIR/snyk-oss.sarif" "$OUT_DIR/snyk-code.sarif"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CodeQL — the same configuration and CLI version as .github/workflows/codeql.yml.
+# Skipped inside GitHub Actions, where that workflow already runs it and uploads
+# to the Security tab: running it a second time in the security job would double
+# the cost for an identical answer. SECURITY_SKIP_CODEQL=1 skips it locally too.
+if [ "${GITHUB_ACTIONS:-}" = 'true' ] || [ "${SECURITY_SKIP_CODEQL:-0}" = '1' ]; then
+  log 'CodeQL pulado aqui (coberto pelo workflow codeql.yml no GitHub).'
+  rm -f "$OUT_DIR"/codeql-*.sarif
+else
+  bash scripts/codeql-scan.sh
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────

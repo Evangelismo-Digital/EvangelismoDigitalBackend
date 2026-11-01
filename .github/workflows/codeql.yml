@@ -1,0 +1,74 @@
+name: CodeQL
+
+# Semantic code analysis (taint tracking + the security-and-quality query suite)
+# for the TypeScript sources and for these workflow files. Results land in the
+# repository's Security tab, where a new alert on a pull request is annotated on
+# the diff. The configuration lives in .github/codeql/codeql-config.yml and is
+# the same one scripts/codeql-scan.sh runs locally (`npm run security:codeql`).
+#
+# Advanced setup on purpose, rather than GitHub's "default setup": the query
+# suite, the ignored paths and the CLI version are versioned here and reviewable,
+# and the same pins drive the local run. Do NOT also enable default setup in the
+# repository settings — GitHub rejects uploads from an advanced workflow while
+# default setup is on.
+#
+# Third-party actions are pinned to commit SHAs, like ci.yml.
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - '**'
+  schedule:
+    # Weekly, so new queries shipped with the CLI reach code nobody touched.
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language:
+          - javascript-typescript
+          - actions
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: ${{ matrix.language }}
+          # Interpreted languages: nothing to compile, no `npm ci` needed.
+          build-mode: none
+          config-file: ./.github/codeql/codeql-config.yml
+          # Same CLI as scripts/codeql-scan.sh (CODEQL_VERSION) — keep in lockstep.
+          tools: https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.27.3/codeql-bundle-linux64.tar.gz
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: '/language:${{ matrix.language }}'

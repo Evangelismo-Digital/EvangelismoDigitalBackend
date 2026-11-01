@@ -66,8 +66,6 @@ const isOrs = (url: string) => url.startsWith(env.OPENROUTESERVICE_MATRIX_API_UR
 
 /** Geoapify's envelope: meters, one row per source. */
 const GEOAPIFY_ANSWER = { status: 200, data: { sources_to_targets: [[{ distance: 980 }, { distance: 3250 }]] } }
-/** ORS's envelope: already in km. */
-const ORS_ANSWER = { status: 200, data: { distances: [[1.5, 2.5]] } }
 
 function calledUrls(): string[] {
   return mockPost.mock.calls.map(([url]) => url as string)
