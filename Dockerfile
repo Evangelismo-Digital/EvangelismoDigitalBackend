@@ -2,7 +2,7 @@
 
 # ---------- Stage 1: builder ----------
 # Compiles TypeScript (server + worker) and generates the Prisma client.
-FROM node:22-slim AS builder
+FROM node:25-slim AS builder
 
 # Prisma's engines/generator need OpenSSL present.
 RUN apt-get update \
@@ -48,7 +48,7 @@ RUN npm run build
 
 # ---------- Stage 2: runner ----------
 # Minimal production image: prod deps + generated client + compiled bundles.
-FROM node:22-slim AS runner
+FROM node:25-slim AS runner
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
