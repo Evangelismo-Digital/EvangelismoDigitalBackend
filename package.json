@@ -104,7 +104,7 @@
     "bullmq": "5.81.4",
     "close-with-grace": "2.5.0",
     "cockatiel": "4.0.0",
-    "cpf-cnpj-validator": "1.0.3",
+    "cpf-cnpj-validator": "2.1.2",
     "dotenv": "17.4.2",
     "fastify": "5.12.6",
     "fastify-metrics": "13.2.1",
