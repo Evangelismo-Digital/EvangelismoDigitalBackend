@@ -71,8 +71,6 @@ function createForwardedIp() {
   return `198.18.${host >> 8}.${host & 0xff}`
 }
 
-import { HTTP_RATE_LIMIT_POLICIES } from '@common/plugins/policies/rate-limit'
-
 describe('churches nearest route rate limit (e2e)', () => {
   beforeAll(async () => {
     await app.ready()

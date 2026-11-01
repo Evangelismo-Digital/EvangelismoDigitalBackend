@@ -326,8 +326,16 @@ async function main() {
   const gate = (await api(`/api/qualitygates/project_status?projectKey=${PROJECT_KEY}`)).projectStatus
 
   mkdirSync(OUT_DIR, { recursive: true })
+  // The three writes below (and SONAR-REPORT.md further down) persist what the
+  // local, token-authenticated SonarQube returned. Writing that response to disk
+  // is this script's whole purpose, the paths are constants, and the content is
+  // serialised JSON/Markdown that nothing executes — hence the CodeQL
+  // js/http-to-file-access suppressions.
+  // codeql[js/http-to-file-access] Report generator: constant path, JSON-serialised data from our own SonarQube.
   writeFileSync(`${OUT_DIR}/measures.json`, JSON.stringify(Object.fromEntries(measures), null, 2))
+  // codeql[js/http-to-file-access] Report generator: constant path, JSON-serialised data from our own SonarQube.
   writeFileSync(`${OUT_DIR}/issues.json`, JSON.stringify(issues, null, 2))
+  // codeql[js/http-to-file-access] Report generator: constant path, JSON-serialised data from our own SonarQube.
   writeFileSync(`${OUT_DIR}/hotspots.json`, JSON.stringify(hotspots, null, 2))
 
   const warnings = analysis?.warnings ?? []
@@ -357,6 +365,7 @@ async function main() {
     '',
   ].join('\n')
 
+  // codeql[js/http-to-file-access] Report generator: constant path, Markdown rendered from our own SonarQube's response.
   writeFileSync(`${OUT_DIR}/SONAR-REPORT.md`, markdown)
 
   const pendingHotspots = hotspots.filter((hotspot) => hotspot.status !== 'REVIEWED').length

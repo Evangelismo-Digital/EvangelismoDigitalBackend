@@ -81,7 +81,7 @@ describe('RedisRateLimiter (integration, real Redis token bucket)', () => {
 
 // ── HTTP boundary: the @fastify/rate-limit plugin over a real Redis store ──────
 
-const { lowPolicies, mockExecute, mockFactory } = vi.hoisted(() => {
+const { lowPolicies, mockFactory } = vi.hoisted(() => {
   const mockExecute = vi.fn().mockResolvedValue({
     success: true,
     value: { sanitizedFormSubmission: { name: 'x' }, outboxEvent: { publicId: 'evt', payload: {} } },

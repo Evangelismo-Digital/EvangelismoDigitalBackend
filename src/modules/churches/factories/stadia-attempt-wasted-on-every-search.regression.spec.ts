@@ -36,7 +36,7 @@ import { AxiosError, AxiosHeaders } from 'axios'
 import { makeChurchRoutingProvider } from './make-find-nearest-churches.service'
 import { resetProviderCircuitBreakers } from '@infra/providers/helpers/provider-circuit-breaker'
 import { env } from '@config/env/index'
-import { isErr, isOk } from '@common/utils/result'
+import { isOk } from '@common/utils/result'
 
 const origin = { lat: -22.9113709, lon: -43.1054179 }
 const destinations = [

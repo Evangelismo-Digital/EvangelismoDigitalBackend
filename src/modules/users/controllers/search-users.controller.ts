@@ -27,7 +27,9 @@ export async function searchUsersController(
 
   const { users } = result.value
 
-  logger.info(`Encontrados ${users.length} usuários para a consulta: "${query}" na página ${page}.`)
+  // The query is caller-supplied: it goes in a structured field (JSON-encoded by
+  // pino), never in the message, so it cannot forge log content (CWE-117).
+  logger.info({ query, page, count: users.length }, 'Busca de usuários concluída')
 
   return reply.code(HTTP_STATUS.OK).send({ users: UserPresenter.toHTTP(users) })
 }

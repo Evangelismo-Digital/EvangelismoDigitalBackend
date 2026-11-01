@@ -12,6 +12,7 @@ import { cpf as cpfValidator } from 'cpf-cnpj-validator'
 import { compare } from 'bcryptjs'
 import { isOk, isErr, err } from '@common/utils/result'
 import { InfrastructureError } from '@common/errors/infrastructure-error'
+import { logger } from '@infra/logger'
 
 class InfraTestError extends InfrastructureError {
   constructor() {
@@ -184,6 +185,81 @@ describe('Reset Password Use Case', () => {
     expect(isErr(second)).toBe(true)
     if (!isErr(second)) return
     expect(second.error).toBeInstanceOf(InvalidTokenError)
+  })
+
+  it('falha ao buscar pelo token: propaga o err sem tocar no usuário', async () => {
+    const { usersRepository, resetPasswordUseCase, rawToken } = await makeSutWithToken()
+    const infraError = new InfraTestError()
+    vi.spyOn(usersRepository, 'findByToken').mockResolvedValueOnce(err(infraError))
+    const updatePassword = vi.spyOn(usersRepository, 'updatePassword')
+
+    const result = await resetPasswordUseCase.execute({ token: rawToken, password: 'newPassword123!' })
+
+    expect(isErr(result)).toBe(true)
+    if (!isErr(result)) return
+    expect(result.error).toBe(infraError)
+    expect(updatePassword).not.toHaveBeenCalled()
+  })
+
+  it('token que expira exatamente agora ainda é aceito (expira só DEPOIS do instante)', async () => {
+    // Pins the boundary of `tokenExpiresAt < new Date()`: the token is valid up
+    // to and including its expiry instant. Date is frozen so "now" cannot move
+    // between setting the expiry and the comparison (see the clock note above).
+    vi.useFakeTimers({ toFake: ['Date'] })
+
+    try {
+      const { resetPasswordUseCase, rawToken, getUser } = await makeSutWithToken()
+      const user = await getUser()
+      user.tokenExpiresAt = new Date(Date.now())
+
+      const result = await resetPasswordUseCase.execute({ token: rawToken, password: 'newPassword123!' })
+
+      expect(isOk(result)).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('falha na limpeza do token expirado: registra o erro com o publicId', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined)
+
+    try {
+      const { usersRepository, resetPasswordUseCase, rawToken, getUser } = await makeSutWithToken()
+      const user = await getUser()
+      user.tokenExpiresAt = new Date(Date.now() - 1000)
+      const infraError = new InfraTestError()
+      vi.spyOn(usersRepository, 'updatePassword').mockResolvedValueOnce(err(infraError))
+
+      await resetPasswordUseCase.execute({ token: rawToken, password: 'newPassword123!' })
+
+      expect(loggerError).toHaveBeenCalledWith(
+        { publicId: user.publicId, error: infraError },
+        'Falha ao limpar token de reset expirado; o token permanece inválido e expira naturalmente',
+      )
+    } finally {
+      loggerError.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('limpeza do token expirado bem-sucedida: nada é registrado como erro', async () => {
+    // Counterweight: the log above is for the failure only.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined)
+
+    try {
+      const { resetPasswordUseCase, rawToken, getUser } = await makeSutWithToken()
+      const user = await getUser()
+      user.tokenExpiresAt = new Date(Date.now() - 1000)
+
+      await resetPasswordUseCase.execute({ token: rawToken, password: 'newPassword123!' })
+
+      expect(loggerError).not.toHaveBeenCalled()
+    } finally {
+      loggerError.mockRestore()
+      vi.useRealTimers()
+    }
   })
 
   it('falha ao atualizar a senha: propaga o err', async () => {

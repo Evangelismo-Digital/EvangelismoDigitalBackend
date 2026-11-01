@@ -20,7 +20,6 @@ import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-n
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
 import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { ProviderFailureError } from '@common/errors/infrastructure/provider-failure-error'
-import { TimeoutExceededError } from '@common/errors/infrastructure/timeout-exceeded-error'
 import { serializeAppError, deserializeAppError } from '@common/errors/app-error-registry'
 import {
   isRetryableChurchLookupError,
