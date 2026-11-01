@@ -2,6 +2,7 @@ import { env } from '@config/env/index'
 import Redis from 'ioredis'
 import { attachOutageLogging } from './attach-outage-logging'
 import { REDIS_LOGS } from '@common/messages/constants/logs/redis'
+import { REDIS_WIRE_PROTOCOL } from './redis-wire-protocol'
 
 /** The cache is optional by design: give up quickly and serve from source. */
 const MAX_RECONNECT_ATTEMPTS = 2
@@ -13,6 +14,7 @@ export function createRedisCacheConnection() {
     host: env.REDIS_HOST,
     port: env.REDIS_PORT,
     password: env.REDIS_PASSWORD || undefined,
+    protocol: REDIS_WIRE_PROTOCOL,
     commandTimeout: 1000,
     connectTimeout: 2000,
     enableOfflineQueue: true,

@@ -1,91 +1,82 @@
 # OSV-Scanner ignore config — Evangelismo Digital Backend
 #
 # Revisit periodically (aim: within ~90 days) rather than treating these as
-# permanent. Each entry carries its own reasoning and its own re-check command.
+# permanent. Each entry carries its own reasoning, its own re-check command and
+# an `ignoreUntil`: when that date passes, OSV-Scanner stops honouring the entry
+# and CI goes red, which is what forces the revisit instead of hoping for it.
 #
-# REVISIT TRIGGER — two of the three entries clear on the SAME event: a snyk
-# release whose BUNDLED global-agent reaches 4.x. global-agent 4 dropped roarr
-# entirely, and roarr 2.x is what drags in both the vulnerable semver
-# (GHSA-c2qf-rxjj-qqgw) and sprintf-js (GHSA-hp3w-g68c-fv3c). Until then neither
-# can be fixed OR overridden, because snyk declares
-# `bundleDependencies: ["global-agent", "roarr", "boolean"]` and npm cannot
-# rewrite what ships inside a package's own tarball. After any snyk bump:
+# Two of the three entries below exist only because of the 7-day release
+# quarantine in .npmrc (min-release-age=7): the fix is published but still too
+# new to install. Their `ignoreUntil` is the day after the fix becomes
+# installable — on that day, bump and delete the entry.
 #
-#     npm ls sprintf-js semver
+# Cleared on 2026-10-31 (do not re-add without re-checking):
+# - GHSA-c2qf-rxjj-qqgw (semver, bundled in snyk): snyk 1.1308.3 no longer ships
+#   the 7.3.8 copy — `npm ls semver@7.3.8` is empty.
+# - GHSA-6w3j-5fw6-r9vr (@hapi/joi via cpf-cnpj-validator 1.0.3): the validator
+#   moved to 2.1.2, which has no runtime dependencies; @hapi/joi is gone.
+# - GHSA-hp3w-g68c-fv3c (sprintf-js, bundled in snyk): the advisory was
+#   WITHDRAWN upstream on 2026-10-22 (`curl api.osv.dev/v1/vulns/GHSA-hp3w-g68c-fv3c`).
 #
-# If both come back clean, delete those two entries. The third
-# (GHSA-6w3j-5fw6-r9vr, @hapi/joi) is independent and tracks
-# cpf-cnpj-validator.
-#
-# Note that two of the three have NO upstream fix at all, so "wait for a patch"
-# is not the plan for them — see each reason block.
-#
-# (The two @hono/node-server entries that used to live here were dropped once
-# prisma 7.9.1 removed that transitive dependency entirely.)
+# OSV prints "has unused ignores" for entries that are in fact working, so
+# cross-check against a run with an empty config before deleting on that
+# message alone.
 
 [[IgnoredVulns]]
-id = "GHSA-c2qf-rxjj-qqgw"
+id = "GHSA-mrwp-f3q8-3g9p"
+ignoreUntil = 2026-11-02T00:00:00Z
 reason = """
-ReDoS in semver <7.5.2, reached only through snyk's BUNDLED copy at
-node_modules/snyk/node_modules/global-agent/node_modules/semver (the lockfile
-entry carries inBundle: true). npm `overrides` cannot rewrite a bundled
-dependency — verified: a top-level override, a nested one, and deleting the lock
-entry all re-resolve to 7.3.8, because the version ships inside snyk's own
-tarball. Only Snyk can fix it upstream.
+follow-redirects 1.16.1 (via axios 1.20.0): a cross-realm array passed as the
+`sensitiveHeaders` option fails an `instanceof Array` check and is discarded, so
+those headers can follow a redirect. Also reported by Snyk as
+SNYK-JS-FOLLOWREDIRECTS-21762031 (suppressed in security-suppressions.json with
+the same deadline).
 
-Accepted because the exposure is nil in practice: snyk is a devDependency, is
-never installed into the production image (the Dockerfile installs with --omit=dev
-and the runner stage copies only @prisma/client), and the vulnerable code path is
-semver range parsing on input that only ever comes from our own package.json.
+QUARANTINE, not acceptance. The fix, 1.16.2, was published 2026-10-25T21:32Z and
+becomes installable under min-release-age=7 on 2026-11-01T21:32Z. Exposure until
+then is nil: the trigger is a caller passing `sensitiveHeaders` built in another
+VM realm, and nothing in src/ sets `sensitiveHeaders`, `beforeRedirect` or any
+redirect option on axios (`grep -rn sensitiveHeaders src`).
 
-Revisit when snyk publishes a build with global-agent updated; check with
-`npm ls semver` after a snyk bump.
+On or after 2026-11-01T21:32Z: set the `follow-redirects` override in
+package.json to 1.16.2, `npm install`, confirm with `npm ls follow-redirects`,
+and delete this entry and the matching security-suppressions.json one.
 """
 
 [[IgnoredVulns]]
-id = "GHSA-6w3j-5fw6-r9vr"
-reason = """Prototype pollution in @hapi/joi via a `__proto__` language key in
-CUSTOM MESSAGES. Reached only through cpf-cnpj-validator@1.0.3 -> @hapi/joi@17.1.1,
-which this project calls in exactly one place: src/http/schemas/utils/cpf.ts, as
-`cpf.isValid` and `cpf.format` on a value Zod has already narrowed to 11 digits
-(`.length(CPF_DIGITS)` runs before the `.refine`). No custom message object is
-passed to Joi anywhere in the codebase, so the polluting sink is never fed — the
-library is used purely as a checksum validator over a digit string.
+id = "GHSA-3g3m-2fjr-6pw4"
+ignoreUntil = 2026-11-04T00:00:00Z
+reason = """
+glob 10.5.0 (tsup > sucrase) and 13.0.6 (dpdm): an AbortSignal that fires after
+a timeout does not stop the filesystem walk. Dev-only — neither package is in
+the production image (Dockerfile installs with --omit=dev) — and neither caller
+passes an AbortSignal: sucrase globs its CLI inputs, dpdm resolves our own
+src/ tree.
 
-No fixed version exists: @hapi/joi is end-of-life, and the advisory's remedy is
-cpf-cnpj-validator@2.1.2, a semver-MAJOR bump to CPF validation used across
-registration, authentication, password reset and update.
-
-Revisit if cpf-cnpj-validator ships a 1.x patch that moves off @hapi/joi, or when
-the major upgrade is scheduled on its own. Re-check with `npm ls @hapi/joi`."""
+QUARANTINE. The only fix is glob 14.0.2, published 2026-10-27T22:07Z, installable
+from 2026-11-03T22:07Z. It is a MAJOR bump for both consumers (10.x and 13.x), so
+on that date try a top-level `"glob": "14.0.2"` override and run `npm run build`
+(tsup) and `npm run check:cycles` (dpdm). If both pass, keep it and delete this
+entry; if not, re-baseline with the failure recorded here. Re-check with
+`npm ls glob`.
+"""
 
 [[IgnoredVulns]]
-id = "GHSA-hp3w-g68c-fv3c"
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2027-01-31T00:00:00Z
 reason = """
-DoS in sprintf-js (CVE-2026-97058): unvalidated precision specifiers reach
-toFixed/toExponential/toPrecision and can throw an uncaught RangeError when the
-attacker controls the FORMAT STRING.
+minimatch < 11.0.1: pattern-expansion ("globparts") amplification lets a hostile
+GLOB PATTERN consume CPU. Present as 3.1.5 (eslint, @eslint/*, eslint-plugin-import,
+npm-run-all), 9.0.9 (sucrase's glob) and 10.2.6 (stryker, eslint-plugin-sonarjs,
+ts-morph, dpdm's glob).
 
-No fixed version exists. The advisory's affected range is `<= 1.1.3`, and 1.1.3
-is the newest version ever published — OSV-Scanner itself reports "0
-vulnerabilities can be fixed". Upgrading is not an option that exists.
+NO FIX EXISTS on any of those lines: the advisory is fixed only in 11.0.1, and
+11.x changed the module's export shape, so overriding it under eslint 9 (which
+calls the 3.x default export) breaks linting. Accepted because every copy is a
+devDependency outside the production image, and the patterns they evaluate come
+from our own config files (eslint.config.mjs, stryker.conf.mjs, tsconfig) — never
+from a request or any other untrusted input.
 
-Neither is overriding. The vulnerable copy arrives as
-node_modules/snyk/node_modules/roarr/node_modules/sprintf-js, and snyk declares
-`bundleDependencies: ["global-agent", "roarr", "boolean"]` — 23 lockfile entries
-under snyk carry inBundle: true. Verified: a top-level `roarr` override, a
-nested `snyk > roarr` override, a `snyk > global-agent` override (4.1.3 drops
-roarr entirely) and a full lockfile re-resolution all leave roarr at 2.15.4,
-because it ships inside snyk's own tarball. This is the same mechanism already
-documented for GHSA-c2qf-rxjj-qqgw above.
-
-Accepted because the exposure is nil in practice: snyk is a devDependency, never
-installed into the production image (the Dockerfile installs with --omit=dev and
-the runner stage copies only dist plus @prisma/client/.prisma), and the sink is
-roarr's log formatting inside the snyk CLI, whose format strings are snyk's own
-literals — never our input, let alone a request's.
-
-Revisit when snyk publishes a build whose bundled global-agent is 4.x (which has
-no roarr dependency at all); check with `npm ls sprintf-js` after a snyk bump.
-The same bump should also clear GHSA-c2qf-rxjj-qqgw.
+Revisit by 2027-01-31, or sooner when eslint 10 / the plugins move to minimatch
+11 or the 3.x/9.x/10.x lines get a backport. Re-check with `npm ls minimatch`.
 """

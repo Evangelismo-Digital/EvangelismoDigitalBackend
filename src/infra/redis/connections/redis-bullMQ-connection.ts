@@ -4,12 +4,14 @@ import { logger } from '@infra/logger'
 import { attachOutageLogging } from './attach-outage-logging'
 import { isRedisConnectivityError, RedisOutageLogger } from './redis-outage-logger'
 import { REDIS_LOGS } from '@common/messages/constants/logs/redis'
+import { REDIS_WIRE_PROTOCOL } from './redis-wire-protocol'
 
 export function createRedisBullMQConnection() {
   const redis = new Redis({
     host: env.REDIS_HOST,
     port: env.REDIS_PORT,
     password: env.REDIS_PASSWORD || undefined,
+    protocol: REDIS_WIRE_PROTOCOL,
     maxRetriesPerRequest: null, // Obrigatório para BullMQ
 
     // === CORREÇÃO DE INFRAESTRUTURA (DOCKER) ===

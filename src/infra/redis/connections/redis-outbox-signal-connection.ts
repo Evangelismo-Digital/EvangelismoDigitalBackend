@@ -3,11 +3,13 @@ import Redis from 'ioredis'
 import { attachOutageLogging } from './attach-outage-logging'
 import { OUTBOX_LOGS } from '@common/messages/constants/logs/outbox'
 import { logger } from '@infra/logger'
+import { REDIS_WIRE_PROTOCOL } from './redis-wire-protocol'
 
 const baseConfig = {
   host: env.REDIS_HOST,
   port: env.REDIS_PORT,
   password: env.REDIS_PASSWORD || undefined,
+  protocol: REDIS_WIRE_PROTOCOL,
   lazyConnect: true,
   family: 4, // force IPv4
 }
