@@ -335,7 +335,7 @@ jobs:
 
       - name: Coverage report comment
         if: github.event_name == 'pull_request'
-        uses: davelosert/vitest-coverage-report-action@8ab049ff5a2c6e78f78af446329379b318544a1a # v2.8.3
+        uses: davelosert/vitest-coverage-report-action@8f86cfb56ed6d5613ea8cdc5259f207fbfd51ece # v2.13.1
 
       - name: Upload coverage artifact
         if: always()
