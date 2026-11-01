@@ -1,8 +1,9 @@
 [
   {
-    "rule": "SNYK-JS-NODEMAILER-19784395",
+    "rule": "SNYK-JS-FOLLOWREDIRECTS-21762031",
     "file": "package.json",
     "line": 1,
-    "justification": "Nodemailer is used strictly for outbound mail dispatch and does not parse untrusted inbound email headers (CVE-2026-90776 / ReDoS in addressparser). Upgrading to nodemailer >=10.0.5 is currently blocked by the 7-day quarantine policy in .npmrc (min-release-age=7) as v10.0.5+ was released fewer than 7 days ago."
+    "expires": "2026-11-02T00:00:00Z",
+    "justification": "follow-redirects 1.16.1 (via axios): a cross-realm `sensitiveHeaders` array is discarded, so those headers can follow a redirect. Not reachable here: nothing in src/ sets sensitiveHeaders, beforeRedirect or any redirect option on axios. The fix (1.16.2, published 2026-10-25T21:32Z) is held back only by the 7-day quarantine in .npmrc and becomes installable on 2026-11-01T21:32Z; bump the follow-redirects override then and delete this entry. Same advisory and deadline as GHSA-mrwp-f3q8-3g9p in osv-scanner.toml."
   }
 ]

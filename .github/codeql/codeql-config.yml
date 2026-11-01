@@ -1,0 +1,35 @@
+# CodeQL configuration — shared by .github/workflows/codeql.yml and the local
+# mirror, scripts/codeql-scan.sh, so a finding cannot exist in one and not the
+# other.
+#
+# `security-and-quality` is the widest suite GitHub supports: the security
+# queries plus the maintainability ones (unused imports, superfluous arguments,
+# ...). The quality half matters here because ESLint deliberately ignores
+# **/*.spec.ts, so nothing else looks at the test code at all.
+#
+# False positives are suppressed IN SOURCE, next to the code, with a reason:
+#     // codeql[<query-id>] <why this point is safe>
+# on the line immediately above the alert. Never by excluding a query here.
+name: evangelismo-codeql
+
+queries:
+  - uses: security-and-quality
+
+# The alert-suppression query is what turns a `// codeql[...]` comment into a
+# SARIF `suppressions` entry; without it the comments are inert and every
+# documented false positive comes back as an open alert. It is not part of any
+# standard suite, so it is added per language. The key is the BASE language
+# (`javascript`): the `javascript-typescript` alias is silently ignored here,
+# which was verified by the suppressions going missing from the SARIF.
+packs:
+  javascript:
+    - codeql/javascript-queries:AlertSuppression.ql
+
+paths-ignore:
+  - node_modules
+  - dist
+  - coverage
+  - reports
+  - .stryker-tmp
+  - .ci-local
+  - .sonar

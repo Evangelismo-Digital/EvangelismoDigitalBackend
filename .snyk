@@ -1,0 +1,26 @@
+# Snyk (https://snyk.io) policy file.
+#
+# Snyk Code ships "/test" variants of its hardcoded-credential rules
+# (NoHardcodedPasswords/test, NoHardcodedCredentials/test,
+# HardcodedNonCryptoSecret/test) precisely because test code is full of fixture
+# values. On this repository they produced 75 findings, every one of them a
+# fixture: 'Password123!' sent to a controller under test, maria@example.com in
+# a form submission, a Redis key name, a rate-limit env var NAME containing the
+# word "PASSWORD". None is a credential to anything.
+#
+# Test files are therefore excluded from Snyk Code. They are not part of the
+# shipped artifact (the Dockerfile builds src/ with tsup, which never reaches a
+# spec), and they are still analysed by CodeQL's security-and-quality suite
+# (.github/codeql/codeql-config.yml) — so this narrows one scanner, it does not
+# leave test code unscanned. Snyk Open Source (SCA) is unaffected: `exclude.code`
+# applies to Snyk Code only.
+version: v1.25.0
+ignore: {}
+patch: {}
+exclude:
+  code:
+    - '**/*.spec.ts'
+    - '**/*.spec.mts'
+    - '**/*.regression.spec.ts'
+    - test/**
+    - prisma/vitest-environment-prisma/**
