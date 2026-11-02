@@ -184,7 +184,7 @@
       "esbuild": "0.28.2"
     },
     "fast-uri": "3.1.9",
-    "follow-redirects": "1.16.1",
+    "follow-redirects": "1.16.2",
     "@react-email/render": {
       "html-to-text": "10.0.1"
     }
