@@ -5,10 +5,14 @@
 # an `ignoreUntil`: when that date passes, OSV-Scanner stops honouring the entry
 # and CI goes red, which is what forces the revisit instead of hoping for it.
 #
-# Two of the three entries below exist only because of the 7-day release
+# The first entry below exists only because of the 7-day release
 # quarantine in .npmrc (min-release-age=7): the fix is published but still too
-# new to install. Their `ignoreUntil` is the day after the fix becomes
+# new to install. Its `ignoreUntil` is the day after the fix becomes
 # installable — on that day, bump and delete the entry.
+#
+# Cleared on 2026-11-02 (do not re-add without re-checking):
+# - GHSA-mrwp-f3q8-3g9p / SNYK-JS-FOLLOWREDIRECTS-21762031 (follow-redirects via
+#   axios): override bumped to 1.16.2 once past the 7-day quarantine.
 #
 # Cleared on 2026-10-31 (do not re-add without re-checking):
 # - GHSA-c2qf-rxjj-qqgw (semver, bundled in snyk): snyk 1.1308.3 no longer ships
@@ -21,27 +25,6 @@
 # OSV prints "has unused ignores" for entries that are in fact working, so
 # cross-check against a run with an empty config before deleting on that
 # message alone.
-
-[[IgnoredVulns]]
-id = "GHSA-mrwp-f3q8-3g9p"
-ignoreUntil = 2026-11-02T00:00:00Z
-reason = """
-follow-redirects 1.16.1 (via axios 1.20.0): a cross-realm array passed as the
-`sensitiveHeaders` option fails an `instanceof Array` check and is discarded, so
-those headers can follow a redirect. Also reported by Snyk as
-SNYK-JS-FOLLOWREDIRECTS-21762031 (suppressed in security-suppressions.json with
-the same deadline).
-
-QUARANTINE, not acceptance. The fix, 1.16.2, was published 2026-10-25T21:32Z and
-becomes installable under min-release-age=7 on 2026-11-01T21:32Z. Exposure until
-then is nil: the trigger is a caller passing `sensitiveHeaders` built in another
-VM realm, and nothing in src/ sets `sensitiveHeaders`, `beforeRedirect` or any
-redirect option on axios (`grep -rn sensitiveHeaders src`).
-
-On or after 2026-11-01T21:32Z: set the `follow-redirects` override in
-package.json to 1.16.2, `npm install`, confirm with `npm ls follow-redirects`,
-and delete this entry and the matching security-suppressions.json one.
-"""
 
 [[IgnoredVulns]]
 id = "GHSA-3g3m-2fjr-6pw4"
