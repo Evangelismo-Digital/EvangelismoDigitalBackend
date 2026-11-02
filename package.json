@@ -102,7 +102,7 @@
     "@react-email/render": "2.1.0",
     "@scalar/fastify-api-reference": "1.67.0",
     "@sentry/node": "10.73.0",
-    "@sentry/profiling-node": "10.73.0",
+    "@sentry/profiling-node": "11.9.0",
     "axios": "1.20.0",
     "bcryptjs": "3.0.3",
     "bullmq": "6.4.2",
