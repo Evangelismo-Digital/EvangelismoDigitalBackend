@@ -541,7 +541,7 @@ src/
 │   │   │   ├── delete-church.dto.ts
 │   │   │   └── find-church-by-name.dto.ts
 │   │   ├── errors/
-│   │   │   ├── cep-to-lat-lon-error.ts
+│   │   │   ├── cep-translation-to-coordinates-error.ts
 │   │   │   ├── church-already-exists-error.ts
 │   │   │   ├── church-not-found-error.ts
 │   │   │   ├── coordinates-not-found-error.ts

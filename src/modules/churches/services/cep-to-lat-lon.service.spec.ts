@@ -3,7 +3,7 @@ import { CepToLatLonUseCase } from './cep-to-lat-lon.service'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
 import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
-import { CepToLatLonError } from '@modules/churches/errors/cep-to-lat-lon-error'
+import { CepTranslationToCoordinatesError } from '@modules/churches/errors/cep-translation-to-coordinates-error'
 import { IGeocodingProvider, EnumGeoPrecision } from '@infra/providers/interfaces/geo-provider.interface'
 import { IAddressProvider } from '@infra/providers/interfaces/address-provider.interface'
 import { ok, err, isOk, isErr } from '@common/utils/result'
@@ -368,14 +368,14 @@ describe('CepToLatLon Use Case', () => {
     }
   })
 
-  it('PARANOID GUARD: should return CepToLatLonError (a SystemError) without capturing here — the global HTTP error handler captures it once it propagates', async () => {
+  it('PARANOID GUARD: should return CepTranslationToCoordinatesError (a SystemError) without capturing here — the global HTTP error handler captures it once it propagates', async () => {
     addressProviderMock.fetchAddress.mockResolvedValue(ok({}))
 
     const result = await useCase.execute({ cep: '00000000' })
 
     expect(isErr(result)).toBe(true)
     if (isErr(result)) {
-      expect(result.error).toBeInstanceOf(CepToLatLonError)
+      expect(result.error).toBeInstanceOf(CepTranslationToCoordinatesError)
     }
     expect(mockCaptureError).not.toHaveBeenCalled()
     expect(logger.error).toHaveBeenCalledWith(

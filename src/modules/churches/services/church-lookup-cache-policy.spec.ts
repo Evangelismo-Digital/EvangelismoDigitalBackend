@@ -8,7 +8,7 @@ import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
 import { EmptyChurchListError } from '@modules/churches/errors/empty-church-list-error'
-import { CepToLatLonError } from '@modules/churches/errors/cep-to-lat-lon-error'
+import { CepTranslationToCoordinatesError } from '@modules/churches/errors/cep-translation-to-coordinates-error'
 import { ProviderRateLimitError } from '@common/errors/infrastructure/provider-rate-limit-error'
 import { DeadlineExceededError } from '@common/errors/infrastructure/deadline-exceeded-error'
 import { ResilientCache } from '@infra/cache/resilient-cache'
@@ -48,7 +48,7 @@ describe('CEP negative cache policy', () => {
     })
 
     it('defaults to the short TTL for anything else — such an error is never cached anyway', () => {
-      const uncacheable = new CepToLatLonError('01310100')
+      const uncacheable = new CepTranslationToCoordinatesError('01310100')
 
       expect(isRetryableChurchLookupError(uncacheable)).toBe(true)
       expect(negativeTtlForChurchLookup(uncacheable)).toBe(PERMANENT_TTL_SECONDS)

@@ -4,7 +4,7 @@ import { AppError } from './app-error'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
-import { CepToLatLonError } from '@modules/churches/errors/cep-to-lat-lon-error'
+import { CepTranslationToCoordinatesError } from '@modules/churches/errors/cep-translation-to-coordinates-error'
 import { EmptyChurchListError } from '@modules/churches/errors/empty-church-list-error'
 import { ProviderRateLimitError } from './infrastructure/provider-rate-limit-error'
 import { ConcurrencyLimitError } from './infrastructure/concurrency-limit-error'
@@ -72,15 +72,15 @@ describe('deserializeAppError', () => {
     expect(restored.message).not.toMatch(/\d/)
   })
 
-  it('reconstructs CepToLatLonError with the numeric run from the message', () => {
-    const restored = deserializeAppError('CepToLatLonError', 'Falha ao converter o CEP 87654321.')
-    expect(restored).toBeInstanceOf(CepToLatLonError)
+  it('reconstructs CepTranslationToCoordinatesError with the numeric run from the message', () => {
+    const restored = deserializeAppError('CepTranslationToCoordinatesError', 'Falha ao converter o CEP 87654321.')
+    expect(restored).toBeInstanceOf(CepTranslationToCoordinatesError)
     expect(restored.message).toContain('87654321')
   })
 
-  it('reconstructs CepToLatLonError with an empty CEP when the message has no digits', () => {
-    const restored = deserializeAppError('CepToLatLonError', 'Falha ao converter o CEP.')
-    expect(restored).toBeInstanceOf(CepToLatLonError)
+  it('reconstructs CepTranslationToCoordinatesError with an empty CEP when the message has no digits', () => {
+    const restored = deserializeAppError('CepTranslationToCoordinatesError', 'Falha ao converter o CEP.')
+    expect(restored).toBeInstanceOf(CepTranslationToCoordinatesError)
     // trailing " ." from `${message} ${''}.`
     expect(restored.message).toMatch(/\s\.$/)
   })

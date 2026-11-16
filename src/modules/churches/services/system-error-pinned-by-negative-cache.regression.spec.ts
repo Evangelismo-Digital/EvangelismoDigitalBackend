@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { isRetryableChurchLookupError, makeNearestChurchesCacheOptions } from './church-lookup-cache-policy'
-import { CepToLatLonError } from '@modules/churches/errors/cep-to-lat-lon-error'
+import { CepTranslationToCoordinatesError } from '@modules/churches/errors/cep-translation-to-coordinates-error'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
@@ -29,7 +29,7 @@ vi.mock('@infra/metrics/cache-metrics', () => ({
 
 /**
  * Symptom: a genuine internal fault on the nearest-churches path — a 500 such
- * as CepToLatLonError, or any infrastructure failure — was written to the cache
+ * as CepTranslationToCoordinatesError, or any infrastructure failure — was written to the cache
  * as a negative envelope and served back for the whole 30-minute negative TTL.
  * Every later request for that CEP got the cached 500 without the chain ever
  * being retried.
@@ -43,8 +43,8 @@ vi.mock('@infra/metrics/cache-metrics', () => ({
  */
 describe('regression: a system error must not be pinned by the negative cache', () => {
   describe('policy', () => {
-    it('does not negative-cache CepToLatLonError (a SystemError surfaced as HTTP 500)', () => {
-      expect(isRetryableChurchLookupError(new CepToLatLonError('01310100'))).toBe(true)
+    it('does not negative-cache CepTranslationToCoordinatesError (a SystemError surfaced as HTTP 500)', () => {
+      expect(isRetryableChurchLookupError(new CepTranslationToCoordinatesError('01310100'))).toBe(true)
     })
 
     it.each([
@@ -88,11 +88,11 @@ describe('regression: a system error must not be pinned by the negative cache', 
     }
 
     it('writes no negative envelope for a 500, leaving the next request to retry the chain', async () => {
-      const result = await runWith(new CepToLatLonError('01310100'))
+      const result = await runWith(new CepTranslationToCoordinatesError('01310100'))
 
       expect(isErr(result)).toBe(true)
       if (isErr(result)) {
-        expect(result.error).toBeInstanceOf(CepToLatLonError)
+        expect(result.error).toBeInstanceOf(CepTranslationToCoordinatesError)
       }
       expect(redis.set).not.toHaveBeenCalled()
     })

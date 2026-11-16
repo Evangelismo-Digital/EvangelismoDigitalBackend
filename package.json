@@ -110,7 +110,7 @@
     "cockatiel": "4.0.0",
     "cpf-cnpj-validator": "2.1.2",
     "dotenv": "17.4.2",
-    "fastify": "5.12.6",
+    "fastify": "5.12.8",
     "fastify-metrics": "13.2.1",
     "fastify-plugin": "5.1.0",
     "fastify-type-provider-zod": "7.0.0",
@@ -187,6 +187,16 @@
     "follow-redirects": "1.16.2",
     "@react-email/render": {
       "html-to-text": "10.0.1"
+    },
+    "glob": {
+      ".": "14.0.2",
+      "minimatch": {
+        ".": "11.0.5",
+        "brace-expansion": "5.0.12"
+      }
+    },
+    "fastify": {
+      "find-my-way": "9.10.0"
     }
   }
 }

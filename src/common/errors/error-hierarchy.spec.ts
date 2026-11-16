@@ -25,7 +25,7 @@ import { ChurchNotFoundError } from '@modules/churches/errors/church-not-found-e
 import { CreateChurchError } from '@modules/churches/errors/create-church-error'
 import { EmptyChurchListError } from '@modules/churches/errors/empty-church-list-error'
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
-import { CepToLatLonError } from '@modules/churches/errors/cep-to-lat-lon-error'
+import { CepTranslationToCoordinatesError } from '@modules/churches/errors/cep-translation-to-coordinates-error'
 import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { LatitudeRangeError } from '@modules/churches/errors/latitude-range-error'
@@ -152,7 +152,7 @@ describe('Error Hierarchy Architecture', () => {
 
   describe('Domain Errors - Geolocation', () => {
     it('instantiates all geolocation error types with proper inheritance', () => {
-      const cepToLatLon = new CepToLatLonError('24020000')
+      const cepToLatLon = new CepTranslationToCoordinatesError('24020000')
       expect(cepToLatLon).toBeInstanceOf(SystemError)
       expect(cepToLatLon.message).toContain('24020000')
 

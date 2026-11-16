@@ -5,10 +5,14 @@
 # an `ignoreUntil`: when that date passes, OSV-Scanner stops honouring the entry
 # and CI goes red, which is what forces the revisit instead of hoping for it.
 #
-# The first entry below exists only because of the 7-day release
-# quarantine in .npmrc (min-release-age=7): the fix is published but still too
-# new to install. Its `ignoreUntil` is the day after the fix becomes
+# An entry that exists only because of the 7-day release quarantine in .npmrc
+# (min-release-age=7) carries an `ignoreUntil` of the day after the fix becomes
 # installable — on that day, bump and delete the entry.
+#
+# Cleared on 2026-11-16 (do not re-add without re-checking):
+# - GHSA-3g3m-2fjr-6pw4 (glob 10.5.0 via tsup > sucrase, 13.0.6 via dpdm): a
+#   top-level `"glob": "14.0.2"` override; `npm run build` (tsup) and
+#   `npm run check:cycles` (dpdm) both pass on it. `npm ls glob` shows only 14.0.2.
 #
 # Cleared on 2026-11-02 (do not re-add without re-checking):
 # - GHSA-mrwp-f3q8-3g9p / SNYK-JS-FOLLOWREDIRECTS-21762031 (follow-redirects via
@@ -27,31 +31,15 @@
 # message alone.
 
 [[IgnoredVulns]]
-id = "GHSA-3g3m-2fjr-6pw4"
-ignoreUntil = 2026-11-04T00:00:00Z
-reason = """
-glob 10.5.0 (tsup > sucrase) and 13.0.6 (dpdm): an AbortSignal that fires after
-a timeout does not stop the filesystem walk. Dev-only — neither package is in
-the production image (Dockerfile installs with --omit=dev) — and neither caller
-passes an AbortSignal: sucrase globs its CLI inputs, dpdm resolves our own
-src/ tree.
-
-QUARANTINE. The only fix is glob 14.0.2, published 2026-10-27T22:07Z, installable
-from 2026-11-03T22:07Z. It is a MAJOR bump for both consumers (10.x and 13.x), so
-on that date try a top-level `"glob": "14.0.2"` override and run `npm run build`
-(tsup) and `npm run check:cycles` (dpdm). If both pass, keep it and delete this
-entry; if not, re-baseline with the failure recorded here. Re-check with
-`npm ls glob`.
-"""
-
-[[IgnoredVulns]]
 id = "GHSA-g3hv-75wg-m249"
 ignoreUntil = 2027-01-31T00:00:00Z
 reason = """
 minimatch < 11.0.1: pattern-expansion ("globparts") amplification lets a hostile
 GLOB PATTERN consume CPU. Present as 3.1.5 (eslint, @eslint/*, eslint-plugin-import,
-npm-run-all), 9.0.9 (sucrase's glob) and 10.2.6 (stryker, eslint-plugin-sonarjs,
-ts-morph, dpdm's glob).
+npm-run-all) and 10.2.6 (stryker, eslint-plugin-sonarjs, ts-morph,
+@typescript-eslint/typescript-estree). The 9.0.9 copy (sucrase's glob) and dpdm's
+glob copy left with the glob 14.0.2 override on 2026-11-16 — glob 14 ships the
+fixed minimatch 11.x.
 
 NO FIX EXISTS on any of those lines: the advisory is fixed only in 11.0.1, and
 11.x changed the module's export shape, so overriding it under eslint 9 (which
@@ -61,5 +49,5 @@ from our own config files (eslint.config.mjs, stryker.conf.mjs, tsconfig) — ne
 from a request or any other untrusted input.
 
 Revisit by 2027-01-31, or sooner when eslint 10 / the plugins move to minimatch
-11 or the 3.x/9.x/10.x lines get a backport. Re-check with `npm ls minimatch`.
+11 or the 3.x/10.x lines get a backport. Re-check with `npm ls minimatch`.
 """

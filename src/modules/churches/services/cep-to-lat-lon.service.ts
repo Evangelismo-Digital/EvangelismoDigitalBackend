@@ -1,7 +1,7 @@
 import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
 import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { logger } from '@infra/logger'
-import { CepToLatLonError } from '@modules/churches/errors/cep-to-lat-lon-error'
+import { CepTranslationToCoordinatesError } from '@modules/churches/errors/cep-translation-to-coordinates-error'
 import {
   IGeocodingProvider,
   IGeoCoordinates,
@@ -113,7 +113,7 @@ export class CepToLatLonUseCase {
     logger.error({ cep: cleanCep, city: address.localidade }, 'Crítico: Geocoding Provider não encontrou a cidade.')
 
     // This is a system error
-    return err(new CepToLatLonError(cleanCep))
+    return err(new CepTranslationToCoordinatesError(cleanCep))
   }
 
   /** Strategy A: Exact Match (Street) */
