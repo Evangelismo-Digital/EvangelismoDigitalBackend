@@ -5,7 +5,7 @@ import { InvalidCepError } from '@modules/churches/errors/invalid-cep-error'
 import { CoordinatesNotFoundError } from '@modules/churches/errors/coordinates-not-found-error'
 import { NoNearbyChurchesFoundError } from '@modules/churches/errors/no-nearby-churches-found-error'
 import { EmptyChurchListError } from '@modules/churches/errors/empty-church-list-error'
-import { CepToLatLonError } from '@modules/churches/errors/cep-to-lat-lon-error'
+import { CepTranslationToCoordinatesError } from '@modules/churches/errors/cep-translation-to-coordinates-error'
 import { ProviderRateLimitError } from './infrastructure/provider-rate-limit-error'
 import { ConcurrencyLimitError } from './infrastructure/concurrency-limit-error'
 import { TimeoutExceededError } from './infrastructure/timeout-exceeded-error'
@@ -45,9 +45,9 @@ export const AppErrorRegistry: Record<string, (message: string, data?: Serialize
 
   EmptyChurchListError: () => new EmptyChurchListError(),
 
-  CepToLatLonError: (msg) => {
+  CepTranslationToCoordinatesError: (msg) => {
     const cep = /\d+/.exec(msg)?.[0] || ''
-    return new CepToLatLonError(cep)
+    return new CepTranslationToCoordinatesError(cep)
   },
 
   ProviderRateLimitError: (msg, data) => {

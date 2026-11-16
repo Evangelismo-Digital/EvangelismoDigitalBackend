@@ -2,7 +2,7 @@ import { ErrorType } from '@common/types/error-type/error-type'
 import { SystemError } from '@common/errors/system-error'
 import { CHURCH_ERRORS } from '@common/messages/errors/churches'
 
-export class CepToLatLonError extends SystemError {
+export class CepTranslationToCoordinatesError extends SystemError {
   constructor(cep: string) {
     super(
       {
