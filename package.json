@@ -187,6 +187,7 @@
     "follow-redirects": "1.16.2",
     "@react-email/render": {
       "html-to-text": "10.0.1"
-    }
+    },
+    "glob": "14.0.2"
   }
 }
