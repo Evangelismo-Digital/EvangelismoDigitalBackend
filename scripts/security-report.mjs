@@ -156,24 +156,26 @@ function collectSarif(tool, path, { securityOnly = false } = {}) {
 
     const isSecurity = (result) => (rules.get(result.ruleId)?.properties?.tags ?? []).includes('security')
 
-    return (run.results ?? []).filter((result) => !securityOnly || isSecurity(result)).map((result) => {
-      const location = result.locations?.[0]?.physicalLocation
-      const rule = rules.get(result.ruleId)
+    return (run.results ?? [])
+      .filter((result) => !securityOnly || isSecurity(result))
+      .map((result) => {
+        const location = result.locations?.[0]?.physicalLocation
+        const rule = rules.get(result.ruleId)
 
-      return {
-        tool,
-        rule: result.ruleId ?? 'unknown',
-        file: normalizePath(location?.artifactLocation?.uri),
-        line: location?.region?.startLine ?? 0,
-        severity: sarifSeverity(result.level ?? rule?.defaultConfiguration?.level ?? 'warning'),
-        message: (result.message?.text ?? '').trim(),
-        extra: result.properties?.cwe ?? rule?.properties?.cwe ?? '',
-        // An in-source suppression (CodeQL's `// codeql[<rule>] <reason>`) is a
-        // justification that lives next to the code; it counts like an entry in
-        // security-suppressions.json.
-        suppressedInSource: (result.suppressions ?? []).length > 0,
-      }
-    })
+        return {
+          tool,
+          rule: result.ruleId ?? 'unknown',
+          file: normalizePath(location?.artifactLocation?.uri),
+          line: location?.region?.startLine ?? 0,
+          severity: sarifSeverity(result.level ?? rule?.defaultConfiguration?.level ?? 'warning'),
+          message: (result.message?.text ?? '').trim(),
+          extra: result.properties?.cwe ?? rule?.properties?.cwe ?? '',
+          // An in-source suppression (CodeQL's `// codeql[<rule>] <reason>`) is a
+          // justification that lives next to the code; it counts like an entry in
+          // security-suppressions.json.
+          suppressedInSource: (result.suppressions ?? []).length > 0,
+        }
+      })
   })
 }
 
@@ -243,21 +245,23 @@ function deduplicate(findings) {
     const key = `${finding.file}:${finding.line}`
     const existing = merged.get(key)
 
+    // The rules on this line that no in-source suppression covers. Each one
+    // still needs its own security-suppressions.json entry (see isSuppressed).
+    const unjustified = finding.suppressedInSource === true ? [] : [finding.rule]
+
     if (!existing) {
       merged.set(key, {
         ...finding,
         tools: [finding.tool],
         rules: [finding.rule],
-        suppressedInSource: finding.suppressedInSource === true,
+        unjustifiedRules: unjustified,
       })
       continue
     }
 
     existing.tools.push(finding.tool)
     existing.rules.push(finding.rule)
-    // Suppressed in source only if EVERY tool's report of this line is: one
-    // scanner's justified false positive must not hide another scanner's finding.
-    existing.suppressedInSource &&= finding.suppressedInSource === true
+    existing.unjustifiedRules.push(...unjustified)
 
     if (SEVERITY_ORDER[finding.severity] < SEVERITY_ORDER[existing.severity]) {
       existing.severity = finding.severity
@@ -289,9 +293,19 @@ function loadSuppressions(now = Date.now()) {
   return new Map(active.map((entry) => [`${entry.rule}@${entry.file}:${entry.line}`, entry]))
 }
 
+/**
+ * A merged line is suppressed only when EVERY rule on it is justified, either
+ * in source or by its own entry here: one scanner's justified false positive
+ * must not hide another scanner's finding, nor one advisory hide another.
+ *
+ * It used to be enough for ANY rule to match, and that is unsafe for SCA: Snyk
+ * Open Source reports every vulnerable package at package-lock.json:1, so all
+ * of them merge into one line. Suppressing a single advisory there silently
+ * suppressed every other one, including any new CVE that showed up while the
+ * entry was active.
+ */
 function isSuppressed(finding, suppressions) {
-  if (finding.suppressedInSource) return true
-  return finding.rules.some((rule) => suppressions.has(`${rule}@${finding.file}:${finding.line}`))
+  return finding.unjustifiedRules.every((rule) => suppressions.has(`${rule}@${finding.file}:${finding.line}`))
 }
 
 function isShipping(finding) {
@@ -311,11 +325,7 @@ function renderFindings(title, findings) {
     // Backslashes first: a message that already contains `\|` would otherwise
     // become `\\|`, an escaped backslash followed by a live pipe that splits the
     // table row (CodeQL js/incomplete-sanitization).
-    const message = finding.message
-      .replace(/\\/g, '\\\\')
-      .replace(/\|/g, '\\|')
-      .replace(/\n/g, ' ')
-      .slice(0, 160)
+    const message = finding.message.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ').slice(0, 160)
     lines.push(`| ${finding.severity} | \`${finding.file}:${finding.line}\` | \`${rules}\` | ${tools} | ${message} |`)
   }
 

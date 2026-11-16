@@ -1,2 +1,9 @@
-[]
-
+[
+  {
+    "rule": "SNYK-JS-NODEMAILER-22409044",
+    "file": "package-lock.json",
+    "line": 1,
+    "expires": "2026-11-18T00:00:00Z",
+    "justification": "CVE-2026-125755, nodemailer < 10.4.1: the recipient domain in the SMTP envelope can differ from the one a validator approved, through (a) internationalized characters mapped differently from UTS-46 and (b) whitespace or comments around a dot in the domain. QUARANTINE: the only fix, 10.4.1, was published 2026-11-10T08:17Z and is installable under .npmrc min-release-age=7 from 2026-11-17T08:17Z. SAFE UNTIL THEN: every user-supplied address (forms, register, update user, forgot-password) goes through emailSchema in src/common/utils/email.ts, which is z.email(). z.email() rejects non-ASCII domains ('a@exämple.com') and any whitespace or parenthesised comment in the domain ('a@ex .ample.com', 'a@ex(c).ample.com'), so neither vector reaches nodemailer. ON 2026-11-17: bump nodemailer to 10.4.1 and delete this entry. Every Snyk SCA finding lands on package-lock.json:1, but this entry hides only this advisory: security-report.mjs requires every rule on a merged line to be justified."
+  }
+]
